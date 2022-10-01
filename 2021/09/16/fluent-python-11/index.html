@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="yield 对于 Python 来说，有两个含义：  yield item 会产生一个值，提供给 next(…) 的调用方 此外还会做出让步，暂停执行生成器，让调用方继续工作，直到需要使用另一个值时再调用 next()。调用方会从生成器中拉取值  从语法上来看，协程与生成器都是类似的，都是定义体中包含 yield 关键字的函数。但是在协程中，yield 通常出现在表达式的右边，可以产出值，也可以不">
+<meta property="og:type" content="article">
+<meta property="og:title" content="流畅的 Python（11）：协程">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2021/09/16/fluent-python-11/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="yield 对于 Python 来说，有两个含义：  yield item 会产生一个值，提供给 next(…) 的调用方 此外还会做出让步，暂停执行生成器，让调用方继续工作，直到需要使用另一个值时再调用 next()。调用方会从生成器中拉取值  从语法上来看，协程与生成器都是类似的，都是定义体中包含 yield 关键字的函数。但是在协程中，yield 通常出现在表达式的右边，可以产出值，也可以不">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-09-16T12:05:24.000Z">
+<meta property="article:modified_time" content="2022-08-25T12:04:03.804Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2021/09/16/fluent-python-11/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>流畅的 Python（11）：协程 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2021/09/16/fluent-python-11/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          流畅的 Python（11）：协程
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-09-16 20:05:24" itemprop="dateCreated datePublished" datetime="2021-09-16T20:05:24+08:00">2021-09-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python-%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" itemprop="url" rel="index"><span itemprop="name">Python 读书笔记</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>yield 对于 Python 来说，有两个含义：</p>
+<ul>
+<li>yield item 会产生一个值，提供给 next(…) 的调用方</li>
+<li>此外还会做出让步，暂停执行生成器，让调用方继续工作，直到需要使用另一个值时再调用 next()。调用方会从生成器中拉取值</li>
+</ul>
+<p>从语法上来看，协程与生成器都是类似的，都是定义体中包含 yield 关键字的函数。但是在协程中，yield 通常出现在表达式的右边，可以产出值，也可以不产生。如果 yield 关键字后面没有表达式，那么生成器产出 None。协程可能会从调用方接收数据，调用方把数据提供给协程使用的是 <code>.send(datum)</code> 方法，而不是 next(…) 函数。通常调用方会把值推送给协程。</p>
+<span id="more"></span>
+
+<p>yield 关键字甚至可以不接收或传出数据，不管数据如何流动，<strong>yield 都是一种流程控制工具，使用它可以实现协作时多任务</strong>：协程可以把控制流让步给中心调度程序，从而激活其他的协程。<strong>从根本上把 yield 视作控制流程的方式，这样就好理解协程了</strong>。</p>
+<h2 id="生成器如何进化成协程"><a href="#生成器如何进化成协程" class="headerlink" title="生成器如何进化成协程"></a>生成器如何进化成协程</h2><p>yield 关键字可以在表达式中使用，而且生成器 API 中增加了 <code>.send(value)</code> 方法，生成器的调用方可以使用 <code>.send(...)</code> 方法发送数据，发送的数据会成为生成器函数中 yield 表达式的值。因此生成器可以作为协程使用，<strong>协程是指一个过程，这个过程与调用方协作，产出由调用方提供的值</strong>。</p>
+<h2 id="用作协程的生成器的基本行为"><a href="#用作协程的生成器的基本行为" class="headerlink" title="用作协程的生成器的基本行为"></a>用作协程的生成器的基本行为</h2><p>如下展示了一个基本的协程：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">simple_coroutine</span>():</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;-&gt; coroutine started&#x27;</span>)</span><br><span class="line"><span class="meta">... </span>    x = <span class="keyword">yield</span></span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;-&gt; coroutine received&#x27;</span>, x)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>my_cro = simple_coroutine()</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>my_cro</span><br><span class="line">&lt;generator <span class="built_in">object</span> simple_coroutine at <span class="number">0x1070f73c0</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>t = <span class="built_in">next</span>(my_cro)</span><br><span class="line">-&gt; coroutine started</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>t</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>my_cro.send(<span class="number">42</span>)</span><br><span class="line">-&gt; coroutine received <span class="number">42</span></span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">StopIteration</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>协程使用生成器函数定义：定义体中有 yield 关键字</li>
+<li>yield 在表达式中使用，如果协程只需要从客户那里接收数据，那么产出的值是 None：该值是隐式的，因为 yield 关键字右边没有表达式</li>
+<li>与创建生成器的方式一样，调用函数得到生成器对象</li>
+<li>首先需要调用 <code>next()</code> 函数，因为生成器还没有启动，没有在 yield 语句处暂停，所以一开始无法接收数据</li>
+<li>在生成器调用 <code>send()</code> 后，协程会恢复，且 yield 表达式会计算出值为 42，协程继续运行直到下一个 yield 表达式，或者终止</li>
+<li>最后控制权流动到协程定义体的末尾，导致生成器像往常一样抛出 StopIteration 异常</li>
+</ul>
+<p>协程可以处于以下 4 个状态之一：</p>
+<ul>
+<li>GEN_CREATED：等待开始执行</li>
+<li>GEN_RUNNING：解释器正在运行</li>
+<li>GEN_SUSPEND：在 yield 表达处暂停</li>
+<li>GEN_CLOSED：执行结束</li>
+</ul>
+<p>可以使用 <code>inspect.getgeneratorstate()</code> 获取当前状态。因为 send 方法的参数会成为暂停的 yield 表达式的值，因此仅当协程处于暂停状态时才能调用 send 方法。但是如果协程还没有激活，可以调用 next(next_mycro) 激活协程，也可以调用 my_cro.send(None) 激活协程。如果创建协程后，立即把 None 之外的值发送给它，会出现错误。</p>
+<p>如下完整地展示了这一过程：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">simple_coro2</span>(<span class="params">a</span>):</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;-&gt; Started: a =&#x27;</span>, a)</span><br><span class="line"><span class="meta">... </span>    b = <span class="keyword">yield</span> a</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;-&gt; Received: b=&#x27;</span>, b)</span><br><span class="line"><span class="meta">... </span>    c = <span class="keyword">yield</span> a + b</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;-&gt; Received: c=&#x27;</span>, c)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>my_cro2 = simple_coro2(<span class="number">14</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> inspect <span class="keyword">import</span> getgeneratorstate</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>getgeneratorstate(my_cro2)</span><br><span class="line"><span class="string">&#x27;GEN_CREATED&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">next</span>(my_cro2)</span><br><span class="line">-&gt; Started: a = <span class="number">14</span></span><br><span class="line"><span class="number">14</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>getgeneratorstate(my_cro2)</span><br><span class="line"><span class="string">&#x27;GEN_SUSPENDED&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>my_cro2.send(<span class="number">28</span>)</span><br><span class="line">-&gt; Received: b= <span class="number">28</span></span><br><span class="line"><span class="number">42</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>my_cro2.send(<span class="number">99</span>)</span><br><span class="line">-&gt; Received: c= <span class="number">99</span></span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">StopIteration</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>getgeneratorstate(my_cro2)</span><br><span class="line"><span class="string">&#x27;GEN_CLOSED&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的一点是，协程在 yield 关键字所在位置暂停执行。对于赋值语句而言，<code>=</code> 右边的代码在赋值前执行。对于 <code>b = yield a</code>，需要等到调用方再次激活协程时才会设定 b 的值。</p>
+<h3 id="使用协程计算移动平均值"><a href="#使用协程计算移动平均值" class="headerlink" title="使用协程计算移动平均值"></a>使用协程计算移动平均值</h3><p>如下代码实现了一个计算移动平均值的协程：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">averager</span>():</span><br><span class="line">    total = <span class="number">0.0</span></span><br><span class="line">    count = <span class="number">0</span></span><br><span class="line">    average = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        term = <span class="keyword">yield</span> average</span><br><span class="line">        total += term</span><br><span class="line">        count += <span class="number">1</span></span><br><span class="line">        average = total / count</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> coroaverager <span class="keyword">import</span> averager</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg = averager()</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">next</span>(coro_avg)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="number">10</span>)</span><br><span class="line"><span class="number">10.0</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="number">20</span>)</span><br><span class="line"><span class="number">15.0</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="number">30</span>)</span><br><span class="line"><span class="number">20.0</span></span><br></pre></td></tr></table></figure>
+
+<p>这里使用协程的好处是，total 和 count 声明为局部变量即可，<strong>无需使用实例属性或者闭包在多次调用之间保持上下文</strong>。</p>
+<h3 id="预激协程的装饰器"><a href="#预激协程的装饰器" class="headerlink" title="预激协程的装饰器"></a>预激协程的装饰器</h3><p>如果不预激，那么协程没有什么用。<strong>对协程调用 send 之前一定要使用 next() 来预激协程</strong>。为了简化协程的用法，有时会使用一个预激装饰器。如下展示了一个预激协程的装饰器：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> functools <span class="keyword">import</span> wraps</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">coroutine</span>(<span class="params">func</span>):</span><br><span class="line"><span class="meta">    @wraps(<span class="params">func</span>)</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">primer</span>(<span class="params">*args, **kwargs</span>):</span><br><span class="line">        gen = func(*args, **kwargs)</span><br><span class="line">        <span class="built_in">next</span>(gen)</span><br><span class="line">        <span class="keyword">return</span> gen</span><br><span class="line">    <span class="keyword">return</span> primer</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>被装饰的生成器函数替换成 primer 函数，而调用 primer 函数则直接返回预激后的生成器</li>
+<li>调用被装饰的函数，获取生成器对象</li>
+</ul>
+<p>很多框架都提供了处理协程的特殊装饰器，但是不是所有装饰器都用于预激协程，有些会提供其他服务。<strong>使用 <code>yield from</code> 语法调用协程时会自动预激</strong>。</p>
+<h3 id="终止协程和异常处理"><a href="#终止协程和异常处理" class="headerlink" title="终止协程和异常处理"></a>终止协程和异常处理</h3><p>协程未处理的异常会向上冒泡，传给 next() 函数或 send 方法的调用方。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avr.send(<span class="number">10</span>)</span><br><span class="line"><span class="number">10.0</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avr.send(<span class="string">&quot;test&quot;</span>)</span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">  File <span class="string">&quot;/Users/fuchencong/data/workspace/code/private/fluent_python/coroaverager.py&quot;</span>, line <span class="number">11</span>, <span class="keyword">in</span> averager</span><br><span class="line">    total += term</span><br><span class="line">TypeError: unsupported operand <span class="built_in">type</span>(s) <span class="keyword">for</span> +=: <span class="string">&#x27;float&#x27;</span> <span class="keyword">and</span> <span class="string">&#x27;str&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avr.send(<span class="number">60</span>)</span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">StopIteration</span><br></pre></td></tr></table></figure>
+
+<p>上面的例子展示了由于协程内部没有处理异常，协程会终止。如果重新激活协程，则会抛出 StopIteration 异常。这个例子也暗示了终止协程的一种方式：发送某个哨符值，让协程退出。内置的 None 和 Ellipsis 等常量经常用作哨符值。</p>
+<p>客户代码可以在生成器对象上调用两个方法，显式地把异常发送给协程：</p>
+<ul>
+<li><p><code>generator.throw(exec_type[, exc_value[, traceback]])</code>：使生成器在暂停的的 yield 表达式处抛出指定的异常。如果生成器处理了抛出的异常，异常代码会向前执行到下一个 yield 表达式，而产出的值会成为调用 generator.throw 方法得到的返回值。如果生成器没有处理抛出的异常，异常会向上冒泡，传到调用方的上下文中</p>
+</li>
+<li><p>generator.close()：使生成器在暂停的 yield 表达式处抛出 GeneratorExit 异常，如果生成器没有处理这个异常，或者抛出了 StopIteration 异常（通常是运行到结尾），调用方不会报错。如果收到了 GeneratorExit 异常，生成器一定不能产出值，否则解释器会抛出 RuntimeError 异常。生成器抛出的其他异常会向上冒泡，传给调用方。</p>
+</li>
+</ul>
+<p>如果不管协程如何结束都想做一些清理工作，要把协程定义体中相关的代码放在 try&#x2F;finally 块中。</p>
+<h3 id="让协程返回值"><a href="#让协程返回值" class="headerlink" title="让协程返回值"></a>让协程返回值</h3><p>如下展示了 averager 协程的另一个版本，该版本每次激活协程时不会产出移动平均值，而是在最后返回一个值：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># Copyright (C) fuchencong.com</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> namedtuple</span><br><span class="line"></span><br><span class="line">Result = namedtuple(<span class="string">&#x27;Result&#x27;</span>, <span class="string">&#x27;count average&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">averager</span>():</span><br><span class="line">    total = <span class="number">0.0</span></span><br><span class="line">    count = <span class="number">0</span></span><br><span class="line">    average = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        term = <span class="keyword">yield</span></span><br><span class="line">        <span class="keyword">if</span> term <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">        total += term</span><br><span class="line">        count += <span class="number">1</span></span><br><span class="line">        average = total / count</span><br><span class="line">    <span class="keyword">return</span> Result(count, average)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> coroaverager_v2 <span class="keyword">import</span> averager</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg = averager()</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">next</span>(coro_avg)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="number">10</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="number">20</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="number">30</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>coro_avg.send(<span class="literal">None</span>)</span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">StopIteration: Result(count=<span class="number">3</span>, average=<span class="number">20.0</span>)</span><br></pre></td></tr></table></figure>
+
+<p>注意，return 表达式的值会偷偷传递给调用方，赋值给 StopIteration 异常的一个属性。这样做有点不合理，但是能够保留生成器对象的常规行为：耗尽时抛出 StopIteration 异常。<strong>yield from 结构会在内部自动捕获 StopIteration 异常，同时把 value 属性的值变成 yield from 表达式的值</strong>。</p>
+<h2 id="使用-yield-from"><a href="#使用-yield-from" class="headerlink" title="使用 yield from"></a>使用 yield from</h2><p><code>yield from</code> 是全新的语言结构，在其他语言中类似的结构使用 await 关键字，它传到了重要的一点：在生成器 gen 中使用 <code>yield from subgen()</code> 时，subgen 会获得控制权，把产出的值传给 gen 的调用方。即调用方可以直接控制 subgen，与此同时 gen 会阻塞，等待 subgen 终止。</p>
+<p>之前介绍过，<code>yield from</code> 可以简化 for 循环中的 yield 表达式。<code>yield from x</code> 表达式对 x 对象所做的第一件事，调用 iter(x)，从中获取迭代器。因此 x 可以是任何可迭代的对象。但是 yield from 的主要功能是打开双向通道，把最外层的调用方与最内层的子生成器连接起来，这样二者可以直接发送和产出值，还可以直接传入异常，而不用在中间的协程中添加大量处理异常的样板代码。有了该结构，协程可以通过以前无法实现的方式来委托职责。</p>
+<ul>
+<li>委派生成器：包含 <code>yield from &lt;iterable&gt;</code> 表达式的生成器函数</li>
+<li>子生成器：从 yield from 表达式中 <code>&lt;iterable&gt;</code> 部分获取的生成器</li>
+<li>调用方：指调用委派生成器的客户端代码</li>
+</ul>
+<p>委派生成器在 <code>yield from</code> 表达式处暂停，调用方可以直接把数据发送给子生成器，子生成器再把产出的值发送给调用方。子生成器返回后，解释器会抛出 StopIteration 异常，并把附加值加到异常对象上，此时委派生成器会恢复。如下展示了使用 <code>yield from</code> 的一个例子：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> namedtuple</span><br><span class="line"></span><br><span class="line">Result = namedtuple(<span class="string">&#x27;Result&#x27;</span>, <span class="string">&#x27;count average&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">averager</span>():</span><br><span class="line">    total = <span class="number">0.0</span></span><br><span class="line">    count = <span class="number">0</span></span><br><span class="line">    average = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        term = <span class="keyword">yield</span></span><br><span class="line">        <span class="keyword">if</span> term <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">        total += term</span><br><span class="line">        count += <span class="number">1</span></span><br><span class="line">        average = total / count</span><br><span class="line">    <span class="keyword">return</span> Result(count, average)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">grouper</span>(<span class="params">results, key</span>):</span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        results[key] = <span class="keyword">yield</span> <span class="keyword">from</span> averager()</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>(<span class="params">data</span>):</span><br><span class="line">    <span class="keyword">for</span> key, values <span class="keyword">in</span> data.items():</span><br><span class="line">        group = grouper(results, key)</span><br><span class="line">        <span class="built_in">next</span>(group)</span><br><span class="line">        <span class="keyword">for</span> value <span class="keyword">in</span> values:</span><br><span class="line">            group.send(value)</span><br><span class="line">        group.send(<span class="literal">None</span>)</span><br><span class="line"></span><br><span class="line">    report(results)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">report</span>(<span class="params">results</span>):</span><br><span class="line">    <span class="keyword">for</span> key, result <span class="keyword">in</span> <span class="built_in">sorted</span>(results.items()):</span><br><span class="line">        group, unit = key.split(<span class="string">&quot;;&quot;</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;&#123;:2&#125;.&#123;:5&#125; averaging &#123;:.2f&#125;&#123;&#125;&#x27;</span>.<span class="built_in">format</span>(</span><br><span class="line">            result.count, group, result.average, unit))</span><br><span class="line"></span><br><span class="line">data = &#123;</span><br><span class="line">    <span class="string">&#x27;girs;kg&#x27;</span>:</span><br><span class="line">        [<span class="number">40</span>, <span class="number">41</span>, <span class="number">42</span>, <span class="number">43</span>, <span class="number">44</span>, <span class="number">45</span>],</span><br><span class="line">    <span class="string">&#x27;girls;m&#x27;</span>:</span><br><span class="line">        [<span class="number">1.62</span>, <span class="number">1.65</span>, <span class="number">1.66</span>, <span class="number">1.67</span>, <span class="number">1.68</span>, <span class="number">1.69</span>],</span><br><span class="line">    <span class="string">&#x27;boys;kg&#x27;</span>:</span><br><span class="line">        [<span class="number">50</span>, <span class="number">51</span>, <span class="number">52</span>, <span class="number">53</span>, <span class="number">55</span>, <span class="number">55</span>],</span><br><span class="line">    <span class="string">&#x27;boys;m&#x27;</span>:</span><br><span class="line">        [<span class="number">1.72</span>, <span class="number">1.75</span>, <span class="number">1.77</span>, <span class="number">1.77</span>, <span class="number">1.78</span>, <span class="number">1.79</span>],</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(data)</span><br></pre></td></tr></table></figure>
+
+<p>grouper 发送的每个值都会经由 <code>yield from</code> 处理，通过管道传送给 averager 实例。grouper 会在 <code>yield from</code> 表达式处暂停，等待 averager 实例处理客户端发来的值。grouper 永远不知道传入的值是什么。当把 None 传入 grouper 后，导致当前的 averager 实例终止，也让 grouper 继续运行，再创建一个 averager 实例，处理下一组值。这里最关键的一点是，如果子生成器不终止，委派生成器会在 <code>yield from</code> 表达式处永远暂停。如果是这样，程序不会向前执行，因为 yield from 把控制权交给客户代码了，此时任务无法完成。</p>
+<p>因为委派生成器相当于管道，所以可以把任意数量的个委派生成器连接在一起：</p>
+<ul>
+<li>一个委派生成器使用 <code>yield from</code> 调用另一个子生成器，而该子生成器本身也是委派生成器，使用 <code>yield from</code> 调用另一个子生成器</li>
+<li>最终该链条以一个只使用 yield 表达式的简单生成器（或者任何可迭代对象）结束</li>
+<li>任何 yield from 链条都必须由客户驱动，<strong>在最外层委派生成器上调用 next(…) 或 send(…) 方法。可以隐式调用，例如 for 循环</strong></li>
+</ul>
+<h3 id="yield-from-的意义"><a href="#yield-from-的意义" class="headerlink" title="yield from 的意义"></a>yield from 的意义</h3><p>这里说明一下 yield from 的行为：</p>
+<ul>
+<li>子生成器产出的值都直接传给委派生成器的调用方</li>
+<li>使用 send() 方法发送给委派生成器的值都直接传给子生成器。如果发送的值是 None，则调用子生成器的 <code>__next__</code> 方法，否则调用其 send() 方法。如果调用的方法抛出 StopIteration 异常，则委派生成器恢复运行。任何其他异常都会向上冒泡，传给委派生成器</li>
+<li>生成器退出时，生成器（或子生成器）中的 return 表达式会触发 StopIteration 异常</li>
+<li><code>yield from</code> 表达式的值是子生成器终止时传给 StopIteration 异常的第一个参数</li>
+<li>传给委派生成器的异常，除了 GeneratorExit 之外都传给子生成器的 throw 方法。如果调用 throw 方法抛出 StopIteration 异常，委派生成器恢复运行，StopIteration 之外的异常向上冒泡，传给委派生成器。</li>
+<li>如果把 GeneratorExit 异常传给委派生成器，或者在委派生成器上调用 close() 方法，那么则在子生成器上调用 close() 方法（如果存在的话）。如果调用 close() 方法抛出异常，那么异常会向上冒泡，传给委派生成器，否则委派生成器会抛出 GeneratorExit 异常。</li>
+</ul>
+<p>对于 <code>yield from EXPR</code>，其含义可以用如下伪代码表示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">_i = <span class="built_in">iter</span>(EXPR)</span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    _y = <span class="built_in">next</span>(_i)</span><br><span class="line"><span class="keyword">except</span> StopIteration <span class="keyword">as</span> _e:</span><br><span class="line">    _r = _e.value</span><br><span class="line"><span class="keyword">else</span>:</span><br><span class="line">    <span class="keyword">while</span> <span class="number">1</span>:</span><br><span class="line">        _s = <span class="keyword">yield</span> _y</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        _y = _i.send(s)</span><br><span class="line">    <span class="keyword">except</span> StopIteration <span class="keyword">as</span> _e:</span><br><span class="line">        _r = _e.value</span><br><span class="line">        <span class="keyword">break</span></span><br></pre></td></tr></table></figure>
+
+<p>现实情况还要复杂一些，因为要处理客户对 <code>.throw()</code> 和 <code>.close()</code> 方法的调用，而这两个方法的操作必须传入子生成器。此外，子生成器也可能是普通的迭代器，不支持 <code>.throw()</code> 和 <code>.close()</code> 方法。因此 <code>yield from</code> 结构的逻辑必须处理这个情况。</p>
+<h3 id="使用案例：使用协程做离散事件仿真"><a href="#使用案例：使用协程做离散事件仿真" class="headerlink" title="使用案例：使用协程做离散事件仿真"></a>使用案例：使用协程做离散事件仿真</h3><p>协程能自然地表述很多算法，例如仿真、游戏、异步 I&#x2F;O，以及其他事件驱动型编程形式或协作式多任务。接下来分析一个使用协程的经典案例，仿真编程，说明如何只使用协程和标准库中的对象实现一个特别简单的仿真系统，该仿真系统是对出租车队运营的仿真：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Event = collections.namedtuple(<span class="string">&#x27;Event&#x27;</span>, <span class="string">&#x27;time proc action&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">taxi_process</span>(<span class="params">ident, trips, start_time=<span class="number">0</span></span>):</span><br><span class="line">    time = <span class="keyword">yield</span> Event(start_time, ident, <span class="string">&#x27;leave garage&#x27;</span>)</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(trips):</span><br><span class="line">        time = <span class="keyword">yield</span> Event(time, ident, <span class="string">&#x27;pick up passenger&#x27;</span>)</span><br><span class="line">        time = <span class="keyword">yield</span> Event(time, ident, <span class="string">&#x27;drop off passenger&#x27;</span>)</span><br><span class="line">    <span class="keyword">yield</span> Event(time, ident, <span class="string">&#x27;going home&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在 Event 实例中，time 是事件发生时的仿真时间，proc 字段是出租车的编号，action 字段是描述活动的字符串</li>
+<li>每辆出租车调用一次 taxi_process 函数，创建一个生成器对象，表示各个出租车的运营情况</li>
+</ul>
+<p>在这个仿真系统中，各个出租车协程由 Simulator.run 方法中的主循环驱动。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Simulator</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, procs_map</span>):</span><br><span class="line">        self.events = queue.PriorityQueue()</span><br><span class="line">        self.procs = <span class="built_in">dict</span>(procs_map)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">run</span>(<span class="params">self, end_time</span>):</span><br><span class="line">        <span class="keyword">for</span> _, proc <span class="keyword">in</span> <span class="built_in">sorted</span>(self.procs.items()):</span><br><span class="line">            first_event = <span class="built_in">next</span>(proc)</span><br><span class="line">            self.events.put(first_event)</span><br><span class="line"></span><br><span class="line">        sim_time = <span class="number">0</span></span><br><span class="line">        <span class="keyword">while</span> sim_time &lt; end_time:</span><br><span class="line">            <span class="keyword">if</span> self.events.empty():</span><br><span class="line">                <span class="built_in">print</span>(<span class="string">&quot;*** end of events ***&quot;</span>)</span><br><span class="line">            current_event = self.events.get()</span><br><span class="line">            sim_time, proc_id, previous_action = current_event</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">&#x27;taxi:&#x27;</span>, proc_id, proc_id * <span class="string">&#x27; &#x27;</span>, current_event)</span><br><span class="line">            active_proc = self.procs[proc_id]</span><br><span class="line">            next_time = sim_time + compute_duration(previous_action)</span><br><span class="line">            <span class="keyword">try</span>:</span><br><span class="line">                next_event = active_proc.send(next_time)</span><br><span class="line">            <span class="keyword">except</span> StopIteration:</span><br><span class="line">                <span class="keyword">del</span> self.procs[proc_id]</span><br><span class="line">            <span class="keyword">else</span>:</span><br><span class="line">                self.events.put(next_event)</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            msg = <span class="string">&#x27;*** end of simulation time: &#123;&#125; events pending ***&#x27;</span></span><br><span class="line">            <span class="built_in">print</span>(msg.<span class="built_in">format</span>(self.event.qsize()))</span><br></pre></td></tr></table></figure>
+
+<p>该示例主要是为了说明如何在一个<strong>主循环中处理事件，以及如何通过发送数据驱动协程。这是 asyncio 包的基本思想</strong>。</p>
+<p>生成器有三种不同的代码编写风格：传统的拉取式（迭代器）、推送式、任务式。这个离散事件仿真系统示例，说明了如何使用生成器替代线程和回调，实现并发。该实例虽然简单，但是说明了事件驱动型框架的运作方式：<strong>在单个线程中使用一个主循环驱动协程协程执行并发活动</strong>。使用协程做面向事件编程时，协程会不断把控制权让步给主循环，激活并向前运行其他协程，从而执行各个并发活动。<strong>这是一种协作式多任务：协程显式自主地把控制权让步给中央调度程序，而多线程实现的是抢占式多任务。调度程序可以在任何时刻暂停线程，把控制权让给其他线程</strong>。</p>
+<p>最后需要说明一下，这里对协程的定义是宽泛、不正式的，即：通过客户调用 <code>.send(...)</code> 方法发送数据或使用 <code>yield from</code> 结构驱动的生成器。</p>
+<h2 id="使用期物处理并发"><a href="#使用期物处理并发" class="headerlink" title="使用期物处理并发"></a>使用期物处理并发</h2><p>接下来将讨论 Python3.2 引入的 concurrent.futures 模块，然后还会介绍 <code>期物</code>（future）的概念，期物指一种对象，表示异步执行的操作。期物是一种对象，表示异步执行的操作，这个概念的作用很大，是 concurrent.futures 模块和 asyncio 包的基础。</p>
+<h3 id="示例：网络下载的三种风格"><a href="#示例：网络下载的三种风格" class="headerlink" title="示例：网络下载的三种风格"></a>示例：网络下载的三种风格</h3><p>为了高效处理网络 I&#x2F;O，需要使用并发，因为网络有很高的延迟，所以为了不浪费 CPU 周期去等待，最好在收到网络响应之前去做其他的事情。</p>
+<p>如下示例中，第一个程序依序下载每个国家的国旗：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> requests</span><br><span class="line"></span><br><span class="line">POP20_CC = (<span class="string">&#x27;CN IN US ID BR PK NG BD RU JP &#x27;</span></span><br><span class="line">            <span class="string">&#x27;MX PH VN ET EG DE IR TR CD FR&#x27;</span>).split()</span><br><span class="line"></span><br><span class="line">BASE_URL = <span class="string">&#x27;http://flupy.org/data/flags&#x27;</span></span><br><span class="line">DEST_DIR = <span class="string">&#x27;downloads/&#x27;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">save_flag</span>(<span class="params">img, filename</span>):</span><br><span class="line">    path = os.path.join(DEST_DIR, filename)</span><br><span class="line">    <span class="keyword">with</span> <span class="built_in">open</span>(path, <span class="string">&#x27;wb&#x27;</span>) <span class="keyword">as</span> fp:</span><br><span class="line">        fp.write(img)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">get_flag</span>(<span class="params">cc</span>):</span><br><span class="line">    url = <span class="string">&#x27;&#123;&#125;/&#123;cc&#125;/&#123;cc&#125;.gif&#x27;</span>.<span class="built_in">format</span>(BASE_URL, cc=cc.lower())</span><br><span class="line">    resp = requests.get(url)</span><br><span class="line">    <span class="keyword">return</span> resp.content</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">show</span>(<span class="params">text</span>):</span><br><span class="line">    <span class="built_in">print</span>(text, end=<span class="string">&#x27; &#x27;</span>)</span><br><span class="line">    sys.stdout.flush()</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list</span>):</span><br><span class="line">    <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list):</span><br><span class="line">        img = get_flag(cc)</span><br><span class="line">        show(cc)</span><br><span class="line">        save_flag(img, cc.lower() + <span class="string">&#x27;.gif&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>(<span class="params">download_many</span>):</span><br><span class="line">    t0 = time.time()</span><br><span class="line">    count = download_many(POP20_CC)</span><br><span class="line">    elapsed = time.time() - t0</span><br><span class="line">    msg = <span class="string">&#x27;\n&#123;&#125; flags downloaded in &#123;:.2f&#125;s&#x27;</span></span><br><span class="line">    <span class="built_in">print</span>(msg.<span class="built_in">format</span>(count, elapsed))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many)</span><br></pre></td></tr></table></figure>
+
+<p>接下来的程序使用 <code>concurrent.futures</code> 模块下载。<code>concurrent.futures</code> 模块的主要特色是 ThreadPoolExecutor 和 ProcessPoolExecutor 类，这两个类实现的接口能分别在不同的线程或进程中执行可调用的对象。这两个类在内部维护者一个同坐线程或进程池，以及要执行的任务队列。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> concurrent <span class="keyword">import</span> futures</span><br><span class="line"><span class="keyword">from</span> flags <span class="keyword">import</span> save_flag, get_flag, show, main</span><br><span class="line"></span><br><span class="line">MAX_WORKERS = <span class="number">20</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_one</span>(<span class="params">cc</span>):</span><br><span class="line">    img = get_flag(cc)</span><br><span class="line">    show(cc)</span><br><span class="line">    save_flag(img, cc.lower() + <span class="string">&#x27;.gif&#x27;</span>)</span><br><span class="line">    <span class="keyword">return</span> cc</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list</span>):</span><br><span class="line">    workers = <span class="built_in">min</span>(MAX_WORKERS, <span class="built_in">len</span>(cc_list))</span><br><span class="line">    <span class="keyword">with</span> futures.ThreadPoolExecutor(workers) <span class="keyword">as</span> executor:</span><br><span class="line">        res = executor.<span class="built_in">map</span>(download_one, <span class="built_in">sorted</span>(cc_list))</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(<span class="built_in">list</span>(res))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many)</span><br></pre></td></tr></table></figure>
+
+<p>这里 download_one 函数其实是 download_many 函数中的 for 循环体，编写并发代码时经常这样重构：把依序执行的 for 循环体改成函数，以便并发调用。</p>
+<p>期物是 concurrent.futures 模块和 asyncio 包的重要组件。concurrent.futures.Future 和 asyncio.Future 两个类的作用相同：两个 Future 类的实例都表示可能已经完成或者尚未完成的延迟计算。期物封装待完成的操作，可以放入队列，完成的状态可以查询，得到结果（或抛出异常）后可以获取结果。通常情况下，我们不应该自己创建期物，而只能由并发框架实例化，因为期物表示终将发生的事情，而确定某件事情会发生的唯一方式是执行的时间已经排定。客户端代码不应该改变期物的状态，并发框架在期物表示的延迟计算结束后会改变期物的状态，而我们无法控制计算何时结束。</p>
+<ul>
+<li>这两种期物都有 .done() 方法，返回布尔值，表示期物链接的可调用对象是否已经执行</li>
+<li><code>.result</code> 方法在期物运行结束后调用的话，返回可调用对象的结果，或者重新抛出执行可调用的对象时抛出的异常</li>
+<li>通过 <code>.add_done_callback()</code> 方法可以指定一个可调用对象，期物运行结束后会调用指定的可调用对象</li>
+</ul>
+<p>如下程序使用期物中的 as_completed 函数来重新实现 download_many 函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list</span>):</span><br><span class="line">    cc_list = cc_list[:<span class="number">5</span>]</span><br><span class="line">    <span class="keyword">with</span> futures.ThreadPoolExecutor(max_workers=<span class="number">3</span>) <span class="keyword">as</span> executor:</span><br><span class="line">        to_do = []</span><br><span class="line">        <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list):</span><br><span class="line">            future = executor.submit(download_one, cc)</span><br><span class="line">            to_do.append(future)</span><br><span class="line">            msg = <span class="string">&#x27;Scheduled for &#123;&#125;: &#123;&#125;&#x27;</span></span><br><span class="line">            <span class="built_in">print</span>(msg.<span class="built_in">format</span>(cc, future))</span><br><span class="line"></span><br><span class="line">    results = []</span><br><span class="line">    <span class="keyword">for</span> future <span class="keyword">in</span> futures.as_completed(to_do):</span><br><span class="line">        res = future.result()</span><br><span class="line">        msg = <span class="string">&#x27;&#123;&#125; result: &#123;!r&#125;&#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(msg.<span class="built_in">format</span>(future, res))</span><br><span class="line">        results.append(res)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(results)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>as_completed 函数的参数是一个期物列表，返回值是一个迭代器，在期物运行结束后产出期物</li>
+<li>这里 future.result() 方法绝对不会阻塞，因为 future 由 as_completed 函数产出</li>
+</ul>
+<p>严格来说，目前测试的并发脚本都不能并发下载。因为目前 <code>concurrent.futures</code> 库实现的示例受 GIL（Global Interpreter Lock，全局解释器锁） 的限制。</p>
+<h3 id="阻塞型-I-x2F-O-和-GIL"><a href="#阻塞型-I-x2F-O-和-GIL" class="headerlink" title="阻塞型 I&#x2F;O 和 GIL"></a>阻塞型 I&#x2F;O 和 GIL</h3><p>CPython 解释器本身就不是线程安全的，因此有全局解释器锁（GIL），一次只能允许一个线程执行 Python 字节码。因此一个 Python 进程通常不能使用多个 CPU 核心。</p>
+<p>编写 Python 代码时无法控制 GIL，但是执行耗时任务时，可以使用一个内置的函数或一个使用 C 语言编写的扩展来释放 GIL。<strong>但是标准库所有执行阻塞型 I&#x2F;O 操作的函数，在等待操作系统返回结果时都会释放 GIL</strong>。这意味在 Python 语言这个层次上可以使用多线程，而 I&#x2F;O 密集型 Python 程序能够从中受益：一个 Python 程序等待网络响应时，阻塞型 I&#x2F;O 函数（包括 time.sleep() 函数）会释放 GIL，再运行一个线程。</p>
+<h3 id="使用-concurrent-futures-模块启动进程"><a href="#使用-concurrent-futures-模块启动进程" class="headerlink" title="使用 concurrent.futures 模块启动进程"></a>使用 concurrent.futures 模块启动进程</h3><p>concurrent.futures 模块其实也可以实现真正的并行计算（注意并发与并行的区别），因为它可以使用 ProcessPoolExecutor 类把工作分配给多个 Python 进程处理。因此如果需要做 CPU 密集型处理，使用这个模块可以绕过 GIL，利用所有可用的 CPU 核心。 ProcessPoolExecutor 和 ThreadPoolExecutor 类都实现了通用的 Executor 接口，因此使用 concurrent.futures 模块可以轻松地把基于线程的方案转换成基于进程的方案。</p>
+<p>在 ProcessPoolExecutor 类中，指定进程池中进程数量的参数是可选的，默认值是 os.cpu_count() 函数返回的 CPU 数量。ProcessPoolExecutor 的价值体现在 CPU 密集型作业上。另外，如果使用 Python 处理 CPU 密集型工作，可以尝试一下 PyPy。</p>
+<h3 id="实验-Executor-map-方法"><a href="#实验-Executor-map-方法" class="headerlink" title="实验 Executor.map 方法"></a>实验 Executor.map 方法</h3><p>如果想并发运行多个可调用对象，最简单的方法是通过 Executor.map 方法。如下展示了一个 <code>Executor.map</code> 使用案例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> time <span class="keyword">import</span> sleep, strftime</span><br><span class="line"><span class="keyword">from</span> concurrent <span class="keyword">import</span> futures</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">display</span>(<span class="params">*args</span>):</span><br><span class="line">    <span class="built_in">print</span>(strftime(<span class="string">&#x27;[%H:%M:%S]&#x27;</span>), end=<span class="string">&#x27; &#x27;</span>)</span><br><span class="line">    <span class="built_in">print</span>(*args)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">loiter</span>(<span class="params">n</span>):</span><br><span class="line">    msg = <span class="string">&quot;&#123;&#125;loiter(&#123;&#125;): doing nothing for &#123;&#125;s...&quot;</span></span><br><span class="line">    display(msg.<span class="built_in">format</span>(<span class="string">&#x27;\t&#x27;</span>*n, n, n))</span><br><span class="line">    sleep(n)</span><br><span class="line">    msg = <span class="string">&#x27;&#123;&#125;loiter(&#123;&#125;): done&#x27;</span></span><br><span class="line">    display(msg.<span class="built_in">format</span>(<span class="string">&#x27;\t&#x27;</span>*n, n))</span><br><span class="line">    <span class="keyword">return</span> n * <span class="number">10</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    display(<span class="string">&#x27;Script starting.&#x27;</span>)</span><br><span class="line">    executor = futures.ThreadPoolExecutor(max_workers=<span class="number">3</span>)</span><br><span class="line">    results = executor.<span class="built_in">map</span>(loiter, <span class="built_in">range</span>(<span class="number">5</span>))</span><br><span class="line">    display(<span class="string">&#x27;results:&#x27;</span>, results)</span><br><span class="line">    display(<span class="string">&#x27;Waiting for individual results:&#x27;</span>)</span><br><span class="line">    <span class="keyword">for</span> i, result <span class="keyword">in</span> <span class="built_in">enumerate</span>(results):</span><br><span class="line">        display(<span class="string">&#x27;result&#123;&#125;: &#123;&#125;&#x27;</span>.<span class="built_in">format</span>(i, result))</span><br><span class="line"></span><br><span class="line">main()</span><br></pre></td></tr></table></figure>
+
+<p>脚本的运行结果如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">$ python3 executor_map.py</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>] Script starting.</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>] loiter(<span class="number">0</span>): doing nothing <span class="keyword">for</span> 0s...</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>]      loiter(<span class="number">1</span>): doing nothing <span class="keyword">for</span> 1s...</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>] loiter(<span class="number">0</span>): done</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>]              loiter(<span class="number">2</span>): doing nothing <span class="keyword">for</span> 2s...</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>] results: &lt;generator <span class="built_in">object</span> Executor.<span class="built_in">map</span>.&lt;<span class="built_in">locals</span>&gt;.result_iterator at <span class="number">0x10e9652e0</span>&gt;</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>] Waiting <span class="keyword">for</span> individual results:</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>] result0: <span class="number">0</span></span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">36</span>]                      loiter(<span class="number">3</span>): doing nothing <span class="keyword">for</span> 3s...</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">37</span>]      loiter(<span class="number">1</span>): done</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">37</span>]                              loiter(<span class="number">4</span>): doing nothing <span class="keyword">for</span> 4s...</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">37</span>] result1: <span class="number">10</span></span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">38</span>]              loiter(<span class="number">2</span>): done</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">38</span>] result2: <span class="number">20</span></span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">39</span>]                      loiter(<span class="number">3</span>): done</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">39</span>] result3: <span class="number">30</span></span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">41</span>]                              loiter(<span class="number">4</span>): done</span><br><span class="line">[<span class="number">18</span>:<span class="number">17</span>:<span class="number">41</span>] result4: <span class="number">40</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>这里把五个任务提交给 executor（因为只有三个线程，所以只有 3 个任务会立即开始），它是非阻塞调用</li>
+<li>for 循环中的 enumerate 函数会调用 next(results)，该函数会在表示第一个任务的期物上调用 results 方法，该方法会阻塞，直到期物运行结束。因此这个循环每次迭代时都要等待下一个结果做好准备</li>
+</ul>
+<p>需要注意，Executor 函数返回结果的顺序与调用开始的顺序一致。如果希望：不管提交的顺序，只要有结果就获取。要把 Executor.submit 方法和 futures.as_completed 函数结合起来使用。</p>
+<h3 id="线程和多进程的替代方案"><a href="#线程和多进程的替代方案" class="headerlink" title="线程和多进程的替代方案"></a>线程和多进程的替代方案</h3><p>Python 线程特别适合于 I&#x2F;O 密集型应用，concurrent.futures 模块大大简化了某些场景下 Python 线程的用法。如果 <code>futures.ThreadPoolExecutor</code> 类对某个作业来说不够灵活，可能要使用 threading 模块中的组件（如 Thread、Lock、Seamaphore 等）自行定制方案。</p>
+<p>而对 CPU 密集型工作来说，要启动多个进程，来规避 GIL。创建多个进程最简单的方式是，使用 futures.ProcessPoolExecutor 类。如果使用的场景较为复杂，则需要更高级的工具。multiprocessing 模块的 API 与 threading 模块相仿，但是作业是交给多个进程处理。</p>
+<h2 id="使用-asyncio-包处理并发"><a href="#使用-asyncio-包处理并发" class="headerlink" title="使用 asyncio 包处理并发"></a>使用 asyncio 包处理并发</h2><p>并发是指一次处理多件事，并行是指一次做多件事。二者不同，但是是由联系。一个关于结构，一个关于执行。并发用于指定方案，用来解决可能（但未必）并行的问题。真正的并行需要多个核心。</p>
+<p>这篇文章介绍 asyncio 包，这个包使用事件循环驱动的协程实现并发。</p>
+<h3 id="线程与协程对比"><a href="#线程与协程对比" class="headerlink" title="线程与协程对比"></a>线程与协程对比</h3><p>首先看一个示例程序，它显式一个动画效果，然后 3 s 后停止显式：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> threading</span><br><span class="line"><span class="keyword">import</span> itertools</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Signal</span>:</span><br><span class="line">    go = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">spin</span>(<span class="params">msg, signal</span>):</span><br><span class="line">    write, flush = sys.stdout.write, sys.stdout.flush</span><br><span class="line">    <span class="keyword">for</span> char <span class="keyword">in</span> itertools.cycle(<span class="string">&#x27;|/-\\&#x27;</span>):</span><br><span class="line">        status = char + <span class="string">&#x27; &#x27;</span> + msg</span><br><span class="line">        write(status)</span><br><span class="line">        flush()</span><br><span class="line">        write(<span class="string">&#x27;\x08&#x27;</span> * <span class="built_in">len</span>(status))</span><br><span class="line">        time.sleep(<span class="number">1</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> signal.go:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">    write(<span class="string">&#x27; &#x27;</span> * <span class="built_in">len</span>(status) + <span class="string">&#x27;\x08&#x27;</span> * <span class="built_in">len</span>(status))</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">slow_function</span>():</span><br><span class="line">    time.sleep(<span class="number">3</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">42</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">supervisor</span>():</span><br><span class="line">    signal = Signal()</span><br><span class="line">    spinner = threading.Thread(target=spin, args=(<span class="string">&#x27;thinking!&#x27;</span>, signal))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;spiner object:&#x27;</span>, spinner)</span><br><span class="line">    spinner.start()</span><br><span class="line">    result = slow_function()</span><br><span class="line">    signal.go = <span class="literal">False</span></span><br><span class="line">    spinner.join()</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    result = supervisor()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;Answer:&#x27;</span>, result)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+
+<p>这里解释一下：</p>
+<ul>
+<li>使用退格符  <code>\x08</code> 把光标移动回来，这也是显示文本式动画的诀窍</li>
+<li>主线程通过 sleep 函数被阻塞，此时会释放 GIL，从而从属线程有创建并运行的时机</li>
+<li>通过改变 signal 的状态，来使主线程控制从属线程的退出。Python 没有提供终止线程的 API，这是有意为之。若想关闭线程，必须给线程发送消息。</li>
+</ul>
+<p>接下来使用 <code>@asyncio.coroutine</code> 装饰器替代线程，实现相同的行为。之前说过，<strong>asyncio 包实现的协程是较为严格的定义，适合 <code>asyncio</code> API 的协程在定义体中必须使用 <code>yield from</code>，而不能使用 yield</strong>。<strong>适合 asyncio 的协程要由调用方驱动，并由调用方通过 <code>yield from</code> 调用，或者把协程传给 <code>asyncio</code> 包中的某个函数（例如 asncio.async(…)) 从而驱动协程</strong>。最后 <code>@asyncio.coroutine</code> 装饰器应该应用在协程上。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> itertools</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@asyncio.coroutine</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">spin</span>(<span class="params">msg</span>):</span><br><span class="line">    write, flush = sys.stdout.write, sys.stdout.flush</span><br><span class="line">    <span class="keyword">for</span> char <span class="keyword">in</span> itertools.cycle(<span class="string">&#x27;|/-\\&#x27;</span>):</span><br><span class="line">        status = char + <span class="string">&#x27; &#x27;</span> + msg</span><br><span class="line">        write(status)</span><br><span class="line">        flush()</span><br><span class="line">        write(<span class="string">&#x27;\x08&#x27;</span> * <span class="built_in">len</span>(status))</span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            <span class="keyword">yield</span> <span class="keyword">from</span> asyncio.sleep(<span class="number">.1</span>)</span><br><span class="line">        <span class="keyword">except</span> asyncio.CancelledError:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">    write(<span class="string">&#x27; &#x27;</span> * <span class="built_in">len</span>(status) + <span class="string">&#x27;\x08&#x27;</span> * <span class="built_in">len</span>(status))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@asyncio.coroutine</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">slow_function</span>():</span><br><span class="line">    <span class="keyword">yield</span> <span class="keyword">from</span> asyncio.sleep(<span class="number">3</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">42</span></span><br><span class="line"></span><br><span class="line"><span class="meta">@asyncio.coroutine</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">supervisor</span>():</span><br><span class="line">    spinner = asyncio.<span class="keyword">async</span>(spin(<span class="string">&#x27;thinking!&#x27;</span>))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;spinner object:&#x27;</span>, spinner)</span><br><span class="line">    result = <span class="keyword">yield</span> <span class="keyword">from</span> slow_function()</span><br><span class="line">    spinner.cancel()</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    loop = asyncio.get_event_loop()</span><br><span class="line">    result = loop.run_until_complete(supervisor)</span><br><span class="line">    loop.close()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;Answer:&#x27;</span>, result)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>打算交给 asyncio 处理的协程都应该使用 <code>@asyncio.coroutine</code> 装饰</li>
+<li>使用 <code>yield from asyncio.sleep(.1)</code> 替代 <code>time.sleep(.1)</code>，这样的休眠不会阻塞事件循环</li>
+</ul>
+<p>asyncio.Task 对象差不多与 threading.Thread 对象等效。<code>Task</code> 对象是实现协作式多任务的库中的绿色线程。Task 对象用于驱动协程，Thread 对象用于调用可调用的对象。<strong>Task 对象不是由自己动手实例化，而是通过把协程传给 <code>asyncio.async</code> 或 <code>loop.create_task()</code> 方法获取</strong>。</p>
+<p>线程与协程之间的对比，还有重要一点需要说明。由于调度程序能够在任何时候中断线程，因此必须记住保留锁，去保护程序中的重要数据。而协程默认会做好全方位保护，以防止中断。必须显式产出才能让程序的余下部分运行。对于协程来说，无需保留锁，在多个线程之间同步操作，协程自身就会同步，因为在任意时刻只能有一个协程运行。如果想交出控制权时，可以使用 <code>yield</code> 或 <code>yield from</code> 把控制权交还给调度程序。</p>
+<p>在 asyncio 包中，BaseEventLoop.create_task() 方法接收一个协程，排定它的运行时间，然后返回一个 asyncio.Task 实例，即 asyncio.Future 类的实例。<code>asyncio.Future</code> 类的 <code>.result()</code> 方法没有参数，不能指定超时时间，调用该方法时如果期物还没有运行完毕，那么 <code>.result()</code> 方法不会阻塞去等待结果，而是抛出 <code>asyncio.InvalidStateError</code> 异常。其实，获取 <code>asyncio.Future</code> 对象的结果通常使用 <code>yield from</code>。使用 <code>yield from</code> 处理期物，等待期物运行完毕这一步无需我们关心，而且不会阻塞事件循环。在 asyncio 包中，<code>yield from</code> 的作用是把控制权还给事件循环。</p>
+<p>asyncio.Future 类的目的是与 <code>yield from</code> 一起使用，所以通常不需要使用以下方法：</p>
+<ul>
+<li>无需调用 my_future.add_done_callback(…)，因为可以直接把想在期物运行结束后执行的操作放在协程的 <code>yield from my_future</code> 表达式后面。协程是可以暂停和恢复的函数。</li>
+<li>无需调用 <code>my_future.result()</code>，因为 <code>yield from</code> 从期物中产出的值就是结果。</li>
+</ul>
+<h3 id="从期物、任务和协程中产出"><a href="#从期物、任务和协程中产出" class="headerlink" title="从期物、任务和协程中产出"></a>从期物、任务和协程中产出</h3><p>在 asyncio 包中，期物和协程关系紧密，因为可以使用 <code>yield from</code> 从 asyncio.Future 对象中产出结果。如果 foo 是协程函数（调用后返回协程对象），亦或是返回 Future 或 Task 实例的普通函数，那么可以这样写：<code>res = yield from foo()</code>，这也是 asyncio 包的 API 中很多地方可以互换协程与期物的原因之一。</p>
+<p>对于协程来说，获取 Task 对象有两种主要的方式：</p>
+<ul>
+<li>asyncio.async：这个函数统一了协程和期物。如果第一个参数是 Future 或 Task 对象，那么就原封不动的返回。如果是协程，它会调用 loop.create_task() 创建 Task 对象。</li>
+<li>BaseEventLoop.create_task 方法排定协程的执行时间，返回一个 asyncio.Task 对象。</li>
+</ul>
+<p>asyncio 包中有多个函数会自动把参数指定的协程包装在 asyncio.Task 对象中。</p>
+<p>asyncio 的事件循环在背后维护着一个 ThreadPoolExecutor 对象，我们可以调用 <code>run_in_executor</code> 方法，把可调用的对象发给它执行。</p>
+<h3 id="使用-asyncio-和-aiohttp-包下载"><a href="#使用-asyncio-和-aiohttp-包下载" class="headerlink" title="使用 asyncio 和 aiohttp 包下载"></a>使用 asyncio 和 aiohttp 包下载</h3><p>asyncio 包只直接支持 TCP 和 UDP，如果想要使用 HTTP 或其他协议，那么要借助第三方包（如 aiohttp 包）。在 asyncio 中，基本的流程是一样的：在一个单线程程序中使用主循环依次激活队列里的协程。各个协程向前执行几步，然后把控制权让给主循环，主循环再激活队列里的下一个协程。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> aiohttp</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> flags <span class="keyword">import</span> BASE_URL, save_flag, show, main</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@asyncio.coroutine</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">get_flag</span>(<span class="params">cc</span>):</span><br><span class="line">    url = <span class="string">&#x27;&#123;&#125;/&#123;cc&#125;/&#123;cc&#125;.gif&#x27;</span>.<span class="built_in">format</span>(BASE_URL, cc=cc.lower())</span><br><span class="line">    resp = <span class="keyword">yield</span> <span class="keyword">from</span> aiohttp.request(<span class="string">&quot;GET&quot;</span>, url)</span><br><span class="line">    image = <span class="keyword">yield</span> <span class="keyword">from</span> resp.read()</span><br><span class="line">    <span class="keyword">return</span> image</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">@asyncio.coroutine</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_one</span>(<span class="params">cc</span>):</span><br><span class="line">    image = <span class="keyword">yield</span> <span class="keyword">from</span> get_flag(cc)</span><br><span class="line">    show(cc)</span><br><span class="line">    save_flag(image, cc.lower() + <span class="string">&#x27;.gif&#x27;</span>)</span><br><span class="line">    <span class="keyword">return</span> cc</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list</span>):</span><br><span class="line">    loop = asyncio.get_event_loop()</span><br><span class="line">    to_do = [download_one(cc) <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list)]</span><br><span class="line">    wait_coro = asyncio.wait(to_do)</span><br><span class="line">    res, _ = loop.run_until_complete(wait_coro)</span><br><span class="line">    loop.close()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(res)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many)</span><br></pre></td></tr></table></figure>
+
+<p>这里阻塞的操作通过协程实现。为了使用 asyncio 包，必须把每个访问网络的函数改成异步版本，使用 <code>yield from</code> 处理网络操作，这样才能把控制权交还给事件循环。<code>asyncio.wait(...)</code> 协程的参数是一个由期物或协程构成的可迭代的对象。wait 会分别把各个协程包装进一个 task 对象。最终的结果是，wait 处理的所有对象都通过某种方式变成 Future 类的实例。wait 是协程函数，因此返回的是一个协程或生成器对象。为了驱动协程，把该对象传给 loop.run_until_complete(…) 方法。</p>
+<p><code>yield from foo</code> 语法能够防止阻塞，是因为当前协程（即包含 yield from 代码的委派生成器）暂停后，控制权回到事件循环手中，再驱动其他协程。foo 期物或者协程运行完毕后，把结果返回给暂停的协程，将其恢复。关于 <code>yield from</code> 的用法，之前介绍过：</p>
+<ul>
+<li>使用 <code>yield from</code> 链接的多个协程最终必须由不是协程的调用方驱动，调用方显式或隐式在最外层委派生成器上调用 next(…) 函数或者 .send(…) 方法</li>
+<li>链条中最内层的子生成器必须是简单生成器（只使用 yield）或可迭代对象</li>
+</ul>
+<p>在 asyncio 包的 API 中使用 yield from 时，这两点都成立。但是需要注意以下细节：</p>
+<ul>
+<li>我们编写的协程链条始终通过把最外层委派生成器传给 asyncio 包 API 中的某个函数（例如 loop.run_until_complete(…)）驱动</li>
+<li>我们编写的协程链条最终是通过 <code>yield from</code> 把职责委托给 <code>asyncio</code> 包中的某个协程函数或协程方法，或者其他库中实现高层协议的协程</li>
+</ul>
+<p>概括起来就是：使用 asyncio 包时，我们编写的异步代码中包含让 asyncio 本身驱动的协程（即委派生成器），而生成器最终把职责委托给 asyncio 包或第三方库（如 aiohttp）中的协程。这种处理方式相当于架起了管道，<strong>让 asyncio 事件循环通过我们编写的协程驱动执行底层异步 IO 操作的库函数</strong>。</p>
+<h3 id="Semaphore"><a href="#Semaphore" class="headerlink" title="Semaphore"></a>Semaphore</h3><p>Semaphore 对象维护着一个内部计数器，若在该对象上调用 <code>.acquire()</code> 方法，计数器则递减，如果在对象上调用 <code>.release()</code> 协程方法，计数器则递增。计数器的初始值在实例化 Semaphore 时设定。如果计数器的值大于 0，那么调用 <code>.acquire()</code> 方法不会阻塞，可是如果计数器为 0，那么 <code>.acquire()</code> 方法会阻塞调用这个方法的协程。</p>
+<h3 id="避免阻塞型调用"><a href="#避免阻塞型调用" class="headerlink" title="避免阻塞型调用"></a>避免阻塞型调用</h3><p>有两种方法能够避免阻塞型调用阻塞整个应用程序的进程：</p>
+<ul>
+<li>在单独的线程中执行各个阻塞型操作</li>
+<li>把每个阻塞型操作转换成非阻塞的异步调用使用</li>
+</ul>
+<p>多个线程是可以的，但是多个线程是有开销的。为了降低内存的消耗，通常使用回调来实现异步调用。使用回调时，我们不等待响应，而是注册一个函数，在发生某件事时调用。这样，所有调用都是非阻塞的。当然，只有异步应用程序底层的事件循环能够依靠基础设置的中断、线程、轮询和后台进程等，确保多个并发请求能取得进展并最终完成，这样才能使用回调。</p>
+<p>把生成器当做协程使用是异步编程的另一种方式。对事件循环来说，调用回调与在暂停的协程上调用 <code>.send()</code> 方法效果差不多。因为异步操作是交叉执行的，所以并发下载多张图像所需的总时间比依序下载少得多。</p>
+<h3 id="从回调到期物和协程"><a href="#从回调到期物和协程" class="headerlink" title="从回调到期物和协程"></a>从回调到期物和协程</h3><p>使用协程做面向事件编程，需要下一番功夫才能掌握。我们需要了解与经典的回调式编程相比，协程有哪些改进。回调式面向事件编程需要面对 <code>回调地狱</code> 这个问题，也就是说，如果一个操作需要依赖之前操作的结果，那么就得嵌套回调。在这种编程模式中，每个函数做一部分工作，设置下一个回调，然后返回，让事件循环继续执行。这样所有的本地上下文都会丢失。如果需要知道这个上下文，那么就必须依靠闭包，或者把它存储在外部数据结构中，以便在处理过程的不同阶段使用。</p>
+<p>在这个问题上，协程能发挥很大的作用。在协程中，如果要连续执行 3 个异步操作，只需要使用 yield 3 次。让事件循环继续执行。准备好结果后，调用 <code>.send()</code> 方法激活协程。对于事件循环来说，这种做法与调用回调类似。但是对于使用协程式异步 API 的用户来说，情况就大为不同了：3 次操作都是在同一个函数定义体中，像是顺序代码，能够在处理过程中使用局部变量保留整个任务的上下文。</p>
+<p>如下展示了这种实例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@asyncio.coroutine</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">three_stages</span>(<span class="params">request1</span>):</span><br><span class="line">    response1 = <span class="keyword">yield</span> <span class="keyword">from</span> api_call1(request1)</span><br><span class="line"></span><br><span class="line">    request2 = step1(response1)</span><br><span class="line">    response2 = <span class="keyword">yield</span> <span class="keyword">from</span> api_call2(request2)</span><br><span class="line"></span><br><span class="line">    request3 = step2(response2)</span><br><span class="line">    response3 = <span class="keyword">yield</span> <span class="keyword">from</span> api_call3(request3)</span><br><span class="line">    step3(response3)</span><br><span class="line"></span><br><span class="line">loop.create_task(three_stages(request1))</span><br></pre></td></tr></table></figure>
+
+<p>而且对于回调式编程，为了处理错误，通常需要注册两个回调。一个用于处理操作成功时返回的结果，一个用于处理错误。一旦涉及错误处理，回调地域的危害程度就会迅速增大。而在协程编程模式中，如果异步调用会抛出异常，可以把响应的 <code>yield from</code> 表达式放在 <code>try/except</code> 块中处理。</p>
+<p>但是这也有代价，因为我们不能使用常规的函数，必须使用协程，而且要习惯 <code>yield from</code>。只要函数中有 <code>yield from</code>，&#96;函数就会变成协程，而协程不能直接调用，必须使用事件循环来显式排定协程的执行时间（或者在其他排定了执行时间的协程中使用 yield from 表达式把它激活）。</p>
+<p>问题关键是必须知道何时应该使用 <code>yield from</code>，何时不应该使用。基本原则很简单，<code>yield from</code> 只能用于协程和 asyncio.Future 实例。</p>
+<h3 id="使用-asyncio-包编写服务器"><a href="#使用-asyncio-包编写服务器" class="headerlink" title="使用 asyncio 包编写服务器"></a>使用 asyncio 包编写服务器</h3><p>asyncio 包提供了高层流 API，有现成的服务器可用，我们只需要实现一个处理程序（普通的回调或协程）。在使用 asyncio 编写 tcp 服务器时，一般的范式是：</p>
+<ul>
+<li>编写协程处理业务逻辑，该业务处理协程之后会被传递给 asyncio.start_server 函数。业务处理协程函数接收的两个参数： asyncio.StreamReader 对象和 asyncio.StreamWriter 对象。</li>
+<li>使用 asyncio.get_event_loop() 创建事件循环</li>
+<li>使用 asyncio.start_server 函数创建服务端协程，它接收业务处理的协程、监听的地址和端口、以及事件循环作为参数</li>
+<li>通过事件处理循环的 run_until_complete 驱动服务端协程，</li>
+<li>loop.run_forever 运行事件循环</li>
+</ul>
+<p>需要注意，run_until_complete 方法的参数是一个协程（start_server 方法返回的结果）或者是一个 Future 对象（server.wait_closed 方法返回的结果）。如果传给 run_until_complete 方法的参数是协程，会把协程包装在 Task 对象中。</p>
+<p>另外需要注意，有些 I&#x2F;O 方法是协程，必须由 <code>yield from</code> 驱动，而另一些则是普通的函数。</p>
+<p>只有驱动协程，协程才能做事。而驱动 <code>asyncio.coroutine</code> 装饰的协程有两种方法：要么使用 <code>yield from</code>，要么传给 asyncio 包中某个参数为协程或期物的函数（例如 run_until_complete）。</p>
+<p>除了防止阻塞调用之外，高并发的系统还必须把复杂的工作分成多步，以保持敏捷。</p>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>这里总结了在 Python 中做并发编程的一种全新方式，这种方式使用 yield from、协程、期物和 asyncio 事件循环。其实异步库依赖于低层线程，但是这些库的用户无需创建线程，也无需知道用到了基础设施中的底层线程。异步系统能避免用户级线程开销，这是它比多线程系统管理更多并发连接的主要原因。</p>
+<p>asyncio 包添加到标准库之后，协程和期物被确定为符合 Python 风格的异步代码编写方式。此外，asyncio 包为异步期物和事件循环定义了标准接口，为二者提供了实现参考。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2021/09/15/fluent-python-10/" rel="prev" title="流畅的 Python（10）：上下文管理器和 else 块">
+      <i class="fa fa-chevron-left"></i> 流畅的 Python（10）：上下文管理器和 else 块
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2021/09/17/fluent-python-12/" rel="next" title="流畅的 Python（12）：特性、描述符和元编程">
+      流畅的 Python（12）：特性、描述符和元编程 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E5%99%A8%E5%A6%82%E4%BD%95%E8%BF%9B%E5%8C%96%E6%88%90%E5%8D%8F%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">生成器如何进化成协程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%A8%E4%BD%9C%E5%8D%8F%E7%A8%8B%E7%9A%84%E7%94%9F%E6%88%90%E5%99%A8%E7%9A%84%E5%9F%BA%E6%9C%AC%E8%A1%8C%E4%B8%BA"><span class="nav-number">2.</span> <span class="nav-text">用作协程的生成器的基本行为</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E5%8D%8F%E7%A8%8B%E8%AE%A1%E7%AE%97%E7%A7%BB%E5%8A%A8%E5%B9%B3%E5%9D%87%E5%80%BC"><span class="nav-number">2.1.</span> <span class="nav-text">使用协程计算移动平均值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%84%E6%BF%80%E5%8D%8F%E7%A8%8B%E7%9A%84%E8%A3%85%E9%A5%B0%E5%99%A8"><span class="nav-number">2.2.</span> <span class="nav-text">预激协程的装饰器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%88%E6%AD%A2%E5%8D%8F%E7%A8%8B%E5%92%8C%E5%BC%82%E5%B8%B8%E5%A4%84%E7%90%86"><span class="nav-number">2.3.</span> <span class="nav-text">终止协程和异常处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A9%E5%8D%8F%E7%A8%8B%E8%BF%94%E5%9B%9E%E5%80%BC"><span class="nav-number">2.4.</span> <span class="nav-text">让协程返回值</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-yield-from"><span class="nav-number">3.</span> <span class="nav-text">使用 yield from</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#yield-from-%E7%9A%84%E6%84%8F%E4%B9%89"><span class="nav-number">3.1.</span> <span class="nav-text">yield from 的意义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%A1%88%E4%BE%8B%EF%BC%9A%E4%BD%BF%E7%94%A8%E5%8D%8F%E7%A8%8B%E5%81%9A%E7%A6%BB%E6%95%A3%E4%BA%8B%E4%BB%B6%E4%BB%BF%E7%9C%9F"><span class="nav-number">3.2.</span> <span class="nav-text">使用案例：使用协程做离散事件仿真</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%9C%9F%E7%89%A9%E5%A4%84%E7%90%86%E5%B9%B6%E5%8F%91"><span class="nav-number">4.</span> <span class="nav-text">使用期物处理并发</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%EF%BC%9A%E7%BD%91%E7%BB%9C%E4%B8%8B%E8%BD%BD%E7%9A%84%E4%B8%89%E7%A7%8D%E9%A3%8E%E6%A0%BC"><span class="nav-number">4.1.</span> <span class="nav-text">示例：网络下载的三种风格</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%BB%E5%A1%9E%E5%9E%8B-I-x2F-O-%E5%92%8C-GIL"><span class="nav-number">4.2.</span> <span class="nav-text">阻塞型 I&#x2F;O 和 GIL</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-concurrent-futures-%E6%A8%A1%E5%9D%97%E5%90%AF%E5%8A%A8%E8%BF%9B%E7%A8%8B"><span class="nav-number">4.3.</span> <span class="nav-text">使用 concurrent.futures 模块启动进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E9%AA%8C-Executor-map-%E6%96%B9%E6%B3%95"><span class="nav-number">4.4.</span> <span class="nav-text">实验 Executor.map 方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BA%BF%E7%A8%8B%E5%92%8C%E5%A4%9A%E8%BF%9B%E7%A8%8B%E7%9A%84%E6%9B%BF%E4%BB%A3%E6%96%B9%E6%A1%88"><span class="nav-number">4.5.</span> <span class="nav-text">线程和多进程的替代方案</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-asyncio-%E5%8C%85%E5%A4%84%E7%90%86%E5%B9%B6%E5%8F%91"><span class="nav-number">5.</span> <span class="nav-text">使用 asyncio 包处理并发</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BA%BF%E7%A8%8B%E4%B8%8E%E5%8D%8F%E7%A8%8B%E5%AF%B9%E6%AF%94"><span class="nav-number">5.1.</span> <span class="nav-text">线程与协程对比</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E%E6%9C%9F%E7%89%A9%E3%80%81%E4%BB%BB%E5%8A%A1%E5%92%8C%E5%8D%8F%E7%A8%8B%E4%B8%AD%E4%BA%A7%E5%87%BA"><span class="nav-number">5.2.</span> <span class="nav-text">从期物、任务和协程中产出</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-asyncio-%E5%92%8C-aiohttp-%E5%8C%85%E4%B8%8B%E8%BD%BD"><span class="nav-number">5.3.</span> <span class="nav-text">使用 asyncio 和 aiohttp 包下载</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Semaphore"><span class="nav-number">5.4.</span> <span class="nav-text">Semaphore</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%81%BF%E5%85%8D%E9%98%BB%E5%A1%9E%E5%9E%8B%E8%B0%83%E7%94%A8"><span class="nav-number">5.5.</span> <span class="nav-text">避免阻塞型调用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E%E5%9B%9E%E8%B0%83%E5%88%B0%E6%9C%9F%E7%89%A9%E5%92%8C%E5%8D%8F%E7%A8%8B"><span class="nav-number">5.6.</span> <span class="nav-text">从回调到期物和协程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-asyncio-%E5%8C%85%E7%BC%96%E5%86%99%E6%9C%8D%E5%8A%A1%E5%99%A8"><span class="nav-number">5.7.</span> <span class="nav-text">使用 asyncio 包编写服务器</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text">小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">54</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

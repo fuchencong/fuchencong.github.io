@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="最近要改一个之前同学遗留下来的问题，这个问题描述如下：我们的业务进程会定时去扫另一个业务的数据库，将得到的数据信息缓存在内存中，业务进程从缓存中读取数据信息并进行业务处理。由于对数据的实时性要求并不是很高，之前的同学为了实现简单，每 60s 全量扫描一次数据表，将缓存与数据库进行同步。问题是全量查询的 SQL 语句并没有 where 子句，DBA 同学认为这条语句是慢查询语句，需要我们业务方整改。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="golang-lru 源码分析">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="最近要改一个之前同学遗留下来的问题，这个问题描述如下：我们的业务进程会定时去扫另一个业务的数据库，将得到的数据信息缓存在内存中，业务进程从缓存中读取数据信息并进行业务处理。由于对数据的实时性要求并不是很高，之前的同学为了实现简单，每 60s 全量扫描一次数据表，将缓存与数据库进行同步。问题是全量查询的 SQL 语句并没有 where 子句，DBA 同学认为这条语句是慢查询语句，需要我们业务方整改。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/process_01.svg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/lru.svg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/arc_cache.svg">
+<meta property="article:published_time" content="2022-01-26T08:38:14.000Z">
+<meta property="article:modified_time" content="2022-08-25T12:04:03.791Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/process_01.svg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>golang-lru 源码分析 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2022/01/26/go-develop-notes-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          golang-lru 源码分析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2022-01-26 16:38:14" itemprop="dateCreated datePublished" datetime="2022-01-26T16:38:14+08:00">2022-01-26</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go-%E5%BC%80%E5%8F%91%E7%AC%94%E8%AE%B0/" itemprop="url" rel="index"><span itemprop="name">Go 开发笔记</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>最近要改一个之前同学遗留下来的问题，这个问题描述如下：我们的业务进程会定时去扫另一个业务的数据库，将得到的数据信息缓存在内存中，业务进程从缓存中读取数据信息并进行业务处理。由于对数据的实时性要求并不是很高，之前的同学为了实现简单，每 60s 全量扫描一次数据表，将缓存与数据库进行同步。问题是全量查询的 SQL 语句并没有 where 子句，DBA 同学认为这条语句是慢查询语句，需要我们业务方整改。</p>
+<span id="more"></span>
+
+<p>由于我们业务需要使用到的数据在数据库中只会增加、删除，数据本身并不会被修改，而且如果某条数据在数据库中删除了，我们业务也不会有与这条数据相关的输入。整个业务流程可以如下表示：</p>
+<img src="/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/process_01.svg" class="">
+
+<p>分析清楚整个业务流程后，打算使用 lru-cache 来解决该问题，整体解决思路如下：</p>
+<ul>
+<li>业务需要处理某条数据时，如果 cache 中没有相关数据条目，则通过 db 查询获取数据信息，并保存在 cache 中</li>
+<li>为了防止 cache 无限制增大，这里使用 lru-cache，当缓存条目达到限制后，lru-cache 淘汰那些很久没有命中的缓存条目</li>
+</ul>
+<p>这样就解决了全量扫描 DB 的问题，同时缓存也不会无限制增大。这里打算使用开源的、基于 golang 的 <a target="_blank" rel="noopener" href="https://github.com/hashicorp/golang-lru">golang-lru</a>，这篇文章主要分析其代码实现原理。但是在深入代码之前，还是需要掌握 lru cache 的基本原理。</p>
+<h2 id="缓存淘汰算法"><a href="#缓存淘汰算法" class="headerlink" title="缓存淘汰算法"></a>缓存淘汰算法</h2><p>缓存不可能无限制的增长，因此当缓存条目达到规定数量时，需要某种算法来决定将哪些缓存条目进行淘汰：</p>
+<h3 id="LRU"><a href="#LRU" class="headerlink" title="LRU"></a>LRU</h3><p>LRU（Least Recently Used）：最近最少使用算法。从时间角度对缓存条目进行淘汰，即最长时间没有被使用的缓存条目会被淘汰。该算法有一个问题：如果某些历史数据突然被大量访问，但仅仅访问一次，就可能会把那些需要频繁访问的缓存条目给淘汰掉，造成之后大量频繁访问的缓存条目出现 cache-miss。</p>
+<h3 id="LFU"><a href="#LFU" class="headerlink" title="LFU"></a>LFU</h3><p>LFU（Least Frequenty Used）：最不常用算法。从访问频率角度对缓存条目进行淘汰，即访问频率最少的缓存条目会被淘汰。该算法也存在问题：如果之前频繁访问过一些缓存条目，但是现在并不会访问这些条目，这些条目也会一直占据缓冲区，很难被淘汰。</p>
+<h3 id="LRU-K"><a href="#LRU-K" class="headerlink" title="LRU-K"></a>LRU-K</h3><p>相比于 LRU， LRU-K 算法多维护一个队列，用来记录所有缓存数据被访问的历史，只有当数据访问的次数达到 K 时，才将数据放入真正的缓存队列。整个缓存运作过程如下：</p>
+<ul>
+<li>数据第一次被访问，直接进入访问历史队列</li>
+<li>访问历史队列也是按照 LRU 的规则进行淘汰</li>
+<li>如果历史队列中的数据访问达到 K 次后，将数据从历史队列中删除，移入到缓存队列中</li>
+<li>缓存数据队列仍然按照 LRU 的规则进行淘汰</li>
+</ul>
+<p>LRU-K 一定程度上解决了 LRU 的缺点。实际应用中，通常采用 LRU-2。</p>
+<h3 id="2Q"><a href="#2Q" class="headerlink" title="2Q"></a>2Q</h3><p>2Q 即 two-queues 算法，类似于 LRU-2，也是使用两个缓存队列，只不过一个是 FIFO 队列，一个是 LRU 队列。缓存的运作过程如下：</p>
+<ul>
+<li>数据第一次访问，插入到 FIFO 队列</li>
+<li>如果 FIFO 队列中的数据再次被访问，将移入到 LRU 队列</li>
+<li>FIFO 按照先进先出的方式进行数据淘汰</li>
+<li>LRU 队列按照 LRU 规则进行数据淘汰</li>
+</ul>
+<h3 id="ARC"><a href="#ARC" class="headerlink" title="ARC"></a>ARC</h3><p>ARC（Adaptive Replacement Cache）：自适应缓存替换算法。它同时结合了 LRU 和 LFU，当访问的数据趋向于最近访问的条目时，会更多地命中 LRU cache；当访问的数据趋向于最频繁的条目时，会更多地命中 LFU cache。ARC 会动态调整 LRU 和 LFU 的比例，从而提高缓存命中率。</p>
+<h2 id="golang-lru-源码分析"><a href="#golang-lru-源码分析" class="headerlink" title="golang-lru 源码分析"></a>golang-lru 源码分析</h2><p><a target="_blank" rel="noopener" href="https://github.com/hashicorp/golang-lru">golang-lru</a> 一共提供了 3 种 LRU cache 类型：</p>
+<ul>
+<li>Cache 是最简单的 LRU cache，它的实现基于 <a target="_blank" rel="noopener" href="https://github.com/golang/groupcache/tree/master/lru">groupcache</a></li>
+<li>TwoQueueCache 使用 2Q 缓存淘汰算法，从访问时间和访问频率两个维度来跟踪缓存条目</li>
+<li>ARCCache 使用 ARC 缓存淘汰算法，它也是从访问时间和访问频率两个维度来跟踪缓存条目，同时它也会跟踪缓存条目的淘汰情况，从而动态调整 LRU 队列和 FRU 队列的 size 比例</li>
+</ul>
+<p>三种 Cache 提供的 API 接口如下（详细文档可以参考 <a target="_blank" rel="noopener" href="https://pkg.go.dev/github.com/hashicorp/golang-lru%EF%BC%89%EF%BC%9A">https://pkg.go.dev/github.com/hashicorp/golang-lru）：</a></p>
+<p>Cache：</p>
+<table>
+<thead>
+<tr>
+<th>API 接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>New</td>
+<td>创建 Cache 实例</td>
+</tr>
+<tr>
+<td>NewWithEvict</td>
+<td>创建 Cache 实例，同时可以提供 cache 条目淘汰时的回调函数</td>
+</tr>
+<tr>
+<td>Add</td>
+<td>添加缓存条目</td>
+</tr>
+<tr>
+<td>ContainsOrAdd</td>
+<td>判断缓存条目是否存在，如果不存在则直接添加</td>
+</tr>
+<tr>
+<td>Get</td>
+<td>根据 key 获取缓存值</td>
+</tr>
+<tr>
+<td>GetOldest</td>
+<td>返回最老的缓存条目</td>
+</tr>
+<tr>
+<td>keys</td>
+<td>返回所有的 key 列表</td>
+</tr>
+<tr>
+<td>Len</td>
+<td>获取 cache 缓存数目</td>
+</tr>
+<tr>
+<td>Peek</td>
+<td>根据 key 获取缓存值，但并不更新该 key 的缓存状态</td>
+</tr>
+<tr>
+<td>PeekOrAdd</td>
+<td>根据 key 获取缓存值，如果不存在则直接添加</td>
+</tr>
+<tr>
+<td>Purge</td>
+<td>清空缓存</td>
+</tr>
+<tr>
+<td>Remove</td>
+<td>移除某一个缓存条目</td>
+</tr>
+<tr>
+<td>RemoveOldest</td>
+<td>移除最老的缓存条目</td>
+</tr>
+<tr>
+<td>Resize</td>
+<td>调整缓冲区大小</td>
+</tr>
+</tbody></table>
+<p>TwoQueueCache</p>
+<table>
+<thead>
+<tr>
+<th>API 接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>New2Q</td>
+<td>创建 2QCache 实例</td>
+</tr>
+<tr>
+<td>New2QParams</td>
+<td>创建 2QCache 实例，同时允许设置 2QCache 的参数</td>
+</tr>
+<tr>
+<td>Add</td>
+<td>添加缓存条目</td>
+</tr>
+<tr>
+<td>Contains</td>
+<td>判断缓存条目是否存在</td>
+</tr>
+<tr>
+<td>Get</td>
+<td>根据 key 获取缓存值，但并不更新该 key 的缓存状态</td>
+</tr>
+<tr>
+<td>keys</td>
+<td>返回所有的 key 列表</td>
+</tr>
+<tr>
+<td>Len</td>
+<td>获取 cache 缓存数目</td>
+</tr>
+<tr>
+<td>Peek</td>
+<td>根据 key 获取缓存值</td>
+</tr>
+<tr>
+<td>Purge</td>
+<td>清空缓存</td>
+</tr>
+<tr>
+<td>Remove</td>
+<td>移除某一个缓存条目</td>
+</tr>
+</tbody></table>
+<p>ARCCache</p>
+<table>
+<thead>
+<tr>
+<th>API 接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ARCCache</td>
+<td>创建 ARCCache 实例</td>
+</tr>
+<tr>
+<td>Add</td>
+<td>添加缓存条目</td>
+</tr>
+<tr>
+<td>Contains</td>
+<td>判断缓存条目是否存在</td>
+</tr>
+<tr>
+<td>Get</td>
+<td>根据 key 获取缓存值</td>
+</tr>
+<tr>
+<td>keys</td>
+<td>返回所有的 key 列表</td>
+</tr>
+<tr>
+<td>Len</td>
+<td>获取 cache 缓存数目</td>
+</tr>
+<tr>
+<td>Peek</td>
+<td>根据 key 获取缓存值，但是并不更新该 key 的缓存状态</td>
+</tr>
+<tr>
+<td>Purge</td>
+<td>清空缓存</td>
+</tr>
+<tr>
+<td>Remove</td>
+<td>移除某一个缓存条目</td>
+</tr>
+</tbody></table>
+<p>golang-lru 代码主要包含如下文件：</p>
+<table>
+<thead>
+<tr>
+<th>API 接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>simplelru&#x2F;lru.go</td>
+<td>lru cache 的实现，是三种 Cache 的实现基础</td>
+</tr>
+<tr>
+<td>lru.go</td>
+<td>Cache 的实现，对 simplelru&#x2F;lru.go 的包装，提供并发安全</td>
+</tr>
+<tr>
+<td>2q.go</td>
+<td>2QCache 的实现</td>
+</tr>
+<tr>
+<td>arc.go</td>
+<td>ARCCache 的实现</td>
+</tr>
+</tbody></table>
+<h3 id="LRU-实现"><a href="#LRU-实现" class="headerlink" title="LRU 实现"></a>LRU 实现</h3><p>三种 cache 类型底层都依赖 LRU，因此首先来看 LRU 结构体的定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> LRU <span class="keyword">struct</span> &#123;</span><br><span class="line">    size      <span class="type">int</span></span><br><span class="line">    evictList *list.List</span><br><span class="line">    items     <span class="keyword">map</span>[<span class="keyword">interface</span>&#123;&#125;]*list.Element</span><br><span class="line">    onEvict   EvictCallback</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>size：LRU cache 的大小</li>
+<li>evictList：缓存条目链表，通过该链表来实现 LRU 算法</li>
+<li>items：缓存条目 map，缓存条目的查找通过该 map 实现。map 的 key 是缓存条目的 key，而 value 则是 evictList 链表元素的指针。链表元素中包含缓存条目的 key 和 value</li>
+<li>onEvict：缓存条目淘汰时的回调函数</li>
+</ul>
+<img src="/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/lru.svg" class="">
+
+<p>LRU.Get 方法实现了从 LRU 中根据 key 查找缓存项：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Get looks up a key&#x27;s value from the cache.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *LRU)</span></span> Get(key <span class="keyword">interface</span>&#123;&#125;) (value <span class="keyword">interface</span>&#123;&#125;, ok <span class="type">bool</span>) &#123;</span><br><span class="line">    <span class="comment">// 从 map 中根据 key 查找</span></span><br><span class="line">    <span class="keyword">if</span> ent, ok := c.items[key]; ok &#123;</span><br><span class="line">        <span class="comment">// 如果找到该缓存，需要将其移动到链表头</span></span><br><span class="line">        c.evictList.MoveToFront(ent)</span><br><span class="line">        <span class="keyword">if</span> ent.Value.(*entry) == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">nil</span>, <span class="literal">false</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 返回链表元素中保存的缓存 key 对应的 value</span></span><br><span class="line">        <span class="keyword">return</span> ent.Value.(*entry).value, <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>接下来再看往 LRU 中添加元素的 Add 方法实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *LRU)</span></span> Add(key, value <span class="keyword">interface</span>&#123;&#125;) (evicted <span class="type">bool</span>) &#123;</span><br><span class="line">    <span class="comment">// Check for existing item</span></span><br><span class="line">    <span class="keyword">if</span> ent, ok := c.items[key]; ok &#123;</span><br><span class="line">        c.evictList.MoveToFront(ent)</span><br><span class="line">        ent.Value.(*entry).value = value</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Add new item</span></span><br><span class="line">    ent := &amp;entry&#123;key, value&#125;</span><br><span class="line">    entry := c.evictList.PushFront(ent)</span><br><span class="line">    c.items[key] = entry</span><br><span class="line"></span><br><span class="line">    evict := c.evictList.Len() &gt; c.size</span><br><span class="line">    <span class="comment">// Verify size not exceeded</span></span><br><span class="line">    <span class="keyword">if</span> evict &#123;</span><br><span class="line">        c.removeOldest()</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> evict</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>首先判断 cache 中是否已经有该元素了，如果存在，则更新该缓存条目，同时将该缓存条目移动到链表头</li>
+<li>否则新增缓存条目：将该缓存条目添加到调表头，同时在 map 中添加对应的索引</li>
+<li>检查当前缓存条目的个数是否超过 size 限制，如果超过，则调用 removeOldest 移除该缓存元素</li>
+</ul>
+<p>最后再分析下 removeOldest 的实现</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// removeOldest removes the oldest item from the cache.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *LRU)</span></span> removeOldest() &#123;</span><br><span class="line">    <span class="comment">// 从缓存队列的尾部获取缓存元素</span></span><br><span class="line">    ent := c.evictList.Back()</span><br><span class="line">    <span class="keyword">if</span> ent != <span class="literal">nil</span> &#123;</span><br><span class="line">        c.removeElement(ent)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// removeElement is used to remove a given list element from the cache</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *LRU)</span></span> removeElement(e *list.Element) &#123;</span><br><span class="line">    <span class="comment">// 从缓存队列中移除该元素</span></span><br><span class="line">    c.evictList.Remove(e)</span><br><span class="line">    kv := e.Value.(*entry)</span><br><span class="line">    <span class="comment">// 从 map 中删除索引</span></span><br><span class="line">    <span class="built_in">delete</span>(c.items, kv.key)</span><br><span class="line">    <span class="keyword">if</span> c.onEvict != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// 调用用户指定的缓存淘汰回调函数</span></span><br><span class="line">        c.onEvict(kv.key, kv.value)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="Cache-实现"><a href="#Cache-实现" class="headerlink" title="Cache 实现"></a>Cache 实现</h3><p>Cache 结构体定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Cache <span class="keyword">struct</span> &#123;</span><br><span class="line">    lru                      *simplelru.LRU</span><br><span class="line">    evictedKeys, evictedVals []<span class="keyword">interface</span>&#123;&#125;</span><br><span class="line">    onEvictedCB              <span class="function"><span class="keyword">func</span><span class="params">(k, v <span class="keyword">interface</span>&#123;&#125;)</span></span></span><br><span class="line">    lock                     sync.RWMutex</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>lru：Cache 本身其实是对 LRU cache 的封装</li>
+<li>evictedKeys, evictedVals：用于临时保存当前被淘汰的缓存条目，这样就可以不用在临界区内回调 onEvictedCB</li>
+<li>onEvictedCB：缓存条目淘汰时的回调函数</li>
+<li>lock：Cache 提供线程安全能力</li>
+</ul>
+<p>由于 Cache 其实就是对 LRU cache 的封装，所以 Cahce 的接口实现，底层基本上都是调用 simplelru.LRU 的相应接口。唯一需要注意的一点是：Cache 对淘汰缓存条目的回调处理。如果用户创建 Cache 时指定了 onEvicted 回调函数，那么 Cache 会将该函数保存到 onEvictedCB。Cache 运行过程中，如果出现了缓存淘汰，会将这些淘汰的缓存条目临时保存到 evictedKeys&#x2F;evictedVals slice 中，之后再针对每一个淘汰的缓存条目调用回调函数。</p>
+<p>接下来以 Cache 的 Add 接口为例，分析其实现逻辑，其他接口的实现都是类似的。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *Cache)</span></span> Add(key, value <span class="keyword">interface</span>&#123;&#125;) (evicted <span class="type">bool</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> k, v <span class="keyword">interface</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 操作 lru cache 时需要加锁，保证线程安全</span></span><br><span class="line">    c.lock.Lock()</span><br><span class="line">    <span class="comment">// 调用 lru.Add 添加 key/value</span></span><br><span class="line">    evicted = c.lru.Add(key, value)</span><br><span class="line">    <span class="comment">// 如果因为 Add 操作而造成其他缓存条目被淘汰，同时用户指定了回调函数</span></span><br><span class="line">    <span class="keyword">if</span> c.onEvictedCB != <span class="literal">nil</span> &amp;&amp; evicted &#123;</span><br><span class="line">        <span class="comment">// 被淘汰的缓存条目保存在 Cache 的 evictedKeys/evictedVals 中</span></span><br><span class="line">        k, v = c.evictedKeys[<span class="number">0</span>], c.evictedVals[<span class="number">0</span>]</span><br><span class="line">        c.evictedKeys, c.evictedVals = c.evictedKeys[:<span class="number">0</span>], c.evictedVals[:<span class="number">0</span>]</span><br><span class="line">    &#125;</span><br><span class="line">    c.lock.Unlock()</span><br><span class="line">    <span class="comment">// 在非临界区调用用户的回调函数</span></span><br><span class="line">    <span class="keyword">if</span> c.onEvictedCB != <span class="literal">nil</span> &amp;&amp; evicted &#123;</span><br><span class="line">        c.onEvictedCB(k, v)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>那为什么被淘汰的缓存条目会保存在 Cache 的 evictedKeys&#x2F;evictedVals 中呢？因为创建 Cache 时，如果用户提供了回调函数，那么 simple.LRU 的回调被被设置成 Cache 自己的 onEvicted 函数，其逻辑就是将被淘汰的缓存条目保存到自己的 buffer 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewWithEvict</span><span class="params">(size <span class="type">int</span>, onEvicted <span class="keyword">func</span>(key, value <span class="keyword">interface</span>&#123;&#125;)</span></span>) (c *Cache, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// create a cache with default settings</span></span><br><span class="line">    c = &amp;Cache&#123;</span><br><span class="line">        onEvictedCB: onEvicted,</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 如果用户提供了回调函数</span></span><br><span class="line">    <span class="keyword">if</span> onEvicted != <span class="literal">nil</span> &#123;</span><br><span class="line">        c.initEvictBuffers()</span><br><span class="line">        <span class="comment">// 将回调设置为 Cache 自己的 onEvicted 函数</span></span><br><span class="line">        onEvicted = c.onEvicted</span><br><span class="line">    &#125;</span><br><span class="line">    c.lru, err = simplelru.NewLRU(size, onEvicted)</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Cache 自己的 onEvicted 就是将被淘汰的 key/value 保存到 Cache 的 evictedKeys/evictedVals</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *Cache)</span></span> onEvicted(k, v <span class="keyword">interface</span>&#123;&#125;) &#123;</span><br><span class="line">    c.evictedKeys = <span class="built_in">append</span>(c.evictedKeys, k)</span><br><span class="line">    c.evictedVals = <span class="built_in">append</span>(c.evictedVals, v)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="2QCache"><a href="#2QCache" class="headerlink" title="2QCache"></a>2QCache</h3><p>golang-lrucache 实现的 <code>2QCache</code> 和上文介绍的 2Q 缓存淘汰算法不太一样，可以认为 golang-lrucache 实现的 <code>2QCache</code> 是 <code>lru-2</code> 和 <code>ARC</code> 的结合体。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> TwoQueueCache <span class="keyword">struct</span> &#123;</span><br><span class="line">    size       <span class="type">int</span></span><br><span class="line">    recentSize <span class="type">int</span></span><br><span class="line"></span><br><span class="line">    recent      simplelru.LRUCache</span><br><span class="line">    frequent    simplelru.LRUCache</span><br><span class="line">    recentEvict simplelru.LRUCache</span><br><span class="line">    lock        sync.RWMutex</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>size 是整个 cache 的大小、recentSize 是 recent LRU 的大小</li>
+<li>recent LRU 队列用来记录最近访问的缓存条目、frequent LRU 队列用来记录最频繁访问的缓存条目</li>
+<li>recentEvcit 队列用来跟踪从 recent LRU 中淘汰的缓存条目</li>
+<li>lock 保证线程安全</li>
+</ul>
+<p>在创建 TwoQueueCache 时，可以通过参数指定 recent 和 recentEvict 队列占用 cache size 的比例，从而设置 recent 和 recentEvict 的大小。如果没有指定比例参数，TwoQueueCache 会使用默认的比例参数，分别是 0.25 和 0.5。</p>
+<p>接下来分析 TwoQueueCache 从缓存中获取 key 对应的缓存条目的代码：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *TwoQueueCache)</span></span> Get(key <span class="keyword">interface</span>&#123;&#125;) (value <span class="keyword">interface</span>&#123;&#125;, ok <span class="type">bool</span>) &#123;</span><br><span class="line">    c.lock.Lock()</span><br><span class="line">    <span class="keyword">defer</span> c.lock.Unlock()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Check if this is a frequent value</span></span><br><span class="line">    <span class="keyword">if</span> val, ok := c.frequent.Get(key); ok &#123;</span><br><span class="line">        <span class="keyword">return</span> val, ok</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// If the value is contained in recent, then we</span></span><br><span class="line">    <span class="comment">// promote it to frequent</span></span><br><span class="line">    <span class="keyword">if</span> val, ok := c.recent.Peek(key); ok &#123;</span><br><span class="line">        c.recent.Remove(key)</span><br><span class="line">        c.frequent.Add(key, val)</span><br><span class="line">        <span class="keyword">return</span> val, ok</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// No hit</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>首先尝试从 frequent LRU 中查找 key</li>
+<li>如果 key 不存在，则尝试从 recent 中查找 key，如果找到，则将该缓存条目从 recent 中移除，添加到 frequent（这说明该缓存条目已经访问两次了，可以添加到 frequent 中）</li>
+</ul>
+<p>再来看往 TwoQueueCache 中添加缓存条目的逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Add adds a value to the cache.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *TwoQueueCache)</span></span> Add(key, value <span class="keyword">interface</span>&#123;&#125;) &#123;</span><br><span class="line">    c.lock.Lock()</span><br><span class="line">    <span class="keyword">defer</span> c.lock.Unlock()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Check if the value is frequently used already,</span></span><br><span class="line">    <span class="comment">// and just update the value</span></span><br><span class="line">    <span class="keyword">if</span> c.frequent.Contains(key) &#123;</span><br><span class="line">        c.frequent.Add(key, value)</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Check if the value is recently used, and promote</span></span><br><span class="line">    <span class="comment">// the value into the frequent list</span></span><br><span class="line">    <span class="keyword">if</span> c.recent.Contains(key) &#123;</span><br><span class="line">        c.recent.Remove(key)</span><br><span class="line">        c.frequent.Add(key, value)</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// If the value was recently evicted, add it to the</span></span><br><span class="line">    <span class="comment">// frequently used list</span></span><br><span class="line">    <span class="keyword">if</span> c.recentEvict.Contains(key) &#123;</span><br><span class="line">        c.ensureSpace(<span class="literal">true</span>)</span><br><span class="line">        c.recentEvict.Remove(key)</span><br><span class="line">        c.frequent.Add(key, value)</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Add to the recently seen list</span></span><br><span class="line">    c.ensureSpace(<span class="literal">false</span>)</span><br><span class="line">    c.recent.Add(key, value)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>首选判断 frequent 中是否已经包含了该 key，如果包含，则用最新的值更新该 key 对应的缓存条目</li>
+<li>如果 frequent 中不存在该缓存，再判断 recent 中是否包含该 key。如果包含，则认为该 key 被再次访问，将其从 recent 中移除，添加到 frequent 中</li>
+<li>最后再检查 recentEvict 中是否包含该 key，如果存在，则代表该 key 是不久前被淘汰的，则将其添加到 frequent LRU 中。在添加之前通过 ensureSpace 确保 cache 中存在空间</li>
+<li>否则将其添加到 recent LRU 中，同样添加之前需要通过 ensureSpace 确保存在空间</li>
+</ul>
+<p>之后再看 ensureSpace 的实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// ensureSpace is used to ensure we have space in the cache</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *TwoQueueCache)</span></span> ensureSpace(recentEvict <span class="type">bool</span>) &#123;</span><br><span class="line">    <span class="comment">// If we have space, nothing to do</span></span><br><span class="line">    recentLen := c.recent.Len()</span><br><span class="line">    freqLen := c.frequent.Len()</span><br><span class="line">    <span class="keyword">if</span> recentLen+freqLen &lt; c.size &#123;</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// If the recent buffer is larger than</span></span><br><span class="line">    <span class="comment">// the target, evict from there</span></span><br><span class="line">    <span class="keyword">if</span> recentLen &gt; <span class="number">0</span> &amp;&amp; (recentLen &gt; c.recentSize || (recentLen == c.recentSize &amp;&amp; !recentEvict)) &#123;</span><br><span class="line">        k, _, _ := c.recent.RemoveOldest()</span><br><span class="line">        c.recentEvict.Add(k, <span class="literal">nil</span>)</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Remove from the frequent list otherwise</span></span><br><span class="line">    c.frequent.RemoveOldest()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>当没有达到 cache size 时，recent 和 frequent 都可以任意增长，不受各自的 size 限制</li>
+<li>如果 cache 达到 size 限制时，首先判断 recent 是否达到 recentSize 的限制，如果达到了，则从 recent LRU 中移除元素</li>
+<li>否则则从 frequent LRU 中移除元素</li>
+</ul>
+<p>2QCache 的其他接口就不再分析了，比较简单。</p>
+<h3 id="ARCCache"><a href="#ARCCache" class="headerlink" title="ARCCache"></a>ARCCache</h3><p>接下来再分析 ARCCache 的实现，首先来看 <code>ARCCache</code> 结构体的定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ARCCache <span class="keyword">struct</span> &#123;</span><br><span class="line">    size <span class="type">int</span> <span class="comment">// Size is the total capacity of the cache</span></span><br><span class="line">    p    <span class="type">int</span> <span class="comment">// P is the dynamic preference towards T1 or T2</span></span><br><span class="line"></span><br><span class="line">    t1 simplelru.LRUCache <span class="comment">// T1 is the LRU for recently accessed items</span></span><br><span class="line">    b1 simplelru.LRUCache <span class="comment">// B1 is the LRU for evictions from t1</span></span><br><span class="line"></span><br><span class="line">    t2 simplelru.LRUCache <span class="comment">// T2 is the LRU for frequently accessed items</span></span><br><span class="line">    b2 simplelru.LRUCache <span class="comment">// B2 is the LRU for evictions from t2</span></span><br><span class="line"></span><br><span class="line">    lock sync.RWMutex</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>size 是整个 ARCCache 的大小</li>
+<li>p 是 LRU 和 FRU 队列的分隔点，p 的位置可以动态调整</li>
+<li>t1 实现了 LRU 缓存队列，b1 用来记录从 t1 中淘汰的缓存条目</li>
+<li>t2 实现了 FRU 缓存队列，b2 用来记录从 t2 中淘汰的缓存条目</li>
+</ul>
+<p>接下来分析从 ARCCache 中获取缓存元素的实现逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *ARCCache)</span></span> Get(key <span class="keyword">interface</span>&#123;&#125;) (value <span class="keyword">interface</span>&#123;&#125;, ok <span class="type">bool</span>) &#123;</span><br><span class="line">    c.lock.Lock()</span><br><span class="line">    <span class="keyword">defer</span> c.lock.Unlock()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// If the value is contained in T1 (recent), then</span></span><br><span class="line">    <span class="comment">// promote it to T2 (frequent)</span></span><br><span class="line">    <span class="keyword">if</span> val, ok := c.t1.Peek(key); ok &#123;</span><br><span class="line">        c.t1.Remove(key)</span><br><span class="line">        c.t2.Add(key, val)</span><br><span class="line">        <span class="keyword">return</span> val, ok</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Check if the value is contained in T2 (frequent)</span></span><br><span class="line">    <span class="keyword">if</span> val, ok := c.t2.Get(key); ok &#123;</span><br><span class="line">        <span class="keyword">return</span> val, ok</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// No hit</span></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>首先判断 LRU 缓存队列中（t1）是否包含该元素，如果存在，则将其从 t1 中移除，添加到 FRU 缓存队列（t2）</li>
+<li>如果 t1 中不存在，判断 FRU 缓存队列（t2）中是否包含该元素</li>
+</ul>
+<p>最后再看看 ARCCache 添加元素的逻辑，其整体流程如下：</p>
+<img src="/fuchencong.github.io/2022/01/26/go-develop-notes-01/images/arc_cache.svg" class="">
+
+<p>这个流程中，在往队列中添加新元素时，都需要确保相应的队列有足够的位置能够增加缓存条目。这是通过 replace 函数实现的，它会根据 p 的位置以及 t1&#x2F;t2 当前的大小，自动从 t1&#x2F;t2 中移除 oldest：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// replace is used to adaptively evict from either T1 or T2</span></span><br><span class="line"><span class="comment">// based on the current learned value of P</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *ARCCache)</span></span> replace(b2ContainsKey <span class="type">bool</span>) &#123;</span><br><span class="line">    t1Len := c.t1.Len()</span><br><span class="line">    <span class="comment">// 如果当前 t1 队列的长度已经达到限制，从 t1 中移除缓存条目</span></span><br><span class="line">    <span class="keyword">if</span> t1Len &gt; <span class="number">0</span> &amp;&amp; (t1Len &gt; c.p || (t1Len == c.p &amp;&amp; b2ContainsKey)) &#123;</span><br><span class="line">        k, _, ok := c.t1.RemoveOldest()</span><br><span class="line">        <span class="keyword">if</span> ok &#123;</span><br><span class="line">            c.b1.Add(k, <span class="literal">nil</span>)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 从 t2 中移除缓存条目</span></span><br><span class="line">        k, _, ok := c.t2.RemoveOldest()</span><br><span class="line">        <span class="keyword">if</span> ok &#123;</span><br><span class="line">            c.b2.Add(k, <span class="literal">nil</span>)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>关于 golang-lru 的源码分析就基本完成了，代码写的十分清晰。通过学习这个模块，可以进一步熟悉 go 语言，同时对 LRU 算法也有一个比较全面的了解。</p>
+<h2 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/u010223431/article/details/105498387">LRU算法及其变种算法原理分析</a></li>
+<li><a target="_blank" rel="noopener" href="https://juejin.cn/post/6923510255154528263">图解 LRU LFU ARC FIFO 缓存淘汰算法</a></li>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/352910565">缓存淘汰算法分析</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2022/01/21/memory-grandma/" rel="prev" title="怀念外婆">
+      <i class="fa fa-chevron-left"></i> 怀念外婆
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2022/02/07/go-develop-notes-02/" rel="next" title="etcdctl 工具总结">
+      etcdctl 工具总结 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E6%B7%98%E6%B1%B0%E7%AE%97%E6%B3%95"><span class="nav-number">1.</span> <span class="nav-text">缓存淘汰算法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#LRU"><span class="nav-number">1.1.</span> <span class="nav-text">LRU</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#LFU"><span class="nav-number">1.2.</span> <span class="nav-text">LFU</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#LRU-K"><span class="nav-number">1.3.</span> <span class="nav-text">LRU-K</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2Q"><span class="nav-number">1.4.</span> <span class="nav-text">2Q</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ARC"><span class="nav-number">1.5.</span> <span class="nav-text">ARC</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#golang-lru-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">golang-lru 源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#LRU-%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.1.</span> <span class="nav-text">LRU 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Cache-%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.2.</span> <span class="nav-text">Cache 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2QCache"><span class="nav-number">2.3.</span> <span class="nav-text">2QCache</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ARCCache"><span class="nav-number">2.4.</span> <span class="nav-text">ARCCache</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">3.</span> <span class="nav-text">总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reference"><span class="nav-number">4.</span> <span class="nav-text">Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">54</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

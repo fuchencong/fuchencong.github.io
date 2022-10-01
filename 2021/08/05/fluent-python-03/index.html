@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="从设计上看，不管函数式语言的定义如何，Python 都不是一门函数式语言。Python 只是从函数式语言中借鉴了一些好的想法。这篇文章主要讲解 Python 中的函数，以及利用 Python 中的函数是一等对象这个特性，重新实现一些设计模式。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="流畅的 Python（3）：一等函数 &amp; 使用一等函数实现设计模式">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2021/08/05/fluent-python-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="从设计上看，不管函数式语言的定义如何，Python 都不是一门函数式语言。Python 只是从函数式语言中借鉴了一些好的想法。这篇文章主要讲解 Python 中的函数，以及利用 Python 中的函数是一等对象这个特性，重新实现一些设计模式。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-08-05T12:43:33.000Z">
+<meta property="article:modified_time" content="2022-08-25T12:04:03.756Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2021/08/05/fluent-python-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>流畅的 Python（3）：一等函数 & 使用一等函数实现设计模式 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2021/08/05/fluent-python-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          流畅的 Python（3）：一等函数 & 使用一等函数实现设计模式
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-08-05 20:43:33" itemprop="dateCreated datePublished" datetime="2021-08-05T20:43:33+08:00">2021-08-05</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python-%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" itemprop="url" rel="index"><span itemprop="name">Python 读书笔记</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>从设计上看，不管函数式语言的定义如何，Python 都不是一门函数式语言。Python 只是从函数式语言中借鉴了一些好的想法。这篇文章主要讲解 Python 中的函数，以及利用 Python 中的函数是一等对象这个特性，重新实现一些设计模式。</p>
+<span id="more"></span>
+
+<h2 id="一等函数"><a href="#一等函数" class="headerlink" title="一等函数"></a>一等函数</h2><p>在 Python 中，函数是一等对象，可以把 <code>一等对象</code> 定义为满足下列条件的程序实体：</p>
+<ul>
+<li>在运行时创建</li>
+<li>能赋值给变量或数据结构中的元素</li>
+<li>能作为参数传给函数</li>
+<li>能作为函数的返回结果</li>
+</ul>
+<p>在 Python 中，所有的函数都是一等对象。</p>
+<h3 id="把函数视为对象"><a href="#把函数视为对象" class="headerlink" title="把函数视为对象"></a>把函数视为对象</h3><p>如下创建了一个函数，通过 type() 可以确定该函数对象是 function 类的实例，并且该函数对象具有 <code>__doc__</code> 属性。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">factorial</span>(<span class="params">n</span>):</span><br><span class="line"><span class="meta">... </span>    <span class="string">&#x27;&#x27;&#x27;returns n!&#x27;&#x27;&#x27;</span></span><br><span class="line"><span class="meta">... </span>    <span class="keyword">return</span> <span class="number">1</span> <span class="keyword">if</span> n &lt; <span class="number">2</span> <span class="keyword">else</span> n * factorial(n - <span class="number">1</span>)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>factorial(<span class="number">10</span>)</span><br><span class="line"><span class="number">3628800</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">type</span>(factorial)</span><br><span class="line">&lt;<span class="keyword">class</span> <span class="string">&#x27;function&#x27;</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>factorial.__doc__</span><br><span class="line"><span class="string">&#x27;returns n!&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p><code>__doc__</code> 属性用于生成对象的帮助文本，通过 help() 可以获得该帮助文本：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">help</span>(factorial)</span><br><span class="line">Help on function factorial <span class="keyword">in</span> module __main__:</span><br><span class="line"></span><br><span class="line">factorial(n)</span><br><span class="line">    returns n!</span><br></pre></td></tr></table></figure>
+
+<p>接下来将该函数作为参数传递给 map 函数，map 函数返回一个可迭代对象，其结果是把第一个参数（一个可调用对象）应用到第二个参数（一个可迭代对象）中各个元素上得到的结果：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">list</span>(<span class="built_in">map</span>(factorial, <span class="built_in">range</span>(<span class="number">1</span>, <span class="number">10</span>)))</span><br><span class="line">[<span class="number">1</span>, <span class="number">2</span>, <span class="number">6</span>, <span class="number">24</span>, <span class="number">120</span>, <span class="number">720</span>, <span class="number">5040</span>, <span class="number">40320</span>, <span class="number">362880</span>]</span><br></pre></td></tr></table></figure>
+
+<h3 id="高阶函数"><a href="#高阶函数" class="headerlink" title="高阶函数"></a>高阶函数</h3><p>有了一等函数，就可以使用函数式风格编程。函数式编程的特点之一是使用高阶函数。接受函数作为参数、或者把函数作为结果返回的函数是高阶函数。在函数式编程中，最为人熟知的高阶函数有 map、filter、reduce 和 apply。在 Python3 中 apply 已经被标记为移除了，如果想使用不定量的参数调用函数，可以直接使用 <code>fn(*args, **keywords)</code>，不需要再编写 <code>apply(fn, args, kwargs)</code>。</p>
+<p>在 Python3 中 map 和 filter 还是内置函数，但是由于列表推导和生成器表达式，这两个函数变得没有那么重要，列表推导或生成器表达式：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">list</span>(<span class="built_in">map</span>(factorial, <span class="built_in">range</span>(<span class="number">1</span>, <span class="number">10</span>)))</span><br><span class="line">[<span class="number">1</span>, <span class="number">2</span>, <span class="number">6</span>, <span class="number">24</span>, <span class="number">120</span>, <span class="number">720</span>, <span class="number">5040</span>, <span class="number">40320</span>, <span class="number">362880</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[factorial(i) <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, <span class="number">10</span>)]</span><br><span class="line">[<span class="number">1</span>, <span class="number">2</span>, <span class="number">6</span>, <span class="number">24</span>, <span class="number">120</span>, <span class="number">720</span>, <span class="number">5040</span>, <span class="number">40320</span>, <span class="number">362880</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">list</span>(<span class="built_in">map</span>(factorial, <span class="built_in">filter</span>(<span class="keyword">lambda</span> n: n % <span class="number">2</span>, <span class="built_in">range</span>(<span class="number">10</span>))))</span><br><span class="line">[<span class="number">1</span>, <span class="number">6</span>, <span class="number">120</span>, <span class="number">5040</span>, <span class="number">362880</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[factorial(i) <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, <span class="number">10</span>) <span class="keyword">if</span> i % <span class="number">2</span>]</span><br><span class="line">[<span class="number">1</span>, <span class="number">6</span>, <span class="number">120</span>, <span class="number">5040</span>, <span class="number">362880</span>]</span><br></pre></td></tr></table></figure>
+
+<p>在 Python3 中，map 和 filter 返回生成器，因此它们的直接替代品是生成器表达式。reduce 函数在 Python3 中放到了 functools 模块里了。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> functools <span class="keyword">import</span> reduce</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> operator <span class="keyword">import</span> add</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>reduce(add, <span class="built_in">range</span>(<span class="number">100</span>))</span><br><span class="line"><span class="number">4950</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">sum</span>(<span class="built_in">range</span>(<span class="number">100</span>))</span><br><span class="line"><span class="number">4950</span></span><br></pre></td></tr></table></figure>
+
+<p>all 和 any 也是内置的规约函数：</p>
+<ul>
+<li>all(iterable)：如果 iterable 的每个元素都是真值，返回 True，all([]) 返回 True</li>
+<li>any(iterable)：如果 iterable 中有元素是真值，就返回 True，any([]) 返回 False</li>
+</ul>
+<h3 id="匿名函数"><a href="#匿名函数" class="headerlink" title="匿名函数"></a>匿名函数</h3><p>为了使用高阶函数，有时创建一次性的小型函数更便利。这便是匿名函数的使用场景。lambda 关键字在 Python 表达式内创建匿名函数，这也限制了 lambda 函数的定义体内只能使用纯表达式，所以 lambda 函数的定义体内不能使用 while、try 等 python 语句。</p>
+<p>在参数列表中最适合使用匿名函数，如下按照单词翻转后进行排序：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>fruits = [<span class="string">&#x27;strawberry&#x27;</span>, <span class="string">&#x27;apple&#x27;</span>, <span class="string">&#x27;banana&#x27;</span>, <span class="string">&#x27;watermelon&#x27;</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">sorted</span>(fruits, key = <span class="keyword">lambda</span> n : n[::-<span class="number">1</span>])</span><br><span class="line">[<span class="string">&#x27;banana&#x27;</span>, <span class="string">&#x27;apple&#x27;</span>, <span class="string">&#x27;watermelon&#x27;</span>, <span class="string">&#x27;strawberry&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+<p>除了作为参数传给高阶函数，Python 很少使用匿名函数。由于句法上的限制，非平凡的 lambda 表达式要么难以阅读，要么无法写出。</p>
+<p>lambda 句法只是语法糖，与 def 语句一样，lambda 表达式会创建函数对象。这是 Python 中几种可调用对象之一。</p>
+<h3 id="可调用对象"><a href="#可调用对象" class="headerlink" title="可调用对象"></a>可调用对象</h3><p>Python 中一共有 7 种可调用对象：</p>
+<ul>
+<li>用户定义函数：使用 def 或 lambda 表达式创建</li>
+<li>内置函数：使用 C 语言（CPython）实现的函数，如 len</li>
+<li>内置方法：使用 C 语言实现的方法，如 dict.get</li>
+<li>方法：在类的定义体中定义的函数</li>
+<li>类：调用类时会运行类的 <code>__new__</code> 方法创建一个实例，然后运行 <code>__init__</code> 方法初始化该实例，最后把实例返回给调用方。通常调用类会创建该类的实例，但是如果覆盖 <code>__new__</code> 方法，也可能会出现其他行为</li>
+<li>类的实例：如果类定义了 <code>__call__</code> 方法，那么它的实例可以作为函数调用</li>
+<li>生成器函数：使用 yield 关键字的函数或方法。调用生成器函数返回的是生成器对象</li>
+</ul>
+<p>判断对象是否能调用，可以使用内置的 callable() 函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>[<span class="built_in">callable</span>(obj) <span class="keyword">for</span> obj <span class="keyword">in</span> (<span class="built_in">abs</span>, <span class="built_in">str</span>, <span class="number">13</span>)]</span><br><span class="line">[<span class="literal">True</span>, <span class="literal">True</span>, <span class="literal">False</span>]</span><br></pre></td></tr></table></figure>
+
+<h3 id="用户定义的可调用类型"><a href="#用户定义的可调用类型" class="headerlink" title="用户定义的可调用类型"></a>用户定义的可调用类型</h3><p>不仅仅 Python 函数是真正的对象，任何 Python 对象都可以表现的像函数一样。只要实现实例方法 __call__。如下实现了一个 BingoCage 类，该类的实例使用任何可迭代对象构建，然后内部存储一个随机顺序排列的列表。调用该实例会随机取出一个元素：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> random</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">BingoCage</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, items</span>):</span><br><span class="line">        self._items = <span class="built_in">list</span>(items)</span><br><span class="line">        random.shuffle(self._items)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">pick</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            <span class="keyword">return</span> self._items.pop()</span><br><span class="line">        <span class="keyword">except</span> IndexError:</span><br><span class="line">            <span class="keyword">raise</span> LookupError(<span class="string">&#x27;pick from empty BingoCage&#x27;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> self.pick()</span><br><span class="line"></span><br><span class="line">b = BingoCage(<span class="built_in">range</span>(<span class="number">10</span>))</span><br><span class="line"><span class="built_in">print</span>(b())</span><br><span class="line"><span class="built_in">print</span>(b())</span><br></pre></td></tr></table></figure>
+
+<p>实现 <code>__call__</code> 方法的类是创建函数类对象的简便方式，此时可以在对象内部一个状态，让在调用之间可用，例如 BingoCage 中的剩余元素。装饰器就是这样，装饰器必须是函数，而且有时要在多次调用之间记住某些状态。创建保有内部状态的函数，还有一种方式，是使用闭包。</p>
+<h3 id="函数内省"><a href="#函数内省" class="headerlink" title="函数内省"></a>函数内省</h3><p>把函数视为对象处理的另一方面，是可以在运行时对函数进行内省。函数对象有很多属性，使用 dir() 函数可以查看：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">dir</span>(factorial)</span><br><span class="line">[<span class="string">&#x27;__annotations__&#x27;</span>, <span class="string">&#x27;__call__&#x27;</span>, <span class="string">&#x27;__class__&#x27;</span>, <span class="string">&#x27;__closure__&#x27;</span>, <span class="string">&#x27;__code__&#x27;</span>, <span class="string">&#x27;__defaults__&#x27;</span>, <span class="string">&#x27;__delattr__&#x27;</span>, <span class="string">&#x27;__dict__&#x27;</span>, <span class="string">&#x27;__dir__&#x27;</span>, <span class="string">&#x27;__doc__&#x27;</span>, <span class="string">&#x27;__eq__&#x27;</span>, <span class="string">&#x27;__format__&#x27;</span>, <span class="string">&#x27;__ge__&#x27;</span>, <span class="string">&#x27;__get__&#x27;</span>, <span class="string">&#x27;__getattribute__&#x27;</span>, <span class="string">&#x27;__globals__&#x27;</span>, <span class="string">&#x27;__gt__&#x27;</span>, <span class="string">&#x27;__hash__&#x27;</span>, <span class="string">&#x27;__init__&#x27;</span>, <span class="string">&#x27;__init_subclass__&#x27;</span>, <span class="string">&#x27;__kwdefaults__&#x27;</span>, <span class="string">&#x27;__le__&#x27;</span>, <span class="string">&#x27;__lt__&#x27;</span>, <span class="string">&#x27;__module__&#x27;</span>, <span class="string">&#x27;__name__&#x27;</span>, <span class="string">&#x27;__ne__&#x27;</span>, <span class="string">&#x27;__new__&#x27;</span>, <span class="string">&#x27;__qualname__&#x27;</span>, <span class="string">&#x27;__reduce__&#x27;</span>, <span class="string">&#x27;__reduce_ex__&#x27;</span>, <span class="string">&#x27;__repr__&#x27;</span>, <span class="string">&#x27;__setattr__&#x27;</span>, <span class="string">&#x27;__sizeof__&#x27;</span>, <span class="string">&#x27;__str__&#x27;</span>, <span class="string">&#x27;__subclasshook__&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+
+<p>其中大多数属性是 Python 对象共有的。函数使用 <code>__dict__</code> 属性存储赋予它的用户属性，这相当于一种基本形式的注解。一般来说，为函数随意赋予属性不是很常见的做法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>factorial.__dict__</span><br><span class="line">&#123;&#125;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>factorial.short_description = <span class="string">&quot;math calculate&quot;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>factorial.__dict__</span><br><span class="line">&#123;<span class="string">&#x27;short_description&#x27;</span>: <span class="string">&#x27;math calculate&#x27;</span>&#125;</span><br></pre></td></tr></table></figure>
+
+<p>有一些属性是函数专有的，而一般对象不存在这些属性。通过如下方式就可以计算出函数专有的属性：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">class</span> <span class="title class_">C</span> : <span class="keyword">pass</span></span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>obj = C()</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">func</span>(): <span class="keyword">pass</span></span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">sorted</span>(<span class="built_in">set</span>(<span class="built_in">dir</span>(func)) - <span class="built_in">set</span>(<span class="built_in">dir</span>(obj)))</span><br><span class="line">[<span class="string">&#x27;__annotations__&#x27;</span>, <span class="string">&#x27;__call__&#x27;</span>, <span class="string">&#x27;__closure__&#x27;</span>, <span class="string">&#x27;__code__&#x27;</span>, <span class="string">&#x27;__defaults__&#x27;</span>, <span class="string">&#x27;__get__&#x27;</span>, <span class="string">&#x27;__globals__&#x27;</span>, <span class="string">&#x27;__kwdefaults__&#x27;</span>, <span class="string">&#x27;__name__&#x27;</span>, <span class="string">&#x27;__qualname__&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+<h3 id="从定位参数到仅限关键字参数"><a href="#从定位参数到仅限关键字参数" class="headerlink" title="从定位参数到仅限关键字参数"></a>从定位参数到仅限关键字参数</h3><p>Python 最好的特性之一是提供了极为灵活的参数处理机制，Python3 进一步提供了仅限关键字参数（keyword-only argument）。另外调用函数时，使用 * 和 ** 可以展开 <code>可迭代对象</code>，将其映射到具体个参数中。如下例子中展示了 Python 中灵活的参数传递方式：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">tag</span>(<span class="params">name, *content, cls=<span class="literal">None</span>, **attrs</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Generate one or multiple HTML tags&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> cls <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        attrs[<span class="string">&#x27;class&#x27;</span>] = cls</span><br><span class="line">    <span class="keyword">if</span> attrs:</span><br><span class="line">        attr_str = <span class="string">&#x27;&#x27;</span>.join(<span class="string">&#x27; %s=&quot;%s&quot;&#x27;</span> % (attr, value) <span class="keyword">for</span> attr, value <span class="keyword">in</span> <span class="built_in">sorted</span>(attrs.items()))</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        attr_str = <span class="string">&#x27;&#x27;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> content:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;\n&#x27;</span>.join(<span class="string">&#x27;&lt;%s%s&gt;%s&lt;/%s&gt;&#x27;</span> % (name, attr_str, c, name) <span class="keyword">for</span> c <span class="keyword">in</span> content)</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;&lt;%s%s /&gt;&#x27;</span> % (name, attr_str)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(tag(<span class="string">&#x27;br&#x27;</span>))</span><br><span class="line"><span class="built_in">print</span>(tag(<span class="string">&#x27;p&#x27;</span>, <span class="string">&#x27;hello&#x27;</span>))</span><br><span class="line"><span class="built_in">print</span>(tag(<span class="string">&#x27;p&#x27;</span>, <span class="string">&#x27;hello&#x27;</span>, <span class="string">&#x27;world&#x27;</span>))</span><br><span class="line"><span class="built_in">print</span>(tag(<span class="string">&#x27;p&#x27;</span>, <span class="string">&#x27;hello&#x27;</span>, <span class="built_in">id</span> = <span class="number">33</span>))</span><br><span class="line"><span class="built_in">print</span>(tag(<span class="string">&#x27;p&#x27;</span>, <span class="string">&#x27;hello&#x27;</span>, <span class="string">&#x27;world&#x27;</span>, cls = <span class="string">&#x27;sidebar&#x27;</span>, <span class="built_in">id</span> = <span class="number">33</span>))</span><br><span class="line"><span class="built_in">print</span>(tag(content = <span class="string">&#x27;testing&#x27;</span>, name = <span class="string">&#x27;img&#x27;</span>))</span><br><span class="line">content_list = [<span class="string">&quot;p&quot;</span>, <span class="string">&quot;A&quot;</span>, <span class="string">&quot;B&quot;</span>, <span class="string">&quot;C&quot;</span>]</span><br><span class="line"><span class="built_in">print</span>(tag(*content_list))</span><br><span class="line">tag_dir = &#123;<span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;img&#x27;</span>, <span class="string">&#x27;title&#x27;</span>: <span class="string">&#x27;Sunset Boulevard&#x27;</span>, <span class="string">&#x27;src&#x27;</span>:<span class="string">&#x27;sunset.jpg&#x27;</span>, <span class="string">&#x27;cls&#x27;</span>:<span class="string">&#x27;framed&#x27;</span>&#125;</span><br><span class="line"><span class="built_in">print</span>(tag(**tag_dir))</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>cls</code> 参数只能使用关键字参数的方式进行传入</li>
+<li>定位参数（位置参数）也可以通过关键字参数的方式进行调用，但是函数调用时，所有的关键字参数必须位于定位参数之后</li>
+<li>对于 <code>content = &#39;testing&#39;</code> 参数 ，虽然与函数定义的 <code>*content</code> 重名，但是该参数也是作为关键字参数之一，被 attrs 参数接收</li>
+<li>通过在 <code>content_list</code> 前使用 <code>*</code>，列表中的所有元素会被作为定位参数传入，函数形参中的相应定位参数会被赋值，剩余的被 <code>*content</code> 捕获</li>
+<li>通过在 <code>tag_dir</code> 前使用 <code>**</code>，字典中的所有元素会被作为关键字参数传入，函数形参中的相应同名参数会被赋值，剩余的被 <code>**attrs</code> 捕获</li>
+</ul>
+<p>仅限关键字参数是 Python3 新增的特性，它只能通过关键字参数指定，而且它肯定不会捕获未命名的定位参数。定位函数时，如果想仅指定关键字参数，要把它们放在前面有 <code>*</code> 参数的后面。如果不想支持数量不定的定位参数，但是想支持仅限关键字参数，可以在前面中放入一个 <code>*</code>，如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">f1</span>(<span class="params">a, *, b=<span class="number">1</span></span>):</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(a, b)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f(<span class="number">1</span>, b = <span class="number">2</span>)</span><br><span class="line"><span class="number">1</span> <span class="number">2</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f(b = <span class="number">2</span>, a = <span class="number">1</span>)</span><br><span class="line"><span class="number">1</span> <span class="number">2</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f(<span class="number">1</span>, <span class="number">2</span>)</span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">TypeError: f() takes <span class="number">1</span> positional argument but <span class="number">2</span> were given</span><br></pre></td></tr></table></figure>
+
+<p>注意，仅限关键字参数不一定要提供默认值。</p>
+<h3 id="获取参数中的信息"><a href="#获取参数中的信息" class="headerlink" title="获取参数中的信息"></a>获取参数中的信息</h3><p>函数对象有一个 <code>__defaults__</code> 属性，它的值是一个元祖，里面保存这定位参数和关键字参数的默认值。仅限关键字参数的默认值在 <code>_kwdefaults__</code> 属性当中。参数的名称保存在 <code>__code__</code> 属性中，它的值是一个 code 对象的引用，自身也有很多属性。</p>
+<p>如下编写了一个函数，它在指定长度附近截断字符串，它的工作原理是在 max_len 的前面或者后面的第一个空格处截断文本：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">clip</span>(<span class="params">text, max_len = <span class="number">80</span></span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">    cut text before or after the first space of maxlen</span></span><br><span class="line"><span class="string">    &quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    end = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(text) &gt; max_len:</span><br><span class="line">        space_before = text.rfind(<span class="string">&#x27; &#x27;</span>, <span class="number">0</span>, max_len)</span><br><span class="line">        <span class="keyword">if</span> (space_before &gt;= <span class="number">0</span>):</span><br><span class="line">            end = space_before</span><br><span class="line">        <span class="keyword">else</span> :</span><br><span class="line">            space_after = text.rfind(<span class="string">&#x27; &#x27;</span>, max_len)</span><br><span class="line">            <span class="keyword">if</span> space_after &gt;= <span class="number">0</span>:</span><br><span class="line">                end = space_after</span><br><span class="line">    <span class="keyword">if</span> end <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        end = <span class="built_in">len</span>(text)</span><br><span class="line">    <span class="keyword">return</span> text[:end].rstrip()</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(clip(<span class="string">&quot;Hello World&quot;</span>, <span class="number">8</span>))</span><br></pre></td></tr></table></figure>
+
+<p>接下来查看该函数参数的信息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> clip <span class="keyword">import</span> clip</span><br><span class="line">Hello</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>clip.__defaults__</span><br><span class="line">(<span class="number">80</span>,)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>clip.__code__</span><br><span class="line">&lt;code <span class="built_in">object</span> clip at <span class="number">0x1075520e0</span>, file <span class="string">&quot;/Users/fuchencong/data/workspace/code/private/fluent_python/clip.py&quot;</span>, line <span class="number">3</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>clip.__code__.co_varnames</span><br><span class="line">(<span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;max_len&#x27;</span>, <span class="string">&#x27;end&#x27;</span>, <span class="string">&#x27;space_before&#x27;</span>, <span class="string">&#x27;space_after&#x27;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>clip.__code__.co_argcount</span><br><span class="line"><span class="number">2</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>参数名称在 <code>__code__.co_varnames</code> 中，但是这里面还有函数体内定义的局部变量。参数名称是前 N 个字符串，N 的值为 <code>co_argcount</code>。这里不包含前缀为 <code>*</code> 或 <code>**</code> 的变长参数。参数的默认值只能通过他们在 <code>__defaults__</code> 元祖中的位置确定。需要从后向前扫描才能把参数和默认值一一对应：例如这里只有一个默认参数值，因此肯定对应最后一个参数，即 max_len</li>
+</ul>
+<p>使用 inspect 模块可以更方便地完成函数内省：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> inspect <span class="keyword">import</span> signature</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>sig = signature(clip)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">str</span>(sig)</span><br><span class="line"><span class="string">&#x27;(text, max_len=80)&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> name, param <span class="keyword">in</span> sig.parameters.items():</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(param.kind, <span class="string">&quot;:&quot;</span>, name, <span class="string">&quot;=&quot;</span>, param.default)</span><br><span class="line">...</span><br><span class="line">POSITIONAL_OR_KEYWORD : text = &lt;<span class="keyword">class</span> <span class="string">&#x27;inspect._empty&#x27;</span>&gt;</span><br><span class="line">POSITIONAL_OR_KEYWORD : max_len = <span class="number">80</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>inspect.signature 函数返回一个 inspect.signature 对象，它有一个 parameters 属性，把参数名和 inspect.Parameter 对象关联起来</li>
+<li>parameter 对象也有各自的属性，例如 name、default、kind 等</li>
+<li>kind 属性目前有 5 种值<ul>
+<li>POSITIONAL_OR_KEYWORD：可以通过定位参数或关键字参数传入的形参</li>
+<li>VAR_POSITIONAL：定位参数元祖</li>
+<li>VAR_KEYWORD：关键字参数字典</li>
+<li>KEYWORD_ONLY：仅限关键字参数（Python3 新增）</li>
+<li>POSITIONAL_ONLY：仅限定位参数，Python 声明函数的语法不支持，使用 C 语言实现且不接受关键字参数的函数支持</li>
+</ul>
+</li>
+</ul>
+<p>inspect.Signature 对象有个 bind 方法，它可以把任意个参数绑定到签名的形参中上，所用的规则与实参到形参的匹配方式一致。框架可以使用这个方法来验证参数，且无需真正调用函数。如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> inspect</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> tag <span class="keyword">import</span> tag</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>sig = inspect.signature(tag)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tag_dir = &#123;<span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;img&#x27;</span>, <span class="string">&#x27;title&#x27;</span>: <span class="string">&#x27;Sunset Boulevard&#x27;</span>, <span class="string">&#x27;src&#x27;</span>:<span class="string">&#x27;sunset.jpg&#x27;</span>, <span class="string">&#x27;cls&#x27;</span>:<span class="string">&#x27;framed&#x27;</span>&#125;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>bound_args = sig.bind(**tag_dir)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> name, value <span class="keyword">in</span> bound_args.arguments.items():</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(name, <span class="string">&#x27;=&#x27;</span>, value)</span><br><span class="line">...</span><br><span class="line">name = img</span><br><span class="line">cls = framed</span><br><span class="line">attrs = &#123;<span class="string">&#x27;title&#x27;</span>: <span class="string">&#x27;Sunset Boulevard&#x27;</span>, <span class="string">&#x27;src&#x27;</span>: <span class="string">&#x27;sunset.jpg&#x27;</span>&#125;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">del</span> tag_dir[<span class="string">&#x27;name&#x27;</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>bound_args = sig.bind(**tag_dir)</span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line <span class="number">1</span>, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">  File <span class="string">&quot;/usr/local/Cellar/python@3.9/3.9.1_3/Frameworks/Python.framework/Versions/3.9/lib/python3.9/inspect.py&quot;</span>, line <span class="number">3062</span>, <span class="keyword">in</span> bind</span><br><span class="line">    <span class="keyword">return</span> self._bind(args, kwargs)</span><br><span class="line">  File <span class="string">&quot;/usr/local/Cellar/python@3.9/3.9.1_3/Frameworks/Python.framework/Versions/3.9/lib/python3.9/inspect.py&quot;</span>, line <span class="number">2977</span>, <span class="keyword">in</span> _bind</span><br><span class="line">    <span class="keyword">raise</span> TypeError(msg) <span class="keyword">from</span> <span class="literal">None</span></span><br><span class="line">TypeError: missing a required argument: <span class="string">&#x27;name&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>从中可以看出，将 name 从参数字典中删除后，再次调用 bind 将抛出异常，因为 name 参数没有默认值，是一个必须指定的参数。这个示例在 inspect 模块的帮助下，展示了 Python 数据模型把实参绑定到给定函数调用中的形参的机制，这与 Python 解释器使用的机制不同。</p>
+<p>框架和 IDE 等工具可以使用这些信息验证代码。函数注解也增加了这些信息的用途。</p>
+<h3 id="函数注解"><a href="#函数注解" class="headerlink" title="函数注解"></a>函数注解</h3><p>Python3 提供了一种语法，用于为函数声明中的参数和返回值附加元数据。如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">func</span>(<span class="params">a:<span class="built_in">str</span>, b:<span class="string">&#x27;int &gt; 0&#x27;</span>=<span class="number">80</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">return</span> a + <span class="built_in">str</span>(b)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>func(<span class="string">&quot;1&quot;</span>, <span class="number">0</span>)</span><br><span class="line"><span class="string">&#x27;10&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>函数声明中的各个参数可以在 <code>:</code> 之后增加注解表达式。如果参数有默认值，注解放在参数名和 <code>=</code> 之间。如果想注解返回值，在 ) 和函数声明的末尾 <code>:</code>之间添加 <code>-&gt;</code> 和一个表达式</li>
+<li>注解表达式可以是任意类型。注解中最常用的类型是类（如 str 或 int）和字符串（如 &#96;int &gt; 0’）</li>
+<li>注解不会做任何处理，只是存储在函数的 <code>__annotations__</code> 属性中</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>func.__annotations__</span><br><span class="line">&#123;<span class="string">&#x27;a&#x27;</span>: &lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt;, <span class="string">&#x27;b&#x27;</span>: <span class="string">&#x27;int &gt; 0&#x27;</span>, <span class="string">&#x27;return&#x27;</span>: &lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>Python 对注解所做的唯一事情是把它们存储在函数的 <code>__annotations__</code> 属性里。Python 不会做检查、不做验证，什么操作也不做。注解只是元数据，可以供 IDE、框架和装饰器等工具使用。inspect.signature() 函数知道怎么提取注解：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> inspect <span class="keyword">import</span> signature</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>sig = signature(func)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>sig.return_annotation</span><br><span class="line">&lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> param <span class="keyword">in</span> sig.parameters.values():</span><br><span class="line"><span class="meta">... </span>    note = <span class="built_in">repr</span>(param.annotation)</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(note, <span class="string">&#x27;:&#x27;</span>, param.name, <span class="string">&#x27;=&#x27;</span>, param.default)</span><br><span class="line">...</span><br><span class="line">&lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt; : a = &lt;<span class="keyword">class</span> <span class="string">&#x27;inspect._empty&#x27;</span>&gt;</span><br><span class="line"><span class="string">&#x27;int &gt; 0&#x27;</span> : b = <span class="number">80</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="支持函数式编程的包"><a href="#支持函数式编程的包" class="headerlink" title="支持函数式编程的包"></a>支持函数式编程的包</h3><p>根据 Python 创始人 Gudio 的说法，Python 的目标不是变成函数式编程语言，但是得益于 operator 和 functiontools 等包的支持，函数式编程风格也很容易支持。</p>
+<p>在函数式编程中，经常需要把算术运算符当成函数使用。operator 模块可以为算术运算符提供对应的函数，从而避免使用 lambda 匿名函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> functools <span class="keyword">import</span> reduce</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">fact</span>(<span class="params">n</span>):</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">return</span> reduce(<span class="keyword">lambda</span> a, b : a * b, <span class="built_in">range</span>(<span class="number">1</span>, n+<span class="number">1</span>))</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>fact(<span class="number">10</span>)</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> functools <span class="keyword">import</span> reduce</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> operator <span class="keyword">import</span> mul</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">fact</span>(<span class="params">n</span>):</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">return</span> reduce(mul, <span class="built_in">range</span>(<span class="number">1</span>, n+<span class="number">1</span>))</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>fact(<span class="number">10</span>)</span><br><span class="line"><span class="number">3628800</span></span><br></pre></td></tr></table></figure>
+
+<p>operator 模块中还有一类函数，能替代从序列中取出元素或读取对象属性的 lambda 表达式：</p>
+<ul>
+<li>itemgetter 使用 <code>[]</code> 运算符，因此它不仅支持序列，还支持映射和任何使用 <code>__getitem__</code> 方法的类。如果传入多个名称，它会返回提取的值构成的元祖</li>
+<li>attrgetter 根据名称提取对象的属性，如果传入多个名称，返回属性所构成的元祖。如果参数名中包含 <code>.</code>，attrgetter 会深入嵌套对象，获取指定的属性</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> operator <span class="keyword">import</span> itemgetter</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>student_data = [(<span class="string">&#x27;Mark&#x27;</span>, <span class="string">&#x27;Male&#x27;</span>, <span class="number">18</span>), (<span class="string">&#x27;Lily&#x27;</span>, <span class="string">&#x27;Female&#x27;</span>, <span class="number">19</span>), (<span class="string">&#x27;Jack&#x27;</span>, <span class="string">&#x27;Male&#x27;</span>, <span class="number">17</span>)]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">sorted</span>(student_data, key = itemgetter(<span class="number">2</span>))</span><br><span class="line">[(<span class="string">&#x27;Jack&#x27;</span>, <span class="string">&#x27;Male&#x27;</span>, <span class="number">17</span>), (<span class="string">&#x27;Mark&#x27;</span>, <span class="string">&#x27;Male&#x27;</span>, <span class="number">18</span>), (<span class="string">&#x27;Lily&#x27;</span>, <span class="string">&#x27;Female&#x27;</span>, <span class="number">19</span>)]</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> collections <span class="keyword">import</span> namedtuple</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> operator <span class="keyword">import</span> attrgetter</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>StudentDetail = namedtuple(<span class="string">&#x27;StudentDetail&#x27;</span>, <span class="string">&#x27;Sex Age&#x27;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>Student = namedtuple(<span class="string">&#x27;Student&#x27;</span>, <span class="string">&#x27;Name StudentDetail&#x27;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = [Student(name, StudentDetail(sex, age)) <span class="keyword">for</span> name, sex, age <span class="keyword">in</span> student_data]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>get_name_and_age = attrgetter(<span class="string">&#x27;Name&#x27;</span>, <span class="string">&#x27;StudentDetail.Age&#x27;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[get_name_and_age(n) <span class="keyword">for</span> n <span class="keyword">in</span> s]</span><br><span class="line">[(<span class="string">&#x27;Mark&#x27;</span>, <span class="number">18</span>), (<span class="string">&#x27;Lily&#x27;</span>, <span class="number">19</span>), (<span class="string">&#x27;Jack&#x27;</span>, <span class="number">17</span>)]</span><br></pre></td></tr></table></figure>
+
+<p>通过如下方式可以查看 operator 包所提供的函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> operator</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[name <span class="keyword">for</span> name <span class="keyword">in</span> <span class="built_in">dir</span>(operator) <span class="keyword">if</span> <span class="keyword">not</span> name.startswith(<span class="string">&#x27;_&#x27;</span>)]</span><br><span class="line">[<span class="string">&#x27;abs&#x27;</span>, <span class="string">&#x27;add&#x27;</span>, <span class="string">&#x27;and_&#x27;</span>, <span class="string">&#x27;attrgetter&#x27;</span>, <span class="string">&#x27;concat&#x27;</span>, <span class="string">&#x27;contains&#x27;</span>, <span class="string">&#x27;countOf&#x27;</span>, <span class="string">&#x27;delitem&#x27;</span>, <span class="string">&#x27;eq&#x27;</span>, <span class="string">&#x27;floordiv&#x27;</span>, <span class="string">&#x27;ge&#x27;</span>, <span class="string">&#x27;getitem&#x27;</span>, <span class="string">&#x27;gt&#x27;</span>, <span class="string">&#x27;iadd&#x27;</span>, <span class="string">&#x27;iand&#x27;</span>, <span class="string">&#x27;iconcat&#x27;</span>, <span class="string">&#x27;ifloordiv&#x27;</span>, <span class="string">&#x27;ilshift&#x27;</span>, <span class="string">&#x27;imatmul&#x27;</span>, <span class="string">&#x27;imod&#x27;</span>, <span class="string">&#x27;imul&#x27;</span>, <span class="string">&#x27;index&#x27;</span>, <span class="string">&#x27;indexOf&#x27;</span>, <span class="string">&#x27;inv&#x27;</span>, <span class="string">&#x27;invert&#x27;</span>, <span class="string">&#x27;ior&#x27;</span>, <span class="string">&#x27;ipow&#x27;</span>, <span class="string">&#x27;irshift&#x27;</span>, <span class="string">&#x27;is_&#x27;</span>, <span class="string">&#x27;is_not&#x27;</span>, <span class="string">&#x27;isub&#x27;</span>, <span class="string">&#x27;itemgetter&#x27;</span>, <span class="string">&#x27;itruediv&#x27;</span>, <span class="string">&#x27;ixor&#x27;</span>, <span class="string">&#x27;le&#x27;</span>, <span class="string">&#x27;length_hint&#x27;</span>, <span class="string">&#x27;lshift&#x27;</span>, <span class="string">&#x27;lt&#x27;</span>, <span class="string">&#x27;matmul&#x27;</span>, <span class="string">&#x27;methodcaller&#x27;</span>, <span class="string">&#x27;mod&#x27;</span>, <span class="string">&#x27;mul&#x27;</span>, <span class="string">&#x27;ne&#x27;</span>, <span class="string">&#x27;neg&#x27;</span>, <span class="string">&#x27;not_&#x27;</span>, <span class="string">&#x27;or_&#x27;</span>, <span class="string">&#x27;pos&#x27;</span>, <span class="string">&#x27;pow&#x27;</span>, <span class="string">&#x27;rshift&#x27;</span>, <span class="string">&#x27;setitem&#x27;</span>, <span class="string">&#x27;sub&#x27;</span>, <span class="string">&#x27;truediv&#x27;</span>, <span class="string">&#x27;truth&#x27;</span>, <span class="string">&#x27;xor&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>以 i 开头函数，对应的是增量赋值赋值运算符（例如 +&#x3D;、*&#x3D; 等）。如果第一个参数是可变的，那么这些函数直接就地修改它，否则与不带 i 的函数一样，直接返回运算结果</li>
+<li>methodcaller 类似于 attrgetter 和 itemgetter，它会自行创建函数，创建的函数会在对象上调用参数所指定的方法</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> operator <span class="keyword">import</span> methodcaller</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>upcase = methodcaller(<span class="string">&#x27;upper&#x27;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = <span class="string">&#x27;hello, world&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>upcase(s)</span><br><span class="line"><span class="string">&#x27;HELLO, WORLD&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>replace_white_space = methodcaller(<span class="string">&#x27;replace&#x27;</span>, <span class="string">&#x27; &#x27;</span>, <span class="string">&#x27;-&#x27;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>replace_white_space(s)</span><br><span class="line"><span class="string">&#x27;hello,-world&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>可以看到 methodcaller 可以冻结某些参数，这也就是部分应用（partial application），这与 <code>functools.partial</code> 函数的作用类似。</p>
+<h3 id="使用-functools-partial-冻结参数"><a href="#使用-functools-partial-冻结参数" class="headerlink" title="使用 functools.partial 冻结参数"></a>使用 <code>functools.partial</code> 冻结参数</h3><p>functools.partial 也是一个高阶函数，它用于部分应用一个函数。部分应用是指基于一个函数创建一个新的可调用对象，把原有函数的某些参数固定。使用这个函数可以把接受一个或多个参数的函数改变成需要更少参数的 API：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> operator <span class="keyword">import</span> mul</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> functools <span class="keyword">import</span> partial</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>triple = partial(mul, <span class="number">3</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>triple(<span class="number">7</span>)</span><br><span class="line"><span class="number">21</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">list</span>(<span class="built_in">map</span>(triple, <span class="built_in">range</span>(<span class="number">1</span>, <span class="number">10</span>)))</span><br><span class="line">[<span class="number">3</span>, <span class="number">6</span>, <span class="number">9</span>, <span class="number">12</span>, <span class="number">15</span>, <span class="number">18</span>, <span class="number">21</span>, <span class="number">24</span>, <span class="number">27</span>]</span><br></pre></td></tr></table></figure>
+
+<p>partial 的第一个参数是可调用对象，后面跟着任意个要绑定的定位参数和关键字参数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">f</span>(<span class="params">a, b, *c, d, **e</span>):</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(a, b, c, d, e)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3 = partial(f, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3(d = <span class="number">4</span>)</span><br><span class="line"><span class="number">1</span> <span class="number">2</span> (<span class="number">3</span>,) <span class="number">4</span> &#123;&#125;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3(<span class="number">4</span>, <span class="number">5</span>, d = <span class="number">6</span>)</span><br><span class="line"><span class="number">1</span> <span class="number">2</span> (<span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>) <span class="number">6</span> &#123;&#125;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3(<span class="number">4</span>, <span class="number">5</span>, d = <span class="number">6</span>, h = <span class="number">10</span>)</span><br><span class="line"><span class="number">1</span> <span class="number">2</span> (<span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>) <span class="number">6</span> &#123;<span class="string">&#x27;h&#x27;</span>: <span class="number">10</span>&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3d6 = partial(f, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, d = <span class="number">6</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3d6(<span class="number">4</span>, h = <span class="number">7</span>)</span><br><span class="line"><span class="number">1</span> <span class="number">2</span> (<span class="number">3</span>, <span class="number">4</span>) <span class="number">6</span> &#123;<span class="string">&#x27;h&#x27;</span>: <span class="number">7</span>&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3d6h9 = partial(f, <span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, d = <span class="number">6</span>, h = <span class="number">9</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>f3d6h9()</span><br><span class="line"><span class="number">1</span> <span class="number">2</span> (<span class="number">3</span>,) <span class="number">6</span> &#123;<span class="string">&#x27;h&#x27;</span>: <span class="number">9</span>&#125;</span><br></pre></td></tr></table></figure>
+
+<p>functools.partial 对象提供了访问原函数和固定参数的属性：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">&gt;&gt;&gt; f3d6h9.func</span><br><span class="line">&lt;function f at 0x10e238e50&gt;</span><br><span class="line">&gt;&gt;&gt; f3d6h9.args</span><br><span class="line">(1, 2, 3)</span><br><span class="line">&gt;&gt;&gt; f3d6h9.keywords</span><br><span class="line">&#123;&#x27;d&#x27;: 6, &#x27;h&#x27;: 9&#125;</span><br></pre></td></tr></table></figure>
+
+<p>functools.partialmethod 函数的作用与 partial 一样，不过是用于处理方法的。</p>
+<h2 id="使用一等函数实现设计模式"><a href="#使用一等函数实现设计模式" class="headerlink" title="使用一等函数实现设计模式"></a>使用一等函数实现设计模式</h2><p>虽然设计模式与语言无关，但是并不意味着每一个模式都能在每一门语言中使用。在有一等函数的语言中，可以把 <code>策略模式</code>、<code>命令模式</code>、<code>模板方法</code> 等模式中涉及的某些类的实例替换成简单的函数，从而减少代码。这里将使用函数对象，重构 <code>策略模式</code>。</p>
+<h3 id="重构策略模式"><a href="#重构策略模式" class="headerlink" title="重构策略模式"></a>重构策略模式</h3><p>策略模式的经典定义如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">定义一系列算法，把它们一一封装起来，并且使他们可以相互替换。本模式使得算法可以独立于使用它的客户而变化。</span><br></pre></td></tr></table></figure>
+
+<p>如下了实现电商根据订单使用不同的打折策略：</p>
+
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> abc <span class="keyword">import</span> ABC, abstractmethod</span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> namedtuple</span><br><span class="line"></span><br><span class="line">Customer = namedtuple(<span class="string">&#x27;Customer&#x27;</span>, <span class="string">&#x27;name fidelity&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LineItem</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, product, quantity, price</span>):</span><br><span class="line">        self.product = product</span><br><span class="line">        self.quantity = quantity</span><br><span class="line">        self.price = price</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">total</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> self.price * self.quantity</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Order</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, customer, cart, promotion=<span class="literal">None</span></span>):</span><br><span class="line">        self.customer = customer</span><br><span class="line">        self.cart = cart</span><br><span class="line">        self.promotion = promotion</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">total</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">hasattr</span>(self, <span class="string">&#x27;__total&#x27;</span>):</span><br><span class="line">            self.__total = <span class="built_in">sum</span>(item.total() <span class="keyword">for</span> item <span class="keyword">in</span> self.cart)</span><br><span class="line">        <span class="keyword">return</span> self.__total</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">due</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">if</span> self.promotion <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            discount = <span class="number">0</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            discount = self.promotion.discount(self)</span><br><span class="line">        <span class="keyword">return</span> self.total() - discount</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        fmt = <span class="string">&#x27;&lt;Order total: &#123;:.2f&#125; due: &#123;:.2f&#125;&gt;&#x27;</span></span><br><span class="line">        <span class="keyword">return</span> fmt.<span class="built_in">format</span>(self.total(), self.due())</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Promotion</span>(<span class="title class_ inherited__">ABC</span>):</span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">discount</span>(<span class="params">self, order</span>):</span><br><span class="line">        <span class="string">&quot;&quot;&quot;return discount&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">FidelityPromo</span>(<span class="title class_ inherited__">Promotion</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">discount</span>(<span class="params">self, order</span>):</span><br><span class="line">        <span class="keyword">return</span> order.total() * <span class="number">0.05</span> <span class="keyword">if</span> order.customer.fidelity &gt;= <span class="number">1000</span> <span class="keyword">else</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">BulkItemPromo</span>(<span class="title class_ inherited__">Promotion</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">discount</span>(<span class="params">self, order</span>):</span><br><span class="line">        discount = <span class="number">0</span></span><br><span class="line">        <span class="keyword">for</span> item <span class="keyword">in</span> order.cart:</span><br><span class="line">            <span class="keyword">if</span> item.quantity &gt;= <span class="number">20</span>:</span><br><span class="line">                discount += item.total() * <span class="number">0.1</span></span><br><span class="line">        <span class="keyword">return</span> discount</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LargeOrderPromo</span>(<span class="title class_ inherited__">Promotion</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">discount</span>(<span class="params">self, order</span>):</span><br><span class="line">        distinct_items = &#123;item.product <span class="keyword">for</span> item <span class="keyword">in</span> order.cart&#125;</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(distinct_items) &gt;= <span class="number">10</span>:</span><br><span class="line">            <span class="keyword">return</span> order.total() * <span class="number">0.07</span></span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test</span>():</span><br><span class="line">    jack = Customer(<span class="string">&#x27;Jack&#x27;</span>, <span class="number">0</span>)</span><br><span class="line">    ann = Customer(<span class="string">&#x27;Ann&#x27;</span>, <span class="number">1100</span>)</span><br><span class="line"></span><br><span class="line">    cart = [LineItem(<span class="string">&#x27;banana&#x27;</span>, <span class="number">4</span>, <span class="number">0.5</span>),</span><br><span class="line">            LineItem(<span class="string">&#x27;apple&#x27;</span>, <span class="number">10</span>, <span class="number">1.5</span>),</span><br><span class="line">            LineItem(<span class="string">&#x27;watermelon&#x27;</span>, <span class="number">5</span>, <span class="number">5.0</span>)]</span><br><span class="line"></span><br><span class="line">    o1 = Order(jack, cart, FidelityPromo())</span><br><span class="line">    o2 = Order(ann, cart, FidelityPromo())</span><br><span class="line">    <span class="built_in">print</span>(o1)</span><br><span class="line">    <span class="built_in">print</span>(o2)</span><br><span class="line"></span><br><span class="line">    large_cart = [LineItem(<span class="string">&#x27;banana&#x27;</span>, <span class="number">30</span>, <span class="number">0.5</span>),</span><br><span class="line">                  LineItem(<span class="string">&#x27;apple&#x27;</span>, <span class="number">10</span>, <span class="number">1.5</span>)]</span><br><span class="line">    o1 = Order(jack, large_cart, BulkItemPromo())</span><br><span class="line">    <span class="built_in">print</span>(o1)</span><br><span class="line">    o2 = Order(ann, large_cart, BulkItemPromo())</span><br><span class="line">    <span class="built_in">print</span>(o2)</span><br><span class="line"></span><br><span class="line">    long_cart = [LineItem(<span class="built_in">str</span>(i), <span class="number">1</span>, <span class="number">1.0</span>) <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">10</span>)]</span><br><span class="line">    o1 = Order(jack, long_cart, LargeOrderPromo())</span><br><span class="line">    <span class="built_in">print</span>(o1)</span><br><span class="line">    o2 = Order(ann, long_cart, LargeOrderPromo())</span><br><span class="line">    <span class="built_in">print</span>(o2)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ != <span class="string">&#x27;__MAIN__&#x27;</span>:</span><br><span class="line">    test()</span><br></pre></td></tr></table></figure>
+
+<p>在该实现中，每一个具体策略都是一个类，而且都只定义了一个方法，此外这些策略实例没有状态（没有实例属性），它们看起来就像普通的函数。可以把这些具体策略换成简单的函数，这样就无需 Promo 抽象类：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> abc <span class="keyword">import</span> ABC, abstractmethod</span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> namedtuple</span><br><span class="line"></span><br><span class="line">Customer = namedtuple(<span class="string">&#x27;Customer&#x27;</span>, <span class="string">&#x27;name fidelity&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">LineItem</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, product, quantity, price</span>):</span><br><span class="line">        self.product = product</span><br><span class="line">        self.quantity = quantity</span><br><span class="line">        self.price = price</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">total</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> self.price * self.quantity</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Order</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, customer, cart, promotion=<span class="literal">None</span></span>):</span><br><span class="line">        self.customer = customer</span><br><span class="line">        self.cart = cart</span><br><span class="line">        self.promotion = promotion</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">total</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">hasattr</span>(self, <span class="string">&#x27;__total&#x27;</span>):</span><br><span class="line">            self.__total = <span class="built_in">sum</span>(item.total() <span class="keyword">for</span> item <span class="keyword">in</span> self.cart)</span><br><span class="line">        <span class="keyword">return</span> self.__total</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">due</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">if</span> self.promotion <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            discount = <span class="number">0</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            discount = self.promotion(self)</span><br><span class="line">        <span class="keyword">return</span> self.total() - discount</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        fmt = <span class="string">&#x27;&lt;Order total: &#123;:.2f&#125; due: &#123;:.2f&#125;&gt;&#x27;</span></span><br><span class="line">        <span class="keyword">return</span> fmt.<span class="built_in">format</span>(self.total(), self.due())</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">fidelity_promo</span>(<span class="params">order</span>):</span><br><span class="line">    <span class="keyword">return</span> order.total() * <span class="number">0.05</span> <span class="keyword">if</span> order.customer.fidelity &gt;= <span class="number">1000</span> <span class="keyword">else</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">bulkitem_promo</span>(<span class="params">order</span>):</span><br><span class="line">    discount = <span class="number">0</span></span><br><span class="line">    <span class="keyword">for</span> item <span class="keyword">in</span> order.cart:</span><br><span class="line">        <span class="keyword">if</span> item.quantity &gt;= <span class="number">20</span>:</span><br><span class="line">            discount += item.total() * <span class="number">0.1</span></span><br><span class="line">    <span class="keyword">return</span> discount</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">large_order_promo</span>(<span class="params">order</span>):</span><br><span class="line">    distinct_items = &#123;item.product <span class="keyword">for</span> item <span class="keyword">in</span> order.cart&#125;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(distinct_items) &gt;= <span class="number">10</span>:</span><br><span class="line">        <span class="keyword">return</span> order.total() * <span class="number">0.07</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">test</span>():</span><br><span class="line">    jack = Customer(<span class="string">&#x27;Jack&#x27;</span>, <span class="number">0</span>)</span><br><span class="line">    ann = Customer(<span class="string">&#x27;Ann&#x27;</span>, <span class="number">1100</span>)</span><br><span class="line"></span><br><span class="line">    cart = [LineItem(<span class="string">&#x27;banana&#x27;</span>, <span class="number">4</span>, <span class="number">0.5</span>),</span><br><span class="line">            LineItem(<span class="string">&#x27;apple&#x27;</span>, <span class="number">10</span>, <span class="number">1.5</span>),</span><br><span class="line">            LineItem(<span class="string">&#x27;watermelon&#x27;</span>, <span class="number">5</span>, <span class="number">5.0</span>)]</span><br><span class="line"></span><br><span class="line">    o1 = Order(jack, cart, fidelity_promo)</span><br><span class="line">    o2 = Order(ann, cart, fidelity_promo)</span><br><span class="line">    <span class="built_in">print</span>(o1)</span><br><span class="line">    <span class="built_in">print</span>(o2)</span><br><span class="line"></span><br><span class="line">    large_cart = [LineItem(<span class="string">&#x27;banana&#x27;</span>, <span class="number">30</span>, <span class="number">0.5</span>),</span><br><span class="line">                  LineItem(<span class="string">&#x27;apple&#x27;</span>, <span class="number">10</span>, <span class="number">1.5</span>)]</span><br><span class="line">    o1 = Order(jack, large_cart, bulkitem_promo)</span><br><span class="line">    <span class="built_in">print</span>(o1)</span><br><span class="line">    o2 = Order(ann, large_cart, bulkitem_promo)</span><br><span class="line">    <span class="built_in">print</span>(o2)</span><br><span class="line"></span><br><span class="line">    long_cart = [LineItem(<span class="built_in">str</span>(i), <span class="number">1</span>, <span class="number">1.0</span>) <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">10</span>)]</span><br><span class="line">    o1 = Order(jack, long_cart, large_order_promo)</span><br><span class="line">    <span class="built_in">print</span>(o1)</span><br><span class="line">    o2 = Order(ann, long_cart, large_order_promo)</span><br><span class="line">    <span class="built_in">print</span>(o2)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ != <span class="string">&#x27;__MAIN__&#x27;</span>:</span><br><span class="line">    test()</span><br></pre></td></tr></table></figure>
+
+<p>具体策略一般没有内部状态，只是处理上下文中的数据。此时，一定要使用普通的函数，别去编写只有一个方法的类。函数比用户定义的类的实例轻量，而且各个策略函数在 Python 编译模块时只会创建一次。普通函数也是可共享的对象，可以同时在多个上下文中使用。</p>
+<h3 id="选择最佳策略"><a href="#选择最佳策略" class="headerlink" title="选择最佳策略"></a>选择最佳策略</h3><p>如果我们想创建一个元策略，让它为指定的订单创建最佳折扣。利用<code>函数</code>和<code>模块</code>都是对象，可以使用不同的方式实现这个需求。</p>
+<p>方法 1：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">promos = [fidelity_promo, bulkitem_promo, large_order_promo]</span><br><span class="line"><span class="keyword">def</span> <span class="title function_">best_promo</span>(<span class="params">order</span>):</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">max</span>(promo(order) <span class="keyword">for</span> promo <span class="keyword">in</span> promos)</span><br></pre></td></tr></table></figure>
+
+<p>这种方法直接遍历每个折扣函数，计算针对指定 order 的折扣，并返回最大的折扣值。因为函数本身是一等对象，所以可以构建函数列表。但是这种方法有个缺点，每次新增 <code>XX_promo</code> 都需要记得将其放到 promos 列表中。</p>
+<p>方法 2：</p>
+<p>在 Python 中，模块也是一等对象，而且标准库提供了几个处理模块的函数：</p>
+<ul>
+<li>globals()：返回一个字典，表示当前的全局符号表。这个符号表始终针对当前模块。对函数或方法来说，是指定义他们的模块，而不是调用它们的模块。</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">promos = [<span class="built_in">globals</span>()[name] <span class="keyword">for</span> name <span class="keyword">in</span> <span class="built_in">globals</span>() <span class="keyword">if</span> name.endswith(<span class="string">&#x27;_promo&#x27;</span>) <span class="keyword">and</span> name != <span class="string">&#x27;best_promo&#x27;</span>]</span><br><span class="line"><span class="keyword">def</span> <span class="title function_">best_promo</span>(<span class="params">order</span>):</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">max</span>(promo(order) <span class="keyword">for</span> promo <span class="keyword">in</span> promos)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>globals() 直接返回字典，迭代字典，获得字典的每一个 key，即符号的名称</li>
+<li>如果名称是以 <code>_promo</code> 结尾，同时不是 best_promo，将其对值（即函数对象）加入到 promos 列表中</li>
+</ul>
+<p>另外一种方法是将所有 <code>XX_promo</code> 函数放入单独的模块，通过如下方式，获取所有的折扣函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">promos = [func <span class="keyword">for</span> name, func <span class="keyword">in</span> inspect.getmembers(promotions, inspect.isfunction)]</span><br></pre></td></tr></table></figure>
+
+<p>动态收集促销折扣函数更为显式的一种方案是使用简单的装饰器，之后会介绍该方案。</p>
+<h3 id="命令模式"><a href="#命令模式" class="headerlink" title="命令模式"></a>命令模式</h3><p>命令设计模式也可以通过把函数作为参数传递而简化。命令模式的目的是解耦调用操作的对象（调用者）和提供实现的对象（接收者）。这种模式的做法是，在二者之间放入一个 Command 对象，让它实现只有一个方法 <code>execute</code> 的接口，调用接收者中的方法执行所需的操作，这样调用者无需了解接收者的接口。</p>
+<p>可以不为调用者提供一个 Command 实例，而是给它一个函数，此时调用者不用调用 <code>command.execute()</code>，而是直接调用提供的函数即可。当然，对于复杂的命令模式可能需要更多，而不是简单的回调函数，也可以考虑使用 Python 提供的几个替代品：</p>
+<ul>
+<li>实现一个可调用实例，可以保存任何所需的状态，而且除了 <strong>call</strong> 之外还可以提供其他方法</li>
+<li>可以使用闭包在调用之间保存函数内部的状态</li>
+</ul>
+<p>把实现单方法接口的类的实例替换成可调用对象。毕竟，每个 Python 可调用对象都实现了单方法接口，即 <code>__call__</code>。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2021/07/25/fluent-python-02/" rel="prev" title="流畅的 Python（2）：字典和集合 & 文本和字节序列">
+      <i class="fa fa-chevron-left"></i> 流畅的 Python（2）：字典和集合 & 文本和字节序列
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2021/08/08/fluent-python-04/" rel="next" title="流畅的 Python（4）：函数装饰器和闭包">
+      流畅的 Python（4）：函数装饰器和闭包 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E7%AD%89%E5%87%BD%E6%95%B0"><span class="nav-number">1.</span> <span class="nav-text">一等函数</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8A%8A%E5%87%BD%E6%95%B0%E8%A7%86%E4%B8%BA%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.1.</span> <span class="nav-text">把函数视为对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%AB%98%E9%98%B6%E5%87%BD%E6%95%B0"><span class="nav-number">1.2.</span> <span class="nav-text">高阶函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%BF%E5%90%8D%E5%87%BD%E6%95%B0"><span class="nav-number">1.3.</span> <span class="nav-text">匿名函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E8%B0%83%E7%94%A8%E5%AF%B9%E8%B1%A1"><span class="nav-number">1.4.</span> <span class="nav-text">可调用对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E6%88%B7%E5%AE%9A%E4%B9%89%E7%9A%84%E5%8F%AF%E8%B0%83%E7%94%A8%E7%B1%BB%E5%9E%8B"><span class="nav-number">1.5.</span> <span class="nav-text">用户定义的可调用类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%BD%E6%95%B0%E5%86%85%E7%9C%81"><span class="nav-number">1.6.</span> <span class="nav-text">函数内省</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E%E5%AE%9A%E4%BD%8D%E5%8F%82%E6%95%B0%E5%88%B0%E4%BB%85%E9%99%90%E5%85%B3%E9%94%AE%E5%AD%97%E5%8F%82%E6%95%B0"><span class="nav-number">1.7.</span> <span class="nav-text">从定位参数到仅限关键字参数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%8E%B7%E5%8F%96%E5%8F%82%E6%95%B0%E4%B8%AD%E7%9A%84%E4%BF%A1%E6%81%AF"><span class="nav-number">1.8.</span> <span class="nav-text">获取参数中的信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%BD%E6%95%B0%E6%B3%A8%E8%A7%A3"><span class="nav-number">1.9.</span> <span class="nav-text">函数注解</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%94%AF%E6%8C%81%E5%87%BD%E6%95%B0%E5%BC%8F%E7%BC%96%E7%A8%8B%E7%9A%84%E5%8C%85"><span class="nav-number">1.10.</span> <span class="nav-text">支持函数式编程的包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-functools-partial-%E5%86%BB%E7%BB%93%E5%8F%82%E6%95%B0"><span class="nav-number">1.11.</span> <span class="nav-text">使用 functools.partial 冻结参数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E4%B8%80%E7%AD%89%E5%87%BD%E6%95%B0%E5%AE%9E%E7%8E%B0%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F"><span class="nav-number">2.</span> <span class="nav-text">使用一等函数实现设计模式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8D%E6%9E%84%E7%AD%96%E7%95%A5%E6%A8%A1%E5%BC%8F"><span class="nav-number">2.1.</span> <span class="nav-text">重构策略模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%89%E6%8B%A9%E6%9C%80%E4%BD%B3%E7%AD%96%E7%95%A5"><span class="nav-number">2.2.</span> <span class="nav-text">选择最佳策略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E6%A8%A1%E5%BC%8F"><span class="nav-number">2.3.</span> <span class="nav-text">命令模式</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">54</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

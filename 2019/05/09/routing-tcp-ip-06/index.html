@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="RIPv2 协议在 RFC17231 中进行了定义，确切地说，RIPv2 协议不是一个新的协议，它只是在 RIPv1 协议的基础上增加了一些扩展特性，以适用于现代网络的路由选择环境。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TCP&#x2F;IP 路由技术 06：RIPv2、RIPng 和无类别路由选择">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="RIPv2 协议在 RFC17231 中进行了定义，确切地说，RIPv2 协议不是一个新的协议，它只是在 RIPv1 协议的基础上增加了一些扩展特性，以适用于现代网络的路由选择环境。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/vlsm.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/auth.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/ripng_nexthop.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/configure_01.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/configure_02.jpg">
+<meta property="article:published_time" content="2019-05-09T00:53:42.000Z">
+<meta property="article:modified_time" content="2022-08-25T12:04:03.755Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Route">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/vlsm.jpg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>TCP/IP 路由技术 06：RIPv2、RIPng 和无类别路由选择 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          TCP/IP 路由技术 06：RIPv2、RIPng 和无类别路由选择
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-05-09 08:53:42" itemprop="dateCreated datePublished" datetime="2019-05-09T08:53:42+08:00">2019-05-09</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>RIPv2 协议在 RFC17231 中进行了定义，确切地说，RIPv2 协议不是一个新的协议，它只是在 RIPv1 协议的基础上增加了一些扩展特性，以适用于现代网络的路由选择环境。</p>
+<span id="more"></span>
+
+<p>这些扩展特性有：</p>
+<ul>
+<li>每个路由条目都携带自己的子网掩码</li>
+<li>路由选择更新具有认证功能</li>
+<li>每个路由条目都携带下一跳地址</li>
+<li>外部路由标志</li>
+<li>组播路由更新</li>
+</ul>
+<p>由于路由选择跟新条目中增加了子网掩码字段，因而 RIPv2 协议可以使用可变长的子网掩码，<strong>使其成为一个支持无类别路由选择的协议</strong>。RIP 下一代（RIP next generation，RIPng）是 RIPv2 对 IPv6 路由选择的修改。与 IPv4 不同，IPv6 天生就是无类别的 ，因此 RIPng 也是一个无类别路由选择协议。</p>
+<h2 id="RIPv2-的基本原理与实现"><a href="#RIPv2-的基本原理与实现" class="headerlink" title="RIPv2 的基本原理与实现"></a>RIPv2 的基本原理与实现</h2><p>所有在 RIPv1 中运用的实现方法、计时器和稳定特性都同样可以在版本 2 中使用，其中只有一个例外，就是路由更新的广播。RIPv2 协议使用组播的方式向其他宣告 RIPv2 的路由器发出消息，它所使用的组播地址是保留的 D 类地址 224.0.0.9。使用组播的好处在于，本地网络上相连的与 RIP 路由选择无关的设备不再需要花费时间对路由器广播的更新消息进行解析。</p>
+<h3 id="RIPv2-的消息格式"><a href="#RIPv2-的消息格式" class="headerlink" title="RIPv2 的消息格式"></a>RIPv2 的消息格式</h3><p>RIPv2 的消息格式如下，它的基本结构和 RIPv1 相同。所有相对于原来协议的扩展特性都是由未使用的字段提供。</p>
+
+
+<ul>
+<li>命令：取值 1 或 2，1 表示为请求消息，2 表示响应消息</li>
+<li>版本号：对于 RIPv2，该字段的值设置为 2。RIPv2 能够处理有效的 RIPv1 消息</li>
+<li>地址族标识：对于 IPv4 协议，该项总是设置为 2。只有一种例外情况，当该消息对路由器（或主机）的整个路由表进行请求时，这个字段将被设置为 0</li>
+<li>路由标记：提供这个字段用来标记外部路由或重新分配到 RIPv2 协议中的路由。默认的情况是使用这个 16 位的字段来携带从外部路由选择协议注入到 RIP 中的路由的自主系统号。虽然 RIP 协议自己不使用这个字段，但是在多个地点和某个 RIP 域相连的外部路由，可能需要使用这个路由标记字段通过 RIP 域来交换路由信息。这个字段也可以用来把外部路由编成 组，以便在 RIP 域中更容易地控制这些路由</li>
+<li>IP 地址：路由条目的 IPv4 目的地址，可以是主网络地址、子网地址或主机路由</li>
+<li>子网掩码：是一个 32 位的掩码，用来标识 IPv4 地址的网络和子网部分</li>
+<li>下一跳：如果存在的话，它标识一个比通告路由器的地址更好的下一跳地址。也就是说，它指定的下一跳地址，其度量值比在同一个子网上的通告路由器更接近目的地。如果这个字段设置为全 0，说明通告路由器的地址是最优的下一跳地址</li>
+<li>度量：是一个在 1-16 之间的跳数</li>
+</ul>
+<h3 id="与-RIPv1-的兼容性"><a href="#与-RIPv1-的兼容性" class="headerlink" title="与 RIPv1 的兼容性"></a>与 RIPv1 的兼容性</h3><p>RIPv1 使用灵活的方式进行路由更新。如果更新消息的版本指出 RIP 是版本 1，但是所有未使用字段的所有位都设置为 1，那么这个更新消息将被丢弃。如果版本字段设置大于 1，在版本 1 中定义为未使用的字段将会被忽略，但会处理这个消息。结果是像 RIPv2 这种新协议版本就可以向后兼容 RIPv1。</p>
+<p>RFC 1723 用 4 个设置定义了一个 兼容性开关，用来允许版本 1 和版本 2 之间的互操作：</p>
+<ul>
+<li>RIP-1：只有 RIPv1 的消息被传送</li>
+<li>RIP-1 兼容性：RIPv2 使用广播代替多播方式来通告消息，以便 RIPv1 可以接收它们</li>
+<li>RIP-2：RIPv2 使用多播方式将消息通告到目的地址 224.0.0.9</li>
+<li>None：不发送更新</li>
+</ul>
+<p>RFC 建议这些开关在基于接口模式上进行配置。另外，RFC1723 定义了一个 接收控制开关 来控制更新的接收。对于这个开关，4 种建议的设置是：</p>
+<ul>
+<li>RIP-1 only</li>
+<li>RIP-2 only</li>
+<li>Both</li>
+<li>None</li>
+</ul>
+<h2 id="无类别路由选择"><a href="#无类别路由选择" class="headerlink" title="无类别路由选择"></a>无类别路由选择</h2><p>上一篇文章阐述了有类别路由的查找方法：首先将目的地址与路由表中的主网地址匹配，然后匹配主网的子网。如果经过这些步骤找不到匹配项，这个数据包就会被丢弃。</p>
+<p>在 IOS11.3 版本之前，IOS 的缺省方式都是有类别路由查找，但缺省路由的查找改成了无类别的查找。对于早期的 IOS 版本，即使像 RIPv1 和 IGRP 这样的有类别路由选择协议，也可以通过全局命令 ip classless 来启用无类别路由查找。当路由器执行无类别路由查找时，它不会注意目的地址的类别，替代方法是，它会在目的地址和所有已知的路由之间逐位执行最佳匹配。</p>
+<h3 id="无类别路由选择协议"><a href="#无类别路由选择协议" class="headerlink" title="无类别路由选择协议"></a>无类别路由选择协议</h3><p>无类别路由选择协议最根本的特点是，它具有可以在路由通告中携带子网掩码的能力。</p>
+<p>每条路由拥有子网掩码的一个好处是：全 0 和全 1 的子网现在可以利用了。如果包含了子网掩码，就可以很容易判断出 172.16.0.0&#x2F;16 是一个主网络号，而 172.16.0.0&#x2F;24 则是一个全 0 的子网。在缺省的条件下，即使运行的是无类别路由选择协议，Cisco IOS 软件也将试图把一个全 0 的子网配置为有效的地址&#x2F;掩码组合。为了使这个缺省行为无效，可是使用全局命令 ip subnet-zero 进行更改。</p>
+<p>每条路由拥有子网掩码的另一个好处是：可以使用可变长子网掩码和利用一条单一的聚合地址来汇总一组主网地址。</p>
+<h3 id="可边长子网掩码（VLSM）"><a href="#可边长子网掩码（VLSM）" class="headerlink" title="可边长子网掩码（VLSM）"></a>可边长子网掩码（VLSM）</h3><p>如果每一个目的地址都可以单独地携带相关联的子网掩码通告到整个网络中，那么就不需要要求所有的掩码必须是等长的。这个事实就是可变长子网掩码（VLSM）的基础。</p>
+<p>如下显示了一个可变长子网掩码的简单应用：</p>
+<p>网络中的每一条数据链路都必须有一个唯一标识的子网掩码，同时，每个子网地址段必须包含足够的主机地址数来提供给这条数据链路上相连的设备使用。假设只给这个网络分配一个 C 类网络地址，没有 VLSM 技术是不能完成子网划分的。如果采用固定长度掩码，由于其中一个网段需要 100 个主机地址，这就需要 25 位长的子网掩码，这样也就只能划分出 2 个子网，无法提供足够的子网数以满足需要。</p>
+<img src="/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/vlsm.jpg" class="">
+
+<p>通过使用 VLSM，通过如下子网划分方法即可满足需要：</p>
+<table>
+<thead>
+<tr>
+<th>子网&#x2F;掩码</th>
+<th>主机地址范围</th>
+<th>广播地址</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>192.168.50.0&#x2F;25</td>
+<td>192.168.50.1 ~ 192.168.50.126</td>
+<td>192.168.50.127</td>
+</tr>
+<tr>
+<td>192.168.50.128&#x2F;26</td>
+<td>192.168.50.129 ~ 192.168.50.190</td>
+<td>192.168.50.191</td>
+</tr>
+<tr>
+<td>192.168.50.192&#x2F;27</td>
+<td>192.168.50.193 ~ 192.168.50.222</td>
+<td>192.168.50.223</td>
+</tr>
+<tr>
+<td>192.168.50.224&#x2F;28</td>
+<td>192.168.50.225 ~ 192.168.50.238</td>
+<td>192.168.50.239</td>
+</tr>
+<tr>
+<td>192.168.50.240&#x2F;30</td>
+<td>192.168.50.241 ~ 192.168.50.242</td>
+<td>192.168.50.243</td>
+</tr>
+<tr>
+<td>192.168.50.244&#x2F;30</td>
+<td>192.168.50.245 ~ 192.168.50.246</td>
+<td>192.168.50.247</td>
+</tr>
+</tbody></table>
+<p>使用 VLSM 技术的关键之处在于，当一个网络地址依据某种标准方式被划分成子网后，那些子网本身还能够进一步子网化。上面的子网划分，使用到了一个技巧，对于任何点到点的链路，最普遍的情况只需要两个主机地址：每端一个地址。使用 30 位的掩码创建子网，每个子网正好包括两个可用的主机地址。这也是使用 VLSM 的一个理由。</p>
+<h2 id="认证"><a href="#认证" class="headerlink" title="认证"></a>认证</h2><p>涉及到所有路由选择协议的安全问题，是指一台路由器接受非法路由选择更新消息的可能性。非法的更新消息可能来自试图破坏网络的攻击者，或试图通过欺骗路由器发送数据包到一个错误的目的地的方法来捕获数据包，或者是有害更新消息来自出现故障的路由器。</p>
+<p>如下所示，RIPv2 是通过更改 RIP 消息中第一个路由条目的字段来支持认证，因此在含有认证的单个消息中，最大可携带的路由条目被减少到了 24 个。对于简单的口令认证，认证类型为 2，剩余的 16 个字节携带一个最多含有 16 个字符的口令。</p>
+<img src="/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/auth.jpg" class="">
+
+<p>缺省的 RIP 认证有一个安全隐患，口令是以明文方式传输的，任何人捕获到包含 RIPv2 更新消息的数据包，都可以读出它的口令。虽然 RFC1723 只描述了简单口令认证，但是却提供了认证类型字段。Cisco IOS 软件就是利用这个特定的字段，提供了用 MD5 认证来替代简单口令认证的选项。其使用第一个和最后一个路由条目的字段空间，从而达到了 MD5 认证的目的。MD5 算法是通过一个随意长度的明文消息（例如一个 RIPv2 更新消息）和口令计算出一个 128 位的 hash 值的。这个指纹随同消息一起传送。拥有相同口令的接收者会计算出它自己的 hash 值，如果消息的内容没有被修改，接收者的 hash 值应该和消息中发送者的 hash 值相匹配。</p>
+<h2 id="RIPng-的基本原理与实现"><a href="#RIPng-的基本原理与实现" class="headerlink" title="RIPng 的基本原理与实现"></a>RIPng 的基本原理与实现</h2><p>支持 IPv6 的 RIPng 协议虽然是基于 RIPv2 协议的，但它并不是 RIPv2 的简单扩展，它实际上是一个完全独立的协议。RIPng 协议不支持 IPv4，因此如果同时在 IPv4 和 IPv6 环境里使用 RIP 作为路由选择协议，就必须运行支持 IPv4 的 RIPv1 或 RIPv2，以及支持 IPv6 的 RIPng。</p>
+<p>RIPng 使用 RIPv2 相同的计时器、处理过程和消息类型。像 RIPv2 一样，使用 30s 的更新计时器，同时通过抖动来避免消息同步，还有 180s 的超时周期，120s 的垃圾收集计时器和 180s 的抑制计时器。使用跳数作为路由度量，16 跳表示不可达。除了类似于 RIPv1 和 RIPv2 一样用到少数单播方式外，RIPng 大多是以多播方式收发请求和响应消息。RIPng 使用的 IPv6 多播地址是 FF02::9。</p>
+<p>RIPng 本身没有认证机制，但是承担认证功能的特性已经集成到了 IPv6 中了。而且，RIPng 也不需要像 RIPv2 那样要求具有对 RIPv1 的兼容性开关，因为它本身就不向后支持 IPv4 协议。</p>
+<p>如下显示了 RIPng 的消息格式，RIPng 消息发送和接收都是运行在 UDP 端口 521 上，另外，其没有设定消息的大小，消息的大小仅仅依赖于发送它的链路的 MTU 值。</p>
+
+
+<ul>
+<li>命令：总是设置为 1 或 2，1 表示请求消息，2 表示响应消息</li>
+<li>版本号：总是设置为 1，RIPng 当前版本为 RIPngv1</li>
+<li>IPv6 前缀：是指路由条目的 128 位的目的 IPv6 前缀</li>
+<li>路由标记：与 RIPv2 中的 16 位的路由标记字段的用法相同，用来标记经过 RIP 路由域传送的外部路由属性</li>
+<li>前缀长度：8 位字段，用来指定 IPv6 前缀字段中的地址的有效位数。</li>
+<li>度量：跳数度量</li>
+</ul>
+<p>RIPng 使用和 RIPv2 相同的方式指定下一跳地址：如果是一个有效的非零下一跳地址，表示下一跳路由器不同于发起响应消息的路由器。如果下一跳路由器地址是全 0，则表示下一跳路由器就是发起响应消息的路由器本身。在 RIPv2 中，下一跳地址跟随在每一个路由条目中，但是在 RIPng 中，只在一个专门的路由条目中指定下一跳地址，并把所有使用这个下一跳地址的路由条目编成组，跟在这个专门的路由条目后面。即下一跳路由条目指定的下一跳地址应用于跟随在它后面的所有路由条目，要么到响应消息的末尾，要么直到发现另一个专门的下一跳路由条目。</p>
+<p>如下显示了专门的下一跳路由条目的格式，它的 IPv6 下一跳地址 字段要么是另一台路由器的 IPv6 地址，要么是 ::，表示发起该消息的路由器的地址。通过将度量字段设置为全 1，可以识别出这是一个下一跳路由条目。</p>
+<img src="/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/ripng_nexthop.jpg" class="">
+
+<h2 id="RIPv2-的配置"><a href="#RIPv2-的配置" class="headerlink" title="RIPv2 的配置"></a>RIPv2 的配置</h2><p>由于 RIPv2 是 RIPv1 的增强版，而不是一个单独的协议，因此上一章介绍的某些命令可以以同样的方式在 RIPv2 中正确使用，如计时器和度量的操作，单播更新或根本不发出更新等配置等。</p>
+<h3 id="RIPv2-的基本配置"><a href="#RIPv2-的基本配置" class="headerlink" title="RIPv2 的基本配置"></a>RIPv2 的基本配置</h3><p>缺省时，在 Cisco 路由器上配置一个 RIP 进程将只发送 RIPv1 的消息，但是同时接收 RIPv1 和 RIPv2 消息。这个缺省的配置可以通过 version 命令来进行修改。如果配置 version 2，RIP 将只能接收和发送 RIPv2 的消息。如果配置成 version 1，RIP 将只发送和接收 RIPv1 的消息。</p>
+<h3 id="案例研究：与-RIPv1-的兼容性"><a href="#案例研究：与-RIPv1-的兼容性" class="headerlink" title="案例研究：与 RIPv1 的兼容性"></a>案例研究：与 RIPv1 的兼容性</h3><p>RFC 2453 中建议的基于接口模式下的兼容性开关，在 Cisco IOS 软件中可以通过命令 <code>ip rip send version</code> 和 <code>ip rip receive version</code> 来实现。</p>
+<p>如下所示的网络中，包含了同时宣告 RIPv1 和 RIPv2 的路由器，另外主机 Pojoaque 是一台运行 routed 进程的 Linux 主机，它只能理解和处理 RIPv1。</p>
+<img src="/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/configure_01.jpg" class="">
+
+<p>路由器 Taos 的配置如下：</p>
+<img src="/fuchencong.github.io/2019/05/09/routing-tcp-ip-06/images/configure_02.jpg" class="">
+
+<p>这里有一个问题，主机 Projoaque 无法得知子网 172.25.150.32，原因就是由于路由器 Sandia 只发送 RIPv2 更新，因此只能处理 RIPv1 的 Pojoaque 无法接收到该路由更新，而路由器 Taos 虽然学习到了该子网（其能处理 RIPv2），但是水平分割法又禁止了 Taos 把从这个接口学到的路由再从相同的接口通告出去。</p>
+<p>这里有两种修正方法可供使用：</p>
+<ul>
+<li>修改路由器 Sandia 的配置，使其可以同时发送 RIP 协议的两个版本</li>
+<li>配置路由器 Taos 的 E1 接口，使其关闭水平分割</li>
+</ul>
+<h3 id="案例研究：使用-VLSM"><a href="#案例研究：使用-VLSM" class="headerlink" title="案例研究：使用 VLSM"></a>案例研究：使用 VLSM</h3><p>划分子网的基本目的总是相同的：路由器必须能够使用唯一的地址来标识每一条数据链路，以区别网络中的其他地址。通过减少掩码的大小，可以将多个地址合并成一个地址，该操作一直进行到所有地址都具有相同的位。注意，这种情况在子网汇总成主网络地址时也会发生。而通过扩展子网掩码，可以将单个子网划分为多个更小的子网。</p>
+<h3 id="案例研究：不连续的子网和无类别路由选择"><a href="#案例研究：不连续的子网和无类别路由选择" class="headerlink" title="案例研究：不连续的子网和无类别路由选择"></a>案例研究：不连续的子网和无类别路由选择</h3><p>无类别路由选择协议没有关于不连续子网的困难，因为每一条路由更新都包含了一个子网掩码，因而一个主网络的子网能够通告给其他的主网络。<strong>但是 RIPv2 协议在缺省情况下会在主网络边界执行路由汇总，这一点和 RIPv1 相同，为了关闭路由汇总功能以允许被通告的子网通过主网络边界，可以在 RIP 的处理中使用 no auto-summary 命令</strong>。</p>
+<h3 id="案例研究：认证"><a href="#案例研究：认证" class="headerlink" title="案例研究：认证"></a>案例研究：认证</h3><p>Cisco 实现的 RIPv2 的消息认证包含了两种选择：简单的口令或 MD5 认证。另外，也包含了在一个 钥匙链 上定义多个钥匙或口令的选项。这样路由器就可以在不同的时候配置不同的钥匙。设置 RIPv2 认证的步骤如下：</p>
+<ul>
+<li>定义一个带名字的钥匙链</li>
+<li>定义在钥匙链上的钥匙</li>
+<li>在接口上启动认证并指定使用的钥匙链</li>
+<li>指定这个接口使用明文认证还是 MD5 认证</li>
+<li>可选地配置钥匙的管理</li>
+</ul>
+<p>即使只要一个钥匙，也必须配置钥匙链，虽然交换带认证的更新消息的所有路由器必须拥有相同的口令，但是钥匙链的名字却只在本地路由器上有意义。如果没有使用命令 <code>ip rip authentication mode md5</code>，接口将使用缺省的明文认证。</p>
+<p>钥匙管理用来进行从一个认证钥匙到另一个认证钥匙的迁移工作。从其他路由器接受的口令和发送消息所使用的口令在管理上是分离的，钥匙的号码按照从最低到最高的顺序检查，使用第一个有效的钥匙。</p>
+<h2 id="RIPng-的配置"><a href="#RIPng-的配置" class="headerlink" title="RIPng 的配置"></a>RIPng 的配置</h2><p>RIPng 的配置步骤和 RIPv1 和 RIPv2 是相同的：首先创建一个路由选择进程，接着在接口上启动该路由选择协议，然后执行任何所希望的用户配置，但是 RIPng 中所使用的命令却是非常不同的。</p>
+<h3 id="案例研究：RIPng-的基本配置"><a href="#案例研究：RIPng-的基本配置" class="headerlink" title="案例研究：RIPng 的基本配置"></a>案例研究：RIPng 的基本配置</h3><p>在路由器上启动 IPv6 的单播路由选择协议之后，只需要一条命令就可以启动 IPv6 路由选择的 RIPng 协议，该命令是一个接口模式下的命令：<code>ipv6 rip process-name enable</code>，该命令创建一个名为 process-name 的 RIPng 进程，同时在接口上启动 RIPng 协议。该命令需要在每一个希望运行 RIPng 协议的接口上启动。</p>
+<p>RIPng 的创建和在接口上激活 RIPng 都是通过一个接口配置命令的，这是 RIPng 的配置与 RIPv1&#x2F;RIPv2 配置的不同之处。在 RIPv1&#x2F;RIPv2 的配置中，在一个全局命令 <code>router rip</code> 中创建进程，然后通过<code>network &lt;address&gt;</code> 语句指定运行 RIP 进程的接口。</p>
+<p>注意，这里进程的名字是在每个接口上指定的，这个名字只和本地路由器相关联，用来区分可能运行同一台路由器的多个 RIPng 进程。每一个不同接口都可以运行一个唯一的 RIPng 进程，而这些接口之间不进行信息交换，或者在单个接口上运行多个进程。另一方面，在同一台路由器上只能运行单个 RIPv1 或 RIPv2 进程，一个接口要么属于这个进程，要么不运行 RIP 协议。</p>
+<p>通过创建多个 RIPng 路由选择进程可以对 IPv6 网络流量进行分段。需要注意，如果在同一个接口上同时运行多个 RIPng 进程，那么这些 RIPng 进程不能使用相同的 UDP 端口号。所有运行更改 UDP 端口号的 RIPng 进程的路由器和主机必须使用相同的 UDP 端口号，这样接收路由器可以使用端口号来区分所收到的更新消息属于哪一个路由进程。</p>
+<p>使用 show ipv6 rip 可以显示出每一个 RIPng 路由选择进程的相关信息，使用 show ipv6 route rip 可以查看通过 RIP 协议所学习到的路由。通过使用 debug ipv6 rip 可以打开 RIPng 的调试信息，从而看到每一个接口上发送和接收的每一个 RIPng 进程的更新消息。</p>
+<h3 id="案例研究：RIPng-进程的定制"><a href="#案例研究：RIPng-进程的定制" class="headerlink" title="案例研究：RIPng 进程的定制"></a>案例研究：RIPng 进程的定制</h3><p>路由选择进程的一些定制和 <code>RIPv1/RIPv2</code> 中的类似，可以使用全局配置命令 <code>ipv6 router rip process_name</code> 配置 RIPng 进程的全局参数。</p>
+<p>在 RIPng 中，管理距离、用于负载均分的最大路路径数、以及 RIP 计时器，这些参数的使用方法和 RIPv1&#x2F;RIPv2 相同。在更改计时器和管理距离时应该特别小心，所有运行同一个 RIPng 进程的路由器都必须使用同样的计时器值。管理距离虽然只在本地路由器上具有意义，但是如果路由器上正在运行多个路由选择协议或路由进程，并且地址是从多个路由选择进程学习到的，那么改变管理距离需要慎重考虑。更改路由选择进程的管理距离会改变它们的优先权。通过具有较低的管理距离的路由选择进程学习到的地址才会加入到路由表中。如果从具有较高的管理距离的进程学习到的地址，那么只有当第一条路由条目失效时才会将这个地址加入到路由表中。</p>
+<h3 id="案例研究：RIPng-的度量控制"><a href="#案例研究：RIPng-的度量控制" class="headerlink" title="案例研究：RIPng 的度量控制"></a>案例研究：RIPng 的度量控制</h3><p>RIPng 与 RIPv1 和 RIPv2 一样，通过增加一个偏移量来调整它的度量值。RIPng 是通过在路由器的相对应的接口上配置希望增加的跳数值来增加通过这个接口所通告的每一个前缀的跳数。在缺省情况下，RIPng 为邻居路由器通告过来的前缀度量值增加一跳，通过 metric-offset 命令可以设置希望增加的跳数</p>
+<h3 id="案例研究：路由汇总"><a href="#案例研究：路由汇总" class="headerlink" title="案例研究：路由汇总"></a>案例研究：路由汇总</h3><p>与 RIPv2 一样，RIPng 的路由可以进行路由汇总后在通告给邻居。在配置了覆盖这些具体路由前缀的汇总路由地址后，这些更具体的路由前缀将被自动地抑制。</p>
+<h2 id="RIPv2-与-RIPng-的故障诊断"><a href="#RIPv2-与-RIPng-的故障诊断" class="headerlink" title="RIPv2 与 RIPng 的故障诊断"></a>RIPv2 与 RIPng 的故障诊断</h2><p>对于 RIPv2 协议，通常会碰到两个配置问题，即版本不匹配和认证配置错误。可以通过 <code>debug ip rip events</code> 命令打开调试信息来发现这两个问题。对于 RIPv2 或 RIPng 协议，或者任何无类别路由选择协议来说，更有可能出问题的原因是，配置了一个错误的可变长子网掩码。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>虽然 RIPv2 协议比 RIPv1 协议有了很大的改进，但它依旧受到最大 15 跳的跳数限制，因此只能适用于小型网络。接下来将阐述在大型网络中使用的路由选择协议，并再结合像 VLSM 这样的设计策略，就可以成为控制大型网络的强有力的工具。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Route/" rel="tag"># Route</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/05/08/routing-tcp-ip-05/" rel="prev" title="TCP/IP 路由技术 05：路由选择信息协议（RIP）">
+      <i class="fa fa-chevron-left"></i> TCP/IP 路由技术 05：路由选择信息协议（RIP）
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/05/12/routing-tcp-ip-07/" rel="next" title="TCP/IP 路由技术 07：增强型内部网关路由选择协议（EIGRP）">
+      TCP/IP 路由技术 07：增强型内部网关路由选择协议（EIGRP） <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#RIPv2-%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E4%B8%8E%E5%AE%9E%E7%8E%B0"><span class="nav-number">1.</span> <span class="nav-text">RIPv2 的基本原理与实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#RIPv2-%E7%9A%84%E6%B6%88%E6%81%AF%E6%A0%BC%E5%BC%8F"><span class="nav-number">1.1.</span> <span class="nav-text">RIPv2 的消息格式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8E-RIPv1-%E7%9A%84%E5%85%BC%E5%AE%B9%E6%80%A7"><span class="nav-number">1.2.</span> <span class="nav-text">与 RIPv1 的兼容性</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%97%A0%E7%B1%BB%E5%88%AB%E8%B7%AF%E7%94%B1%E9%80%89%E6%8B%A9"><span class="nav-number">2.</span> <span class="nav-text">无类别路由选择</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%97%A0%E7%B1%BB%E5%88%AB%E8%B7%AF%E7%94%B1%E9%80%89%E6%8B%A9%E5%8D%8F%E8%AE%AE"><span class="nav-number">2.1.</span> <span class="nav-text">无类别路由选择协议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%AF%E8%BE%B9%E9%95%BF%E5%AD%90%E7%BD%91%E6%8E%A9%E7%A0%81%EF%BC%88VLSM%EF%BC%89"><span class="nav-number">2.2.</span> <span class="nav-text">可边长子网掩码（VLSM）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A4%E8%AF%81"><span class="nav-number">3.</span> <span class="nav-text">认证</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#RIPng-%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E4%B8%8E%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.</span> <span class="nav-text">RIPng 的基本原理与实现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#RIPv2-%E7%9A%84%E9%85%8D%E7%BD%AE"><span class="nav-number">5.</span> <span class="nav-text">RIPv2 的配置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#RIPv2-%E7%9A%84%E5%9F%BA%E6%9C%AC%E9%85%8D%E7%BD%AE"><span class="nav-number">5.1.</span> <span class="nav-text">RIPv2 的基本配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E4%B8%8E-RIPv1-%E7%9A%84%E5%85%BC%E5%AE%B9%E6%80%A7"><span class="nav-number">5.2.</span> <span class="nav-text">案例研究：与 RIPv1 的兼容性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E4%BD%BF%E7%94%A8-VLSM"><span class="nav-number">5.3.</span> <span class="nav-text">案例研究：使用 VLSM</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E4%B8%8D%E8%BF%9E%E7%BB%AD%E7%9A%84%E5%AD%90%E7%BD%91%E5%92%8C%E6%97%A0%E7%B1%BB%E5%88%AB%E8%B7%AF%E7%94%B1%E9%80%89%E6%8B%A9"><span class="nav-number">5.4.</span> <span class="nav-text">案例研究：不连续的子网和无类别路由选择</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E8%AE%A4%E8%AF%81"><span class="nav-number">5.5.</span> <span class="nav-text">案例研究：认证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#RIPng-%E7%9A%84%E9%85%8D%E7%BD%AE"><span class="nav-number">6.</span> <span class="nav-text">RIPng 的配置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9ARIPng-%E7%9A%84%E5%9F%BA%E6%9C%AC%E9%85%8D%E7%BD%AE"><span class="nav-number">6.1.</span> <span class="nav-text">案例研究：RIPng 的基本配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9ARIPng-%E8%BF%9B%E7%A8%8B%E7%9A%84%E5%AE%9A%E5%88%B6"><span class="nav-number">6.2.</span> <span class="nav-text">案例研究：RIPng 进程的定制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9ARIPng-%E7%9A%84%E5%BA%A6%E9%87%8F%E6%8E%A7%E5%88%B6"><span class="nav-number">6.3.</span> <span class="nav-text">案例研究：RIPng 的度量控制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E8%B7%AF%E7%94%B1%E6%B1%87%E6%80%BB"><span class="nav-number">6.4.</span> <span class="nav-text">案例研究：路由汇总</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#RIPv2-%E4%B8%8E-RIPng-%E7%9A%84%E6%95%85%E9%9A%9C%E8%AF%8A%E6%96%AD"><span class="nav-number">7.</span> <span class="nav-text">RIPv2 与 RIPng 的故障诊断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">8.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">54</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

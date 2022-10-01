@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="程序中的形式应该仅仅反映它所要解决的问题，代码中的其他任何外加形式都是一个信号，表明对问题的抽象还不够深。迭代是数据处理的基石。扫描内存中存不下的数据集时，需要找到一种惰性获取数据项的方式，即按需一次获取一个数据项。这就是迭代器模式。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="流畅的 Python（9）：可迭代的对象、迭代器和生成器">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2021/09/15/fluent-python-09/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="程序中的形式应该仅仅反映它所要解决的问题，代码中的其他任何外加形式都是一个信号，表明对问题的抽象还不够深。迭代是数据处理的基石。扫描内存中存不下的数据集时，需要找到一种惰性获取数据项的方式，即按需一次获取一个数据项。这就是迭代器模式。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2021/09/15/fluent-python-09/images/relation.png">
+<meta property="article:published_time" content="2021-09-15T02:55:24.000Z">
+<meta property="article:modified_time" content="2022-08-25T12:04:03.773Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2021/09/15/fluent-python-09/images/relation.png">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2021/09/15/fluent-python-09/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>流畅的 Python（9）：可迭代的对象、迭代器和生成器 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2021/09/15/fluent-python-09/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          流畅的 Python（9）：可迭代的对象、迭代器和生成器
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-09-15 10:55:24" itemprop="dateCreated datePublished" datetime="2021-09-15T10:55:24+08:00">2021-09-15</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python-%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" itemprop="url" rel="index"><span itemprop="name">Python 读书笔记</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>程序中的形式应该仅仅反映它所要解决的问题，代码中的其他任何外加形式都是一个信号，表明对问题的抽象还不够深。迭代是数据处理的基石。扫描内存中存不下的数据集时，需要找到一种惰性获取数据项的方式，即按需一次获取一个数据项。这就是迭代器模式。</p>
+<span id="more"></span>
+
+<p>在 Python 中所有集合都可以迭代，在 Python 语言内部，迭代器用于支持：</p>
+<ul>
+<li>for 循环</li>
+<li>构建和扩展集合类型</li>
+<li>逐行遍历文本文件</li>
+<li>列表推导、字典推导和集合推导</li>
+<li>元祖拆包</li>
+<li>调用函数时，使用 * 拆包实参</li>
+</ul>
+<h2 id="一个单词序列实例"><a href="#一个单词序列实例" class="headerlink" title="一个单词序列实例"></a>一个单词序列实例</h2><p>接下来实现一个 Sentence 类，向该类的构造方法传入包含一些文本的字符串，然后可以逐个单词迭代。如下版本实现了序列协议，因此这个类的对象是可迭代的（因为所有序列都是可迭代的）。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> reprlib</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">RE_WORD = re.<span class="built_in">compile</span>(<span class="string">&#x27;\w+&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Sentence</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, text</span>):</span><br><span class="line">        self.text = text</span><br><span class="line">        self.words = RE_WORD.findall(text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__getitem__</span>(<span class="params">self, index</span>):</span><br><span class="line">        <span class="keyword">return</span> self.words[index]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__len__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">len</span>(self.words)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;Sentence(%s)&#x27;</span> % reprlib.<span class="built_in">repr</span>(self.text)</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> sentence</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = sentence.Sentence(<span class="string">&quot;this is a test&quot;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[w <span class="keyword">for</span> w <span class="keyword">in</span> s]</span><br><span class="line">[<span class="string">&#x27;this&#x27;</span>, <span class="string">&#x27;is&#x27;</span>, <span class="string">&#x27;a&#x27;</span>, <span class="string">&#x27;test&#x27;</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s[<span class="number">1</span>]</span><br><span class="line"><span class="string">&#x27;is&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>findall 返回一个字符串列表，里面的元素是正则表达式的非全部重叠匹配。可以看到 Sentence 类实例可以迭代，也支持序列操作，例如按索引获取单词。我们都知道，序列可以迭代，这里详细解释一下原因。</p>
+<p>解释器需要迭代对象 x 时，会自动调用 iter(x)。内置的 iter 函数有以下作用：</p>
+<ul>
+<li>检查对象是否实现了 <code>__iter__</code>，如果实现了，则调用它获取一个迭代器</li>
+<li>如果没有实现 <code>__iter__</code>，但是实现了 <code>__getitem__</code> 方法，则 Python 会创建一个迭代器，尝试按照顺序（从索引 0 开始）获取元素</li>
+<li>如果尝试失败，Python 则抛出 TypeError 异常，提示该对象不可迭代</li>
+</ul>
+<p>任何 Python 序列都是可迭代的原因是，它们都实现了 <code>__getitem__</code> 方法。其实标准的序列也实现了 <code>__iter__</code> 方法，因此你自己实现的序列最好也这样做。之所以会对 <code>__getitem__</code> 方法做特殊处理，是为了向后兼容。</p>
+<p>虽然 Sentence 类是可以迭代的，但是却无法通过 <code>issubclass(Sentence, abc.Iterable)</code> 测试（没有实现 <strong>iter</strong> 方法）。从 Python3.4 开始，检查对象 x 是否可以迭代，<strong>最准确的方法是调用 iter(x) 函数，如果不可迭代，再处理 TypeError 异常</strong>。iter(x) 函数会考虑遗留的 <code>__getitem__</code> 方法，而 <code>abc.Iterable</code> 类则不会考虑。</p>
+<h2 id="可迭代对象和迭代器的对比"><a href="#可迭代对象和迭代器的对比" class="headerlink" title="可迭代对象和迭代器的对比"></a>可迭代对象和迭代器的对比</h2><p>可迭代对象：使用 iter 内置函数可以获取迭代器的对象：</p>
+<ul>
+<li>如果对象实现了返回迭代器的 <code>__iter__</code> 方法，那么对象就是可以迭代的</li>
+<li>序列都可以迭代，因为其实现了 <code>__getitem__</code> 方法，而且其参数是从 0 开始的索引</li>
+</ul>
+<p>因此可迭代的对象和迭代器之间的关系是：<strong>Python 从可迭代对象中获取迭代器</strong>。如下一个简单的循环中，字符串是可迭代对象，背后是有迭代器的：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> c <span class="keyword">in</span> <span class="string">&#x27;abc&#x27;</span>:</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(c)</span><br><span class="line">...</span><br><span class="line">a</span><br><span class="line">b</span><br><span class="line">c</span><br></pre></td></tr></table></figure>
+
+<p>如果没有 for 语句，则需要使用 while 循环模拟：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = <span class="string">&#x27;abc&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>i = <span class="built_in">iter</span>(s)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">try</span>:</span><br><span class="line"><span class="meta">... </span>            <span class="built_in">print</span>(<span class="built_in">next</span>(i))</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">except</span> StopIteration:</span><br><span class="line"><span class="meta">... </span>            <span class="keyword">del</span> i</span><br><span class="line"><span class="meta">... </span>            <span class="keyword">break</span></span><br><span class="line">...</span><br><span class="line">a</span><br><span class="line">b</span><br><span class="line">c</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>使用可迭代对象构建迭代器 it</li>
+<li>不断在迭代器上调用 next 函数，获取下一个字符</li>
+<li>如果没有字符，迭代器抛出 StopIteration 异常</li>
+<li>StopIteration 异常表明迭代器到头了，Python 语言内部会处理 for 循环和其他迭代上下文（如列表推导、元祖拆包）中的 StopIteration。</li>
+</ul>
+<p>标准的迭代器接口有两个方法：</p>
+<ul>
+<li><code>__next__</code> 方法：返回下一个可用的元素，如果没有元素了，则抛出 StopIteration 异常</li>
+<li><code>__iter__</code> 方法：返回 self，以便在应该使用可迭代对象的地方也可以使用迭代器，例如 for 循环中</li>
+</ul>
+<p>如下展示了展示了这些关系：</p>
+<img src="/fuchencong.github.io/2021/09/15/fluent-python-09/images/relation.png" class="">
+
+<p>检查对象 x 是否为迭代器的最好方法是调用 <code>isintance(x, abc.Iterator)</code>，得益于 <code>Iterator.__subclasshook__</code> 方法，即使对象 x 所属的类不是 Iterator 类的真实子类或虚拟子类，也能检查。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">&gt;&gt;&gt; s = sentence.Sentence(<span class="string">&quot;this is a test&quot;</span>)</span><br><span class="line">&gt;&gt;&gt; it = iter(s)</span><br><span class="line">&gt;&gt;&gt; it</span><br><span class="line">&lt;iterator object at 0x108598940&gt;</span><br><span class="line">&gt;&gt;&gt; next(it)</span><br><span class="line"><span class="string">&#x27;this&#x27;</span></span><br><span class="line">&gt;&gt;&gt; next(it)</span><br><span class="line"><span class="string">&#x27;is&#x27;</span></span><br><span class="line">&gt;&gt;&gt; next(it)</span><br><span class="line"><span class="string">&#x27;a&#x27;</span></span><br><span class="line">&gt;&gt;&gt; next(it)</span><br><span class="line"><span class="string">&#x27;test&#x27;</span></span><br><span class="line">&gt;&gt;&gt; next(it)</span><br><span class="line">Traceback (most recent call last):</span><br><span class="line">  File <span class="string">&quot;&lt;stdin&gt;&quot;</span>, line 1, <span class="keyword">in</span> &lt;module&gt;</span><br><span class="line">StopIteration</span><br></pre></td></tr></table></figure>
+
+<p>如果想还原迭代器，即想再次迭代，只能使用 iter() 传入之前构建迭代器的可迭代对象。传入迭代器本身没有用，因为 <code>Iterator.__iter__</code> 方法的实现方式是返回实例本身，所以传入迭代器无法还原已经耗尽的的迭代器。</p>
+<p>总结一些，迭代器是这样的对象，实现了无参数的 <code>__next__</code> 方法，返回序列中的下一个元素，如果没有元素了，则需要抛出 StopIteration 异常。Python 中的迭代器还实现了 <code>__iter__</code> 方法，因此迭代器本身也是可迭代对象。由于内置的 iter() 函数会对序列做特殊处理，因此序列也是可迭代对象。</p>
+<p>all、any、max、min、reduce、sum 等函数都接受一个可迭代的对象，然后返回单个结果。这些函数被称为归约函数。另外，all 和 any 函数来说，这两个函数会短路求值（即一旦确定了结果就立即停止使用迭代器）。</p>
+<h2 id="典型的迭代器"><a href="#典型的迭代器" class="headerlink" title="典型的迭代器"></a>典型的迭代器</h2><p>如下的 Sentence 类可以迭代，因为它实现了特殊的 <code>__iter__</code> 方法，构建并返回了一个 SentenceIterator 实例，这也符合一般设计模式书籍中所描述的 <code>迭代器设计模式</code>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> reprlib</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">RE_WORD = re.<span class="built_in">compile</span>(<span class="string">&#x27;\w+&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Sentence</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, text</span>):</span><br><span class="line">        self.text = text</span><br><span class="line">        self.words = RE_WORD.findall(text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;Sentence(%s)&#x27;</span> % reprlib.<span class="built_in">repr</span>(self.text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__iter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> SentenceIterator(self.words)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">SentenceIterator</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, words</span>):</span><br><span class="line">        self.words = words</span><br><span class="line">        self.index = <span class="number">0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__next__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            word = self.words[self.index]</span><br><span class="line">        <span class="keyword">except</span> IndexError:</span><br><span class="line">            <span class="keyword">raise</span> StopIteration</span><br><span class="line">        self.index += <span class="number">1</span></span><br><span class="line">        <span class="keyword">return</span> word</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__iter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> self</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> sentence_v2</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = sentence_v2.Sentence(<span class="string">&quot;this is test&quot;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">iter</span>(s)</span><br><span class="line">&lt;sentence_v2.SentenceIterator <span class="built_in">object</span> at <span class="number">0x1085f9ee0</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[w <span class="keyword">for</span> w <span class="keyword">in</span> s]</span><br><span class="line">[<span class="string">&#x27;this&#x27;</span>, <span class="string">&#x27;is&#x27;</span>, <span class="string">&#x27;test&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+<p>这里 SentenceIterator 这个迭代器类实现了 <code>__next__</code> 和 <code>__iter__</code> 两个方法，如果让 SentenceIterator 类继承 abc.Iterator 类，那么它会继承 <code>abc.Iterator.__iter__</code> 这个具体方法。</p>
+<p>由于迭代器也实现 <code>__iter__</code> 方法并且返回 self，因此迭代器是可迭代对象，但是可迭代对象不是迭代器。<strong>不要在可迭代对象中实现 <code>__next__</code> 方法，试图让可迭代对象也是自身的迭代器</strong>。因为迭代器模式是用来：</p>
+<ul>
+<li>访问一个聚合对象的内容而无需暴露它的内部表示</li>
+<li>支持对聚合对象的多种遍历</li>
+<li>为遍历不同的聚合结构提供一个统一的接口</li>
+</ul>
+<p>为了支持多种迭代，必须能从一个可迭代的实例中获取多个独立的迭代器，而且每个迭代器都要能维护自身的内部状态。因此正确的方法是调用 <code>iter(my_iterable)</code> 都新建一个独立的迭代器。</p>
+<h3 id="深入分析-iter-函数"><a href="#深入分析-iter-函数" class="headerlink" title="深入分析 iter 函数"></a>深入分析 iter 函数</h3><p>在 Python 中迭代对象 x 时，会调用 iter(x) 获取 x 的迭代器。iter 函数还有一个用法：使用常规的函数或者任何可调用的对象创建迭代器。此时需要传入两个参数，第一个参数必须是可调用的对象，用于不断调用（没有参数）产出值，第二个值是哨符，这是个标记值，当调用对象返回这个值时，触发迭代器抛出 StopIteration 异常，而不产生哨符。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> random <span class="keyword">import</span> randint</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">d6</span>():</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">return</span> randint(<span class="number">1</span>, <span class="number">6</span>)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>d6_iter = <span class="built_in">iter</span>(d6, <span class="number">1</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> roll <span class="keyword">in</span> d6_iter:</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(roll)</span><br><span class="line">...</span><br><span class="line"><span class="number">6</span></span><br><span class="line"><span class="number">5</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>d6_iter</span><br><span class="line">&lt;callable_iterator <span class="built_in">object</span> at <span class="number">0x1087421c0</span>&gt;</span><br></pre></td></tr></table></figure>
+
+<p>这里的 iter 函数返回一个 callable_iterator 对象。</p>
+<h2 id="生成器函数"><a href="#生成器函数" class="headerlink" title="生成器函数"></a>生成器函数</h2><p>实现相同功能，<strong>但是更符合 Python 的习惯方式是，用生成器函数替代 SentenceIterator 类</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> reprlib</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">RE_WORD = re.<span class="built_in">compile</span>(<span class="string">&#x27;\w+&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Sentence</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, text</span>):</span><br><span class="line">        self.text = text</span><br><span class="line">        self.words = RE_WORD.findall(text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;Sentence(%s)&#x27;</span> % reprlib.<span class="built_in">repr</span>(self.text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__iter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">for</span> word <span class="keyword">in</span> self.words:</span><br><span class="line">            <span class="keyword">yield</span> word</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> sentence_v3</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = sentence_v3.Sentence(<span class="string">&quot;this is test&quot;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">iter</span>(s)</span><br><span class="line">&lt;generator <span class="built_in">object</span> Sentence.__iter__ at <span class="number">0x10874b040</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[w <span class="keyword">for</span> w <span class="keyword">in</span> s]</span><br><span class="line">[<span class="string">&#x27;this&#x27;</span>, <span class="string">&#x27;is&#x27;</span>, <span class="string">&#x27;test&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+<p>在这个例子中，生成器就是迭代器，每次 <code>__iter__</code> 方法都会返回一个生成器，<code>__iter__</code> 方法就是生成器函数。<strong>只要 Python 函数的定义体中有 yield 关键字，该函数就是生成器函数。调用生成器函数时，会返回一个生成器对象，即生成器函数是生成器工厂</strong>。普通函数与生成器函数在语法上的唯一区别是，生成器函数定义体中有 yield 关键字。如下说明了生成器函数的行为：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">gen_123</span>():</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&quot;call&quot;</span>, __name__)</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">yield</span> <span class="number">1</span></span><br><span class="line"><span class="meta">... </span>    <span class="keyword">yield</span> <span class="number">2</span></span><br><span class="line"><span class="meta">... </span>    <span class="keyword">yield</span> <span class="number">3</span></span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>gen_123</span><br><span class="line">&lt;function gen_123 at <span class="number">0x108691430</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>g = gen_123()</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>g</span><br><span class="line">&lt;generator <span class="built_in">object</span> gen_123 at <span class="number">0x10874b120</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> i <span class="keyword">in</span> g:</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(i)</span><br><span class="line">...</span><br><span class="line">call __main__</span><br><span class="line"><span class="number">1</span></span><br><span class="line"><span class="number">2</span></span><br><span class="line"><span class="number">3</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>gen_123 自己是函数对象，只不过其含有 yield 关键字，因此是生成器函数</li>
+<li>gen_123() 返回一个生成器</li>
+<li>生成器是迭代器（生成器实现了 <code>__next__</code> 和 <code>__iter__</code> 方法），会返回传给 yield 关键字的表达式的值。把生成器传给 next(…) 函数时，生成器会向前，执行函数定义体中下一个 yield 语句，返回产生的值，并在函数定义体中的当前位置暂停。最终函数的定义体返回时，外层的生成器对象会抛出 StopIteration 异常，这与迭代器协议一致</li>
+</ul>
+<p>需要注意，迭代生成器是产生值，生成器不会以常规的方式返回值，生成器函数定义体中的 return 语句会触发生成器对象抛出 StopIteration 异常。</p>
+<h3 id="惰性实现"><a href="#惰性实现" class="headerlink" title="惰性实现"></a>惰性实现</h3><p>惰性实现是指尽可能延后生成值，这样做能节省内存，而且还可以避免做无用的处理。目前的 Sentence 类都不具备惰性，因为在其 <code>__init__</code> 方法中都急迫地构建好了文本中的单词列表。<code>re.finditer</code> 函数是 <code>re.findall</code> 的惰性版本，返回的不是列表，而是一个生成器，按需生成 re.MatchObject 的实例。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> reprlib</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">RE_WORD = re.<span class="built_in">compile</span>(<span class="string">&#x27;\w+&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Sentence</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, text</span>):</span><br><span class="line">        self.text = text</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;Sentence(%s)&#x27;</span> % reprlib.<span class="built_in">repr</span>(self.text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__iter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">for</span> <span class="keyword">match</span> <span class="keyword">in</span> re.finditer(RE_WORD, self.text):</span><br><span class="line">            <span class="keyword">yield</span> <span class="keyword">match</span>.group()</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> sentence_v4</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>s = sentence_v4.Sentence(<span class="string">&quot;this is test&quot;</span>)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">iter</span>(s)</span><br><span class="line">&lt;generator <span class="built_in">object</span> Sentence.__iter__ at <span class="number">0x10874b270</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>[w <span class="keyword">for</span> w <span class="keyword">in</span> s]</span><br><span class="line">[<span class="string">&#x27;this&#x27;</span>, <span class="string">&#x27;is&#x27;</span>, <span class="string">&#x27;test&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+<p>这里 <code>match.group()</code> 方法从 MatchObject 实例中提取出匹配正则表达式的具体文本。</p>
+<h3 id="等差数列生成器"><a href="#等差数列生成器" class="headerlink" title="等差数列生成器"></a>等差数列生成器</h3><p>生成器也可用于生成不受数据源限制的值。如下定义了一个 ArithmeticProgression 类，实现了等差数列：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">ArithmeticProgression</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, begin, step, end=<span class="literal">None</span></span>):</span><br><span class="line">        self.begin = begin</span><br><span class="line">        self.step = step</span><br><span class="line">        self.end = end</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__iter__</span>(<span class="params">self</span>):</span><br><span class="line">        result = <span class="built_in">type</span>(self.begin + self.step)(self.begin)</span><br><span class="line">        forever = self.end <span class="keyword">is</span> <span class="literal">None</span></span><br><span class="line">        index = <span class="number">0</span></span><br><span class="line">        <span class="keyword">while</span> forever <span class="keyword">or</span> result &lt; self.end:</span><br><span class="line">            <span class="keyword">yield</span> result</span><br><span class="line">            index += <span class="number">1</span></span><br><span class="line">            result = self.begin + self.step * index</span><br></pre></td></tr></table></figure>
+
+<p>如果一个类只是为了构建生成器而去实现 <code>__iter__</code> 方法，那还不如直接使用生成器函数。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">aritprog_gen</span>(<span class="params">begin, step, end=<span class="literal">None</span></span>):</span><br><span class="line">    result = <span class="built_in">type</span>(begin + step)(begin)</span><br><span class="line">    forever = end <span class="keyword">is</span> <span class="literal">None</span></span><br><span class="line">    index = <span class="number">0</span></span><br><span class="line">    <span class="keyword">while</span> forever <span class="keyword">or</span> result &lt; self.end:</span><br><span class="line">        <span class="keyword">yield</span> result</span><br><span class="line">        index += <span class="number">1</span></span><br><span class="line">        result = begin + step * index</span><br></pre></td></tr></table></figure>
+
+<p>标准库有许多现成的生成器。itertools 模块提供了很多生成器函数：</p>
+<ul>
+<li>itertools.count 函数返回的生成器能生成多个数，并且可以提供可选的 start 和 step</li>
+<li>itertools.takeWhile 会生成一个使用另一个生成器的生成器，在指定条件计算结果为 False 时停止</li>
+</ul>
+<p>因此更简单的实现方法为：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> itertools</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">aritprog_gen</span>(<span class="params">begin, step, end=<span class="literal">None</span></span>):</span><br><span class="line">    first = <span class="built_in">type</span>(begin + step)(begin)</span><br><span class="line">    ap_gen = itertools.count(first, step)</span><br><span class="line">    <span class="keyword">if</span> end <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        ap_gen = itertools.takewhile(<span class="keyword">lambda</span> n: n &lt; end, ap_gen)</span><br><span class="line">    <span class="keyword">return</span> ap_gen</span><br></pre></td></tr></table></figure>
+
+<h3 id="标准库中的生成器函数"><a href="#标准库中的生成器函数" class="headerlink" title="标准库中的生成器函数"></a>标准库中的生成器函数</h3><p>实现生成器时，要知道标准库中有什么可用，否则可能会重新发明轮子。</p>
+<ul>
+<li>用于过滤的生成器函数：从输入的可迭代对象中产出元素的子集，而且不修改元素</li>
+<li>用于映射的生成器函数：在输入的可迭代对象中的各个元素上做计算，然后返回结果</li>
+<li>用于合并的生成器函数：这些函数都从输入的多个可迭代对象中产出元素。</li>
+<li>有些生成器函数会从一个元素中产生多个值，扩展输入的可迭代对象</li>
+<li>用于产出输入的可迭代对象中的全部元素，但是会以某种方式重新排列。</li>
+</ul>
+<h2 id="生成器表达式"><a href="#生成器表达式" class="headerlink" title="生成器表达式"></a>生成器表达式</h2><p>简单的生成器函数，可以替换成生成器表达式。生成器表达式可以理解为列表推导的惰性版本：<strong>不会迫切地构建列表，而是返回一个生成器，按需惰性生成元素</strong>。也就是说列表推导是生产列表的工厂，那么生成器表达式就是制造生成器的工厂。</p>
+<p>如下展示了列表推导和生成器表达式的区别：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">def</span> <span class="title function_">gen_AB</span>():</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;start&#x27;</span>)</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">yield</span> <span class="string">&#x27;A&#x27;</span></span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;continue&#x27;</span>)</span><br><span class="line"><span class="meta">... </span>    <span class="keyword">yield</span> <span class="string">&#x27;B&#x27;</span></span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(<span class="string">&#x27;end&#x27;</span>)</span><br><span class="line">...</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>res1 = [x * <span class="number">3</span> <span class="keyword">for</span> x <span class="keyword">in</span> gen_AB()]</span><br><span class="line">start</span><br><span class="line"><span class="keyword">continue</span></span><br><span class="line">end</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>res1</span><br><span class="line">[<span class="string">&#x27;AAA&#x27;</span>, <span class="string">&#x27;BBB&#x27;</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>res2 = (x * <span class="number">3</span> <span class="keyword">for</span> x <span class="keyword">in</span> gen_AB())</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">for</span> i <span class="keyword">in</span> res2:</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(i)</span><br><span class="line">...</span><br><span class="line">start</span><br><span class="line">AAA</span><br><span class="line"><span class="keyword">continue</span></span><br><span class="line">BBB</span><br><span class="line">end</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>res2</span><br><span class="line">&lt;generator <span class="built_in">object</span> &lt;genexpr&gt; at <span class="number">0x10874b270</span>&gt;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，列表推导急切地迭代 <code>gen_AB()</code> 函数产生的生成器，从而得到列表。而生成器表达式只有真正迭代时，才会迭代 gen_AB 产生的生成器。可以看出，生成器表达式会产出生成器。因此 Sentence 类的代码可以进一步简化：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> re</span><br><span class="line"><span class="keyword">import</span> reprlib</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">RE_WORD = re.<span class="built_in">compile</span>(<span class="string">&#x27;\w+&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Sentence</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, text</span>):</span><br><span class="line">        self.text = text</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__repr__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&#x27;Sentence(%s)&#x27;</span> % reprlib.<span class="built_in">repr</span>(self.text)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__iter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="keyword">return</span> (<span class="keyword">match</span>.group <span class="keyword">for</span> <span class="keyword">match</span> <span class="keyword">in</span> re.finditer(RE_WORD, self.text))</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，这里使用生成器表达式构建生成器，然后将其返回。最终效果是一样的，调用 <strong>iter</strong> 方法会得到一个生成器对象。</p>
+<h3 id="何时使用生成器表达式"><a href="#何时使用生成器表达式" class="headerlink" title="何时使用生成器表达式"></a>何时使用生成器表达式</h3><p>生成器表达式是创建生成器的简单语法，这样无需定义函数再调用。但是生成器函数更灵活，可以使用多个语句实现复杂的逻辑，也可以作为协程使用。具体使用哪种语法，可以根据如下经验判断：</p>
+<ul>
+<li>如果生成器表达式需要分多行写，倾向于定义生成器函数，以便提高可读性</li>
+<li>另外，生成器函数有名称，因此可以重用</li>
+</ul>
+<h2 id="yield-from"><a href="#yield-from" class="headerlink" title="yield from"></a>yield from</h2><p>如果生成器函数需要产出另一个生成器生成的值，传统的解决方法，是使用嵌套的 for 循环，例如如下自己实现了 <code>chain</code> 函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">chain</span>(<span class="params">*iterables</span>):</span><br><span class="line">    <span class="keyword">for</span> it <span class="keyword">in</span> iterables:</span><br><span class="line">        <span class="keyword">for</span> i <span class="keyword">in</span> it:</span><br><span class="line">            <span class="keyword">yield</span> it</span><br></pre></td></tr></table></figure>
+
+<p>使用 <code>yield from i</code> 可以替代内层的 for 循环，如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">chain</span>(<span class="params">*iterables</span>):</span><br><span class="line">    <span class="keyword">for</span> it <span class="keyword">in</span> iterables:</span><br><span class="line">        <span class="keyword">yield</span> <span class="keyword">from</span> it</span><br></pre></td></tr></table></figure>
+
+<p>除了替代循环外，<code>yield from</code> 还会创建通道，把内层生成器与外层生成器的客户端联系起来。把生成器当成协程使用时，这个通道特别重要，不仅能够为客户端代码生成值，还能使用客户端代码提供的值。这些知识后面讲解协程时会详细介绍。</p>
+<h2 id="把生成器当成协程"><a href="#把生成器当成协程" class="headerlink" title="把生成器当成协程"></a>把生成器当成协程</h2><p>接下来要介绍生成器的另一个特性。与 <code>__next__()</code> 方法一样，<code>.send()</code> 方法可以使生成器前进到下一个 yield 语句，但是 <code>.send()</code> 方法允许使用生成器的客户把数据发给自己，即不管传给 <code>.send()</code> 方法什么参数，那个参数都会成为生成器函数定义体中对应的 yield 表达式的值。也就是说，<code>.send()</code> 方法允许在客户代码和生成器之间双向交换数据，而 <code>__next__()</code> 只允许客户从生成器中获取数据。</p>
+<p>这一特性改变了生成器的本性：生成器本身就变成了协程：</p>
+<ul>
+<li>生成器用于生成可供迭代的数据</li>
+<li>而协程是数据的消费者</li>
+<li><strong>不能把这两个概念混为一谈，协程与迭代无关</strong>。虽然在协程中会使用 yield 产出值，但是这与迭代无关</li>
+</ul>
+<p>最后，再介绍使用生成器时的一个注意点，因为 yield 关键字只能把最近的外层函数变成生成器函数。虽然生成器函数看起来像函数，但是不能通过简单的函数调用把职责委托给另一个生成器函数。而 <code>yield from</code> 方法允许生成器或协程把工作委托给第三方完成。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2021/09/14/fluent-python-08/" rel="prev" title="流畅的 Python（8）：正确重载运算符">
+      <i class="fa fa-chevron-left"></i> 流畅的 Python（8）：正确重载运算符
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2021/09/15/fluent-python-10/" rel="next" title="流畅的 Python（10）：上下文管理器和 else 块">
+      流畅的 Python（10）：上下文管理器和 else 块 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%8D%95%E8%AF%8D%E5%BA%8F%E5%88%97%E5%AE%9E%E4%BE%8B"><span class="nav-number">1.</span> <span class="nav-text">一个单词序列实例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%AF%E8%BF%AD%E4%BB%A3%E5%AF%B9%E8%B1%A1%E5%92%8C%E8%BF%AD%E4%BB%A3%E5%99%A8%E7%9A%84%E5%AF%B9%E6%AF%94"><span class="nav-number">2.</span> <span class="nav-text">可迭代对象和迭代器的对比</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%B8%E5%9E%8B%E7%9A%84%E8%BF%AD%E4%BB%A3%E5%99%A8"><span class="nav-number">3.</span> <span class="nav-text">典型的迭代器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B7%B1%E5%85%A5%E5%88%86%E6%9E%90-iter-%E5%87%BD%E6%95%B0"><span class="nav-number">3.1.</span> <span class="nav-text">深入分析 iter 函数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E5%99%A8%E5%87%BD%E6%95%B0"><span class="nav-number">4.</span> <span class="nav-text">生成器函数</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%83%B0%E6%80%A7%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.1.</span> <span class="nav-text">惰性实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AD%89%E5%B7%AE%E6%95%B0%E5%88%97%E7%94%9F%E6%88%90%E5%99%A8"><span class="nav-number">4.2.</span> <span class="nav-text">等差数列生成器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%87%E5%87%86%E5%BA%93%E4%B8%AD%E7%9A%84%E7%94%9F%E6%88%90%E5%99%A8%E5%87%BD%E6%95%B0"><span class="nav-number">4.3.</span> <span class="nav-text">标准库中的生成器函数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E5%99%A8%E8%A1%A8%E8%BE%BE%E5%BC%8F"><span class="nav-number">5.</span> <span class="nav-text">生成器表达式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%95%E6%97%B6%E4%BD%BF%E7%94%A8%E7%94%9F%E6%88%90%E5%99%A8%E8%A1%A8%E8%BE%BE%E5%BC%8F"><span class="nav-number">5.1.</span> <span class="nav-text">何时使用生成器表达式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#yield-from"><span class="nav-number">6.</span> <span class="nav-text">yield from</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8A%8A%E7%94%9F%E6%88%90%E5%99%A8%E5%BD%93%E6%88%90%E5%8D%8F%E7%A8%8B"><span class="nav-number">7.</span> <span class="nav-text">把生成器当成协程</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">54</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">19</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
