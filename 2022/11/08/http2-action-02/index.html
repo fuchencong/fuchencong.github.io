@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章将详细介绍 HTTP&#x2F;2 协议的基础知识，通过介绍 HTTP&#x2F;2 的数据传输方式，可以理解为什么 HTTP&#x2F;2 比 HTTP&#x2F;1.1 更加高效。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="HTTP&#x2F;2 实战（2）：HTTP&#x2F;2 协议基础">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2022/11/08/http2-action-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章将详细介绍 HTTP&#x2F;2 协议的基础知识，通过介绍 HTTP&#x2F;2 的数据传输方式，可以理解为什么 HTTP&#x2F;2 比 HTTP&#x2F;1.1 更加高效。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2022/11/08/http2-action-02/images/http2_magic.jpg">
+<meta property="article:published_time" content="2022-11-08T12:06:39.000Z">
+<meta property="article:modified_time" content="2023-01-04T09:27:58.473Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="HTTP">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2022/11/08/http2-action-02/images/http2_magic.jpg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2022/11/08/http2-action-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>HTTP/2 实战（2）：HTTP/2 协议基础 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2022/11/08/http2-action-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          HTTP/2 实战（2）：HTTP/2 协议基础
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2022-11-08 20:06:39" itemprop="dateCreated datePublished" datetime="2022-11-08T20:06:39+08:00">2022-11-08</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章将详细介绍 HTTP&#x2F;2 协议的基础知识，通过介绍 HTTP&#x2F;2 的数据传输方式，可以理解为什么 HTTP&#x2F;2 比 HTTP&#x2F;1.1 更加高效。</p>
+<span id="more"></span>
+
+<h2 id="为什么是-HTTP-x2F-2-而不是-HTTP-x2F-1-2"><a href="#为什么是-HTTP-x2F-2-而不是-HTTP-x2F-1-2" class="headerlink" title="为什么是 HTTP&#x2F;2 而不是 HTTP&#x2F;1.2"></a>为什么是 HTTP&#x2F;2 而不是 HTTP&#x2F;1.2</h2><p>HTTP&#x2F;2 主要用来解决 HTTP&#x2F;1 的性能问题，新版本的协议与原来的协议有很大的不同，新增了如下概念：</p>
+<ul>
+<li>二进制协议</li>
+<li>多路复用</li>
+<li>流量控制功能</li>
+<li>数据流优先级</li>
+<li>首部压缩</li>
+<li>服务端推送</li>
+</ul>
+<p>以上概念是新协议根本上的变化，不向前兼容。出于这个原因，HTTP&#x2F;2 被视为主版本更新。</p>
+<p>新版本的变化主要与 HTTP&#x2F;2 在网络中传输的方式有关。一般 Web 开发者都关注更高层面的 HTTP 语义，这块 HTTP&#x2F;2 和 HTTP&#x2F;1 基本上保持一致，所以一般而言上层应用无需区别对待不同的版本。但是深入理解 HTTP&#x2F;2，可能会改变网站开发的方式（例如不再使用 HTTP&#x2F;1.1 的优化方法），从而获得更好的性能优化。</p>
+<h3 id="使用二进制格式替换文本格式"><a href="#使用二进制格式替换文本格式" class="headerlink" title="使用二进制格式替换文本格式"></a>使用二进制格式替换文本格式</h3><p>HTTP&#x2F;2 是一个二进制的、基于数据包的协议。虽然 HTTP&#x2F;1.0 引入了二进制 HTTP 消息体，支持在响应中发送图片或其他媒体问题。HTTP&#x2F;1.1 引入了管道化和分块编码。分块编码允许先发送消息体的一部分，其余部分可用时再接着发。这时 HTTP 消息体被分成多个块，客户端可以在完整接收到所有数据块之前就开始处理这些分块的内容（服务端也可以收到分块请求）。该技术常用于数据长度动态生成的场景，预先不知道数据的总长度。分块编码和管道化都有队头阻塞问题（HOL），即在队列首部的消息会阻塞后面消息的发送，而且管道化在实际中也没有得到很好支持。</p>
+<p>HTTP&#x2F;2 则是一个完全的二进制协议，HTTP 消息被分成清晰定义的数据帧发送。这里的帧类似于 TCP 中的分段，当收到所有的数据帧后，可以将它们组合成完整地 HTTP 消息。HTTP&#x2F;2 中的二进制表示用于消息的传输，消息本身和之前的 HTTP&#x2F;1 类似，二进制帧由 Web 浏览器或服务器处理，Web 应用不需要关注消息是如何发送的。</p>
+<h3 id="多路复用替代同步请求"><a href="#多路复用替代同步请求" class="headerlink" title="多路复用替代同步请求"></a>多路复用替代同步请求</h3><p>HTTP&#x2F;1 是一种同步的、独占的请求-响应协议。客户端发送 HTTP&#x2F;1 请求，然后服务器返回 HTTP&#x2F;1 响应。HTTP&#x2F;2 允许在单个连接上同时执行多个请求，每个 HTTP 请求或响应使用不同的流。通过使用二进制分帧层，给每个帧分配一个流标识符，以支持同时发出多个独立请求。当接收到该流的所有帧时，接收方可以将帧组合成完整消息。</p>
+<p>帧是同时发送多个消息的关键，每个帧都由标签表明它属于哪个消息（流）。因此一个连接上就可以同时有多个消息。在 HTTP&#x2F;2 中，某一个请求发出后，并不需要阻塞到该请求的响应返回，而是可以直接发送下一个请求。类似地，响应也可以混合在一起返回。<strong>每个请求都有一个新的、自增的流 ID，返回响应时使用相同的流 ID。响应完成后，流将被关闭</strong>。为了防止流 ID 冲突，客户端发起的请求使用奇数流 ID，服务器发起的请求使用偶数流 ID。ID 为 0 的流是用于管理连接的控制流。</p>
+<p>总结一下：HTTP&#x2F;2 的两个基本原理：</p>
+<ul>
+<li>HTTP&#x2F;2 使用过多个二进制帧发送 HTTP 请求和响应，使用单个 TCP 连接，以流的方式多路复用</li>
+<li>HTTP&#x2F;2 与 HTTP&#x2F;1 的不同主要在消息传输方面，在更上层，HTTP 的核心概念不变</li>
+</ul>
+<h3 id="流的优先级和流量控制"><a href="#流的优先级和流量控制" class="headerlink" title="流的优先级和流量控制"></a>流的优先级和流量控制</h3><p>在 HTTP&#x2F;2 之前，HTTP 是单独的请求-响应协议，因此无法在协议中进行优先级排序，客户端在 HTTP 之外就决定了请求的优先级。但是由于同时只能发送有限数量（通常单域名限制 6 个 TCP 连接）的 HTTP&#x2F;1 请求，因此通常需要优先请求关键资源，由浏览器对请求队列进行管理。而 HTTP&#x2F;2 对并发请求数量的限制放宽了许多，此时许多请求不再需要浏览器进行排队，可以立即发送它们。这可能会导致带宽浪费在较低优先级的资源上，从而导致在 HTTP&#x2F;2 下页面的加载速度变慢。</p>
+<p>因此需要控制流的优先级，使用更高的优先级发送最关键的资源。流的优先级是通过如下方式实现的：<code>当数据帧在排队时，服务器会给高优先级的请求发送更多的帧</code>。</p>
+<p>而流量控制是在同一个连接上使用多个流的另一种方式，如果接收方处理消息的速度慢于发送方，就会存在积压，需要将数据放入缓冲区。而当缓冲区满时会导致丢包，需要重新发送。HTTP&#x2F;2 在流的层面实现流量控制（不同于 TCP 层面的流量控制）。</p>
+<h3 id="首部压缩"><a href="#首部压缩" class="headerlink" title="首部压缩"></a>首部压缩</h3><p>HTTP 首部用于携带与请求、响应相关的额外信息。在这些首部中，有很多信息是重复的，通常和之前的请求使用相同的值。HTTP&#x2F;1 允许压缩 HTTP body，但是不会压缩 HTTP 首部，HTTP&#x2F;2 引入了首部压缩的概念，但是使用了和 body 压缩不同的技术。该技术支持跨请求压缩首部。</p>
+<h3 id="服务端推送"><a href="#服务端推送" class="headerlink" title="服务端推送"></a>服务端推送</h3><p>HTTP&#x2F;2 还增加了服务端推送的概念，它允许服务端给一个请求返回多个响应。在 HTTP&#x2F;1 中，当主页加载完成后，在渲染之前，浏览器需要解析它并请求其他资源（CSS、JavaScript等）。有了 HTTP&#x2F;2 服务端推送，那些资源可以与首个请求的响应一起被返回。当然，决定什么时候推送、如何推送，是充分利用服务端推送的关键。</p>
+<h2 id="如何创建一个-HTTP-x2F-2-连接"><a href="#如何创建一个-HTTP-x2F-2-连接" class="headerlink" title="如何创建一个 HTTP&#x2F;2 连接"></a>如何创建一个 HTTP&#x2F;2 连接</h2><p>在建立 HTTP&#x2F;2 连接之前，需要一个过程来确认客户端、服务器两端都想、都能使用 HTTP&#x2F;2。不同于 HTTPS 使用新的 URL scheme（<code>https://</code>）来提供服务（通常也使用一个不同的默认端口），HTTP&#x2F;2 并没有使用新的 scheme，而是通过其他方法来建立 HTTP&#x2F;2 连接。HTTP&#x2F;2 主要提供了 3 种建立 HTTP&#x2F;2 连接的方法：</p>
+<ul>
+<li>使用 HTTTPS 协商</li>
+<li>使用 HTTP Upgrade 首部</li>
+<li>和之前的连接保持一致</li>
+</ul>
+<p>理论上，HTTP&#x2F;2 支持基于未加密的 HTTP 创建连接，也支持基于加密的 HTTPS 建立连接。但是所有浏览器仅支持基于 HTTPS（h2）建立连接。所以浏览器使用方法 1 来协商 HTTP&#x2F;2。服务器之间的 HTTP&#x2F;2 连接可以基于未加密的 HTTP（h2c）或者 HTTPS（h2），因此可以使用上述所有方法。</p>
+<h3 id="使用-HTTPS-协商"><a href="#使用-HTTPS-协商" class="headerlink" title="使用 HTTPS 协商"></a>使用 HTTPS 协商</h3><p>使用 HTTPS 意味着使用 SSL&#x2F;TLS 来加密一个标准的 HTTP&#x2F;1 连接或者 HTTP&#x2F;2 连接。因此使用 HTTPS 时，可以在 TLS 握手阶段完成 HTTP&#x2F;2 的协商。</p>
+<p>ALPN（Application-Layer Protocol Negotiation）是 TLS 的一个扩展，客户端可以在 ClientHello 中通过 ALPN 来声明支持的应用层协议，服务端可以用它来确认在 HTTPS 协商之后所使用的应用层协议。除了 HTTP&#x2F;2 以外，ALPN 还可以应用于其他协议支持。</p>
+<p>如下是通过 Wireshark 看到的 ClientHello、ServerHello 中的 ALPN TLS 扩展。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Extension: application_layer_protocol_negotiation (len=14)</span><br><span class="line">    Type: application_layer_protocol_negotiation (16)</span><br><span class="line">    Length: 14</span><br><span class="line">    ALPN Extension Length: 12</span><br><span class="line">    ALPN Protocol</span><br><span class="line">        ALPN string length: 2</span><br><span class="line">        ALPN Next Protocol: h2</span><br><span class="line">        ALPN string length: 8</span><br><span class="line">        ALPN Next Protocol: http/1.1</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Extension: application_layer_protocol_negotiation (len=11)</span><br><span class="line">    Type: application_layer_protocol_negotiation (16)</span><br><span class="line">    Length: 11</span><br><span class="line">    ALPN Extension Length: 9</span><br><span class="line">    ALPN Protocol</span><br><span class="line">        ALPN string length: 8</span><br><span class="line">        ALPN Next Protocol: http/1.1</span><br></pre></td></tr></table></figure>
+
+<p>使用 <code>curl</code> 工具也可以看到 TLS 握手阶段的 APLN 协商：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">$ curl --http2 -I https://nghttp2.org/ -vv</span><br><span class="line">*   Trying 139.162.123.134:443...</span><br><span class="line">* Connected to nghttp2.org (139.162.123.134) port 443 (<span class="comment">#0)</span></span><br><span class="line">* ALPN, offering h2</span><br><span class="line">* ALPN, offering http/1.1</span><br><span class="line">* successfully <span class="built_in">set</span> certificate verify locations:</span><br><span class="line">*  CAfile: /etc/ssl/cert.pem</span><br><span class="line">*  CApath: none</span><br><span class="line">* TLSv1.2 (OUT), TLS handshake, Client hello (1):</span><br><span class="line">* TLSv1.2 (IN), TLS handshake, Server hello (2):</span><br><span class="line">* TLSv1.2 (IN), TLS handshake, Certificate (11):</span><br><span class="line">* TLSv1.2 (IN), TLS handshake, Server key exchange (12):</span><br><span class="line">* TLSv1.2 (IN), TLS handshake, Server finished (14):</span><br><span class="line">* TLSv1.2 (OUT), TLS handshake, Client key exchange (16):</span><br><span class="line">* TLSv1.2 (OUT), TLS change cipher, Change cipher spec (1):</span><br><span class="line">* TLSv1.2 (OUT), TLS handshake, Finished (20):</span><br><span class="line">* TLSv1.2 (IN), TLS change cipher, Change cipher spec (1):</span><br><span class="line">* TLSv1.2 (IN), TLS handshake, Finished (20):</span><br><span class="line">* SSL connection using TLSv1.2 / ECDHE-ECDSA-AES128-GCM-SHA256</span><br><span class="line">* ALPN, server accepted to use h2</span><br><span class="line">* Server certificate:</span><br><span class="line">*  subject: CN=nghttp2.org</span><br><span class="line">*  start <span class="built_in">date</span>: Oct 20 00:00:06 2022 GMT</span><br><span class="line">*  expire <span class="built_in">date</span>: Jan 18 00:00:05 2023 GMT</span><br><span class="line">*  subjectAltName: host <span class="string">&quot;nghttp2.org&quot;</span> matched cert<span class="string">&#x27;s &quot;nghttp2.org&quot;</span></span><br><span class="line"><span class="string">*  issuer: C=US; O=Let&#x27;</span>s Encrypt; CN=R3</span><br><span class="line">*  SSL certificate verify ok.</span><br><span class="line">* Using HTTP2, server supports multi-use</span><br><span class="line">* Connection state changed (HTTP/2 confirmed)</span><br><span class="line">* Copying HTTP/2 data <span class="keyword">in</span> stream buffer to connection buffer after upgrade: len=0</span><br><span class="line">* Using Stream ID: 1 (easy handle 0x154010000)</span><br></pre></td></tr></table></figure>
+
+<p>NPN（Next Protocol Negotiation）是 ALPN 之前的一个实现，两者工作方式类似，但它并不是一个正式的互联网标准，ALPN 成为正式标准，很大程度上也是基于 NPN 实现的。两者主要区别是，在使用 NPN 时，客户端决定最终使用的协议；而在使用 ALPN 时，服务端决定最终使用的协议。</p>
+<p>现在已经不再推荐使用 NPN，应该使用 ALPN。</p>
+<h3 id="使用-HTTP-Upgrade-首部"><a href="#使用-HTTP-Upgrade-首部" class="headerlink" title="使用 HTTP Upgrade 首部"></a>使用 HTTP Upgrade 首部</h3><p>通过发送 Upgrade 首部，客户端可以请求将现有的 HTTP&#x2F;1.1 连接升级为 HTTP&#x2F;2。<strong>这个首部应该只用于未加密的 HTTP 连接（h2c），基于 HTTPS 连接的 HTTP&#x2F;2（h2）不能使用此方法进行 HTTP&#x2F;2 协商，它必须使用 ALPN</strong>。</p>
+<p>客户端什么时候发送 Upgrade 首部取决于客户端本身，带 <code>Upgrade</code> 首部的请求必须包含一个 <code>HTTP2-Settings</code> 首部，它是一个 Base-64 编码的 HTTP&#x2F;2 SETTINGS 帧。</p>
+<ul>
+<li>不支持 HTTP&#x2F;2 的服务器可以像之前一样返回一个 HTTP&#x2F;1.1 消息，如同 Upgrade 首部没有发送一样</li>
+<li>支持 HTTP&#x2F;2 的服务器可以返回一个 HTTP&#x2F;1.1 101 响应，以表明它将切换协议，而不是忽略升级请求。然后服务器直接切换到 HTTP&#x2F;2，发送 SETTINGS 帧，之后以 HTTP&#x2F;2 格式发送响应</li>
+</ul>
+<p>如下展示了这一过程：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">$ curl nghttp2.org --http2 -vv</span><br><span class="line"></span><br><span class="line">*   Trying 139.162.123.134:80...</span><br><span class="line">* Connected to nghttp2.org (139.162.123.134) port 80 (<span class="comment">#0)</span></span><br><span class="line">&gt; GET / HTTP/1.1</span><br><span class="line">&gt; Host: nghttp2.org</span><br><span class="line">&gt; User-Agent: curl/7.77.0</span><br><span class="line">&gt; Accept: */*</span><br><span class="line">&gt; Connection: Upgrade, HTTP2-Settings</span><br><span class="line">&gt; Upgrade: h2c</span><br><span class="line">&gt; HTTP2-Settings: AAMAAABkAAQCAAAAAAIAAAAA</span><br><span class="line">&gt;</span><br><span class="line">* Mark bundle as not supporting multiuse</span><br><span class="line">&lt; HTTP/1.1 101 Switching Protocols</span><br><span class="line">&lt; Connection: Upgrade</span><br><span class="line">&lt; Upgrade: h2c</span><br><span class="line">* Received 101</span><br><span class="line">* Using HTTP2, server supports multi-use</span><br><span class="line">* Connection state changed (HTTP/2 confirmed)</span><br><span class="line">* Copying HTTP/2 data <span class="keyword">in</span> stream buffer to connection buffer after upgrade: len=6620</span><br><span class="line">&lt; HTTP/2 200</span><br><span class="line">&lt; <span class="built_in">date</span>: Sat, 12 Nov 2022 07:21:15 GMT</span><br><span class="line">&lt; content-type: text/html</span><br><span class="line">&lt; last-modified: Wed, 21 Sep 2022 08:30:40 GMT</span><br><span class="line">&lt; etag: <span class="string">&quot;632acbb0-18b4&quot;</span></span><br><span class="line">&lt; accept-ranges: bytes</span><br><span class="line">&lt; content-length: 6324</span><br><span class="line">&lt; x-backend-header-rtt: 0.004458</span><br><span class="line">&lt; server: nghttpx</span><br><span class="line">&lt; alt-svc: h3=<span class="string">&quot;:443&quot;</span>; ma=3600, h3-29=<span class="string">&quot;:443&quot;</span>; ma=3600</span><br><span class="line">&lt; via: 2 nghttpx</span><br><span class="line">&lt; x-frame-options: SAMEORIGIN</span><br><span class="line">&lt; x-xss-protection: 1; mode=block</span><br><span class="line">&lt; x-content-type-options: nosniff</span><br><span class="line">&lt;</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<p>即使客户端没有携带 <code>Upgrade</code> 首部，服务器也可以通过 <code>Upgrade</code> 响应首部来说明自己支持 HTTP&#x2F;2。此时它是一个升级建议而不是升级请求，只有客户端才能发送升级请求（仍然是通过 <code>Upgrade</code> 请求首部）。</p>
+<p>在网络环境中存在代理服务器时，<code>Upgrade</code> 首部可能会导致问题。例如假设代理服务器不支持 HTTP&#x2F;2，而业务服务器支持。此时代理服务器直接透传该首部到上游业务服务器，上游业务服务器支持 HTTP&#x2F;2，因此会触发升级流程。但之后浏览器和代理服务器之间建立 HTTP&#x2F;2 连接又会出现错误。</p>
+<h3 id="使用先验知识"><a href="#使用先验知识" class="headerlink" title="使用先验知识"></a>使用先验知识</h3><p>HTTP&#x2F;2 规范还描述了一个 <code>客户端使用 HTTP/2</code> 的方法是，看它是否已经知道服务器支持 HTTP&#x2F;2。如果它知道，则可以马上使用 HTTP&#x2F;2，不需要任何升级请求。此方法是风险最高的方法，因为它假设服务器可以支持 HTTP&#x2F;2。使用先验知识的客户端必须注意妥善处理拒绝信息，以防之前的信息有误。只有客户端和服务器都在你的掌控之下时，才应该使用该方法。</p>
+<h3 id="HTTP-Alternative-Services"><a href="#HTTP-Alternative-Services" class="headerlink" title="HTTP Alternative Services"></a>HTTP Alternative Services</h3><p>HTTP Alternative Service（替代服务）是在 HTTP&#x2F;2 发布之后，单独发布的一个标准。该标准允许服务器使用 HTTP&#x2F;1.1 协议（通过 Alt-Svc 首部）通知 HTTP 客户端，它所请求的资源在另一个位置，可以使用不同的协议访问它们。</p>
+<p>Alternative Services 不仅适用于 HTTP&#x2F;1，还可以通过现有 HTTP&#x2F;2 连接进行通信（通过新的 ALTSVC 帧），以使客户端切换到不同的连接。</p>
+<h3 id="HTTP-x2F-2-前奏消息"><a href="#HTTP-x2F-2-前奏消息" class="headerlink" title="HTTP&#x2F;2 前奏消息"></a>HTTP&#x2F;2 前奏消息</h3><p>不管使用哪种方法启用 HTTP&#x2F;2 连接，在 HTTP&#x2F;2 连接上发送的第一个消息必须是 HTTP&#x2F;2 连接前奏，或者说是魔法字符串。该消息是客户端在 HTTP&#x2F;2 连接上发送的第一个消息，它是一个 24 字节序列，ASCII 字符串表示为 <code>PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n</code>。</p>
+<img src="/fuchencong.github.io/2022/11/08/http2-action-02/images/http2_magic.jpg" class="">
+
+<p>当服务器不支持 HTTP&#x2F;2 时，由于它无法识别该消息，因此会解析失败，从而拒绝该消息。而对于支持 HTTP&#x2F;2 的服务器，根据根据收到这个前奏消息推断出客户端支持 HTTP&#x2F;2，它不会拒绝该消息，它必须发送 SETTINGS 帧作为其第一条消息（可以为空）。</p>
+<h2 id="HTTP-x2F-2-帧"><a href="#HTTP-x2F-2-帧" class="headerlink" title="HTTP&#x2F;2 帧"></a>HTTP&#x2F;2 帧</h2><p>建立好 HTTP&#x2F;2 连接后，就可以发送 HTTP&#x2F;2 消息了。HTTP&#x2F;2 消息由数据帧组成，通过在 <code>一个连接上</code> 的 <code>多路复用的流</code> 发送。</p>
+<h3 id="查看-HTTP-x2F-2-帧"><a href="#查看-HTTP-x2F-2-帧" class="headerlink" title="查看 HTTP&#x2F;2 帧"></a>查看 HTTP&#x2F;2 帧</h3><p>有一些工具可以用来查看 HTTP&#x2F;2 帧，例如 Chrome 的 net-export 页面、nghttp 和 Wireshark。</p>
+<ul>
+<li>net-export：通过 <code>chrome://net-export</code>可以打开 net-export，再记录完日志后，可以通过 NetLog 查看器查看日志文件</li>
+<li>nghttp：它是一个基于 <code>nghttp2</code> C 库开发的命令行工具，许多 Web 服务器和客户端使用它来处理底层的 http2 协议</li>
+<li>Wireshark：由于 Wireshark 是个流量嗅探工具，不是一个专门的 http 客户端。所以除非知道加解密的 SSL 秘钥，否则无法读取 https 流量（浏览器的 HTTP&#x2F;2 都是基于 https）。好在 Chrome 等浏览器均允许你将 HTTPS 秘钥保存到单独的文件中</li>
+</ul>
+<p>如下展示了使用 <code>nghttp</code> 工具查看 HTTP2：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">$ nghttp https://nghttp2.org/ -v | more</span><br><span class="line">[  0.256] Connected</span><br><span class="line">The negotiated protocol: h2</span><br><span class="line">[  0.464] send SETTINGS frame &lt;length=12, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (niv=2)</span><br><span class="line">          [SETTINGS_MAX_CONCURRENT_STREAMS(0x03):100]</span><br><span class="line">          [SETTINGS_INITIAL_WINDOW_SIZE(0x04):65535]</span><br><span class="line">[  0.464] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=3&gt;</span><br><span class="line">          (dep_stream_id=0, weight=201, exclusive=0)</span><br><span class="line">[  0.464] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=5&gt;</span><br><span class="line">          (dep_stream_id=0, weight=101, exclusive=0)</span><br><span class="line">[  0.464] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=7&gt;</span><br><span class="line">          (dep_stream_id=0, weight=1, exclusive=0)</span><br><span class="line">[  0.464] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=9&gt;</span><br><span class="line">          (dep_stream_id=7, weight=1, exclusive=0)</span><br><span class="line">[  0.464] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=11&gt;</span><br><span class="line">          (dep_stream_id=3, weight=1, exclusive=0)</span><br><span class="line">[  0.464] send HEADERS frame &lt;length=36, flags=0x25, stream_id=13&gt;</span><br><span class="line">          ; END_STREAM | END_HEADERS | PRIORITY</span><br><span class="line">          (padlen=0, dep_stream_id=11, weight=16, exclusive=0)</span><br><span class="line">          ; Open new stream</span><br><span class="line">          :method: GET</span><br><span class="line">          :path: /</span><br><span class="line">          :scheme: https</span><br><span class="line">          :authority: nghttp2.org</span><br><span class="line">          accept: */*</span><br><span class="line">          accept-encoding: gzip, deflate</span><br><span class="line">          user-agent: nghttp2/1.50.0</span><br><span class="line">[  0.577] recv SETTINGS frame &lt;length=30, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (niv=5)</span><br><span class="line">          [SETTINGS_MAX_CONCURRENT_STREAMS(0x03):100]</span><br><span class="line">          [SETTINGS_INITIAL_WINDOW_SIZE(0x04):1048576]</span><br><span class="line">          [SETTINGS_NO_RFC7540_PRIORITIES(0x09):1]</span><br><span class="line">          [SETTINGS_ENABLE_CONNECT_PROTOCOL(0x08):1]</span><br><span class="line">          [SETTINGS_HEADER_TABLE_SIZE(0x01):8192]</span><br><span class="line">[  0.577] recv SETTINGS frame &lt;length=0, flags=0x01, stream_id=0&gt;</span><br><span class="line">          ; ACK</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<h3 id="HTTP-x2F-2-帧数据格式"><a href="#HTTP-x2F-2-帧数据格式" class="headerlink" title="HTTP&#x2F;2 帧数据格式"></a>HTTP&#x2F;2 帧数据格式</h3><p>在查看帧数据之前，需要了解 HTTP&#x2F;2 帧的组成结构。<strong>每个 HTTP&#x2F;2 帧由一个固定长度的头部和不固定长度的负载组成</strong>。对于 HTTP&#x2F;1.1，需要扫描换行符和空格符来解析 HTTP 消息，而 HTTP&#x2F;2 由于严格定义了帧的格式，帧的解析更容易，需要传输的数据更少。如下展示了 HTTP&#x2F;2 帧头部格式</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>长度</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Length</td>
+<td>24bit</td>
+<td>帧的长度，不包含帧头部字段，单位字节</td>
+</tr>
+<tr>
+<td>Type</td>
+<td>8bit</td>
+<td>帧类型</td>
+</tr>
+<tr>
+<td>Flags</td>
+<td>8bit</td>
+<td>标志位</td>
+</tr>
+<tr>
+<td>Reserved Bit</td>
+<td>1bit</td>
+<td>保留位，现在未使用，必须设置为 0</td>
+</tr>
+<tr>
+<td>Stream Identifier</td>
+<td>31bit</td>
+<td>无符号的 31 位整数，用于标记帧所属的流 ID</td>
+</tr>
+</tbody></table>
+<p>标志位的含义和值取决于帧类型。接下来来查看这些数据帧。</p>
+<h3 id="HTTP-x2F-2-帧示例"><a href="#HTTP-x2F-2-帧示例" class="headerlink" title="HTTP&#x2F;2 帧示例"></a>HTTP&#x2F;2 帧示例</h3><p>仍然先看一个使用 HTTP&#x2F;2 通信示例，<code>nghttp</code> 的 <code>-v</code> 表示查看 http2 通信的详细信息，<code>-n</code> 表示隐藏数据，仅显示帧头部：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br></pre></td><td class="code"><pre><span class="line">$ nghttp -vn https://www.weibo.com</span><br><span class="line">[  0.089] Connected</span><br><span class="line">The negotiated protocol: h2</span><br><span class="line">[  0.170] recv SETTINGS frame &lt;length=18, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (niv=3)</span><br><span class="line">          [SETTINGS_MAX_CONCURRENT_STREAMS(0x03):128]</span><br><span class="line">          [SETTINGS_INITIAL_WINDOW_SIZE(0x04):65536]</span><br><span class="line">          [SETTINGS_MAX_FRAME_SIZE(0x05):16777215]</span><br><span class="line">[  0.170] recv WINDOW_UPDATE frame &lt;length=4, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (window_size_increment=2147418112)</span><br><span class="line">[  0.170] send SETTINGS frame &lt;length=12, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (niv=2)</span><br><span class="line">          [SETTINGS_MAX_CONCURRENT_STREAMS(0x03):100]</span><br><span class="line">          [SETTINGS_INITIAL_WINDOW_SIZE(0x04):65535]</span><br><span class="line">[  0.170] send SETTINGS frame &lt;length=0, flags=0x01, stream_id=0&gt;</span><br><span class="line">          ; ACK</span><br><span class="line">          (niv=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=3&gt;</span><br><span class="line">          (dep_stream_id=0, weight=201, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=5&gt;</span><br><span class="line">          (dep_stream_id=0, weight=101, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=7&gt;</span><br><span class="line">          (dep_stream_id=0, weight=1, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=9&gt;</span><br><span class="line">          (dep_stream_id=7, weight=1, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=11&gt;</span><br><span class="line">          (dep_stream_id=3, weight=1, exclusive=0)</span><br><span class="line">[  0.170] send HEADERS frame &lt;length=38, flags=0x25, stream_id=13&gt;</span><br><span class="line">          ; END_STREAM | END_HEADERS | PRIORITY</span><br><span class="line">          (padlen=0, dep_stream_id=11, weight=16, exclusive=0)</span><br><span class="line">          ; Open new stream</span><br><span class="line">          :method: GET</span><br><span class="line">          :path: /</span><br><span class="line">          :scheme: https</span><br><span class="line">          :authority: www.weibo.com</span><br><span class="line">          accept: */*</span><br><span class="line">          accept-encoding: gzip, deflate</span><br><span class="line">          user-agent: nghttp2/1.50.0</span><br><span class="line">[  0.196] recv SETTINGS frame &lt;length=0, flags=0x01, stream_id=0&gt;</span><br><span class="line">          ; ACK</span><br><span class="line">          (niv=0)</span><br><span class="line">[  0.233] recv (stream_id=13) :status: 302</span><br><span class="line">[  0.233] recv (stream_id=13) content-type: text/html</span><br><span class="line">[  0.233] recv (stream_id=13) location: https://passport.weibo.com/visitor/visitor?entry=miniblog&amp;a=enter&amp;url=https%3A%2F%2Fweibo.com%2F&amp;domain=.weibo.com&amp;ua=php-sso_sdk_client-0.6.36&amp;_rand=1668245618.7385</span><br><span class="line">[  0.233] recv (stream_id=13) server: Weibo API Gateway</span><br><span class="line">[  0.233] recv (stream_id=13) <span class="built_in">date</span>: Sat, 12 Nov 2022 09:33:38 GMT</span><br><span class="line">[  0.233] recv (stream_id=13) last-modified: Sat, 12 Nov 2022 09:33:38 GMT</span><br><span class="line">[  0.233] recv (stream_id=13) pramga: no-cache</span><br><span class="line">[  0.233] recv (stream_id=13) set-cookie: PC_TOKEN=97dd62dcce; expires=Sat, 12-Nov-2022 10:03:38 GMT; path=/; domain=weibo.com; secure; httponly</span><br><span class="line">[  0.233] recv (stream_id=13) content-security-policy: block-all-mixed-content;</span><br><span class="line">[  0.233] recv (stream_id=13) dpool_header: mapi-weibocom-ug-2-765f4b557-bxdsj</span><br><span class="line">[  0.233] recv (stream_id=13) lb_node: mweibo-172-16-138-70.yf.intra.weibo.cn</span><br><span class="line">[  0.233] recv (stream_id=13) proc_node: mapi-weibopro-node-bypass-77d5cbccb9-mrswx</span><br><span class="line">[  0.233] recv (stream_id=13) ssl_node: mweibo-sslv6-003.tc.intra.weibo.cn</span><br><span class="line">[  0.233] recv (stream_id=13) lb: 2400:89c0:1013:3::30</span><br><span class="line">[  0.233] recv (stream_id=13) x-wag-info: bWFwaV9m</span><br><span class="line">[  0.233] recv HEADERS frame &lt;length=539, flags=0x04, stream_id=13&gt;</span><br><span class="line">          ; END_HEADERS</span><br><span class="line">          (padlen=0)</span><br><span class="line">          ; First response header</span><br><span class="line">[  0.233] recv DATA frame &lt;length=0, flags=0x01, stream_id=13&gt;</span><br><span class="line">          ; END_STREAM</span><br><span class="line">[  0.233] send GOAWAY frame &lt;length=8, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (last_stream_id=0, error_code=NO_ERROR(0x00), opaque_data(0)=[])</span><br></pre></td></tr></table></figure>
+
+<p>首先通过 HTTPS（h2）协商建立 HTTP&#x2F;2 连接，由于 nghttp 不输出 HTTPS 建立过程以及 HTTP&#x2F;2 前奏消息，因此看不到建立 HTTP&#x2F;2 连接的详细过程。之后则是 SETTINGS 帧。</p>
+<h3 id="SETTINGS-帧"><a href="#SETTINGS-帧" class="headerlink" title="SETTINGS 帧"></a>SETTINGS 帧</h3><p>SETTINGS 帧是服务器和客户端必须发送的第一个帧（在 HTTP&#x2F;2 前奏魔术消息之前）。该帧不包含业务数据，只包含若干个键&#x2F;值对，即 Identifier（16 bit）&#x2F;Value（32 bit）。SETTINGS 帧仅定义一个标志，即 ACK。如果 HTTP&#x2F;2 连接的一端正在发起设置，将该标志位设置为 0，当确认另一端发送的设置消息时，将其设置为 1。对于确认帧（标志位为 1)，不应该在帧中包含其他设置。SETTINGS 帧属于控制消息，使用流 ID 0。</p>
+<p>详细分析上面收到的第一个 SETTINGS 帧：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[  0.170] recv SETTINGS frame &lt;length=18, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (niv=3)</span><br><span class="line">          [SETTINGS_MAX_CONCURRENT_STREAMS(0x03):128]</span><br><span class="line">          [SETTINGS_INITIAL_WINDOW_SIZE(0x04):65536]</span><br><span class="line">          [SETTINGS_MAX_FRAME_SIZE(0x05):16777215]</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>包含 3 个设置项，每个设置项 2+4 字节，因此帧的总长度 18 字节</li>
+<li>设置项的顺序可以是任意的</li>
+<li>许多设置项都提供默认值，对于这些设置项可以不用显式发送</li>
+</ul>
+<p>接下的三个 SETTINGS 帧，分别是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 客户端发送的带设置项的 SETTINGS 帧</span></span><br><span class="line">[  0.170] send SETTINGS frame &lt;length=12, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (niv=2)</span><br><span class="line">          [SETTINGS_MAX_CONCURRENT_STREAMS(0x03):100]</span><br><span class="line">          [SETTINGS_INITIAL_WINDOW_SIZE(0x04):65535]</span><br><span class="line"></span><br><span class="line"><span class="comment"># 客户端发送的带 ACK 标志的 SETTINGS 帧，用于对服务器 SETTINGS 帧的确认</span></span><br><span class="line">[  0.170] send SETTINGS frame &lt;length=0, flags=0x01, stream_id=0&gt;</span><br><span class="line">          ; ACK</span><br><span class="line">          (niv=0)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 服务器发送的带 ACK 标志的 SETTINGS 帧，用于对客户端 SETTINGS 帧的确认</span></span><br><span class="line">[  0.196] recv SETTINGS frame &lt;length=0, flags=0x01, stream_id=0&gt;</span><br><span class="line">          ; ACK</span><br><span class="line">          (niv=0)</span><br></pre></td></tr></table></figure>
+
+<p>需要注意，在 SETTINGS 帧发送出去、但还未收到对端的确认期间，不能使用非默认值。由于所有 HTTP&#x2F;2 实现都可以处理默认值，而且 SETTINGS 帧必须是第一个发送的帧，因此不会有什么问题。</p>
+<h3 id="WINDOW-UPDATE-帧"><a href="#WINDOW-UPDATE-帧" class="headerlink" title="WINDOW_UPDATE 帧"></a>WINDOW_UPDATE 帧</h3><p>服务器在发送完 SETTINGS 帧后，还发送了一个 WINDOW_UPDATE 帧，该帧用于流量控制，比如限制发送数据的数量，防止接收端处理不完。在 HTTP&#x2F;2 下，在同一个连接上有多个流，所以不能仅仅依赖 TCP 流量控制，必须自己实现针对每个流的减速方法。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[  0.170] recv WINDOW_UPDATE frame &lt;length=4, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (window_size_increment=2147418112)</span><br></pre></td></tr></table></figure>
+
+<p>初始的数据窗口大小可以通过 SETTINGS 帧设置，然后使用 WINDOW_UPDATE 帧来改变它的大小：</p>
+<ul>
+<li>WINDOW_UPDATE 帧没有定义标志位</li>
+<li>如果流 ID 为 0，表示应用于整个 HTTP&#x2F;2 连接</li>
+<li>流量控制仅应用于 DATA 帧，其他类型的帧不受该窗口大小影响，这样可以防止重要的控制消息被较大的 DATA 帧阻塞（DATA 帧是唯一可以为任意大小的帧）</li>
+</ul>
+<h3 id="PRIORITY-帧"><a href="#PRIORITY-帧" class="headerlink" title="PRIORITY 帧"></a>PRIORITY 帧</h3><p>接下来是几个 PRIORITY 帧：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=3&gt;</span><br><span class="line">          (dep_stream_id=0, weight=201, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=5&gt;</span><br><span class="line">          (dep_stream_id=0, weight=101, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=7&gt;</span><br><span class="line">          (dep_stream_id=0, weight=1, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=9&gt;</span><br><span class="line">          (dep_stream_id=7, weight=1, exclusive=0)</span><br><span class="line">[  0.170] send PRIORITY frame &lt;length=5, flags=0x00, stream_id=11&gt;</span><br><span class="line">          (dep_stream_id=3, weight=1, exclusive=0)</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<p>这是 nghttp 创建了几个流，使用不同的优先级。实际上，nghttp 并不直接使用流 3-11，通过 dep_stream_id，它将其他流悬挂在开始时创建的流之下。使用之前创建的流的优先级，可以方便地对请求进行优先级排序，无需为每个后续新创建的流明确指定优先级。</p>
+<h3 id="HEADERS-帧"><a href="#HEADERS-帧" class="headerlink" title="HEADERS 帧"></a>HEADERS 帧</h3><p>在所有设置完成之后，可以看到协议所发送的请求部分。一个 HTTP&#x2F;2 请求以 HEADERS 帧开始发送</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">[  0.170] send HEADERS frame &lt;length=38, flags=0x25, stream_id=13&gt;</span><br><span class="line">          ; END_STREAM | END_HEADERS | PRIORITY</span><br><span class="line">          (padlen=0, dep_stream_id=11, weight=16, exclusive=0)</span><br><span class="line">          ; Open new stream</span><br><span class="line">          :method: GET</span><br><span class="line">          :path: /</span><br><span class="line">          :scheme: https</span><br><span class="line">          :authority: www.weibo.com</span><br><span class="line">          accept: */*</span><br><span class="line">          accept-encoding: gzip, deflate</span><br><span class="line">          user-agent: nghttp2/1.50.0</span><br></pre></td></tr></table></figure>
+
+<p>在 HTTP&#x2F;2 中，没有请求行的概念，所有东西都通过首部发送。HTTP&#x2F;2 定义了新的伪首部（以冒号开始）。HTTP&#x2F;2 伪首部定义严格，不能像标准 HTTP 首部那样可以在其中添加新的自定义首部。如果应用需要定义首部，还得用普通的 HTTP 首部（没有冒号开头的首部）。HTTP&#x2F;2 强制将 HTTP 首部名称小写，而且格式要求也更严格（开头的空格、双冒号或者换行都会带来问题）。</p>
+<p>HEADERS 帧定义了 4 个标志位：</p>
+<ul>
+<li>END_STREAM：如果 HEADERS 帧之后没有其他请求，设置改标志。CONTINUATION 帧不受此限制，它们由 END_HEADERS 标志控制</li>
+<li>END_HEADERS：表明所有的 HTTP 首部都已经包含在该帧中，后面没有 CONTINUATION 帧了</li>
+<li>PADDED：当使用数据填充时设置该标志位</li>
+<li>PRIORITY：表明在帧中设置了 E、Stream Dependency 和 Weight 字段</li>
+</ul>
+<p>如果 HTTP 首部超过一个帧的容量，就会使用 CONTINUATION 帧（紧跟 HEADERS 帧），这是因为 HEADERS 帧的某些字段如果被多次设置，会带来问题。因此只能有一个 HEADERS 帧。而 HTTP 首部如果的确很大，应该放到 CONTINUATION 帧中。</p>
+<p>每个新的请求都会分配一个独立的流 ID，其值是在上一个流 ID 的基础上自增。在该例子中上一个流 ID 是 11（奇数流 ID 是客户端使用、偶数流 ID 是服务端使用），同时 <code>END_STREAM</code>、<code>END_HEADERS</code> 标志位说明了该帧就已经包含了请求的所有内容，<code>PRIORITY</code> 标志位表示该帧使用了优先级策略。<code>nghttp</code> 的注释也说明，该流是新建的（Open new stream）。最后则是多个 HTTP 伪首部和 HTTP 请求首部。</p>
+<p>在同一个流上收到 HTTP 响应，也是以 HEADERS 帧开始：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">[  0.233] recv (stream_id=13) :status: 302</span><br><span class="line">[  0.233] recv (stream_id=13) content-type: text/html</span><br><span class="line">[  0.233] recv (stream_id=13) location: https://passport.weibo.com/visitor/visitor?entry=miniblog&amp;a=enter&amp;url=https%3A%2F%2Fweibo.com%2F&amp;domain=.weibo.com&amp;ua=php-sso_sdk_client-0.6.36&amp;_rand=1668245618.7385</span><br><span class="line">[  0.233] recv (stream_id=13) server: Weibo API Gateway</span><br><span class="line">[  0.233] recv (stream_id=13) <span class="built_in">date</span>: Sat, 12 Nov 2022 09:33:38 GMT</span><br><span class="line">[  0.233] recv (stream_id=13) last-modified: Sat, 12 Nov 2022 09:33:38 GMT</span><br><span class="line">[  0.233] recv (stream_id=13) pramga: no-cache</span><br><span class="line">[  0.233] recv (stream_id=13) set-cookie: PC_TOKEN=97dd62dcce; expires=Sat, 12-Nov-2022 10:03:38 GMT; path=/; domain=weibo.com; secure; httponly</span><br><span class="line">[  0.233] recv (stream_id=13) content-security-policy: block-all-mixed-content;</span><br><span class="line">[  0.233] recv (stream_id=13) dpool_header: mapi-weibocom-ug-2-765f4b557-bxdsj</span><br><span class="line">[  0.233] recv (stream_id=13) lb_node: mweibo-172-16-138-70.yf.intra.weibo.cn</span><br><span class="line">[  0.233] recv (stream_id=13) proc_node: mapi-weibopro-node-bypass-77d5cbccb9-mrswx</span><br><span class="line">[  0.233] recv (stream_id=13) ssl_node: mweibo-sslv6-003.tc.intra.weibo.cn</span><br><span class="line">[  0.233] recv (stream_id=13) lb: 2400:89c0:1013:3::30</span><br><span class="line">[  0.233] recv (stream_id=13) x-wag-info: bWFwaV9m</span><br><span class="line">[  0.233] recv HEADERS frame &lt;length=539, flags=0x04, stream_id=13&gt;</span><br><span class="line">          ; END_HEADERS</span><br><span class="line">          (padlen=0)</span><br><span class="line">          ; First response header</span><br></pre></td></tr></table></figure>
+
+<h3 id="DATA-帧"><a href="#DATA-帧" class="headerlink" title="DATA 帧"></a>DATA 帧</h3><p>在 HEADERS 帧之后是 DATA 帧，用来发送消息体。HTTP&#x2F;2 的帧比较简单，它包含所需要的任何格式数据。由于帧头已经包含了长度，所以 DATA 帧不需要包含数据长度字段。DATA 帧也支持填充。</p>
+<p>DATA 帧定义了两个标志位：</p>
+<ul>
+<li>END_STREAM：当前帧是流中的最后一个</li>
+<li>PADDED：当使用数据填充时设置该标志位</li>
+</ul>
+<p>由于 HTTP&#x2F;2 的 DATA 帧默认支持被分成多个部分，因此就没有必要使用 HTTP&#x2F;1 中的分块编码了。HTTP&#x2F;2 规范甚至规定：<code>分块编码不能在 HTTP/2 中使用了</code>。</p>
+<h3 id="GOAWAY-帧"><a href="#GOAWAY-帧" class="headerlink" title="GOAWAY 帧"></a>GOAWAY 帧</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[  0.233] send GOAWAY frame &lt;length=8, flags=0x00, stream_id=0&gt;</span><br><span class="line">          (last_stream_id=0, error_code=NO_ERROR(0x00), opaque_data(0)=[])</span><br></pre></td></tr></table></figure>
+
+<p>最后是客户端发送的 GOAWAY 帧，用于关闭连接。当连接上没有更多消息或者发生严重错误时，将使用该帧。在该示例的 GOAWAY 帧显示：</p>
+<ul>
+<li>从服务器收到的最后一个流 ID 是 0（服务器没有发起过流）</li>
+<li>没有收到过错误码</li>
+<li>没有附加的调试数据</li>
+</ul>
+<p>该示例是当不需要再使用连接时，标准的关闭连接的方式。</p>
+<h3 id="CONTINUATION-帧"><a href="#CONTINUATION-帧" class="headerlink" title="CONTINUATION 帧"></a>CONTINUATION 帧</h3><p>太大的首部需要 CONTINUATION 帧，它紧跟在 HEADERS 帧或者 PUSH_PROMISE 帧后面。紧跟着的 CONTINUATION 帧的数量不限。</p>
+<p>CONTINUATION 帧只定义了一个标志位：</p>
+<ul>
+<li>END_HEADERS：表示 HTTP 首部内容到此结束</li>
+</ul>
+<h3 id="PING-帧"><a href="#PING-帧" class="headerlink" title="PING 帧"></a>PING 帧</h3><p>PING 帧用于消息发送方计算消息往返时间，也可以用来保持一个不使用的连接。当收到该帧时，接收方应答马上回复一个类似的 PING 帧。两个 PING 帧都应当在控制流（流 ID 为 0）上发送。</p>
+<p>PING 帧定义了一个标志位：</p>
+<ul>
+<li>ACK：在发起方的 PING 帧中不设置，在返回方中需要设置</li>
+</ul>
+<h3 id="PUSH-PROMISE-帧"><a href="#PUSH-PROMISE-帧" class="headerlink" title="PUSH_PROMISE 帧"></a>PUSH_PROMISE 帧</h3><p>服务器使用 PUSH_PROMISE 帧通知客户端它将推送一个客户端没有明确请求的资源。PUSH_PROMISE 帧需要提供关于该资源的客户端信息，所以它包含那些通常在 HEADERS 帧中包含的那些首部信息。PUSH_PROMISE 帧定义了两个标志位：</p>
+<ul>
+<li>END_HEADERS：表明所有的 HTTP 首部都已经包含在该帧中，后面没有 CONTINUATION 帧了</li>
+<li>PADDED：当使用数据填充时设置该标志位</li>
+</ul>
+<h3 id="RST-STREAM-帧"><a href="#RST-STREAM-帧" class="headerlink" title="RST_STREAM 帧"></a>RST_STREAM 帧</h3><p>无论出于何种原因，如果客户端决定不再接收服务端的响应，或者服务器过了很长时间都没发送相应，那么客户端可以发送一个 RST_STREAM 帧，直接取消一个流。</p>
+<p>HTTP&#x2F;1.1 不提供类似的功能，HTTP&#x2F;1.1 没有办法取消一个正在进行中的请求，除非你中断连接。</p>
+<h3 id="ALTSVC-帧"><a href="#ALTSVC-帧" class="headerlink" title="ALTSVC 帧"></a>ALTSVC 帧</h3><p>ALTSVC 帧在一个单独的规范中定义，它允许服务端宣告获取资源时其他可用的服务。该帧可用于服务升级、或者重定义流量到另外一个版本上。</p>
+<h3 id="ORIGIN-帧"><a href="#ORIGIN-帧" class="headerlink" title="ORIGIN 帧"></a>ORIGIN 帧</h3><p>服务器用 <code>ORIGIN</code> 帧来宣告自己可以处理哪些源（比较域名）的请求。当客户端决定是否合并 HTTP&#x2F;2 连接的时候，该帧非常有用。</p>
+<h3 id="CACHE-DIGEST-帧"><a href="#CACHE-DIGEST-帧" class="headerlink" title="CACHE_DIGEST 帧"></a>CACHE_DIGEST 帧</h3><p>客户端使用 <code>CACHE_DIGEST</code> 来表明自己缓存了哪些资源。例如它指示服务器不必再推送这些资源，因为客户端已经有了。</p>
+<p>由于 HTTP&#x2F;2 支持帧类型的扩展，因此以后可能会出现更多的帧类型。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/HTTP/" rel="tag"># HTTP</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2022/12/04/python-cookbook-01/" rel="prev" title="python cookbook（01）：数据结构和算法">
+      <i class="fa fa-chevron-left"></i> python cookbook（01）：数据结构和算法
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2022/11/04/http2-action-01/" rel="next" title="HTTP/2 实战（1）：HTTP/2 上位之路">
+      HTTP/2 实战（1）：HTTP/2 上位之路 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E6%98%AF-HTTP-x2F-2-%E8%80%8C%E4%B8%8D%E6%98%AF-HTTP-x2F-1-2"><span class="nav-number">1.</span> <span class="nav-text">为什么是 HTTP&#x2F;2 而不是 HTTP&#x2F;1.2</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E4%BA%8C%E8%BF%9B%E5%88%B6%E6%A0%BC%E5%BC%8F%E6%9B%BF%E6%8D%A2%E6%96%87%E6%9C%AC%E6%A0%BC%E5%BC%8F"><span class="nav-number">1.1.</span> <span class="nav-text">使用二进制格式替换文本格式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8%E6%9B%BF%E4%BB%A3%E5%90%8C%E6%AD%A5%E8%AF%B7%E6%B1%82"><span class="nav-number">1.2.</span> <span class="nav-text">多路复用替代同步请求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%81%E7%9A%84%E4%BC%98%E5%85%88%E7%BA%A7%E5%92%8C%E6%B5%81%E9%87%8F%E6%8E%A7%E5%88%B6"><span class="nav-number">1.3.</span> <span class="nav-text">流的优先级和流量控制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A6%96%E9%83%A8%E5%8E%8B%E7%BC%A9"><span class="nav-number">1.4.</span> <span class="nav-text">首部压缩</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%8E%A8%E9%80%81"><span class="nav-number">1.5.</span> <span class="nav-text">服务端推送</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A6%82%E4%BD%95%E5%88%9B%E5%BB%BA%E4%B8%80%E4%B8%AA-HTTP-x2F-2-%E8%BF%9E%E6%8E%A5"><span class="nav-number">2.</span> <span class="nav-text">如何创建一个 HTTP&#x2F;2 连接</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-HTTPS-%E5%8D%8F%E5%95%86"><span class="nav-number">2.1.</span> <span class="nav-text">使用 HTTPS 协商</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-HTTP-Upgrade-%E9%A6%96%E9%83%A8"><span class="nav-number">2.2.</span> <span class="nav-text">使用 HTTP Upgrade 首部</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E5%85%88%E9%AA%8C%E7%9F%A5%E8%AF%86"><span class="nav-number">2.3.</span> <span class="nav-text">使用先验知识</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-Alternative-Services"><span class="nav-number">2.4.</span> <span class="nav-text">HTTP Alternative Services</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-x2F-2-%E5%89%8D%E5%A5%8F%E6%B6%88%E6%81%AF"><span class="nav-number">2.5.</span> <span class="nav-text">HTTP&#x2F;2 前奏消息</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#HTTP-x2F-2-%E5%B8%A7"><span class="nav-number">3.</span> <span class="nav-text">HTTP&#x2F;2 帧</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E7%9C%8B-HTTP-x2F-2-%E5%B8%A7"><span class="nav-number">3.1.</span> <span class="nav-text">查看 HTTP&#x2F;2 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-x2F-2-%E5%B8%A7%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F"><span class="nav-number">3.2.</span> <span class="nav-text">HTTP&#x2F;2 帧数据格式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HTTP-x2F-2-%E5%B8%A7%E7%A4%BA%E4%BE%8B"><span class="nav-number">3.3.</span> <span class="nav-text">HTTP&#x2F;2 帧示例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#SETTINGS-%E5%B8%A7"><span class="nav-number">3.4.</span> <span class="nav-text">SETTINGS 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#WINDOW-UPDATE-%E5%B8%A7"><span class="nav-number">3.5.</span> <span class="nav-text">WINDOW_UPDATE 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#PRIORITY-%E5%B8%A7"><span class="nav-number">3.6.</span> <span class="nav-text">PRIORITY 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#HEADERS-%E5%B8%A7"><span class="nav-number">3.7.</span> <span class="nav-text">HEADERS 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#DATA-%E5%B8%A7"><span class="nav-number">3.8.</span> <span class="nav-text">DATA 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#GOAWAY-%E5%B8%A7"><span class="nav-number">3.9.</span> <span class="nav-text">GOAWAY 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#CONTINUATION-%E5%B8%A7"><span class="nav-number">3.10.</span> <span class="nav-text">CONTINUATION 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#PING-%E5%B8%A7"><span class="nav-number">3.11.</span> <span class="nav-text">PING 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#PUSH-PROMISE-%E5%B8%A7"><span class="nav-number">3.12.</span> <span class="nav-text">PUSH_PROMISE 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#RST-STREAM-%E5%B8%A7"><span class="nav-number">3.13.</span> <span class="nav-text">RST_STREAM 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ALTSVC-%E5%B8%A7"><span class="nav-number">3.14.</span> <span class="nav-text">ALTSVC 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ORIGIN-%E5%B8%A7"><span class="nav-number">3.15.</span> <span class="nav-text">ORIGIN 帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#CACHE-DIGEST-%E5%B8%A7"><span class="nav-number">3.16.</span> <span class="nav-text">CACHE_DIGEST 帧</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">66</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">22</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2023</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
