@@ -28,7 +28,7 @@
 <meta property="og:description" content="Envoy 的编译还是比较复杂的，这里将在 ubuntu:22.04 上构建 Envoy。">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2023-01-12T11:49:24.000Z">
-<meta property="article:modified_time" content="2023-01-13T02:42:28.045Z">
+<meta property="article:modified_time" content="2023-03-27T02:41:38.923Z">
 <meta property="article:author" content="fuchencong">
 <meta property="article:tag" content="Envoy">
 <meta name="twitter:card" content="summary">
@@ -260,12 +260,24 @@
 <h2 id="其他"><a href="#其他" class="headerlink" title="其他"></a>其他</h2><h3 id="生成调试版本"><a href="#生成调试版本" class="headerlink" title="生成调试版本"></a>生成调试版本</h3><p>使用如下方式生成调试版本，方便我们在 gdb 下调试 Envoy 代码：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># TEST_TMPDIR=&quot;$PWD/envoy_compile_db&quot; bazel build -c dbg --jobs=2 --copt=-Wno-error=vla-parameter envoy</span></span><br></pre></td></tr></table></figure>
 
+<p>另外这里有一点需要特别注意，由于 Envoy 生成调试版本时默认会生成独立的调试信息文件（<code>.dwp</code> 文件），在我的环境中没法完全调试（看不到函数参数，行号等信息），得益于这个 <a target="_blank" rel="noopener" href="https://github.com/envoyproxy/envoy/commit/7ae4211e5b8925485ed69074214291a7e2992ea5">commit</a>，我们可以关闭这种调试信息生成方式。修改源码目录下的 <code>.bazelrc</code> 文件，将如下两行注释掉：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">build:linux --fission=dbg,opt</span><br><span class="line">build:linux --features=per_object_debug_info</span><br></pre></td></tr></table></figure>
+
+<p>这样就可以对生成的交付件调试了：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#0  Envoy::OptionsImpl::OptionsImpl(int, char const* const*, std::function&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; (bool)&gt; const&amp;, spdlog::level::level_enum) (this=0x7917fcfc338, argc=1, argv=0x7fffffffe0f8, hot_restart_version_cb=...,</span></span><br><span class="line">    default_log_level=spdlog::level::info) at <span class="built_in">source</span>/server/options_impl.cc:40</span><br><span class="line"><span class="comment">#1  0x0000555555c1dfc6 in Envoy::MainCommon::MainCommon (this=0x7917fcfc000, argc=1, argv=0x7fffffffe0f8) at source/exe/main_common.cc:206</span></span><br><span class="line"><span class="comment">#2  0x0000555555c34e19 in std::make_unique&lt;Envoy::MainCommon, int&amp;, char**&amp;&gt; () at /usr/include/c++/11/bits/unique_ptr.h:962</span></span><br><span class="line"><span class="comment">#3  0x0000555555c1e5f7 in Envoy::MainCommon::main(int, char**, std::function&lt;void (Envoy::Server::Instance&amp;)&gt;) (argc=1, argv=0x7fffffffe0f8,</span></span><br><span class="line">    hook=...) at <span class="built_in">source</span>/exe/main_common.cc:235</span><br><span class="line"><span class="comment">#4  0x0000555555bc5f14 in main (argc=1, argv=0x7fffffffe0f8) at source/exe/main.cc:24</span></span><br></pre></td></tr></table></figure>
+
 <h3 id="清理交付件"><a href="#清理交付件" class="headerlink" title="清理交付件"></a>清理交付件</h3><p>执行 <code>bazel clean</code> 清理生成的交付件。</p>
 <h3 id="使用-CI-docker-镜像构建"><a href="#使用-CI-docker-镜像构建" class="headerlink" title="使用 CI docker 镜像构建"></a>使用 CI docker 镜像构建</h3><p>也可以使用 Envoy 的 CI 容器镜像来进行构建，此时可以免去各种依赖安装问题。执行如下命令会使用 CI 容器进行构建：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ./ci/run_envoy_docker.sh &#x27;./ci/do_ci.sh bazel.dev&#x27;</span></span><br></pre></td></tr></table></figure>
 
 <p>生成的交付件默认位于 <code>/tmp/envoy-docker-build/envoy/source/exe/envoy-fastbuild</code>。通过设置 <code>ENVOY_DOCKER_BUILD_DIR</code> 环境变量可以修改交付件的目录。</p>
 <p>关于 CI docker 镜像的使用，可以参考<a target="_blank" rel="noopener" href="https://github.com/envoyproxy/envoy/tree/main/ci">这里</a>。</p>
+<p>生成调试版本：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./ci/run_envoy_docker.sh <span class="string">&#x27;./ci/do_ci.sh bazel.debug.server_only&#x27;</span></span><br></pre></td></tr></table></figure>
+
+<p>同样需要通过上述方式关闭生成独立的调试文件。要不然也无法直接用 gdb 调试生成的交付件，会出现错误：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Reading symbols from envoy...</span><br><span class="line">Dwarf Error: DW_FORM_strx1 found <span class="keyword">in</span> non-DWO CU [<span class="keyword">in</span> module /build/envoy/source/exe/envoy/envoy]</span><br></pre></td></tr></table></figure>
+
 <h3 id="生成编译数据库"><a href="#生成编译数据库" class="headerlink" title="生成编译数据库"></a>生成编译数据库</h3><p>使用如下命令生成 <code>编译数据库</code>，之后就可以在 Vim 编辑器中以支持 LSP（Language Server Protocol）的方式阅读 Envoy 源代码了：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># mkdir envoy_compile_db</span></span><br><span class="line"><span class="comment"># TEST_TMPDIR=&quot;$PWD/envoy_compile_db&quot; BAZEL_BUILD_OPTIONS=&#x27;--copt=-Wno-error=vla-parameter&#x27; python3 tools/gen_compilation_database.py --include_all  //source/exe:envoy</span></span><br></pre></td></tr></table></figure>
 
@@ -386,7 +398,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">70</span>
+          <span class="site-state-item-count">71</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -399,7 +411,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">23</span>
+        <span class="site-state-item-count">24</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
