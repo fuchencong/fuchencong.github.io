@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="今天定位一个 IP 组播问题，在抓到该组播报文并分析其以太头时，发现其目的 MAC 地址比较有趣，才学习到原来 IPv4 组播地址与 MAC 组播地址有一定的对应关系，这篇文章将介绍这一知识。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="network-multicast-address">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2019/07/02/network-multicast-address/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="今天定位一个 IP 组播问题，在抓到该组播报文并分析其以太头时，发现其目的 MAC 地址比较有趣，才学习到原来 IPv4 组播地址与 MAC 组播地址有一定的对应关系，这篇文章将介绍这一知识。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-07-02T10:45:03.000Z">
+<meta property="article:modified_time" content="2023-05-15T11:01:07.271Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Network">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2019/07/02/network-multicast-address/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>network-multicast-address | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2019/07/02/network-multicast-address/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          network-multicast-address
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-07-02 18:45:03" itemprop="dateCreated datePublished" datetime="2019-07-02T18:45:03+08:00">2019-07-02</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>今天定位一个 IP 组播问题，在抓到该组播报文并分析其以太头时，发现其目的 MAC 地址比较有趣，才学习到原来 IPv4 组播地址与 MAC 组播地址有一定的对应关系，这篇文章将介绍这一知识。</p>
+<span id="more"></span>
+
+<p>我们知道，D 类 IP 地址被用于 IPv4 组播，其地址范围为 <code>224.0.0.0 — 239.255.255.255</code>。D 类 IP 第一个字节的最高 4 位固定为 <code>1110</code>，后 28 位可以自由使用。而二层组播地址，其也有 24 位固定前缀 <code>01-00-5E</code>，而剩余的 24 位中也只有一半能自由使用，也就是说只有最后 23 位可用于区别不同的组播组。</p>
+<table>
+<thead>
+<tr>
+<th>Octet 0</th>
+<th>Octet 1</th>
+<th>Octet 2</th>
+<th>Octet 3</th>
+<th>Octet 4</th>
+<th>Octet 5</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01</td>
+<td>00</td>
+<td>5E</td>
+<td>?XXXXXXX</td>
+<td>XXXXXXX</td>
+<td>XXXXXXX</td>
+</tr>
+</tbody></table>
+<p>组播 MAC 地址为什么只有 23 位能使用呢？据说是有一个很有趣的故事：<code>Steve Deering</code> 在研究 IP 组播时想向 IEEE 申请 16 个 OUIs（Organizational Unique Identifiers），每个 OUI 占有 24 位地址空间，这样总共就有 <code>16 * 2^24</code> 个 MAC 组播地址，这样正好就能够和 IPv4 组播地址一一对应。但是每个 OUI 需要花费 $1000，Steve 的经理觉得很贵，因此只买了一个 OUI（24位），并且只给 Steve 一半的地址空间（23 位）用于组播研究。</p>
+<p>因此，每一个 IPv4 组播地址有 28 个有效位可以使用，而 MAC 组播地址中只有 23 个有效位可以使用，那么如何完成这两者之间的映射呢？方法就是：<strong>将 IPv4 IP 地址中的最后 23 位映射到 MAC 组播地址的后 23 位，这样得到的 MAC 组播地址也就是该 IPv4 组播地址对应的 MAC 地址。这样也造成每 32 个组播 IPv4 地址会映射到同一个 MAC 组播地址</strong>。</p>
+<p>举一个例子，对于 IPv4 组播地址 224.11.1.2 而言，其对应的 MAC 组播地址即为 01:00:5E:0B:01:02：</p>
+<table>
+<thead>
+<tr>
+<th>地址</th>
+<th>可读表示</th>
+<th>二进制表示</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>IP 地址</td>
+<td>224.11.1.2</td>
+<td>1110 0000 0000 1011 0000 0001 0000 0010</td>
+</tr>
+<tr>
+<td>MAC 地址</td>
+<td>01:00:5E:0B:01:02</td>
+<td>0000 0001 0000 0000 0101 1110 0000 1011 0000 0001 0000 0010</td>
+</tr>
+</tbody></table>
+<p>而对于 MAC 组播地址 01:00:5E:0B:01:02，其可以对应 32 个组播 IPv4 地址， XXXXX 表示可从 00000 到 11111 ：</p>
+<table>
+<thead>
+<tr>
+<th>地址</th>
+<th>可读表示</th>
+<th>二进制表示</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MAC 地址</td>
+<td>01:00:5E:0B:01:02</td>
+<td>0000 0001 0000 0000 0101 1110 0000 1011 0000 0001 0000 0010</td>
+</tr>
+<tr>
+<td>IP 地址</td>
+<td>可对应 32 个 IP 地址</td>
+<td>1110 XXXX X000 1011 0000 0001 0000 0010</td>
+</tr>
+</tbody></table>
+<p>以上就是 IPv4 组播地址与 MAC 组播地址之间的映射关系。当然每次手工计算还挺麻烦的，因此我编写了一个 shell 脚本来完成这一工作：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#!/bin/bash</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># Copyright (C) fuchencong.com</span></span><br><span class="line"><span class="comment"># Convert IPv4 multicast address to Mac multicast address, and verse.</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="title">check_ip_valid</span></span>()</span><br><span class="line">&#123;</span><br><span class="line">    ip_addr=<span class="variable">$1</span></span><br><span class="line"></span><br><span class="line">    check_addr=$(<span class="built_in">echo</span> <span class="variable">$ip_addr</span> | sed <span class="string">&#x27;s/[0-9.]//g&#x27;</span>)</span><br><span class="line">    <span class="keyword">if</span> [ ! -z <span class="string">&quot;<span class="variable">$check_addr</span>&quot;</span> ]; <span class="keyword">then</span></span><br><span class="line">        <span class="built_in">return</span> 1</span><br><span class="line">    <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">    count=0</span><br><span class="line">    OLDIFS=<span class="variable">$IFS</span></span><br><span class="line">    IFS=<span class="string">&quot;.&quot;</span></span><br><span class="line">    <span class="keyword">for</span> value <span class="keyword">in</span> <span class="variable">$ip_addr</span></span><br><span class="line">    <span class="keyword">do</span></span><br><span class="line">        <span class="keyword">if</span> [ <span class="variable">$value</span> -gt 255 ];</span><br><span class="line">        <span class="keyword">then</span></span><br><span class="line">            <span class="built_in">return</span> 1;</span><br><span class="line">        <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">        count=$((count + <span class="number">1</span>))</span><br><span class="line">    <span class="keyword">done</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># total for digits for IPv4 address</span></span><br><span class="line">    <span class="keyword">if</span> [ <span class="variable">$count</span> != 4 ]; <span class="keyword">then</span></span><br><span class="line">        <span class="built_in">return</span> 1</span><br><span class="line">    <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">    IFS=<span class="variable">$OLDIFS</span></span><br><span class="line">    <span class="built_in">return</span> 0</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="title">check_mac_valid</span></span>()</span><br><span class="line">&#123;</span><br><span class="line">    mac_addr=<span class="variable">$1</span></span><br><span class="line"></span><br><span class="line">    check_mac=$(<span class="built_in">echo</span> <span class="variable">$mac_addr</span> | sed <span class="string">&#x27;s/[A-F0-9:]//g&#x27;</span>)</span><br><span class="line">    <span class="keyword">if</span> [ ! -z <span class="variable">$check_mac</span> ]; <span class="keyword">then</span></span><br><span class="line">        <span class="built_in">return</span> 1;</span><br><span class="line">    <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">    count=0</span><br><span class="line">    OLDIFS=<span class="variable">$IFS</span></span><br><span class="line">    IFS=<span class="string">&quot;:&quot;</span></span><br><span class="line">    <span class="keyword">for</span> value <span class="keyword">in</span> <span class="variable">$ip_addr</span></span><br><span class="line">    <span class="keyword">do</span></span><br><span class="line">        value=$(<span class="built_in">echo</span> <span class="string">&quot;ibase=16; <span class="variable">$value</span>&quot;</span> | bc)</span><br><span class="line">        <span class="keyword">if</span> [ <span class="variable">$value</span> -gt 255 ];</span><br><span class="line">        <span class="keyword">then</span></span><br><span class="line">            <span class="built_in">return</span> 1;</span><br><span class="line">        <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">        count=$((count + <span class="number">1</span>))</span><br><span class="line">    <span class="keyword">done</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># total six bytes for MAC address</span></span><br><span class="line">    <span class="keyword">if</span> [ <span class="variable">$count</span> != 6 ]; <span class="keyword">then</span></span><br><span class="line">        <span class="built_in">return</span> 1</span><br><span class="line">    <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">    IFS=<span class="variable">$OLDIFS</span></span><br><span class="line">    <span class="built_in">return</span> 0</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="title">ip_to_mac</span></span>()</span><br><span class="line">&#123;</span><br><span class="line">    ip_addr=<span class="variable">$1</span></span><br><span class="line">    ip_mask=(0 127 255 255)</span><br><span class="line">    mac_addr=<span class="string">&quot;01:00:5E&quot;</span></span><br><span class="line"></span><br><span class="line">    OLDIFS=<span class="variable">$IFS</span></span><br><span class="line">    IFS=<span class="string">&quot;.&quot;</span></span><br><span class="line">    count=0</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> value <span class="keyword">in</span> <span class="variable">$ip_addr</span></span><br><span class="line">    <span class="keyword">do</span></span><br><span class="line">        <span class="comment"># ignore first byte in ip address (25-32bit)</span></span><br><span class="line">        <span class="keyword">if</span> [ <span class="variable">$count</span> -eq 0 ]; <span class="keyword">then</span></span><br><span class="line">            count=$((count + <span class="number">1</span>))</span><br><span class="line">            <span class="built_in">continue</span>;</span><br><span class="line">        <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">        byte=$((<span class="variable">$value</span> &amp; <span class="variable">$&#123;ip_mask[$count]&#125;</span>))</span><br><span class="line">        hex_byte=$(<span class="built_in">printf</span> <span class="string">&quot;%02X&quot;</span> <span class="variable">$byte</span>)</span><br><span class="line">        mac_addr=<span class="string">&quot;<span class="variable">$&#123;mac_addr&#125;</span>&quot;</span><span class="string">&quot;:<span class="variable">$hex_byte</span>&quot;</span></span><br><span class="line">        count=$((count + <span class="number">1</span>))</span><br><span class="line">    <span class="keyword">done</span></span><br><span class="line"></span><br><span class="line">    IFS=<span class="variable">$OLDIFS</span></span><br><span class="line">    <span class="built_in">echo</span> <span class="variable">$mac_addr</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="title">mac_to_ip</span></span>()</span><br><span class="line">&#123;</span><br><span class="line">    mac_addr=<span class="variable">$1</span></span><br><span class="line">    ip_mask=(0 0 0 127 255 255)</span><br><span class="line"></span><br><span class="line">    ipaddr_4_bit=<span class="string">&quot;1110&quot;</span></span><br><span class="line">    ipaddr_23_bit=<span class="string">&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    OLDIFS=<span class="variable">$IFS</span></span><br><span class="line">    IFS=<span class="string">&quot;:&quot;</span></span><br><span class="line">    count=0</span><br><span class="line"></span><br><span class="line">    <span class="comment"># get common 23 bit of mac and ip address</span></span><br><span class="line">    <span class="keyword">for</span> value <span class="keyword">in</span> <span class="variable">$mac_addr</span></span><br><span class="line">    <span class="keyword">do</span></span><br><span class="line">        <span class="comment"># ignore first 24 bit in mac addr</span></span><br><span class="line">        <span class="keyword">if</span> [ <span class="variable">$count</span> -lt 3 ]; <span class="keyword">then</span></span><br><span class="line">            count=$((count + <span class="number">1</span>))</span><br><span class="line">            <span class="built_in">continue</span>;</span><br><span class="line">        <span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line">        value=$(<span class="built_in">echo</span> <span class="string">&quot;ibase=16; <span class="variable">$value</span>&quot;</span> | bc)</span><br><span class="line">        byte=$((<span class="variable">$value</span> &amp; <span class="variable">$&#123;ip_mask[$count]&#125;</span>))</span><br><span class="line">        <span class="comment"># get binary format</span></span><br><span class="line">        binary_byte=$(<span class="built_in">echo</span> <span class="string">&quot;obase=2; <span class="variable">$byte</span>&quot;</span> | bc)</span><br><span class="line">        <span class="comment"># padding leading zero</span></span><br><span class="line">        binary_byte=$(<span class="built_in">printf</span> <span class="string">&quot;%08s&quot;</span> <span class="variable">$binary_byte</span> | <span class="built_in">tr</span> <span class="string">&#x27; &#x27;</span> <span class="string">&#x27;0&#x27;</span>)</span><br><span class="line">        ipaddr_23_bit=<span class="variable">$&#123;ipaddr_23_bit&#125;</span><span class="variable">$&#123;binary_byte&#125;</span></span><br><span class="line">        count=$((count + <span class="number">1</span>))</span><br><span class="line">    <span class="keyword">done</span></span><br><span class="line"></span><br><span class="line">    IFS=<span class="variable">$OLDIFS</span></span><br><span class="line">    <span class="comment"># always skip first bit of ipaddr_23_bit</span></span><br><span class="line">    ipaddr_23_bit=<span class="variable">$&#123;ipaddr_23_bit:1&#125;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># generate 32 multicast ip address</span></span><br><span class="line">    <span class="keyword">for</span> value <span class="keyword">in</span> `<span class="built_in">seq</span> 0 31`</span><br><span class="line">    <span class="keyword">do</span></span><br><span class="line">        ipaddr_5_bit=$(<span class="built_in">echo</span> <span class="string">&quot;obase=2; <span class="variable">$value</span>&quot;</span> | bc)</span><br><span class="line">        <span class="comment"># padding leading zero</span></span><br><span class="line">        ipaddr_5_bit=$(<span class="built_in">printf</span> <span class="string">&quot;%05s&quot;</span> <span class="variable">$ipaddr_5_bit</span> | <span class="built_in">tr</span> <span class="string">&#x27; &#x27;</span> <span class="string">&#x27;0&#x27;</span>)</span><br><span class="line"></span><br><span class="line">        ipaddr_bit=<span class="variable">$&#123;ipaddr_4_bit&#125;</span><span class="variable">$&#123;ipaddr_5_bit&#125;</span><span class="variable">$&#123;ipaddr_23_bit&#125;</span></span><br><span class="line">        byte1=$(<span class="built_in">echo</span> <span class="string">&quot;ibase=2; <span class="variable">$&#123;ipaddr_bit:0:8&#125;</span>&quot;</span> | bc)</span><br><span class="line">        byte2=$(<span class="built_in">echo</span> <span class="string">&quot;ibase=2; <span class="variable">$&#123;ipaddr_bit:8:8&#125;</span>&quot;</span> | bc)</span><br><span class="line">        byte3=$(<span class="built_in">echo</span> <span class="string">&quot;ibase=2; <span class="variable">$&#123;ipaddr_bit:16:8&#125;</span>&quot;</span> | bc)</span><br><span class="line">        byte4=$(<span class="built_in">echo</span> <span class="string">&quot;ibase=2; <span class="variable">$&#123;ipaddr_bit:24:8&#125;</span>&quot;</span> | bc)</span><br><span class="line"></span><br><span class="line">        <span class="built_in">echo</span> <span class="string">&quot;<span class="variable">$&#123;byte1&#125;</span>.<span class="variable">$&#123;byte2&#125;</span>.<span class="variable">$&#123;byte3&#125;</span>.<span class="variable">$&#123;byte4&#125;</span>&quot;</span></span><br><span class="line">    <span class="keyword">done</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> check_ip_valid <span class="variable">$1</span> ; <span class="keyword">then</span></span><br><span class="line">    ip_to_mac <span class="variable">$1</span></span><br><span class="line"><span class="keyword">elif</span> check_mac_valid <span class="variable">$1</span> ; <span class="keyword">then</span></span><br><span class="line">    mac_to_ip <span class="variable">$1</span></span><br><span class="line"><span class="keyword">else</span></span><br><span class="line">    <span class="built_in">echo</span> <span class="string">&quot;Usage: <span class="variable">$0</span> ip address(224.0.0.0) or mac address(01:00:5E:00:00:00)&quot;</span></span><br><span class="line">    <span class="built_in">exit</span> 1</span><br><span class="line"><span class="keyword">fi</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">exit</span> 0</span><br></pre></td></tr></table></figure>
+
+<p>该脚本的运行结果如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">$ ./mcaddr.sh 224.11.1.2</span><br><span class="line">01:00:5E:0B:01:02</span><br><span class="line">$ ./mcaddr.sh 01:00:5E:0B:01:02</span><br><span class="line">224.11.1.2</span><br><span class="line">224.139.1.2</span><br><span class="line">225.11.1.2</span><br><span class="line">225.139.1.2</span><br><span class="line">226.11.1.2</span><br><span class="line">226.139.1.2</span><br><span class="line">227.11.1.2</span><br><span class="line">227.139.1.2</span><br><span class="line">228.11.1.2</span><br><span class="line">228.139.1.2</span><br><span class="line">229.11.1.2</span><br><span class="line">229.139.1.2</span><br><span class="line">230.11.1.2</span><br><span class="line">230.139.1.2</span><br><span class="line">231.11.1.2</span><br><span class="line">231.139.1.2</span><br><span class="line">232.11.1.2</span><br><span class="line">232.139.1.2</span><br><span class="line">233.11.1.2</span><br><span class="line">233.139.1.2</span><br><span class="line">234.11.1.2</span><br><span class="line">234.139.1.2</span><br><span class="line">235.11.1.2</span><br><span class="line">235.139.1.2</span><br><span class="line">236.11.1.2</span><br><span class="line">236.139.1.2</span><br><span class="line">237.11.1.2</span><br><span class="line">237.139.1.2</span><br><span class="line">238.11.1.2</span><br><span class="line">238.139.1.2</span><br><span class="line">239.11.1.2</span><br><span class="line">239.139.1.2</span><br></pre></td></tr></table></figure>
+
+<p>搞定，收工！</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Network/" rel="tag"># Network</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2020/05/13/pro-git-01/" rel="prev" title="Pro Git（1）：Git 起步">
+      <i class="fa fa-chevron-left"></i> Pro Git（1）：Git 起步
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/06/01/shell-script-101-02/" rel="next" title="Shell 脚本 101（2）：缺失的代码库">
+      Shell 脚本 101（2）：缺失的代码库 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">73</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">12</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">25</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2023</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
