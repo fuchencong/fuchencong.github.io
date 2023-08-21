@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="开放最短路径优先（Open Shortest Path First，OSPF）协议是由 Internet 工程任务组（Internet Engineering Task Force，IETF）开发的路由选择协议，用来替代存在一些问题的 RIP 协议。现在 OSPF 协议是 IETF 组织建议使用的内部网关协议（IGP）。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TCP&#x2F;IP 路由技术 08：开放最短路径优先协议（OSPFv2）">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/15/routing-tcp-ip-08/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="开放最短路径优先（Open Shortest Path First，OSPF）协议是由 Internet 工程任务组（Internet Engineering Task Force，IETF）开发的路由选择协议，用来替代存在一些问题的 RIP 协议。现在 OSPF 协议是 IETF 组织建议使用的内部网关协议（IGP）。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2019-05-15T09:22:27.000Z">
+<meta property="article:modified_time" content="2023-05-29T07:33:33.843Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Route">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/15/routing-tcp-ip-08/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>TCP/IP 路由技术 08：开放最短路径优先协议（OSPFv2） | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/15/routing-tcp-ip-08/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          TCP/IP 路由技术 08：开放最短路径优先协议（OSPFv2）
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-05-15 17:22:27" itemprop="dateCreated datePublished" datetime="2019-05-15T17:22:27+08:00">2019-05-15</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>开放最短路径优先（Open Shortest Path First，OSPF）协议是由 Internet 工程任务组（Internet Engineering Task Force，IETF）开发的路由选择协议，用来替代存在一些问题的 RIP 协议。现在 OSPF 协议是 IETF 组织建议使用的内部网关协议（IGP）。</p>
+<span id="more"></span>
+
+<p>OSPF 协议是一个链路状态协议，它使用 Dijkstra 的最短路径优先（SPF）算法，而且是开放的。这里所说的开放是指它不属于任何一个厂商或组织私有的。OSPF 协议的发展经过了几个 RFC，所有这些相关的 RFC 都是由 John Moy 撰写。RFC 1131 详细说明了 OSPF 版本 1，这个版本从来没有在实验平台以外使用过。OSPF 协议版本 2，也就是目前 IPv4 协议仍然使用的版本，最初是在 RFC1247 说明的，最新是在 RFC2328 中说明的。</p>
+<p>像所有的链路状态协议一样，OSPF 协议和距离矢量协议相比，一个主要的改善在于它的快速收敛，这使得 OSPF 协议可以支持更大型的网络，并且不容易受到有害路由选择信息的影响。OSPF 协议的其他一些特性有：</p>
+<ul>
+<li>使用了区域的概念，这样可以有效地减少路由选择协议对路由器 CPU 和内存的占用，划分区域还可以降低路由选择协议的通信量，这使得构建一个层次化的网络拓扑成为可能</li>
+<li>完全无类别地处理地址问题，排除了不连续子网这样的有类别路由选择协议存在的问题</li>
+<li>支持无类别路由表查询、VLSM 和用来进行有效地址管理的超网技术</li>
+<li>支持无大小限制的、任意的度量值</li>
+<li>支持使用多条路径的效率更高的等价负载均衡</li>
+<li>使用保留的组播地址来减小对不宣告 OSPF 的设备的影响</li>
+<li>支持更安全的路由选择认证</li>
+<li>使用可以跟踪外部路由的路由标记</li>
+</ul>
+<p>OSPF 协议也支持具有服务类型（Type of Service，TOS）的路由选择能力，但是它从来没有被广泛地实施过。基于这个原因，RFC 2328 已经在 OSPF 协议中删除了该 TOS 路由选择选项。</p>
+<h2 id="OSPF-的基本原理与实现"><a href="#OSPF-的基本原理与实现" class="headerlink" title="OSPF 的基本原理与实现"></a>OSPF 的基本原理与实现</h2><p>从一个非常概括的角度来看，OSPF 协议的操作是比较容易解释的：</p>
+<ul>
+<li>宣告 OSPF 的路由器从所有启动 OSPF 协议的接口上发出 Hello 数据包。如果两台路由器共享一条公共数据链路，并且能够互相成功协商它们各自的 Hello 数据包中所指定的某些参数，那么它们就成为了邻居</li>
+<li>邻接关系（Adjacency）可以想象成为一条点对点的虚链路，它是在一些邻居路由器之间构成的。OSPF 协议定义了一些网络类型和一些路由器类型的邻接关系。邻接关系的建立是由交换 Hello 信息的路由器类型和交换 Hello 信息的网络类型决定的</li>
+<li>每一台路由器都会在所有形成邻接关系的邻居之间发送链路状态通告（Link State Advertisement，LSA）。LSA 描述了路由器所有的链路、接口、路由器的邻居以及链路状态信息。这些链路可以是到一个末梢网络（指没有和其他路由器相连的网络）的链路、到其他 OSPF 路由器的链路、到其他区域网络的链路、或是到外部网络（从其他的路由选择进程学习到的网络）的链路。由于这些链路状态信息的多样性，OSPF 协议定义了许多 LSA 类型</li>
+<li>每一台收到从邻居路由器发出的 LSA 的路由器都会把这些 LSA 记录在它的链路状态数据库中，并且发送一份 LSA 的拷贝到该路由器的其他所有邻居</li>
+<li>通过 LSA 泛洪扩散到整个区域，所有的路由器都会形成同样的链路状态数据库</li>
+<li>当这些路由器的数据库完全相同时，每一台路由器都将以其自身作为根，使用 SPF 算法来计算一个无环路的拓扑图，以描述它所知道的到达每一个目的地的最短路径（最小路径代价）。这个拓扑图就是 SPF 算法树</li>
+<li>每一台路由器都将从 SPF 算法树中构建出自己的路由表</li>
+</ul>
+<p>当所有的链路状态信息泛洪到区域内的所有路由器上，并且邻居检测它们的数据库也相同（即链路状态数据库已经同步），从而成功创建路由表时，OSPF 协议就变成了一个 <code>安静</code> 的协议。邻居之间交换的 Hello 数据包称为 keepalive，并且每隔 30min 重传一次 LSA。如果网络拓扑稳定，那么网络中将不会有什么活动或行为发生。</p>
+<h3 id="邻居和邻接关系"><a href="#邻居和邻接关系" class="headerlink" title="邻居和邻接关系"></a>邻居和邻接关系</h3><p>在发送任何 LSA 通告之前，OSPF 路由器都必须首先发现他们的邻居路由器并建立起邻接关系。邻居路由器，连同每一台邻居路由器所在的链路（接口）、以及维护邻居路由器的一些其他的必要的信息都被记录在一个邻居表中。使用 <code>show ip ospf neighbor</code> 可以查看 OSPF 邻居表。</p>
+<p>一台 OSPF 路由器对其他 OSPF 路由器的跟踪需要每台路由器都提供一个路由器 ID（Router ID），路由器 ID 在 OSPF 区域内唯一标识一台路由器的 IP 地址。Cisco 路由器通过下面的方法得到它们的路由器 ID：</p>
+<ul>
+<li>如果使用 router-id 命令手工配置 Router ID，就使用 Router ID</li>
+<li>如果没有手工配置 Router ID，路由器就选取它所有的 loopback 接口上数值最高的 IP 地址</li>
+<li>如果路由器没有配置 IP 地址的 loopback 接口，那么路由器将选取它所有物理接口上数值最高的 IP 地址。用作 Router ID 的接口不一定非要运行 OSPF 协议</li>
+</ul>
+<p>使用 loopback 接口作为路由器 ID 有两个好处：</p>
+<ul>
+<li>loopback 接口比任何其他物理接口更稳定。一旦路由器启动成功，这个环回接口就处于活动状态，只有整个路由器失效时它才会失效</li>
+<li>管理员在预先分配和识别路由器 ID 的地址时有更多的回旋余地</li>
+</ul>
+<p>需要注意，在 Cisco 路由器上，即使路由器中用作路由器 ID 的物理接口随后失效或删除，OSPF 协议也会继续使用原来的物理接口作为路由器 ID。</p>
+<p>OSPF 路由器利用 Hello 数据包通告它的路由器 ID，并开始建立和邻居的关系。</p>
+<h3 id="Hello-协议"><a href="#Hello-协议" class="headerlink" title="Hello 协议"></a>Hello 协议</h3><p>Hello 协议服务于以下几个目的：</p>
+<ul>
+<li>它是发现邻居路由器的方法</li>
+<li>在两台路由器成为邻居之前，需要通告这两台路由器必须互相认可的几个参数</li>
+<li>Hello 数据包在邻居路由器之间担当 keepalive 的角色</li>
+<li>它确保了邻居路由器之间的双向通信</li>
+<li>它用来在一个广播网路或非广播多路访问（NBMA）网络上选取指定路由器（Designated Router，DR）和备份指定路由器（Backup Designated Router，BDR）</li>
+</ul>
+<p>宣告 OSPF 的路由器周期性地从启动 OSPF 协议的每一个接口上发送 Hello 数据包，该周期性的时间称为 Hello 时间间隔，它的配置是基于路由器的每一个接口的。在 Cisco 路由器上，对于广播型网络缺省 Hello 时间间隔为 10s，对于非广播网络缺省是 30s。可以通过命令 ip ospf hello-interval 来更改。如果一台路由器在一个称为路由器无效时间间隔（RouterDeadInterval）的时间段内还没有收到来自邻居的 Hello 数据包，那么它将宣告它的邻居无效。在 Cisco 路由器中，路由器无效时间间隔的缺省值是 Hello 时间间隔的 4 倍，并且这个值可以通过命令 ip ospf dead-interval 进行更改。</p>
+<p>每个 Hello 数据包都包含以下信息：</p>
+<ul>
+<li>始发路由器的路由器 ID（Router ID）</li>
+<li>始发路由器接口的区域 ID （Area ID）</li>
+<li>始发路由器接口的地址掩码</li>
+<li>始发路由器接口的认证类型和认证信息</li>
+<li>始发路由器接口的 Hello 时间间隔</li>
+<li>始发路由器接口的路由器无效时间间隔</li>
+<li>路由器的优先级</li>
+<li>指定路由器（DR）和备份路由器（BDR）</li>
+<li>标识可选功能的 5 个标记位</li>
+<li>始发路由器的所有有效邻居的路由器 ID：它仅仅包含了一些有效的邻居路由器，即在最近的路由器无效时间间隔内，始发路由器接口可以从其接收到 Hello 数据包的邻居</li>
+</ul>
+<p>当一台路由器从它的邻居路由器收到一个 Hello 数据包时，它将检验该 Hello 数据包携带的区域 ID、认证信息、网络掩码、Hello 间隔时间、路由器无效时间间隔以及可选项的数值是否和接收接口上配置的对应值相匹配。如果它们不匹配，那么该数据包将被丢弃，而且邻接关系也无法建立。</p>
+<p>如果所有参数都匹配，那么这个 Hello 数据包就被认为是有效的。如果始发路由器的路由器 ID 已经在接收该 Hello 数据包的接口列表中列出，那么路由器无效时间间隔计时器将被重置。如果始发路由器的路由器 ID 没有在邻居列表中列出，那么就把这个路由器 ID 加入到它的邻居表中。</p>
+<p>无论何时，路由器发送一个 Hello 数据包时，都会在这个数据包中列出传送该数据包的链路上所出现的所有邻居的路由器 ID。如果一台路由器收到了一个有效的 Hello 数据包，并在这个 Hello 数据包中发现了自己的路由 ID，那么这台路由器就认为是双向通信建立成功了。</p>
+<p>一旦双向通信成功建立，邻接关系也就可能建立了。并不是所有邻居路由器都会成为邻接对象。一个邻接关系的形成与否依赖于和这两台互为邻居的路由器所连网络的类型，另外网络类型也影响 OSPF 数据包传送的方式。</p>
+<h3 id="网络类型"><a href="#网络类型" class="headerlink" title="网络类型"></a>网络类型</h3><p>OSPF 定义了以下 5 种网络的类型：</p>
+<ul>
+<li>点到点网络（point-to-point）</li>
+<li>广播型网络（broadcast）</li>
+<li>非广播多路访问（NBMA）网络</li>
+<li>点到多点网络（point-to-multipoint）</li>
+<li>虚链路（virtual links）</li>
+<li>点到点网络（例如 T1，SONET 链路等）是连接单独一对路由器的。在点到点网络上有效邻居总是可以形成邻接关系的。在这些网络中 OSPF 数据包的目的地址也总是保留的 D 类地址：224.0.0.5。</li>
+</ul>
+<p>广播型网络（例如以太网，令牌环网、FDDI 等）是多址的网络，因而可以连接多于两台的设备，而且其具有广播数据包的能力。在广播型网络上的 OSPF 路由器，将会选举一台指定路由器和一台备份指定路由器。Hello 数据包以组播方式发送到目的地址 224.0.0.5，就像始发于 DR 和 BDR 的 OSPF 数据包一样。而其他所有的路由器都会将链路状态更新数据包和链路状态确认数据包以组播方式发送到目的地址 224.0.0.6。</p>
+<p>非广播多路访问（NBMA） 网络（例如 X.25、帧中继和 ATM）等，可以连接两台以上路由的设备，但是它们没有广播数据包的能力。一台在 NBMA 网络上的路由器发送的数据包将不能被其他与之相连的路由器收到。结果是，在这些网络上的路由器有必要增加另外的配置来获得它们的邻居。在 NBMA 网络上的 OSPF 路由器需要选举 DR 和 BDR，并且所有的 OSPF 数据包都是单播的。</p>
+<p>点到多点网络是 NBMA 网络的一个特殊配置，可以看做是一群点到点链路的集合。在这些网络上的 OSPF 路由器不需要选举 DR 和 BDR，OSPF 数据包以单播方式发送给每一个已知邻居。</p>
+<p>虚链路可以被路由器认为是没有编号的点到点网络的一种特殊配置，在虚链路上 OSPF 数据包以单播方式发送。</p>
+<p>所有的网络也都可以归纳到下面两种更普通的网络类型之一：</p>
+<ul>
+<li>传送网络（Transit Network）：与两台或两台以上的路由器相连，这种网络仅仅传送那些 只需要仅仅通过 的数据包，也就是这样的一些数据包：它们的始发网络和目的网络都不同于当前的传送网络</li>
+<li>末梢网络（Stub Network）：仅仅和一台路由器相连。末梢网络上的数据包总是有一个源地址或目的地址属于这个末梢网络。即末梢网络上的所有包要么始发于这个末梢网络上的某个设备，要么终止于某个末梢网络上的某个设备。OSPF 协议在末梢网络上通告主机路由，loopback 接口也可以认为是末梢网络，并当做主机路由来通告</li>
+</ul>
+<h2 id="指定路由器和备份路由器"><a href="#指定路由器和备份路由器" class="headerlink" title="指定路由器和备份路由器"></a>指定路由器和备份路由器</h2><p>对于 OSPF 协议来说，在多址网络上有关 LSA 的泛洪扩散方面存在两个问题：</p>
+<ul>
+<li>在构建相关路由器之间的邻接关系时，会创建很多不必要的 LSA</li>
+<li>多址网络本身的泛洪扩散显得比较混乱</li>
+</ul>
+<p>为了在一个多路访问网络中避免这些问题的发生，可以在多路访问网络上选举一台指定路由器。这台指定路由器将完成以下工作：</p>
+<ul>
+<li>描述这个多路访问网络和 OSPF 区域内与其相连的其余路由器</li>
+<li>管理这个多路访问网络上的泛洪扩散过程</li>
+</ul>
+<p>DR 背后的一种概念是广播链路本身被认为是一个伪节点，或者虚拟路由器。当 SPF 树进行计算的时候，把链路看做一个伪节点，与该链路相连的路由器也就是连接到这个节点上的。从与伪节点相连的路由器到这个伪节点的代价就是该路由器与这个广播链路相连的接口的出站代价，但是从伪节点到任何与之相连的路由器的代价都为 0。通过这种方式，所有路径的代价都不会受到伪节点的影响。</p>
+<p>如下所示，网络中的每一台路由器都会与 DR 形成一个邻接关系。DR 在特定的网络 LSA 中表示一个伪节点。需要注意，指定路由器是路由器接口的特性，而不是整个路由器的特性。</p>
+<p>关于指定路由器的一个重要问题是，如果一台指定路由器失效了，就必须选取一台新的指定路由器。同时，网络上的所有路由器也要重新建立新的邻接关系，并且网络上的所有路由器必须根据新选出的指定路由器执行同步它们的网络数据库。当发生上述流程时，网络将无法有效地传送数据包。</p>
+<p>为了避免这个问题，在网络上除了选取指定路由器，还再选取一台备份指定路由器（BDR）。这样，网络上的所有路由器将和指定路由器（DR）与备份指定路由器（BDR）同时形成邻接关系。DR 和 BDR 之间也将形成邻接关系。这时，如果 DR 失效了，BDR 将会成为新的 DR。但是由于网络上的其余路由器已经和 BDR 形成了邻接关系，因此网络可以将无法传送数据的影响降低到最小。</p>
+<p>DR 和 BDR 的选取是通过一个接口状态机的方式触发的。为了能够使选举的过程进行，需要满足一些前提条件：</p>
+<ul>
+<li>每台路由器的每一个多点访问接口都有一个路由器的优先级，范围为 0-255，在 Cisco 路由器上缺省优先级为 1。可以通过 ip ospf priority 进行更改。优先级为 0 的路由器不能成为 DR 或 BDR</li>
+<li>Hello 数据包包含了表示始发路由器指定的路由器优先级字段，也包含了表示路由器可能认为是 DR 或 BDR 的相关接口的 IP 地址的字段</li>
+<li>当一个接口在一个多址网络上开始有效时，它将把它的 DR 和 BDR 地址设置为 0.0.0.0，同时它也将等待计时器的值设置为路由器无效时间间隔</li>
+<li>在多址网络上已经存在的接口将把 DR 和 BDR 的地址记录在一个接口数据结构表中</li>
+</ul>
+<p>DR 和 BDR 的选举过程如下：</p>
+<ul>
+<li>在路由器和它的邻居路由器之间首先建立双向通信，接着检测每台邻居路由器发送的 Hello 数据包的优先级、DR 和 BDR 字段。列出所有具有 DR 和 BDR 选取资格的路由器的列表。所有的路由器都将宣称自己是 DR 路由器（Hello 数据包中的 DR 字段是它们自身的接口地址）；所有的路由器也都将宣称它们自己是 BDR 路由器。除非没有选举资格，路由器计算时也将在这个具有选取资格路由器的列表中包括它本身</li>
+<li>从具有选举资格的路由器列表中，创建一个还没有宣告为 DR 路由器的所有路由器的子集（宣告自己为 DR 的路由器不能被选举为 BDR）</li>
+<li>如果在这个子集中的一台或多台邻居路由器，它们在 Hello 数据包的 BDR 字段都包含了它们自己的接口地址，那么具有最高优先级的邻居路由器将被宣告为 BDR 路由器，在优先级相同时，具有最高路由器 ID 的邻居路由器将被选作 BDR 路由器</li>
+<li>如果在这个子集中没有路由器宣告自己是 BDR 路由器，那么具有最高优先级的邻居路由器将被宣告为 BDR 路由器，在优先级相同时，具有最高路由器 ID 的邻居路由器将被选作 BDR 路由器。</li>
+<li>如果一台或多台具有选取资格的路由器在 Hello 数据包的 DR 字段中包含它们自己的接口地址，那么具有最高优先级的邻居路由器将被宣告为 DR 路由器，在优先级相同时，具有最高路由器 ID 的邻居路由器将被选作 DR 路由器</li>
+<li>如果没有路由器宣称自己是 DR 路由器，那么新选取的 BDR 路由器将成为 DR 路由器</li>
+<li>如果正在执行计算的路由器是新选取的 DR 或 BDR 路由器，或者它不再是 DR 或 BDR 路由器，将重复以上步骤 2-6</li>
+<li>简单的总结 DR 和 BDR 的选举过程：当一台 OSPF 路由器有效并去发现它的邻居路由器时，它将去检查有效的 DR 和 BDR 路由器。如果 DR 和 BDR 路由器存在的话，这台路由器将接受已经存在的 DR 和 BDR 路由器。如果 BDR 路由器不存在，将执行一个选举过程，那么在数值上具有最高优先级的路由器作为 BDR 路由器。如果存在多台路由器具有相同的优先级，那么在数值上具有最高路由器 ID 的路由器将被选中。如果没有有效的 DR 路由器存在，那么 BDR 路由器将被选举为 DR 路由器，然后在执行一个选举过程选举 BDR 路由器。</li>
+</ul>
+<p>需要注意，路由器的优先级可以影响一个选举过程，但是它不能强制更换已经有效的 DR 或 BDR 路由器。因此，在一个多路访问网络中，通常最先启动的两台具有 DR 选举资格的路由器将成为 DR 和 BDR 路由器。</p>
+<p>一旦 DR 和 BDR 路由器选举成功，其他的路由器（称为 DRothers）将只和 DR 和 BDR 路由器之间形成邻接关系。所有路由器将继续以组播方式发送 Hello 数据包到 224.0.0.5（AllSPFRouters），因此它们能够跟踪它们的邻居路由器。但是 DRothers 路由器只以组播方式发送跟新数据包到 224.0.0.6（AllDRouters），只有 DR 和 BDR 路由器去侦听这个地址。反过来，DR 路由器将使用组播地址 224.0.0.5 泛洪扩散更新数据包到 DRothers。</p>
+<h3 id="OSPF-接口"><a href="#OSPF-接口" class="headerlink" title="OSPF 接口"></a>OSPF 接口</h3><p>链路状态协议的基本要点是它涉及到了路由器之间的链路和那些链路的状态。在 Hello 数据包发送以及在邻居关系建立之前，以及在 LSA 通告之前，一台 OSPF 路由器必须了解自己的链路情况。OSPF 协议通过路由器的接口信息来了解链路信息。接下来将讲解 OSPF 协议接口的数据结构和 OSPF 协议接口的不同状态。</p>
+<p>运行 OSPF 协议的路由器将为每一个启动 OSPF 协议的接口维护一个数据结构，可以使用 <code>show ip ospf interface</code> 命令观察路由器接口的数据结构的内容。</p>
+<ul>
+<li>IP 地址和掩码（IP address and Mask）：路由器接口所配置的 IP 地址和掩码。始发于该接口的 OSPF 数据包将这个地址作为源地址</li>
+<li>Area ID（区域 ID）：接口所在的区域，即这个接口所属网络指定的区域 ID。始发于该接口的 OSPF 数据包将使用这个区域 ID</li>
+<li>进程 ID（Process ID）：该特性是 Cisco 公司的私有属性，不是 OSPF 标准的一部分。Cisco 路由器依赖这个特性能够在同一台路由器上运行多个 OSPF 进程，并使用这个进程 ID 来区分这些 OSPF 进程。进程 ID 的概念仅在所配置的路由器上有效，而在该路由器之外没有意义</li>
+<li>路由器 ID（Router ID）</li>
+<li>网络类型（Network Type）：和这个接口相连的网络类型，广播型、点到点类型、NBMA、点到多点或虚链路等</li>
+<li>代价（Cost）：是指从该接口发送出去的数据包的出站接口的代价。链路代价是 OSPF 协议的度量，并使用 16 位无符号的整数表示。路由器接口的代价值可以通过命令 ip ospf cost 来改变。如果网络中的所有路由器没有使用同一种计算代价的方式来计算 OSPF 代价，那么 OSPF 协议的路由选择将出现不正确的、次优的、或其他一些不确定的情形</li>
+<li>InfTransDelay：该信息是指 LSA 从路由器的接口发送后经历的时间，以秒为单位</li>
+<li>状态（State）：在 OSPF 接口状态机中使用</li>
+<li>路由器优先级（Router Priority）：用来选择 DR 和 BDR 的一个 8 位无符号整数。</li>
+<li>指定路由器（Designated Router）：对于和路由器接口相连的网络的指定路由器，路由器将同时记录下指定路由器的 Router ID 和它与这个共享网络相连的接口地址信息</li>
+<li>备份指定路由器（Backup Designated Router）：对于和路由器接口相连的网络的 BDR，路由器也将同时记录下其 Router ID 和它与这个共享网络相连的接口地址信息</li>
+<li>Hello Interval：是指在接口上传送两个 Hello 数据包之间的周期性间隔，以秒为单位</li>
+<li>RouterDeadInterval：是指在宣告邻居路由器无效之前，本地路由器等待从该邻居路由器接收 Hello 数据的时间，以秒为单位。在 Cisco 路由器上，这个时间的缺省值是 Hello Interval 的 4 倍，可以通过 ip ospf dead-interval 进行修改</li>
+<li>等待计时器（Wait Timer）：在开始选取 DR 和 BDR 之前，路由器等待邻居路由器 Hello 数据包通告 DR 和 BDR 的时间。等待计时器的时间长度就是 RouterDeadInterval</li>
+<li>RxmtInterval：是指在没有得到确认的情况下，路由器重传 OSPF 数据包将要等待的时间长度。在 Cisco 路由器中，可以通过 ip ospf retransmit-interval 进行修改</li>
+<li>Hello 计时器（Hello Timer）：这个计时器的初始值由 Hello Interval 来设置。当它计时超时后，路由器从接口上发送出一个 Hello 数据包</li>
+<li>邻居路由器（Neighboring Routers）：是指和这个接口相连的网络上有效邻居的路由器。在一个多址网络中，可以学习到多个邻居路由器，但是只能和两台邻居路由器建立邻接关系，即 DR 和 BDR</li>
+<li>AuType：描述了在网络上使用的认证类型，OSPF 协议的认证类型可以是 Null（没有认证）、简单口令或加密认证（MD 认证）</li>
+<li>Authentication Key：如果在路由器的接口上启用的是简单认证方式，那么认证秘钥就是一个 64 位的口令。如果在路由器的接口上启用的是加密认证方式，那么认证秘钥就是一个消息摘要秘钥</li>
+</ul>
+<p>一个启用 OSPF 协议的接口在它变成完全有效之前，将会在几种接口状态中间发生转换。这些接口状态是失效、点对点、等待、DR、备份、DRouter 和 Loopback 等。</p>
+<ul>
+<li>失效（Down）：初始的接口状态，在这个阶段，接口不起任何作用。只是将所有接口的参数设置成它们各自的初始数值，此时该接口上不会发送&#x2F;接收任何协议报文</li>
+<li>点到点：这种接口状态仅仅适用于和点到点、点到多点以及虚电路等网络类型相连的接口。当接口的状态切换到该状态时，这种接口就开始起作用了。这是路由器接口将每隔 Hello Interval 的时间发送一次 Hello 数据包，并尝试和接口链路另一端的邻居路由器建立邻接关系</li>
+<li>等待：这种接口状态仅适用于广播型、NBMA 等网络类型相连的接口。当接口的状态切换到该状态时，这个接口将开始发送和接收 Hello 数据包，并设置等待计时器的值。而路由器将在接口处于这个状态的时候，试图去识别网络上的 DR 和 BDR</li>
+<li>指定路由器（DR）：在这种接口状态下，该路由器是所连网络的指定路由器（DR），并将和所在多址网络上的其他路由器建立邻接关系</li>
+<li>备份（Backup）：在这种接口状态下，该路由器就是所连网络的备份指定路由器，并将和所在多址网络上的其他路由器建立邻接关系</li>
+<li>DRother：在这种接口状态下，该路由器既不是所连网络上的 DR 路由器，也不是 BDR 路由器。虽然它将跟踪网络上的所有路由器，但仅仅会和网络上的 DR 路由器和 BDR 路由器建立邻接关系</li>
+<li>Loopback：在这种接口状态下，路由器的接口通过软件或硬件的方式成为环回的。虽然一个接口在该状态下不能发送数据包，但是该接口的地址还是可以通过路由器 LSA 通告出去，因此进行测试用的数据包能够发现到达这个接口的路径</li>
+</ul>
+<h2 id="OSPF-邻居"><a href="#OSPF-邻居" class="headerlink" title="OSPF 邻居"></a>OSPF 邻居</h2><p>要成功建立一个邻接关系，通常需要下面 4 个阶段：</p>
+<ul>
+<li>邻居路由器发现阶段</li>
+<li>双向通信阶段：当两台互为邻居的路由器在它们的 Hello 数据包中互相列出了它们对方的路由器 ID 时，路由器就认为双向通信完成</li>
+<li>数据库同步阶段：路由器之间将进行交换数据库描述、链路状态请求、链路状态更新和链路状态确认数据包信息，以便确保在邻居路由器的链路状态数据库中包含相同的数据库信息。执行这一步骤时，其中一台邻居路由器成为主路由器，而使另一台路由器成为从路由器。主路由器将控制数据库描述数据包的信息交换</li>
+<li>安全邻接阶段</li>
+</ul>
+<p>邻居关系的建立和维持都是通过交换 Hello 数据包来实现的。OSPF 路由器在每个 OSPF 接口的数据结构中保存的信息可以用来为每一种类型的网络构成 Hello 数据包的内容。路由器通过发送包含这些信息的 Hello 数据包，可以将它通告给它的邻居路由器。同样的，对于每一台邻居路由器来说，路由器也将维护一个邻居数据结构表，用来表示从其他路由器学习到的 Hello 数据包信息。使用命令 <code>show ip ospf neighbor</code> 可以观察到路由器单个邻居的信息：</p>
+<ul>
+<li>邻居路由器 ID（Neighbor ID）：邻居路由器的 ID</li>
+<li>邻居 IP 地址（Neighbor IP Address）：是指和网络相连的邻居路由器的接口 IP 地址。当 OSPF 数据包以单播方式发送给邻居路由器时，这个地址就是目的地址</li>
+<li>区域 ID（Area ID）：为了使两台路由器能够互为邻居路由器，路由器收到的 Hello 数据包所带的区域 ID 必须和路由器接收接口配置的区域 ID 要匹配</li>
+<li>接口（Interface）：是指与邻居路由器所在网络相连的接口，即邻居路由器可以通过该接口到达</li>
+<li>邻居优先级（Neighbor Priority）：表示邻居路由器的优先级，其在邻居路由器的 Hello 数据包中通告。该字段在 DR 和 BDR 选举过程中使用</li>
+<li>状态（State）：从本地路由器角度看到的邻居路由器的功能状态</li>
+<li>指定路由器（Designated Router）：该地址包含在邻居路由器发送的 Hello 数据包的 DR 字段里面</li>
+<li>备份指定路由器（Backup Desiignated Router）：该地址包含在邻居路由器发送的 Hello 数据包的 BDR 字段中</li>
+<li>PollInterval：该字段只用于 NBMA 网络上相关的邻居路由器</li>
+<li>邻居路由器可选项（Neighbor Options）：这是邻居路由器支持的一些可选的 OSPF 功能</li>
+<li>失效计时器（Inactive Timer）：这是一个时长为 RouterDeadInterval 的计时器，无论何时，只要从邻居路由器收到一个 Hello 数据包，这个计时器就会被重置。如果在这个失效计时器超时了还没有从邻居路由器收到一个 Hello 数据包，那么该邻居路由器将宣告为失效</li>
+<li>主&#x2F;从（Master&#x2F;Slave）：在 ExStart 状态下，邻居之间协商的主从关系将用来控制数据库的同步问题</li>
+<li>数据库描述序列号（DD Sequence Number）：当前正在向邻居路由器发送的数据库描述序列号</li>
+<li>最后收到的数据库描述数据包（Last Received Database Description Packet）：这个数据包记录了初始化位，后继位和主从位、可选项以及最后收到的数据库描述数据包的序列号等信息。该信息可以用来确定下一个数据库描述数据包是否重复</li>
+<li>链路状态重传列表（Link State Retrasnsmission List）：在邻接关系建立后，OSPF 已经进行泛洪扩散但还没有得到确认的 LSA 列表。当 LSA 还没有得到确认（或者邻接关系被破坏），LSA 将每经过 RxmtInterval 的时间就重传一次。</li>
+<li>数据库摘要列表（Database Summary List）：在数据库同步期间，数据库描述数据包中向邻居路由器发送的 LSA 列表。当路由器进行信息交换状态时，这些 LSA 将会构成链路状态数据库</li>
+<li>链路状态请求列表（Link State Request List）：这个列表记录了来自邻居路由器的数据库描述数据包的 LSA</li>
+<li>，这些 LSA 要比路由器链路状态数据库中的 LSA 更新。链路状态请求数据包会发送给邻居路由器以请求这些 LSA 的拷贝，当路由器通过链路状态更新数据包收到请求的 LSA 时，请求列表就会减少，最终将变成空列表</li>
+</ul>
+<p>OSPF 路由器需要邻居路由器在几种邻居状态之间转换后，才能形成邻居之间的完全邻接关系：</p>
+<ul>
+<li>失效状态（Down）：这是一个邻居会话的初始状态，用来表示在最近一个 RouterDeadInterval 的时间内还没有收到来自邻居路由器的 Hello 数据包。如果一台邻居路由器从其他更高一些的邻居状态转换到了失效状态，那么路由器将会清空链路状态重传列表、数据库摘要列表和链路状态请求列表</li>
+<li>尝试状态（Attempt）：仅仅适用于 NBMA 网络上的邻居，在 NBMA 网络上邻居路由器是手工配置的</li>
+<li>初始状态（Init）：这一状态表明在最近的 RouterDeadInterval 时间来路由器收到了来自邻居路由器的 Hello 数据包，但是双向通信仍然还没有建立。路由器将会在 Hello 数据包的邻居字段中包含这种状态下或更高状态的所有邻居路由器的路由器 ID</li>
+<li>双向通信状态（2-Way）：这一状态表明本地路由器已经在邻居路由器的 Hello 数据包的邻接字段中看到了自己的路由器 ID，这也就意味着一个双向通信的会话已经成功建立。在多址网络中，邻居路由器必须在这个状态或更高状态时才有资格被选做该网络上的 DR 或 BDR。如果在 Init 状态下从邻居路由器那里收到了一个数据库描述数据包，也可以引起邻居状态直接转换到 2-Way 状态</li>
+<li>信息交换初识状态（ExStart）：在这一状态下，本地路由器和它的邻居将建立起主从关系，并确定数据库描述包的序列号，以便为数据库描述数据包的信息交换做准备。具有最高路由器 ID 的邻居路由器将称为主路由器</li>
+<li>信息交换状态（Exchange）：在这一状态下， 本地路由器将向它的邻居路由器发送可以描述它的整个链路状态数据库信息的数据库描述数据包。同时在这个 Exchange 状态下，本地路由器也会发送链路状态请求数据包给它的邻居路由器，用来请求最新的 LSA</li>
+<li>信息加载状态（Loading）：在这一状态下，本地路由器将会向它的邻居路由器发送链路状态请求数据包，用来请求最新的 LSA 通告。虽然在 Exchange 状态下已经发现了这些最新的 LSA 通告，但是本地路由器还没有收到这些 LSA 通告</li>
+<li>完全邻接状态：在这一状态下，邻居路由器之间将建立起完全邻接关系，这种邻接关系出现在路由器 LSA 和网路 LSA 中</li>
+</ul>
+<p>除非邻居路由器之间 Hello 数据包的参数不匹配，一般情况下，在点到点、点到多点、和虚链路类型的网络上邻居路由器总是可以形成邻接关系的。而在广播网络和 NBMA 网络上，需要选取 DR 和 BDR 路由器，DR 和 BDR 路由器将和所有邻接路由器形成邻接关系，但是在 DRothers 路由器之间没有邻接关系存在。</p>
+<p>在一个邻接关系的创建过程中，OSPF 协议使用以下 3 种数据包类型：</p>
+<ul>
+<li>数据库描述数据包</li>
+<li>链路状态请求数据包</li>
+<li>链路状态更新数据包</li>
+</ul>
+<p>数据库描述数据包携带了始发路由器的链路状态数据库中的每一个 LSA 的一个简要描述。这些描述不是 LSA 的完整描述，而仅仅是它们的头部。但是这些信息足以让接收路由器判定在它自己的数据库中的 LSA 信息是否为最新的。另外，在数据库描述数据包中有 3 个标记位用来管理邻接关系的建立过程：</p>
+<ul>
+<li>初始位：当需要指明所发送的是第一个数据库描述数据包时，该位被设置</li>
+<li>后继位：当需要描述所发送的还不是最后一个数据库描述数据包时，该位被设置</li>
+<li>MS 位，或主从位：当数据库描述数据包始发于一个主路由器时，该位被设置为 1</li>
+</ul>
+<p>当两台路由器在 ExStart 状态开始进行主从关系协商时，它们都将通过发送一个 MS 位设置为 1 的空的数据库描述数据包来宣称自己是主路由器。这两个数据库描述数据包的数据库描述序列号由发出这两个数据包的路由器自己决定。具有较低路由器 ID 的路由器将成为从路由器，并且回复一个 MS 位设置为 0 的数据库描述数据包，这个数据库描述数据包的序列号设置为主路由器的序列号。同时这个数据库描述数据包也将是第一个携带 LSA 摘要信息的数据包。当主从协商关系协商完成后，邻居状态也将切换到 Exchange 状态。</p>
+<p>在 Exchange 状态，邻居路由器开始同步它们的链路状态数据库，同步链路状态数据库的操作是通过描述它们各自的链路状态数据库的所有条目来实现的。数据库摘要列表由路由器的链路状态数据库中所有的 LSA 通告的头部组成，而本地路由器将向它的邻居路由器发送包含这些 LSA 头部列表的数据库描述数据包。</p>
+<p>如果本地路由器发现它的邻居路由器有一条 LSA 通告不在自己的链路状态数据库中，或者邻居路由器含有比已知 LSA 通告更新的拷贝，那么本地路由器将把这条 LSA 放入自己的链路状态请求列表中。随后，本地路由器将发出一个链路状态请求数据包去请求该 LSA 的完整拷贝。链路状态更新数据包将会传送这些被请求的 LSA 信息。当本地路由器收到关于这些被请求的 LSA 之后，从自己的链路状态请求列表中删除这些 LSA 条目。</p>
+<p>在更新数据包中传送的所有的 LSA 必须单独地进行确认，因此路由器将把这些传送的 LSA 放入它的链路状态重传列表中，当这些 LSA 被确认后，路由器就从它的链路状态重传列表中删除它们。LSA 可以通过两种方法之一来确认：</p>
+<ul>
+<li>显示确认：收到了包含这个 LSA 头部的链路状态确认数据包</li>
+<li>隐式确认：收到了包含这个 LSA 相同实例的更新数据包</li>
+</ul>
+<p>主路由器将控制数据库的同步过程，并确保每次只有一个数据库描述包是未处理的。当从路由器收到从主路由器发出的数据库描述数据包后，从路由器将通过发送一个具有相同序列号的数据库描述数据包来确认那个数据包。如果主路由器在 RxmtInterval 的时间间隔内没有收到一个关于未处理的数据库描述数据包的确认，那么主路由器将会发送该数据包的一份新拷贝。</p>
+<p>只有当为了响应从 <code>主路由器</code> 那里收到的数据库描述数据包时，从路由器才会发送数据库描述数据包。如果它所收到的数据库描述数据包具有一个新的序列号，那么从路由器将发送一个具有相同序列号的数据库描述数据包。如果它所收到的数据库描述数据包序列号和这之前已经确认的数据库描述数据包相同，那么将重传这个确认数据库描述数据包。</p>
+<p>当满足以下两个条件时，主路由器认为数据库的同步过程已经完成：</p>
+<ul>
+<li>主路由器已经发送过可以完整地描述自己的链路状态数据库所必要的所有数据库描述数据包</li>
+<li>已经从 从路由器 中收到一个 M 位设置为 0 的数据库描述数据包</li>
+</ul>
+<p>当满足以下两个条件时，从路由器认为数据库的同步过程已经完成：</p>
+<ul>
+<li>从路由器接收到一个 M 位设置为 0 的数据库描述数据包</li>
+<li>从路由器已经发送了一个 M 位为 0 的确认数据库描述数据包（即从路由器也完全描述了它自己的链路状态数据库）</li>
+</ul>
+<p>当数据库同步过程完成后，将会出现下面两种状态转换的其中一种：</p>
+<ul>
+<li>如果链路请求列表中仍然还有一些 LSA 条目，那么路由器将把邻居的状态转换到加载（Loading）状态</li>
+<li>如果链路状态请求列表为空，那么路由器将会把邻居的状态转换到完全邻接状态（Full）状态</li>
+</ul>
+<p>如下演示了链路状态数据库同步过程：</p>
+<ul>
+<li>在多路访问网络中，路由器 RT1 变为有效状态，并发送一个 Hello 数据包。由于它还没有学习到任何邻居，因此 Hello 数据包中的邻居字段为空，而 DR 和 BDR 字段为 0.0.0.0</li>
+<li>当收到 RT1 的 Hello 数据包后，路由器 RT2 就为 RT1 创建一个邻居数据结构，并将 RT1 的状态设置为 Init，同样，RT2 也将发送 Hello 数据包到 RT1，只不过此时 Hello 数据包中的邻居字段将填充 RT1 的 路由器 ID，同样地，作为 DR，路由器 RT2 也将 Hello 数据包中的 DR 字段设置成它自己的接口地址</li>
+<li>当路由器 RT1 接收到来自 RT2 的 Hello 数据包，并在该 Hello 报文中看到自己的路由器 ID，于是 RT1 将为 RT2 创建一个邻居数据结构，并将其状态设置为 ExStart，以便开始主从协商关系。接着 RT1 发送一个空的数据库描述数据包，并将数据库描述的序列号设置为 x，同时设置初识位（I 位）、后继位（M 位）以及主从位（MS 位）</li>
+<li>路由器 RT2 一旦收到 RT1 的数据库描述数据包，就会将 RT1 的状态转换到 ExStart。同时它也将发送一个空的数据库描述数据包，并将数据库描述的序列号设置为 y，同时设置初识位（I 位）、后继位（M 位）以及主从位（MS 位）</li>
+<li>由于 RT2 路由器的 Router ID 更高，因此两台路由器一致同意 RT2 是主路由器，路由器 RT1 把 RT2 的状态转换为 Exchange 状态。路由器 RT1 将产生一个数据库描述数据包，这个数据库描述数据包使用 RT2 的数据描述数据包的序列号 y，并将 MS 位设置为 0，同时该数据包将会传送路由器 RT1 的链路状态摘要列表中的 LSA 头部</li>
+<li>RT2 一旦收到 RT1 的数据库描述数据包，就会将它的邻居状态转换为 Exchange 状态，接着它将发送一个数据库描述数据包，该数据库描述数据包包含路由器 RT2 自己的链路状态摘要列表中的 LSA 头部，并将数据库描述序列号增长到 y + 1</li>
+<li>当 RT1 收到 RT2 发送的数据库描述数据包后，路由器 RT1 就会发送一个包含相同序列号的确认数据库描述数据包，这个过程一直延续。路由器 RT2 发送一个数据描述包，接着等待从 RT1 发送的包含相同序列号的确认数据库描述数据包，然后 RT2 再发送下一个数据库描述包。直到路由器 RT2 发出包含最后一个 LSA 摘要的数据库描述数据包，并将这个数据包的 M 位设置为 0</li>
+<li>收到上述数据包后，同时自己所发出的确认数据库描述数据包也已经包含了自己最后的 LSA 摘要后，路由器 RT1 就会认为 Exchange 已经完成。然而 路由器 RT1的链路状态请求列表中还存在 LSA 条目，因此它将 RT2 的状态切换到信息加载状态（Loading）</li>
+<li>当路由器 RT2 收到 RT1 的最后一个数据库描述数据包时，RT2 将 RT1 的状态切换为完全邻居状态（Full），这是因为在它的链路状态请求列表中已经没有 LSA 条目了</li>
+<li>路由器 RT1 继续发送链路状态请求数据包，路由器 RT2 通过链路状态更新数据包发送被请求的 LSA 通告，该过程一直持续直到路由器 RT1 的链路状态请求列表变为空，然后 RT1 将 RT2 的状态转换到完全邻接状态</li>
+</ul>
+<p>需要注意，如果路由器的链路状态请求列表中有 LSA 条目时，当邻居状态是 Exchange 状态时路由器就可以发送链路请求数据包了，不需要等到 Loading 状态。</p>
+<h3 id="泛洪扩散"><a href="#泛洪扩散" class="headerlink" title="泛洪扩散"></a>泛洪扩散</h3><p>整个 OSPF 的拓扑图可以描绘成一组互连的路由器或一组互连的节点，这里所说的互连不是指物理的链路而是指逻辑的邻接关系。为了使这些节点能够在这个逻辑拓扑上完全地进行路由选择，每一个节点都必须拥有一个关于该拓扑结构的相同拓扑图。这个拓扑图就是 OSPF 数据库。</p>
+<p>OSPF 数据库也就是链路状态数据库，这个数据库由路由器可以接收到的所有 LSA 组成。在拓扑图中发生的一个变化将可以表示为一条或多条 LSA 的变化。泛洪扩散（Flooding）过程就是将这些变化的或新的 LSA 发送到整个网络中去，以确保每一个节点的数据库都可以更新，最终保持所有节点的数据库的一致性。</p>
+<p>泛洪扩散过程将会使用下面两种类型的 OSPF 数据包:</p>
+<ul>
+<li>链路状态更新数据包</li>
+<li>链路状态确认数据包</li>
+</ul>
+<p>每一个链路状态更新数据包和确认数据包都可以携带多个 LSA。虽然 LSA 本身是泛洪扩散到整个网络的，但是更新数据包和确认数据包却只在具有邻接关系的两个节点之间传送。</p>
+<p>在点到点网络中，路由器是组播方式将更新数据包发送到组播地址 224.0.0.5（AllSPFRouters）。在点到多点和虚链路的网络上，路由器是以单播方式将更新数据包发送到邻接路由器的接口地址的。在广播型网路中，DRothers 路由器只能和 DR 和 BDR 建立邻接关系，因此更新数据包将发送到组播地址 224.0.0.6（AllDRouters）。相应地，DR 路由器将以组播方式发送包含 LSA 的更新数据包都网络上所有与之建立邻接关系的路由器，这里使用的组播地址是 224.0.0.5（AllSPFRouters）。接着所有的路由器将从所有的其他接口上泛洪扩散 LSA。虽然 BDR 路由器也使用组播方式收到和记录了来自 DRothers 路由器的 LSA 通告，但是它不会在再重复扩散或者确认这些 LSA，除非 DR 路由器失效了它才会这样做。在 NBMA 网络中存在同样的 DR&#x2F;BDR 特性，只不过 LSA 是以单播方式发送。</p>
+<p>由于完全相同的链路状态数据库信息是正确操作 OSPF 最基本的前提，因此 LSA 的泛洪扩散必须是可靠的。发送 LSA 的路由器必须要确认它们发出的 LSA 是否被成功接收了，而接收 LSA 的路由器也必须确认它们正在接收的 LSA 信息是正确的。</p>
+<p>对于可靠的泛洪扩散来讲，每一个单独传送的 LSA 都必须被确认，确认有隐式确认和显式确认两种方式。</p>
+<p>邻居路由器可以通过向始发更新数据包的路由器回送包含那个 LSA 的拷贝信息的更新数据包，来作为对所收到 LSA 的隐式确认。有时隐式确认比显式确认更有效，例如邻居路由器正打算向始发路由器发送更新数据包的时候。</p>
+<p>邻居路由器的显式确认是指通过发送一个链路状态确认数据包来确认收到 LSA。而且可以使用单个链路状态确认数据包来确认多个 LSA 通告。链路状态确认数据包不需要包含完整的 LSA 信息，只需要携带 LSA 的头部就足以识别这些 LSA 了。</p>
+<p>当一台路由器发送一个 LSA 时，会把该 LSA 的一份拷贝放进它所发送的每一个邻居的链路重传列表中，这个 LSA 通告每隔 RxmtInterval 的时间重传一次，直到该 LSA 得到确认或邻接关系中断。重传的链路状态更新数据包总是以单播方式发送。</p>
+<p>确认可以是有时延的，或者直接的。通过延迟一个确认的方法，更多的 LSA 通告可以通过单个链路状态确认数据包来确认。在一个广播型网络中，来自多台邻居路由器的 LSA 可以由单个组播的链路状态确认数据包来确认。通常，在不同网络类型上使用链路状态更新数据包的单播&#x2F;组播地址规则也适用于链路状态确认。一个被延迟的确认数据包的延迟时间必须小于 RxmtInterval 的时长，从而避免不必要的数据包重传。</p>
+<p>直接的确认总是以单播方式立即发送，直接的确认出现在下面两种情况：</p>
+<ul>
+<li>从邻居路由器收到了重复的 LSA，可能表明邻居还没有收到这个 LSA 的确认</li>
+<li>LSA 的老化时间（age）到达最大生存时间（MaxAge），说明在接收路由器的链路状态数据库里已经没有这个 LSA 的实例里</li>
+</ul>
+<p>每一个 LSA 都包含 3 个值用来确保在每个数据库中保存的 LSA 是最新的。这 3 个数值是序列号、校验和和以及老化时间。</p>
+<p>OSPF 协议使用 32 位有符号的线性序列号空间，序列号从 InitialSequenceNumber（0x8000001）到 MaxSequenceNumber（0x7fffffff）。当一台路由器始发一条 LSA 通告时，它将设置这个 LSA 的序列号为 InitialSequenceNumber，每当这台路由器产生该 LSA 的一个新实例时，该路由器就会将它的序列号增加 1。</p>
+<p>如果当前 LSA 的序列号已经达到最大值 MaxSequenceNumber 并且又需要创建这个 LSA 的一个新实例时，这台路由器就必须从所有的数据库中清除老的 LSA。这一操作是通过设置 LSA 的老化时间为 MaxAge，并且重新扩散它到所有的邻接节点来实现，一旦所有的邻居路由器确认过这个 LSA 老化后，就可以泛洪扩散这个 LSA 的一个含有 InitialSequenceNumber 序列号的新实例。</p>
+<p>校验和是一个采用 Fletcher 算法计算得到的 16 位整数。这个校验和的计算除了 Age 字段外，将覆盖整个 LSA 数据包。驻留在链路状态数据库中的每个 LSA 的校验和每 5min 将检验一次，以确保这个 LSA 在数据库中没有被破坏。</p>
+<p>老化时间是一个用来指明 LSA 生存时间的 16 位无符号整数，以秒为单位，范围为 0 - 3600。一台路由器在始发一个 LSA 时，它就会把老化时间设置为 0。当泛洪扩散的 LSA 经过一台路由器时，LSA 的老化时间就会增加一个由 InfTransDelay 设定的秒数。在 Cisco 路由器中，InfTransDelay 设定的缺省值为 1s，这个数值可以通过命令 ip ospf transmit-delay 来改变。当 LSA 驻留在路由器的数据库中时，LSA 的老化时间同样会增大。</p>
+<p>当一条 LSA 通告的老化时间达到最大生存时间时，LSA 将被重新泛洪扩散，并且随后会从路由器的数据库清除这条 LSA。当一台路由器需要从所有路由器的数据库中清除一条 LSA 时，它会提前把这条 LSA 的老化时间设置为最大生存时间并重新泛洪扩散这个 LSA。这里只要始发这条 LSA 的路由器才可以提前使这条 LSA 老化。</p>
+<p>当收到某条相同的 LSA 的多个实例时，路由器将通过下面的算法来确定哪个是最新的 LSA 实例：</p>
+<ul>
+<li>比较 LSA 实例的序列号，拥有最大的序列号的 LSA 就是最新的 LSA</li>
+<li>如果 LSA 序列号相同，那么就会比较他们的校验和，拥有最大的无符号校验和的 LSA 就是最新的 LSA</li>
+<li>如果 LSA 实例的校验和也相同，将进一步比较他们的老化时间。如果只有一条 LSA 拥有大小为 MaxAge 的老化时间，那么就认为这条 LSA 是最新的 LSA</li>
+<li>如果这些 LSA 的老化时间之间的差别多余 15min（MaxAgeDiff），那么拥有较小老化时间的 LSA 将是最新的 LSA</li>
+<li>如果上述条件都无法区分最新的 LSA，那么就认为这两个 LSA 是相同的</li>
+</ul>
+<h3 id="区域"><a href="#区域" class="headerlink" title="区域"></a>区域</h3><p>OSPF 协议由于使用了多个数据库和复杂的算法，因而相比于前面介绍的路由选择协议，它将会耗费路由器更多的内存和更多的 CPU 处理能力。当网络规模的不断增长时，对路由器的性能要求就不断提高。另一方面，虽然 LSA 的泛洪扩散比 RIP 协议中周期性的、全路由表的更新更有效率，但是对于一个大型网路来说，它依然给大量数据链路带来了沉重负担。</p>
+<p>OSPF 协议可以利用区域的概念来缩小这些不利的影响，在 OSPF 协议的环境下，区域（Area）是一组逻辑上的 OSPF 路由器和链路，它可以有效地把一个 OSPF 域分割成几个子域。在一个区域内的路由器将不需要了解它们所在区域外部的拓扑细节：</p>
+<ul>
+<li>路由器仅仅需要和它所在区域内的其他路由器具有相同的链路状态数据库，没有必要和整个 OSPF 域内的所有路由器共享相同的链路状态数据库，因此链路状态数据库大小的缩小就降低了对路由器内存的消耗</li>
+<li>链路状态数据库的减小也就意味着处理较少的 LSA，从而也降低了对路由器 CPU 的消耗</li>
+<li>由于链路状态数据库只需要在一个区域内维护，因此大量的 LSA 泛洪扩散也就被限制在一个区域里</li>
+</ul>
+<p>区域是通过一个 32 位的区域 ID（Area ID）来识别的。区域可以表示为一个十进制的数字，也可以表示成点分十进制的数字。在 Cisco 路由器中这两种表示方式都可以使用。使用哪一种格式来标识一个具体的区域 ID，通常根据使用的方便性来选择。</p>
+<p>定义了下面 3 种与区域相关的通信量的类型：</p>
+<ul>
+<li>域内通信量（Intra-Area Traffic）：指由在单个域内的路由器之间交换的数据包构成的通信量</li>
+<li>域间通信量（Inter-Area Traffic）：指由在不同区域的路由器之间交换的数据包构成的通信量</li>
+<li>外部通信量（External Traffic）：指由 OSPF 域内的路由器和其他路由选择域的路由器之间交换的数据包构成的通信量</li>
+</ul>
+<p>区域 0（或者区域 0.0.0.0）是为骨干域保留的区域 ID 号。骨干区域（Backone Area）的任务是汇总每一个区域的网络拓扑到其他所有的区域，因此所有域间通信量都必须通过骨干区域，非骨干区域之间不能直接交换数据包。</p>
+<p>大多数 OSPF 协议的设计者对于单个区域所能支持的路由器的最大数量都有一个个人认为较适当的粗略的经验值。单个区域所支持的路由器最大数量的范围大约是 30-200，但是在一个区域内实际加入的路由器的数量要比单个区域所能容纳的路由器最大数量小一些。这是因为还有更为重要的因素影响着这个数量：一个区域内链路的数量、网络拓扑的稳定性、路由器的内存和 CPU 性能等。只使用单个区域来设计一个小型的 OSPF 网络来是非常合理的。</p>
+<h3 id="路由器类型"><a href="#路由器类型" class="headerlink" title="路由器类型"></a>路由器类型</h3><p>路由器也像通信量一样可以被分成和区域相关的几个类型，所有的 OSPF 路由器都是下面 4 种路由器类型的一种：</p>
+<ul>
+<li>内部路由器（Internal Router）：是指所有接口都属于同一个区域的路由器</li>
+<li>区域边界路由器（Area Border Router，ABR）：是指连接一个或多个区域到骨干区域的路由器，并且这些路由器会作为域间通信量的路由网关。因而 ABR 路由器总是至少有一个接口是属于骨干区域的，而且必须为每一个与之相连的区域维护不同的链路状态数据库。因此，ABR 路由器通常比一般的内部路由器拥有更多的内存和更高性能的路由处理器。ABR 路由器将与它相连的区域的拓扑信息汇总给骨干区域，然后由其将这些汇总信息传送给其他区域</li>
+<li>骨干路由器（Backbone Router）：是指至少有一个接口是和骨干区域相连的路由器。这意味着 ABR 路由器可以是骨干路由器，但是并不是所有的骨干路由器都是 ABR 路由器。另外，如果一台内部路由器的所有接口都属于区域 0，那么这台路由器也是一台骨干路由器。</li>
+<li>自主系统边界路由器（Autonomous System Boundary Router，ASBR）：可以认为是 OSPF 域外部的通信量进入 OSPF 域的网关路由器，也就是说，ASBR 路由器是用来把其他路由选择协议学习到的路由，通过路由选择重分配的方式注入到 OSPF 域的路由器。一台 ASBR 路由器可以是位于 OSPF 域的自主系统内部的任何路由器，它可以是一台内部路由器、骨干路由器或 ABR 路由器</li>
+</ul>
+<h3 id="分段区域"><a href="#分段区域" class="headerlink" title="分段区域"></a>分段区域</h3><p>分段区域是指由于链路失效而使一个区域的一个部分和其他部分隔离开来的情形。如果一个非骨干的区域变成分段区域，并且在这个分段区域的任何一段区域里的所有路由器当中还能发现一台 ABR 路由器，那么这个分段区域将不会产生中断通信服务。骨干区域仅仅会把这个分段区域看成两个单独的而区域。但是从这个分段区域中的任何一段区域到另一段区域的域内通信量将变成域间通信量，这些通信量将通过骨干区域而绕开该分段区域。注意，分段区域和孤立区域是不同的，孤立区域没有链路路径和网络相连。</p>
+<p>如果一个骨干区域本身变成了分段区域，那么将会带来更麻烦的问题。一种可能的情况是，如果一个骨干区域变成分段区域 ，那么这个分段区域的骨干区域的每一边和与之相连的区域都将和另外一边隔离开来。</p>
+<h3 id="虚链路"><a href="#虚链路" class="headerlink" title="虚链路"></a>虚链路</h3><p>虚链路（Virtual Link）是指一条通过一个非骨干区域连接到骨干区域的链路。虚链路主要应用于以下几种目的：</p>
+<ul>
+<li>通过一个非骨干区域连接一个区域到骨干区域</li>
+<li>通过一个一个非骨干区域连接一个分段的骨干区域两边的部分区域</li>
+</ul>
+<p>虚链路和具体的物理链路没有关系，虚链路事实上是一个逻辑通道（tunnel），数据包可以通过选择最优的路径从一端到达另一端。在配置虚链路的时候，有几条相关的规则，说明如下：</p>
+<ul>
+<li>虚链路必须配置在两台 ABR 路由器之间</li>
+<li>配置了虚链路所经过的区域必须拥有全部的路由选择信息，这样的区域又称为传送区域</li>
+<li>传送区域不能是一个末梢区域</li>
+</ul>
+<p>OSPF 协议也把虚链路归类为一个网络类型，虚链路可以看成是两台 ABR 路由器之间的一个无编码的（即无编制地址的）链路，并且它是属于骨干区域的。这些 ABR 路由器之间虽然没有物理相连的数据链路，但是他们可以看做是通过他们之间的虚链路逻辑上虚拟连接的邻居。在每一个 ABR 路由器的路由表中，当发现有到达邻居的 ABR 路由器时，虚链路将转换到完全可操作的点到点接口状态。这条虚链路的代价就是到达它的邻居路由器的路由代价。当接口状态变为点到点状态时，一个邻接关系将通过这条虚链路建立成功。</p>
+<p>虚链路的存在增加了网络的复杂度，而且使故障的排除更加困难。因此最好避免使用虚链路，而应该在区域上，特别是骨干区域上设计冗余链路来确保防止分段区域的产生。当有两个或多个网络要合并时，预先要制定好充分计划，以便确保那些没有直接链路到达骨干区域的区域不被遗漏。</p>
+<p>如果配置了一条虚链路，设计者应该仅仅把它用来作为修复无法避免的网络拓扑问题的一种临时手段。虚链路可以看做是一个标明网络的某个部分是否需要重新设计的标志。</p>
+<h3 id="链路状态数据库"><a href="#链路状态数据库" class="headerlink" title="链路状态数据库"></a>链路状态数据库</h3><p>一台路由器的所有有效的 LSA 都被存放在它的链路状态数据库中。正确的 LSA 将可以描述一个 OSPF 区域网络拓扑的结构。因为一个区域中的每一台路由器都要利用这个数据库的信息来计算它的最短路径树，因此，所有区域数据库的统一性对于正确的路由选择来说就变得十分重要了。</p>
+<p>可以通过命令 <code>show ip ospf database</code> 来观察一个链路状态数据库中的所有 LSA 的列表。如果这个数据库是包含多个区域的 LSA 信息，那么就表明这台路由器是 ABR 路由器。使用 <code>show ip ospf database database-summary</code> 来显示一个链路状态数据库中基于区域和 LSA 类型分类的 LSA 通告的数量。</p>
+<p>当 LSA 通告驻留在路由器的链路状态数据库中时，它们的老化时间会逐渐增大。当这些 LSA 通告达到了最大生存时间，那么它们将从 OSPF 域中清除掉。每隔 30min（LSRefreshTime） 始发这条 LSA 通告的路由器就将泛洪扩散这条 LSA 的一个新拷贝，并将它的序列号增加 1，老化时间设置为 0。其他的 OSPF 路由器一旦收到这个新拷贝，就会用这个新拷贝替代这条 LSA 通告原来的拷贝，并且使这个新拷贝的老化时间开始增加。这就是链路状态重新刷新机制。</p>
+<p>虽然链路状态重新刷新机制是用来确保每条 LSA 通告的活动状态，但是它也带来一个额外的好处，任何一个在路由器链路状态数据库中可能已经被破坏的 LSA 通告，都可以被正常的 LSA 通告刷新后的拷贝来替换。</p>
+<p>由于每个 LSA 通告都与一个单独的重刷新计时器相关联，这样 LSA 的 LSRefreshTime 不会同时全部超时，这样重新泛洪扩散将在一个相对随机的模式下传播出去。但是这也带来一个问题，链路的带宽没有使用效率，更新数据包只能传送一些，甚至单个 LSA 通告。</p>
+<p>在 Cisco 路由器 IOS 11.3 版本之前，只选用单个 LSRefreshTime 和整个链路状态数据库相关联，每隔 30min，每台路由器将重新刷新它始发的 LSA 通告，而不管这些 LSA 通告的实际老化时间。虽然这种策略避免了链路带宽使用低效的问题，但是一个链路状态数据库很大，那么每隔 30min，网络就会产生一个区域通信量和 CPU 利用率的高峰。</p>
+<p>因此，一种称为 LSA 组步调的机制，作为 LSA 独自使用重新刷新计时器和单个统一计时器之间的一种折中方法。每一个 LSA 通告都有属于自己的重新刷新计时器，但是当它们独自使用的重新计时器超时的时候，会引入一个时延来延迟这些 LSA 通告的泛洪扩散。通过延迟重新刷新时间，可以在泛洪扩散之前将更多的 LSA 变成一组，从而可以让更新数据包携带更多的 LSA 通告。一个组步调的间隔时间为 240s，该时间可以通过命令 timers pacing lsa-group 进行修改。</p>
+<h3 id="LSA-的类型"><a href="#LSA-的类型" class="headerlink" title="LSA 的类型"></a>LSA 的类型</h3><p>由于 OSPF 协议定义了多种路由器的类型，因而定义多种 LSA 通告的类型也是必要的。如下列出了 LSA 通告的类型：</p>
+<ul>
+<li><p>路由器 LSA（Router LSA）：类型为 1，每一台路由器都会产生路由器 LSA 通告。这个最基本的 LSA 通告列出了路由器的所有链路和接口，并指明了它们的状态和沿每条链路方向出站的代价，以及该链路上所有已知的 OSPF 邻居</p>
+</li>
+<li><p>网络 LSA（Network LSA）：类型为 2，每一个多路访问网络中的 DR 将会产生网络 LSA 的通告。DR 路由器可以看作一个伪节点，或是一个虚拟路由器，用来描述一个多路访问网络和与之相连的所有路由器。从这个角度来看，一个网络 LSA 通告也可以描绘为一个逻辑上的伪节点，就像一条路由器 LSA 通告描绘一个物理上的单台路由器一样。网络 LSA 通告列出了所有与之相连的路由器，包括路由器本身。像路由器 LSA 一样，网络 LSA 也仅在产生这条网络 LSA 的区域内部进行泛洪扩散。注意和路由器 LSA 不同，网络 LSA 没有度量值，因为之前讲过，从 LSA 中表示的伪节点到任何相连的路由器的代价总是为 0</p>
+</li>
+<li><p>网络汇总 LSA （Network Summary LSA）：类型为 3，是由 ABR 路由器始发的。ABR 路由器将发送网络汇总 LSA 到一个区域，用来通告在区域外部的目的地址。实际上，这些网络汇总 LSA 就是 ABR 路由器告诉在与之相连的区域内的内部路由器它所能到达目的地址的一种方法。一台 ABR 路由器也可以通过网络汇总 LSA 向骨干通告区域通告与之相连的区域内部的目的地址。在一个区域外部，但仍在一个 OSPF 自主系统内部的缺省路由也可以通过这种类型的 LSA 来通告。</p>
+</li>
+</ul>
+<p>当一台 ABR 路由器始发一条网络汇总 LSA 时，将包括从它本身到正在通告的这条 LSA 的目的地所耗费的代价。ABR 路由器即使知道它有多条路由可以到达目的地，它也只会为这个目的地始发单条网络汇总 LSA 通告，而且这条网络汇总 LSA 是上述多条路由中代价最低的。同样地，如果一台 ABR 路由器经过骨干区域从其他的 ABR 路由器收到多条网络汇总 LSA，那么这台始发的 ABR 路由器将会选择这些 LSA 通告中代价最低的 LSA，并将其通告给与它相连的非骨干区域。</p>
+<p>当其他的路由器从一台 ABR 路由器收到一条网络汇总 LSA 通告时，它并不运行 SPF 算法。它只是简单地加上从它到那台 ABR 路由器之间的路由代价，并将这个代价包含在 LSA 通告中。经由 ABR 路由器，到达所通告目的地的路由连同所计算的代价被被一起记录进了路由表。因此，依赖于中间路由器而不是确定到达目的地的全程路由，这种行为其实是距离矢量协议的行为。因此，虽然在一个区域内部 OSPF 协议是一个链路状态协议，但是它却使用了距离矢量的算法来查找域间路由。</p>
+<ul>
+<li><p>ASBR 汇总 LSA（ASBR Summary LSA）：类型为 4，也是由 ABR 路由器始发的，ASBR 汇总 LSA 除了所通告的目的地是一台 ASBR 路由器而不是一个网络外，其他的和网络汇总 LSA 都是一样的。也就是说 ASBR 汇总 LSA 通告的目的地址将总是一个主机地址，因为它是一条到达一台路由器的路由</p>
+</li>
+<li><p>自主系统外部 LSA（Autonomous System External LSA）：类型为 5，或者称为外部 LSA，是始发于 ASBR 路由器，用来通告到达 OSPF 自主系统外部的目的地或者 OSPF 自主系统外部的缺省路由的 LSA。自主系统外部 LSA 是链路状态数据库中唯一不与具体的区域相关联的 LSA 通告。外部 LSA 通告将在整个自主系统进行泛洪扩散。</p>
+</li>
+<li><p>组成员 LSA（Group Membership LSA）：用在 OSPF 协议的一个增强版本：组播 OSPF（MOSPF）。MOSPF 协议将数据包从一个单一的源地址转发到多个目的地或者说组播成员，这些组播成员共享同一个 D 类组播地址。</p>
+</li>
+<li><p>NSSA 外部 LSA（NSSA External LSA）：类型为 7，是指在非纯末梢区域（Not-So-Stubby-Area，NSSA）内始发于 ASBR 路由器的 LSA 通告。NSSA 外部 LSA 通告几乎和自主系统外部 LSA 通告是相同的。只是不像自主系统外部 LSA 通告那样在整个 OSPF 自主系统内进行泛洪扩散，NSSA 外部 LSA 通告仅仅在始发这个 NSSA 外部 LSA 通告的非传末梢区域内部进行泛洪扩散。</p>
+</li>
+<li><p>外部属性 LSA（External Attributes LSA）：是被提议作为运行内部 BGP（iBGP 协议）的另一种选择，以便用来传送 BGP 协议信息穿过一个 OSPF 域。这个 LSA 没有在大范围部署过，IOS 软件也不支持该 LSA</p>
+</li>
+<li><p>Opaque LSA：由标准的 LSA 头部后面跟随专用信息组成的一类 LSA。这个信息字段可以直接由 OSPF 协议使用，或者由其他应用分发信息到整个 OSPF 域间使用。Opaque LSA 类型现在用于对 OSPF 增加可变的扩展特性，例如在 MPLS 网络中应用的流量工程参数</p>
+</li>
+</ul>
+<h3 id="末梢区域"><a href="#末梢区域" class="headerlink" title="末梢区域"></a>末梢区域</h3><p>一个学习到外部目的地路由信息的 ASBR 路由器，将通过在整个 OSPF 自主系统中泛洪扩散自主系统外部 LSA 来通告这些外部的目的路由信息。通常这些外部 LSA 通告可能会在每台路由器的链路状态数据库中占据比较大的比例。</p>
+<p>但是并不是每一台路由器都需要了解所有外部目的地的信息，例如如下网络，不管外部目的地在哪里，区域 2 中的路由器都必须发送数据包到 ABR 路由器，以便到达那台 ASBR 路由器。此时，区域 2 可以配置成一个末梢区域。</p>
+<p>末梢区域是一个不允许 AS 外部 LSA 通告在其内部进行泛洪扩散的区域 。如果一个区域内不需要学习自主系统外部 LSA，那么 ASBR 汇总 LSA 也就不需要了，因此这些 LSA 通告也将被阻塞。</p>
+<p>位于末梢区域边界的 ABR 路由器将使用网络汇总 LSA 向这个区域通告一个简单的缺省路由，在区域内部路由器上，所有和域内或域间路由不能匹配的目的地址都将最终匹配这条缺省路由。由于缺省路由也是通过网络汇总 LSA 来通告，因此它将不会被通告这个区域的外部去。</p>
+<p>在末梢区域中，路由器的链路状态数据库的大小被减少了，但是在末梢区域中也有 4 个限制条件：</p>
+<ul>
+<li>和所有的区域一样，一个末梢区域内部的所有路由器也必须拥有相同的链路状态数据库。为了确保满足这个条件，所有末梢区域内的路由器都会在它们的 Hello 数据包中设置一个标志：E-bit，并将它设置为 0，这样所有末梢区域内的路由器将不会接受其他任何路由器发送的任何 E-bit 为 1 的 Hello 数据包。结果没配置成一个末梢区域路由器的任何路由器都无法成功建立邻接关系</li>
+<li>虚链路不能在一个末梢区域内进行配置，也不能穿过一个末梢网络</li>
+<li>末梢内的路由器不能是 ASBR 路由器</li>
+<li>一个末梢区域可以拥有多台 ABR 路由器，但是因为缺省路由的原因，区域内部路由器将不能确定哪一台路由器才是到达 ASBR 路由器的最优网关</li>
+</ul>
+<p>通过阻塞类型 5 和类型 4 的 LSA 传播到一个区域的方法来减少链路状态数据库的大小，如果能够把类型 3（网络汇总 LSA）也阻塞掉，就可以进一步减少链路状态数据库的大小。Cisco 借助末梢区域的概念，提出了完全末梢区域的概念。</p>
+<p>完全末梢区域不仅使用缺省路由到达 OSPF 自主系统外部的目的地址，而且使用缺省路由到达这个区域外部的所有目的地址。一个完全末梢区域的 ABR 将不仅阻塞 AS 外部 LSA，还阻塞所有的汇总 LSA，除了通告缺省路由的那一条类型 3 的 LSA。</p>
+<p>在如下图中，带有一些末梢网络的某台路由器必须通过区域 2 中的一台路由器和 OSPF 网络相连，但是该路由器仅支持 RIP 协议，因此区域 2 的那台路由器必须同时运行 RIP 协议和 OSPF 协议，并利用路由重新分配的方式把该路由器的那些末梢网络注入到 OSPF 域，这样区域 2 内的那台路由器也就成为 ASBR 路由器，区域 2 也就不再是一个末梢区域了。</p>
+<p>在这里，RIP 协议的宣告者并不需要学习 OSPF 域的路由，而只需要一条缺省路由指向区域 2 的路由器就足够了，但是 OSPF 域内的路由器为了能够正确地将数据包转发到 RIP 路由器的那些目的地址，必须学习到和 RIP 路由器相连的目的网络。</p>
+<p>非纯末梢区域（Not-So-Stubby-Area，NSSA）允许外部路由通告到 OSPF 自主系统内部，而同时保留自主系统区域部分的末梢特征。为了做到这一点，在 NSSA 区域内部的 ASBR 将始发类型为 7 的 LSA 用于通告那些外部的目的网络。这些 NSSA 外部 LSA 将在整个 NSSA 区域进行泛洪扩散，但是会在 ABR 路由器的地方被阻塞。</p>
+<p>NSSA 外部 LSA 在它的头部有一个 P-bit 位的标志，NSSA ASBR 路由器可以设置或清除这个 P-bit位，如果一台 NSSA ABR 路由器收到一个 P-bit 设置为 1 的类型为 7 的 LSA 数据包，那么将把这条类型为 7 的 LSA 转换成类型为 5 的 LSA，并且将这条 LSA 泛洪扩散到其他的区域中去。如果这个 P-bit 位被设置为 0，那么将不会转换这条类型为 7 的 LSA，这条类型为 7 的 LSA 携带的目的地址也不能通告到这个 NSSA 区域的外部。这个选项允许我们设计一个 NSSA，使得区域学到的外部目的地址仅仅被那个区域知晓。</p>
+<p>如下总结了每一种区域内允许泛洪扩散的 LSA 类型：</p>
+<h3 id="路由表"><a href="#路由表" class="headerlink" title="路由表"></a>路由表</h3><p>根据链路状态数据库中的 LSA 信息，路由器使用 Dijkstra 算法来计算一颗最短路径树。OSPF 协议是基于路由器的每一个接口指定的度量值来决定最短路径的，这里的度量值指的是接口指定的代价。RFC 2328 没有专门为代价指定任何值，Cisco 路由器使用 10 ** 8 &#x2F; BW 作为缺省的 OSPF 代价。</p>
+<p>使用命令 <code>ip ospf cost</code> 可以替换缺省的自动进行的代价计算，这条命令可以为某个接口分配一个固定的代价。</p>
+<h3 id="目的类型"><a href="#目的类型" class="headerlink" title="目的类型"></a>目的类型</h3><p>每一个路由条目都可以根据目的类型进行归类，目的类型可以是网络也可以是路由器。网络条目是数据包所要转发的目的网络地址，这些网络条目就是到路由表中的目的网络地址。路由器条目是到达 ABR 或 ASBR 路由器的条目。如果一台路由器需要发送数据包到一个区域外的目的地，那么它就必须知道如何到达一台 ABR 路由器。如果一台路由器需要发送数据包到一个 OSPF 域外部的目的地，那么它就必须知道如何到达一台 ASBR 路由器。路由器把路由器条目放在一个单独的内部路由表中，这个路由表可以通过 show ip ospf border-routers 来查看。</p>
+<h3 id="路径类型"><a href="#路径类型" class="headerlink" title="路径类型"></a>路径类型</h3><p>每一条到达一个网络目的地的路由都可以被归类到 4 种路径类型中的一种：</p>
+<ul>
+<li>区域内路径（Intra-area Path）：是指在路由器所在区域内就可以到达目的地的路径</li>
+<li>区域间路径（Inter-area Path）：是指目的地在其他区域但是还是在 OSPF 自主系统内的路径。它总是至少经过一台 ABR 路由器。</li>
+<li>类型为 1 的外部路径（Type 1 external）：是指目的地在 OSPF 自主系统外部的路径。但一条路由重新分配到任何一个自主系统时，它都必须指定一个对该自主系统中的路由协议有意义的度量值。在 OSPF 协议中，ASBR 路由器的责任是要给通告的外部路由指定一个代价值。对于类型 1 的外部路径来说，这个代价值是这条路由的外部代价加上到达 ASBR 路由器路径之和。</li>
+<li>类型为 2 的外部路径（Type 2 external）：是指目的地在 OSPF 自主系统外部的路径，但是在计算外部路由的度量时不再计入到达 ASBR 路由器的路径代价</li>
+</ul>
+<p>E1 和 E2 类型的路由给网络管理员一个选项，这个选项是：选择计算到 ASBR 的内部代价重要，还是只选择外部路由的外部代价，而忽略到达 ASBR 的内部代价更重要。如下所示，路由器 A 有两条到达外部目的网络 10.1.2.0 的路径，如果目的地址通过 E1 类型通告，那么 A-B-D 路径将更优先。如果目的地址通过 E2 类型通告，那么 A-C-D 路径将更优先。</p>
+<h3 id="路由表的查找"><a href="#路由表的查找" class="headerlink" title="路由表的查找"></a>路由表的查找</h3><p>当一台 OSPF 路由器检查一个数据包的目的地址时，它将通过下面的步骤来选择最优的路由：</p>
+<ul>
+<li>选择可以和目的地址最精确匹配的路由，最精确的匹配应该总是最长匹配，即匹配拥有最长地址掩码的路由。路由条目可以是主机地址、子网地址、网络地址、超网地址或者缺省地址</li>
+<li>通过排除次优的路径类型来减除可选择条目的集合。路径类型根据下面的次序从高到低排列优先级：区域内路径、区域间路径、E1 外部路径、E2 外部路径</li>
+</ul>
+<p>如果在最后的路由子集中还有多条等代价、等价路径类型的路由存在，那么 OSPF 协议将会利用他们。缺省情况下，Cisco 路由器可以在最多 16 条等价路径上实现负载均衡。</p>
+<h3 id="认证"><a href="#认证" class="headerlink" title="认证"></a>认证</h3><p>OSPF 协议对邻居路由器之间交换的所有数据包都有认证能力。认证可以是简单的口令或 MD5 加密校验和认证。</p>
+<h3 id="按需电路上的-OSPF"><a href="#按需电路上的-OSPF" class="headerlink" title="按需电路上的 OSPF"></a>按需电路上的 OSPF</h3><p>OSPF 协议每隔 10s 发送一次 Hello 数据包，每隔 30min 重新刷新一次它的 LSA。这些功能用来维护邻接关系，以确保链路状态数据库的精确，而且它比像 RIP 这样传统的距离矢量协议使用的带宽少得多。但是，即使很小的通信量，也不希望在按需电路上存在，例如像 X.25 SVC、ISDN 和拨号电路等即用即连的链路。这些链路可能根据连接次数或通信量或两者来计算费用，因而网络管理员必须减少它们的使用时间。</p>
+<p>在一个按需电路上使用的 OSPF 协议的增强特性是，使 OSPF 具有抑制 Hello 数据包和 LSA 重新刷新的能力，以便链路不需要永久有效。虽然增强特性是为即用即连的链路设计，但是它在任何带宽有限的链路上也可能是有用的。</p>
+<p>按需电路上的 OSPF 将会激活一条按需链路去执行最初的数据库同步，随后会激活这条链路去泛洪扩散经过调整的 LSA。这些 LSA 变化包括：</p>
+<ul>
+<li>LSA 的可选字段发生了变化</li>
+<li>在老化时间达到 MaxAge 时会收到一个已经存在的 LSA 通告的新实例</li>
+<li>LSA 头部的长度字段发生了变化</li>
+<li>LSA 的内容发生了变化，但不包括 20 字节的头部、校验和或序列号</li>
+</ul>
+<p>由于没有周期性的 Hello 数据包可以交换（Hello 数据包只有在链路激活时才能使用），OSPF 协议必须有一个可达性的假定。也就是说，OSPF 协议必须假定在需要链路连接的时候，那条按需电路是可用和有效的。但是在一些情况下，链路可能并不能立即可用和有效。有时链路并不是因为链路失效而变得不可用，而是因为链路太忙而变得不可用。OSPF 协议不会将链路过忙的按需链路报告为失效。</p>
+<p>关于接口状态机和邻居状态机，以及泛洪扩散过程的处理必须有几处修改，以便支持 OSPF 协议运行在按需电路上。在 LSA 通告的数据包格式里也有两个地方需要修改：</p>
+<ul>
+<li>OSPF 协议更改了 LSA 的 Age 字段，它将 Age 字段的更高一位指定为 DoNotAge 位，当一条 LSA 在按需电路上进行泛洪扩散时，传送的路由器将 DoNotAge 位设置为 1，这样当这条 LSA 被安置到其他路由器的链路状态数据库中后，这条 LSA 将不再像其他 LSA 一样老化</li>
+<li>由于所有的路由器需要正确识别这个更改的 DoNotAge 位，因此在所有 LSA 中增加了一个新的标志，称为 Demand Circuit 位（DC-bit），通过在所有的 LSA 发起的时候设置这个标志位，路由器就可以通知其他路由器它是能够按需电路上的 OSPF 协议</li>
+</ul>
+<p>利用按需电路上的 OSPF 特性，可以自在一个稳定的网络拓扑中减少泛洪扩散。在某个接口上使用命令 ip ospf flood-reduction，DoNotAge 位就可以设置在这个接口通告出去的 LSA 中，因此这些 LSA 在它们发生变化之前不会重新刷新。</p>
+<h2 id="OSPF-数据包格式"><a href="#OSPF-数据包格式" class="headerlink" title="OSPF 数据包格式"></a>OSPF 数据包格式</h2><p>OSPF 数据包是由多重封装构成的，最外面一层是 IP 包的头部。封装在 IP 头部内的是 5 种 OSPF 数据包类型中的一种，每一种数据包类型都是由一个 OSPF 数据包头部开始的。这个 OSPF 数据包头对于所有的数据包类型都是相同的。紧跟 OSPF 数据包头之后的是 OSPF 数据包数据，并且根据数据包类型的不同会有所不同。每一种数据包类型都有许多的特定类型字段，后跟更多的数据包数据。</p>
+<p>在一个网络中，OSPF 数据包只能在邻居节点之间进行信息交换，它们从来不会转发到始发它们的节点所在的网络的外部。</p>
+<p>如下展示了一个 OSPF 数据包的封装：</p>
+<p>在 IP 头部中，OSPF 的协议号为 89。当 OSPF 数据包多播发生时，其 TTL 字段设置为 1，这样可以确保一个 OSPF 数据包的转发不会超过一跳。</p>
+<h3 id="数据包头部"><a href="#数据包头部" class="headerlink" title="数据包头部"></a>数据包头部</h3><p>所有的 OSPF 数据包都是由一个 24 字节的头部开始的，如下所示：</p>
+<ul>
+<li>版本（Version）：是指 OSPF 版本号，OSPF 版本号为 2，对于 IPv6 的路有选择是 OSPFv3</li>
+<li>类型（Type）：指出跟在头部后面的数据包类型。总共有 5 种类型的 OSPF 数据包，分别为 Hello、数据库描述、链路状态请求、链路状态更新、链路状态确认</li>
+<li>数据包长度（Packet Length）：指 OSPF 数据包的长度，包括数据包头部的长度</li>
+<li>路由器 ID（Router ID）：是指始发路由器的 ID</li>
+<li>区域 ID（Area ID）：是指始发数据包的路由器所在的区域，如果数据包是在一个虚链路上发送的，那么区域 ID 就为 0，因为虚链路被认为是骨干的一部分</li>
+<li>校验和（Checksum）：是指一个对整个数据包（包括报头）的标准 IP 校验和</li>
+<li>认证类型（AuType）：是指正在使用的认证模式，0 为没有认证，1 为简单的口令认证，2 为加密校验和</li>
+<li>认证（Authentication）：是指数据包认证的必要信息。认证可以是 AuType 中指定的任何一种模式。如果 AuType 为 0，将不检查这个认证字段，如果 AuType 1，这个字段向包含一个最长为 64 位的口令。如果 AuType 为 2，这个认证字段将包含一个 Key ID、认证数据长度和一个不减小的加密序列号。这个消息摘要附加在 OSPF 数据包的尾部，不作为 OSPF 数据包本身的一部分</li>
+<li>密钥 ID（Key ID）：标识认证算法和创建消息使用的安全秘钥</li>
+<li>认证数据长度（Authentication Data Length）：指明附加在 OSPF 数据包尾部的消息摘要的长度</li>
+<li>加密序列号（Cryptographic Sequence Number）：是一个不会减少的数字，用来防止重现攻击</li>
+</ul>
+<h3 id="Hello-数据包"><a href="#Hello-数据包" class="headerlink" title="Hello 数据包"></a>Hello 数据包</h3><p>Hello 数据包是用来建立和维护邻接关系的，为了形成一种邻接关系，Hello 数据包携带的参数必须和它的邻居保持一致:</p>
+<ul>
+<li>网络掩码：是指发送数据包的接口的网络掩码。如果这个掩码和接收该数据包的接口的网络掩码不匹配，那么该数据包将被丢弃。这可以确保路由器只有在它们共享网络的地址精确匹配时才能互相成为邻居</li>
+<li>Hello 时间间隔：是指接口上 Hello 数据包传送之间的时间间隔，以秒为单位。对于这个参数，如果发送和接收路由器没有相同的值，那么它们就不能建立一种邻居关系</li>
+<li>可选项：Hello 数据包中包含这个字段可以用来确保邻居之间的兼容性问题。一台路由器可以拒绝一台兼容性不匹配的问题</li>
+<li>路由器优先级：用来做 DR 和 BDR 路由器的选举。如果该字段为 0，那么始发路由器将没有资格选成 DR 或 BDR</li>
+<li>路由器无效时间间隔：是指路由器在宣告邻居路由器无效之前，将要等待从邻居路由器发出的 Hello 数据包的时长，以秒为单位。如果路由器收到 Hello 数据包中的时间和接收接口配置的 RouterDeadInterval 不匹配，那么这个 Hello 数据包就被丢弃，这种做法可以确保邻居之前的这个参数的一致性</li>
+<li>指定路由器：是指网络上指定路由器接口的 IP 地址，注意不是指指定路由器的路由器 ID。在选取 DR 时，这可能只是始发路由器所认为的 DR，而不是最终的 DR。如果没有 DR，那么该字段就被设置为 0</li>
+<li>备份指定路由器：是指网络上指定备份路由器接口的 IP 地址，同样的，在选举 BDR 的过程中，这可能只是始发路由器所认为的 BDR，而不是最终选举出来的 BDR。如果没有 BDR，该字段就会被设置为 0</li>
+<li>邻居：是个列表字段，如果始发路由器在过去的一个 RouterDeadInterval 时间内，从网络中已经收到来自其它的邻居的有效 Hello 数据包，那么将会在这个字段中列出所有邻居的 RID</li>
+</ul>
+<h3 id="数据库描述数据包"><a href="#数据库描述数据包" class="headerlink" title="数据库描述数据包"></a>数据库描述数据包</h3><p>数据库描述数据包用于正在建立的邻接关系，数据库描述数据包的一个主要目的是描述始发路由器数据库中的一些或全部 LSA 信息，以便接收路由器能够确定所收到的 LSA 在其数据库中是否有一个匹配的 LSA。这个操作只需列出 LSA 的头部就可以了。LSA 头部包含了足够多的信息，不仅可以标识一个特定的 LSA，还可以标识该 LSA 的最近实例。</p>
+<ul>
+<li>接口 MTU：是指在数据包不分段的情况下，始发路由器接口可以发送的最大 IP 数据包大小。当数据包在虚链路上传送时，这个字段的值设置为 0</li>
+<li>可选项：该字段包含在数据库描述数据包中，使路由器可以不转发某些 LSA 到某些没有必要的支持能力的路由器</li>
+<li>接下来的字节前 5 位没有被使用，接下来的 3 个位分别为 I 位，或者称为初识位（Initial bit）、M 位，或者称为后继位（More bit）、MS 位，或者称为主&#x2F;从位（Master&#x2F;Slave bit）</li>
+<li>数据库描述序列号：在数据库同步过程中，用来确保路由器能够收到完整的数据库描述数据包序列。这个序列号将由主路由器在最初发送的数据库描述数据包中设置一些唯一的值，而后续数据包的序列号将依次增加</li>
+<li>LSA 头部：列出了始发路由器的链路状态数据库中部分或全部 LSA 的头部。在 LSA 头部中包含了足够的信息可以唯一地标识一个 LSA 或一个具体 LSA 的具体实例</li>
+</ul>
+<h3 id="链路状态请求数据包"><a href="#链路状态请求数据包" class="headerlink" title="链路状态请求数据包"></a>链路状态请求数据包</h3><p>在数据库同步过程中，如果收到了数据库描述数据包，路由器将查看数据库描述数据包里有哪些 LSA 不在自己的数据库中，或者有哪些 LSA 比自己的 LSA 更新，那么将把这些 LSA 记录在链路状态请求列表中。接着路由器将发送链路状态请求数据包去向它的邻居请求在链路状态请求列表中的这些 LSA 的副本。</p>
+<p>一个数据包可以根据一个 LSA 头部的类型、ID 和通告路由器进行唯一的标识，但是它不能请求这个 LSA 的具体实例（LSA 的具体实例由 LSA 头部的序列号、校验号以及老化时间标识）。因此不论请求路由器是否知道是 LSA 的哪个具体实例，它所请求的都是 LSA 的最新实例。</p>
+<ul>
+<li>链路状态类型：是一个链路状态类型，用来指明 LSA 标识的是一个路由器 LSA、一个网络 LSA、还是其他其他类型的 LSA</li>
+<li>链路状态 ID：是 LSA 头部中和类型无关的字段。</li>
+<li>通告路由器（Advertising Router）：是指始发 LSA 通告的路由器的路由器 ID</li>
+</ul>
+<h3 id="链路状态更新数据包"><a href="#链路状态更新数据包" class="headerlink" title="链路状态更新数据包"></a>链路状态更新数据包</h3><p>链路状态更新数据包是用于 LSA 的泛洪扩散和发送 LSA 去响应链路状态请求数据包。由于 OSPF 数据包是不会离开发起它们的网络的，因此一个链路状态数据包携带的 LSA 只能传送到始发它们的路由器的直连邻居。接收 LSA 的邻居路由器将负责在新的 LSA 更新数据包中重新封装相关的 LSA，从而进一步泛洪扩散到它自己的邻居。</p>
+<ul>
+<li>LSA 的数量：指出该数据包中包含的 LSA 的数量</li>
+<li>链路状态通告：是指在 OSPF 协议的 LSA 数据包格式中描述的完整 LSA。每一个更新数据包可以携带多个 LSA，它的大小可以达到传送该数据包的链路所允许的最大数据包尺寸</li>
+</ul>
+<h3 id="链路状态确认数据包"><a href="#链路状态确认数据包" class="headerlink" title="链路状态确认数据包"></a>链路状态确认数据包</h3><p>链路状态确认数据包用来确保 LSA 可靠泛洪扩散。一台路由器从它的邻居路由器收到的每一个 LSA 都必须在链路状态确认数据包中进行明确的确认。被确认的 LSA 是根据在链路状态确认数据包里包含它的头部来辨别的。多个 LSA 可以通过单个数据包来确认。</p>
+<ul>
+<li>LSA 头部：该链路状态确认数据包所需要确认的 LSA 的头部</li>
+</ul>
+<h3 id="OSPF-的-LSA-格式"><a href="#OSPF-的-LSA-格式" class="headerlink" title="OSPF 的 LSA 格式"></a>OSPF 的 LSA 格式</h3><p>接下来将详细描述类型为 1-5 和 类型为 7 的 LSA。</p>
+<h4 id="LSA-的头部"><a href="#LSA-的头部" class="headerlink" title="LSA 的头部"></a>LSA 的头部</h4><p>LSA 头部在所有 LSA 的开始处，在数据库描述数据包和链路状态确认数据包里也使用了 LSA 头部本身。在 LSA 头部中有 3 个字段可以唯一地识别每个 LSA：类型、链路状态 ID 和通告路由器。另外，还有其他 3 个字段可以唯一地识别一个 LSA 的最新实例：老化时间、序列号和校验和。</p>
+<ul>
+<li>老化时间：是指发出 LSA 后经历的时间，当泛洪扩散 LSA 时，在每一台路由器接口上转发出去时，LSA 的老化时间都会增加一个 InfTransDelay 的秒数。当然，当 LSA 驻留在链路状态数据库内时，这个老化时间也会增加。</li>
+<li>可选项：在 LSA 的头部中，该字段指出了在部分 OSPF 域中 LSA 能够支持的可选功能</li>
+<li>类型：即 LSA 的类型</li>
+<li>链路状态 ID：用来指定 LSA 所描述的部分 OSPF 域，该字段的用法根据 LSA 的类型会有所不同。每一个 LSA 的描述都包括了一个怎样使用这个字段的描述</li>
+<li>通告路由器（Advertising Router）：是指始发 LSA 的路由器的 ID</li>
+<li>序列号：当 LSA 每次有新的实例产生时，这个序列号就会增加。这个更新可以帮助其他路由器识别最新的 LSA 实例</li>
+<li>校验和：这是一个除 Age 字段之外，关于 LSA 的全部信息的校验和。因为如果包含 Age 校验和，那么这个校验和就会随着老化时间的增加而每次都需要重新计算</li>
+<li>长度：是指包含 LSA 头部在内的 LSA 的长度</li>
+</ul>
+<h4 id="路由器-LSA"><a href="#路由器-LSA" class="headerlink" title="路由器 LSA"></a>路由器 LSA</h4><p>路由器 LSA 是由每一台路由器产生的，它列出了一台路由器的链路或接口，同时也列出了这些接口的状态和每一条链路的出站代价。这些路由器 LSA 只能在始发它们的 OSPF 区域内进行泛洪扩散。需要注意，路由器 LSA 是把主机路由作为末梢网络来通告的，它的链路 ID 字段携带的是主机 IP 地址，而链路数据字段携带是主机地址的掩码：255.255.255.255。</p>
+<ul>
+<li>链路状态 ID：路由器 LSA 的链路状态 ID 是指始发路由器的路由器 ID</li>
+<li>V，或虚链路端点位：如果设置该位，说明始发路由器是一条或多条具有完全邻接关系的虚链路的一个端点</li>
+<li>E，或外部位：当始发路由器是一个 ASBR 路由器，设置该位</li>
+<li>B，或边界位：当始发路由器是一个 ABR 路由器，设置该位</li>
+<li>链路数量：表明一个 LSA 所描述的路由器链路数量。路由器 LSA 必能描述始发路由器的所有链路或接口，只要这些接口能够到达该 LSA 进行泛洪的区域</li>
+</ul>
+<p>接下来的字段将描述每一条链路，并且出现的次数和前面链路数量字段中的数量是一致的：</p>
+<ul>
+<li>链路类型：描述了链路所提供的类型</li>
+<li>链路 ID：用来标识链路连接的对象。该字段的含义取决于链路类型字段</li>
+<li>链路数据：也是依赖于链路类型的字段</li>
+<li>ToS 数量（Number of ToS）：为列出的这条链路指定的服务类型的数量。虽然 RFC 2828 已经不再支持 ToS，但是为了向前兼容早期部署的 OSPF，仍旧保留这个字段。如果没有 ToS 度量和一条链路相关联，那么这个字段就设置为 0</li>
+<li>度量：是指一条链路的代价</li>
+</ul>
+<p>接下来的字段的数量和 ToS 数量字段一致，Cisco 路由器 ToS 的数量为 0</p>
+<ul>
+<li>ToS：指定了后面提及的度量涉及到的服务类型</li>
+<li>ToS 度量：和指定的 ToS 值相关联的度量</li>
+</ul>
+<h4 id="网络-LSA"><a href="#网络-LSA" class="headerlink" title="网络 LSA"></a>网络 LSA</h4><p>网路 LSA 是始发于指定路由器（DR）的，这些网络 LSA 将通告一个多路访问网络和与这个网络相关联的所有路由器（包括 DR）。像路由器 LSA 一样，网络 LSA 也只能在始发这条网络 LSA 的区域内进行泛洪扩散。</p>
+<p>链路状态 ID：网络 LSA 的链路状态 ID 是指网络中 DR 路由器接口上的 IP 地址<br>网络掩码：指定这个网络上使用的地址或子网掩码<br>相连的路由器：列出了多路访问网络上所有与 DR 形成完全邻接关系的路由器的路由器 ID，以及 DR 路由器本身的 ID。<br>网络汇总 LSA 和 ASBR 汇总 LSA<br>网络汇总 LSA 和 ASBR 汇总 LSA 具有相同的格式。在它们的字段内容里，唯一的不同之处是指它们所指的类型和链路状态 ID。ABR 路由器会产生这两种类型的 LSA。网络汇总 LSA 通告的是一个区域外部的网络（包括缺省路由），而 ASBR 汇总 LSA 通告的是一个区域外部的 ASBR 路由器。这两种类型的 LSA 都只能泛洪到单个区域。</p>
+<p>链路状态 ID：对于类型 3 的 LSA 来说，它是所通告的网络或子网的 IP 地址，对于类型 4 的 LSA 来说，链路状态 ID 是所通告的 ASBR 路由器的路由器 ID<br>网络掩码：在类型 3 的 LSA 中，是指所通告的网络的子网掩码或地址，在类型 4 的 LSA 中，这个字段没有实际意义，并被设置为 0.0.0.0。如果网络汇总 LSA 通告的是一条缺省路由，那么链路状态 ID 和网络掩码字段都将设置为 0<br>度量：是指到达目的地的路由的代价<br>ToS 和 ToS 度量字段都是可选字段，Cisco 路由器只支持 ToS 为 0<br>自主系统外部 LSA<br>自主系统外部 LSA 是由 ASBR 路由器始发的，这些自主系统外部 LSA 是用来通告 OSPF 自主系统外部的目的网络的，这里也包括到达外部目的网络的缺省路由。自主系统外部 LSA 可以泛洪扩散到 OSPF 域内所有非末梢区域。</p>
+<p>链路状态 ID：自主系统外部 LSA 的链路状态 ID 是指目的地的 IP 地址<br>网络掩码：是指通告的目的地的子网掩码或地址。如果通告的是缺省路由，那么链路状态 ID 和网络掩码字段都将被设置为 0.0.0.0<br>E，或称外部度量位：用来指定这条路由使用的外部度量的类型。如果 E-bit 设置为 1，那么度量类型为 E2；如果 E-bit 设置为 0，那么度量类型就是 E1。<br>度量：是指路由的代价，由 ASBR 路由器决定<br>转发地址：是指到达所通告的目的地数据包应该被转发到的地址。如果转发地址是 0.0.0.0，那么数据包应该被转发到始发 ASBR 上<br>外部路由标志：是一个应用于外部路由的任意标志。OSPF 协议本身并不使用这个字段，而是由外部路由来管理和控制<br>可选地，ToS 字段也可以和某个目的地相关联，每个 ToS 度量也都有自己的 E-bit、转发地址和外部路由标志<br>NSSA 外部 LSA<br>NSSA 外部 LSA 是由一个 NSSA 区域内的 ASBR 路由器始发的。除了转发地址字段外，NSSA 外部 LSA 的所有字段和自主系统外部 LSA 相同。自主系统外部 LSA 是在整个 OSPF 自主系统中进行泛洪扩散，而 NSSA 外部 LSA 仅仅在始发它们的一个非纯末梢区域中进行泛洪扩散。</p>
+<p>转发地址：如果网络是在一条 NSSA ASBR 路由器和邻接的自主系统之间作为一条内部路由通告的，那么这个转发地址就是这个网络的下一跳地址。如果不是作为一条内部路由通告，那么这个转发地址是 NSSA ASBR 路由器的路由器 ID<br>可选字段<br>可选字段出现在 Hello 数据包、数据库描述数据包和每一个 LSA 中。可选字段允许路由器和其他路由器进行一些可选功能的通信：</p>
+<p>DN：用于基于 MPLS 的第三层虚拟专用网（VPN）<br>O：设置用来表明始发路由器支持 Opaque LSA<br>DC 位：当始发路由器具有支持按需电路上的 OSPF 能力时，该位被设置<br>EA 位：当始发路由器具有接收和转发外部属性 LSA 的能力时，该位将被设置<br>N 位：只用来 Hello 数据包中，如果设置该位，表明它支持 NSSA 外部 LSA。如果不设置该位，表明路由器将不接受和发送 NSSA 外部 LSA。<br>P 位：只用在 NSSA 外部 LSA 的头部。该位将告诉一个非纯末梢区域中的 ABR 路由器将类型 7 的 LSA 转换为类型为 5 的 LSA<br>MC 位：当始发路由器具有转发 IP 组播数据包的能力时，该位将被设置<br>E 位：当始发路由器具有接受 AS 外部 LSA 的能力时，该位将被设置。所有的 AS 外部 LSA 和所有始发于骨干区域以及非末梢区域的 LSA 中，该位将被设置为 1。而在所有始发于末梢区域的 LSA 当中，该位被设置为 0。<br>MT 位：设置了该位表示始发路由器支持多拓扑 OSPF（MT-OSPF）<br>配置 OSPF<br>由于 OSPF 包含很多选项和配置，因此在一个大型 IP 网络中，经常使用 OSPF 作为 IGP 选择。即使在一个小型网络中，也只需要完成基本的 OSPF 配置，OSPF 协议就可以正常运行了。</p>
+<p>案例研究：一个基本的 OSPF 配置<br>配置一个基本的 OSPF 的过程包含以下 3 个必要的步骤：</p>
+<p>确定和每一个路由器接口相连的区域<br>使用 router ospf process-id 命令来启动一个 OSPF 进程<br>使用 network area 命令来指定运行 OSPF 协议的接口和所在的区域<br>和 IGRP 和 EIGRP 协议中的进程 ID 不同，OSPF 协议的进程 ID 不是一个自主系统号。OSPF 的这个进程 ID 可以是任何整数，并且仅在配置它的路由器内有意义。Cisco IOS 软件运行同一台路由器内运行多个 OSPF 进程，进程 ID 只是在同一台设备内用来区分不同 OSPF 进程的。</p>
+<p>在 RIP 协议中，命令 network 用来指定一个网络地址，如果在这个网络中的一些接口不能运行该路由选择协议的话，那么就使用 passive-interface 命令来抑制这些接口。而 OSPF 协议和 EIGRP 协议一样，使用带通配符的掩码的 network 命令，这可以完全反映 OSPF 协议的无类别特性。任何一个地址范围都可以使用一个（地址，反向掩码）第来指定。这里的反向掩码和在访问列表中使用的反向掩码是一样的。一个反码（Cisco 更喜欢使用术语通配掩码）把对应于地址位中要精确匹配的位设置为 0，而其他位设置为 1，值为 1 的位经常叫做不关心位。</p>
+<p>对于区域的指定，既可以使用一个十进制数字，也可以使用一个点分十进制数来表示。如下展示了一个 OSPF 网络，每一个区域都具有一个 IP 地址，这个地址源于它的子网。限制一个区域为一个地址或子网是不必要的，但是这样做会带来一些好处。这里只是为了演示多区域的 OSPF 配置，现实网络中应该将这样的小型网络设计成当个区域，而且单个区域也不必一定是区域 0。OSPF 的规则规定所有区域必须连接到骨干区域，因此当有多个区域时才需要骨干区域。</p>
+<p>路由器的配置分别如下：</p>
+<p>1<br>2<br>router ospf 10<br>  network 0.0.0.0 255.255.255.255 area 1<br>1<br>2<br>3<br>router ospf 20<br>  network 192.168.30.0 0.0.0.255 area 1<br>  network 192.168.20.0 0.0.0.255 area 0<br>1<br>2<br>3<br>router ospf 30<br>  network 192.168.20.0 0.0.0.3 area 0.0.0.0<br>  network 192.168.10.0 0.0.0.31 area 192.168.10.0<br>1<br>2<br>3<br>router ospf 40<br>  network 192.168.10.2 0.0.0.0 area 192.168.10.0<br>  network 192.168.10.33 0.0.0.0 area 192.168.10.0<br>这里为了更好地说明 network area 命令的灵活性，因此对每台路由器都使用了不同的配置方式。每一台路由器配置的进程 ID 不同，这只是为了说明进程 ID 号在本地路由器之外是没有意义的。通常为了在一个网络中保持配置的一致性，这些数字应该配置成相同的。</p>
+<p>network area 命令中 network 后面紧跟一个 IP 地址和一个反向掩码，当 OSPF 进程第一次启动时，将根据第一个 network 语句的 （地址，反向掩码）对 来启动所有有效 IP 地址的接口。所有匹配的接口将被分配到根据 area 部分指定的区域。接着将继续根据第二条 network 语句来在剩余的不匹配接口中继续匹配启动，该过程将持续进行，直到所有 network 语句都处理为止。这里需要注意，network 语句的处理是按顺序进行的。</p>
+<p>路由器 Rubens 的 network 语句将匹配路由器上的所有接口。这个配置中，地址 0.0.0.0 实际上仅仅是一个占位符，而反向掩码 255.255.255.255 才是所有操作的核心。这表示可以忽略的位占据了完整的 4 个字节。因此掩码将认为和任何地址相匹配<br>路由器 Chardin 是区域 1 和区域 0 之间的 ABR 路由器。这里将任何与网络 192.168.30.0 相连的接口放置到区域 1 中，而将与网络 192.168.20.0 相连的接口放到骨干区域<br>路由器 Goya 也是一台 ABR 路由器，在这里，（地址，反向掩码）对 将只匹配两个接口上配置的具体子网<br>路由器 Matisse 上配置的 network 语句指定是每个单独的接口地址，因为它的反向掩码指定所有 32 位都必须精确匹配。这种方法提供了一种最精确地控制接口运行 OSPF 的手段<br>案例研究：使用 Loopback 接口设置路由器的 ID<br>路由器启动期间，所有接口都是管理关闭的（administratively shutdown），如果 OSPF 不能发现一个有效的 IP 地址作为它的路由器 ID，那么 OSPF 将不会启动。如果 OSPF 进程没有启动，随后的 network area 命令也将是无效的。</p>
+<p>解决问题的方法是使用一个 loopback 接口（环回接口），loopback 接口是一个仅在软件上有意义的、虚拟的接口，并且它总是有效的。因此，loopback 接口的 IP 地址也总是有效的。</p>
+<p>在 OSPF 路由器上使用 loopback 接口还要一个更普遍的原因：这些接口允许网络管理员对路由器 ID 进行控制。当 OSPF 进程查找路由器 ID 时，其将优选选用 loopback 接口的 IP 地址。如果路由器具有多个带 IP 地址的 loopback 接口，那么 OSPF 将选用在数值上最高的 loopback 地址。</p>
+<p>控制路由器 ID 使单个 OSPF 路由器更加容易识别，从而使网络的管理和故障排除更加容易。路由器 ID 的管理通常使用以下两种方法之一：</p>
+<p>留出一个合法的网络或子网地址，严格用于路由器id</p>
+<p>使用一段伪造的 IP 地址范围</p>
+<p>第一种方法的缺点是需要使用合法的网络地址空间，而二个方法可以节省合法的地址。但是也需要记住，在一个网络里伪造的地址在另一个网络里可能是合法的地址。</p>
+<p>例如在路由器 Rubens 的配置中增加 loopback 接口的配置：</p>
+<p>1<br>2<br>3<br>4<br>5<br>interface Loopback0<br>  ip address 192.168.50.1 255.255.255.255<br>!<br>router ospf 10<br>  network 192.168.30.0 0.0.0.255 area 1<br>这里 loopback 接口所使用的地址掩码被配置成一个主机地址掩码，这是不必要的，因为 OSPF 会把一个 loopbck 接口作为一个末梢主机看待，无论（地址、掩码）对 配置成什么，loopback 接口的地址都将被作为一条主机路由来通告。主机掩码仅仅用来保持一种整齐的格式，并且能够反映出通告地址的方式。</p>
+<p>OSPF 协议虽然使用一个接口的 IP 地址作为它的路由器 ID，但是并不一定需要在这个接口上运行 OSPF 协议。 事实上，让 OSPF 通告 loopback 地址不过是创建了一个不必要的 LSA。</p>
+<p>另外，为了对网络的管理和故障排除有所帮助，使用 loopback 接口也可以使一个 OSPF 网络更加稳定。因为 loopback 接口没有硬件上的故障问题。</p>
+<p>另一种可行的做法是，使用 OSPF 命令 router-id 手工为该路由器指定一个路由器 ID。</p>
+<p>案例研究：域名服务查询<br>loopback 地址由于可以提供预先设计好的路由器 ID，从而使一个 OSPF 网络的管理和故障排除变得很简单。为了进一步简化，可以把路由器 ID 记录到一个域名服务数据库中。在路由器上可以配置域名服务，使路由器向一台域名服务器请求相关 地址到名称 的映射，或称为反向 DNS 查找，从而可以通过显示路由器的名称来替代路由器 ID。</p>
+<p>命令 ip name-server XXXX 用来指定一个 DNS 服务器的地址，ip ospf name-lookup 用来在 ospf 进程中启动域名查找。</p>
+<p>案例研究：OSPF 和辅助地址<br>在一个 OSPF 的环境中，辅助地址的用法有以下两个相关的规则：</p>
+<p>只有在主网络或子网也运行 OSPF 协议的时候，OSPF 才会通告一个辅助的网络或子网<br>OSPF 将把辅助地址看做是末梢网络（这些网络上没有 OSPF 邻居），从而不会在这些网络上发送 Hello 数据包。因此，在辅助网络上也就无法建立邻接关系<br>在如下网络中：</p>
+<p>可以将 172.19.35.15 包含到 OSPF 域内，这样路由器 Mastisse 将向它的邻居路由器通告子网 172.19.35.0&#x2F;25。但是由于路由器 Matisse 是通过一个辅助地址和子网 172.19.35.0&#x2F;25 相连的，因此它不能和这个子网上的任何路由器建立邻接关系。</p>
+<p>假设 DNS 服务器配置的缺省网关为路由器 Dali，该网络存在如下问题：</p>
+<p>由于网络 172.19.35.0&#x2F;25 被通告到 OSPF 域中，因此目的地址为 DNS 服务器的数据包被转发到路由器 Matisse 路由器的 FA0&#x2F;0 接口，并被转发到 DNS 服务器<br>但是 DNS 服务器回复的数据包由于目的地址与 DNS 服务器不在同一个网段，因此会被发送到默认路由器 Dali<br>Dali 和 Matisse 之间并不交换路由选择信息，因此它将不知道怎样到达 OSPF 域内的网络<br>这里可以在 Dali 上配置一条静态路由来告诉 Dali 如何才能到达 OSPF 域内的网络。</p>
+<p>在这里，路由器 Matisse 并不是一台 ASBR 路由器。这是因为虽然它将数据包发送到 OSPF 自主系统外部的目的地，但是它并没有接受外部目的地的任何信息。因此它不会始发任何类型为 5 的 LSA 通告。假设路由器 Dali 可以到达一组新的目的地，此时路由器 Mattisse 必须变成一台 ASBR 路由器，并且将这些路由通告到 OSPF 域内。Matisse 必须首先学习到这些路由，这个工作可以通过配置一系列静态路由或者运行一个在辅助网络上通信的路由选择协议来完成。无论哪种情况下，路由器都必须重新分配这些路由到 OSPF 域中。</p>
+<p>案例研究：末梢区域<br>如果一个区域里不会始发类型为 5 的 LSA，那么它可以配置成一个末梢区域。当一个相连的区域被配置成一个末梢区域时，路由器始发的 Hello 数据包进入那个区域后，它的可选字段中的 E 位将会设置为 0。其他没有同样配置的路由器收到这些 Hello 数据包后将丢弃这些数据包，并且不能在这些路由器之间建立邻接关系。即使已经存在一个邻接关系，它也会被阻断。因此，如果需要把一个正在运行的区域重新配置成一个末梢区域的话，应该计划好路由阻断时间，在这期间路由将被阻断，一直到所有的路由器都重新配置后才能恢复。</p>
+<p>一个末梢区域可以通过 area stub 命令配置成功。当一个末梢区域和一台 ABR 路由器相连时，路由器会通过一条网络汇总 LSA 自动地通告一个缺省路由（目的地址为 0.0.0.0）到这个区域。ABR 路由器将通告代价为 1 的缺省路由，这里的缺省代价可以通过命令 area default-cost 来改变。</p>
+<p>案例研究：完全末梢区域<br>完全末梢区域的配置可以通过在命令 area stub 的末端增加关键字 no-summary 来实现。这一步的配置操作只有在 ABR 路由器上才是必须的，在内部路由器上使用标准的末梢区域配置就可以了。</p>
+<p>在完全末梢区域的路由表将只包含区域内的路由和缺省路由。</p>
+<p>案例研究：NSSA 区域<br>在之前的例子中，由于路由器 Matisse 接受了通过 RIP 从路由器 Dali 学习到的路由，并把这些路由重新分配到 OSPF 域中，这一步操作使得路由器 Matisse 成为一台 ASBR 路由器，更进一步说，这也使得区域 192.168.10.0 无法满足成为一个末梢区域或完全末梢区域的条件。然而，这里并不需要 AS 外部区域 LSA 从骨干区域通告到这个区域，因此可以把区域 192.168.10.0 配置成一个 NSSA。</p>
+<p>在路由器 Matisse 上通过命令 area 192.168.10.0 nssa 将区域 192.168.10.0 配置成一个 NSSA，同样的命令再配置在路由器 Goya 上。由于路由器 Goya 是一台 ABR 路由器，因此它将把与 NSSA 区域相连的接口收到的类型 7 的 LSA 转换成类型为 5 的 LSA。这些转换过的 LSA 将泛洪扩散到整个骨干区域中去，从而也泛洪扩散到其他的区域中去。</p>
+<p>对于 ABR 路由器来说还有几个可用的配置选项，第一个是 no-summary 选项，可以和命令 area nssa 一起用来阻塞类型 3 和 类型 4 的 LSA 泛洪扩散到 NSSA 中。这个配置可以使区域 192.168.10.0 变成一个 完全非纯末梢区域。</p>
+<p>如下所示，如果将路由器 Dali 的链路移到了路由器 Goya 上，相关的 IP 地址也作相应的变动。路由器 Goya 现在同时成为一台 ASBR 路由器，并把 RIP 学习到的路由重新分配到 OSPF 中。当一台 ABR 路由器同时也是一台 ASBR 路由器，并且和一个非纯末梢区域相连时，它的缺省行为就是通告重新分配的路由到这个 NSSA 中去。即它会利用类型为 7 的 LSA 通告外部路由到 NSSA 区域中。</p>
+<p>这个在 ABR&#x2F;ASBR 路由器上缺省的路由重新分配行为可以通过在命令 area nssa 之后增加参数 no-redistribution 来关闭。这样，在上述例子的网络中，就不应该有类型 3、类型 4、类型 5 或类型 7 的 LSA 从 ABR 路由器发送到区域 192.168.10.0。</p>
+<p>area nssa 后面如果增加一个 default-information-originate 参数，就可以使用 ABR 路由器来通告一条缺省路由到这个 NSSA 区域。这时，它是使用类型 7 的 LSA 来通告这条缺省路由的。</p>
+<p>案例研究：地址汇总<br>虽然末梢区域可以通过防止某些 LSA 进入该区域，从而达到在一个非骨干的域中节省资源的目的。但是从骨干区域来看，这些区域除了节省资源外并没有做其他任何事情，一个区域内的所有地址仍然被桶告到骨干区域。这种情形可以通过地址汇总来帮助解决。像末梢区域一样，地址汇总也是通过减少泛洪扩散的 LSA 数量来达到节省资源的目的。另外，它还可以通过屏蔽一些不稳定的细节来节省网络资源。</p>
+<p>在 Cisco 路由器上可以执行两种类型的地址汇总：区域间路由汇总和外部路由汇总。区域间路由汇总（inter-area summarization）是指在区域之间的地址汇总。这种类型的汇总通常是在配置在 ABR 路由器上。外部路由汇总（external route summarization）允许一组外部地址汇总为一条汇总地址并通过重新分配到一个 OSPF 域中，这种类型的汇总通常是配置在 ASBR 路由器上。</p>
+<p>ABR 路由器可以配置成将汇总地址通告到骨干区域，或者非骨干区域。最好的实践是，一个非骨干区域的地址应该通过它自己的 ABR 路由器汇总到骨干区域。在骨干区域中，被汇总的地址将穿越骨干区域并通告到其他区域中去。</p>
+<p>area range 命令指定了汇总地址所属的区域、汇总地址和地址掩码。area range 命令的缺省行为是通告指定的范围，它也可以用来抑制一个地址范围的通告。带有关键字 not-advertise 的命令 area range 将使指定范围的前缀被抑制。它们将不会在 LSA 通告中。</p>
+<p>需要注意，OSPF 协议是无类别的路由选择协议，子网以及子网对应的网络掩码都会被通告。因此即使出现子网不连续的情况，也不会出现路由选择不确定的情况。</p>
+<p>案例研究：在区域之间进行过滤<br>在区域之间限制和控制地址交换的一种方法是在 ABR 上配置类型 3 的 LSA 的过滤。ABR 可以过滤由类型 3 的 LSA 通告的网络地址进出某个区域。</p>
+<p>OSPF 命令 area PID filter-list prefix 指定了应用于入站或出站 LSA 的过滤列表的名称。出站列表过滤了发送到由该命令指定的区域之外的其他区域的 LSA。</p>
+<p>案例研究：认证<br>OSPF 数据包可以通过认证来防止有意或无意地引入有害路由信息的情况的发生。如果一个区域内某处配置了认证，那么就必须在整个区域内都配置认证。</p>
+<p>如果网络管理员是以增加网络的安全性为目标，那么只有在 OSPF 区域内的设备不能支持更安全的类型 2 认证时，才考虑使用类型 1 的认证。明文认证会在网络上给你网络攻击者留下一个安全漏洞，因为网络上传送的数据包都能够被协议分析仪捕获，并读出所设置的口令。</p>
+<p>在一个区域上配置类型 1 的认证方式，可以使用命令 ip ospf authentication-key 来为和该区域相连的每一个接口分配一个口令。所分配的口令不必在整个区域上相同，但是在一对邻居的路由器之间必须相同。在 OSPF 协议的配置下添加 area authentication 命令来使类型 1 的认证方式有效。</p>
+<p>MD5 算法用来类型 2 的认证方式中，它用来为 OSPF 数据包内容和一个口令计算一个散列值，而这个散列值将和一个秘钥 ID，以及一个不变小的序列号一起在数据包中传送。如果传送的消息中的内容没有变化，那么接收路由器的散列值应该和发送路由器在消息数据包中传送的散列值相匹配。秘钥 ID 允许路由器指定多个口令，这样可以使口令的改变比较容易。序列号可以用来防止重现攻击，以避免 OSPF 数据包被捕获、更改和重新传送给另一台路由器。</p>
+<p>在一个区域上配置类型为 2 的认证方式，可以使用命令 ip ospf message-digest-key md5 来为该区域相连的每一个接口分配一个口令和一个秘钥 ID。同样，所分配的口令不必在整个区域上都相同，但是在一对邻居路由器之间的秘钥 ID 和口令都必须相同。在 OSPF 协议的配置下使用 area authentication message-digest 来使类型 2 的认证方式有效。</p>
+<p>在所有使用认证的路由器的配置文件中增加命令 service password-encryption，这样做可以使路由器对配置文件里任何显示的口令进行加密，这样可以避免通过查看配置文件而使口令泄露。</p>
+<p>案例研究：虚链路<br>虚链路总是建立在 ABR 路由器之间的，至少它们之中有一台 ABR 路由器是必须和 0 相连的，在每一台 ABR 路由器的 OSPF 配置中，必须添加 area virtual-link 命令来配置一条虚链路，并指定了这条虚链路要穿过的区域以及这条链路远端的 ABR 和路由器的 ID。</p>
+<p>使用命令 show ip ospf virtual-link 可以查看一条虚链路的状态。</p>
+<p>案例研究：运行在 NBMA 网络上的 OSPF<br>在一些非广播多路访问网络上，例如 X.25、帧中继和 ATM 等，运行 OSPF 协议会产生一个问题。多路访问意味着一个 NBMA 网络是多台设备共同相连的单个网络，和以太网或者令牌环网一样。但是它又和以太网、令牌环网等广播型网络不同，它是非广播的。非广播意味着发送到这个网络上的数据包不一定会别和该网络相连的其他所有路由器看到。因此，由于 NBMA 网络是多路访问的，OSPF 协议需要选取一台 DR 路由器和 BDR 路由器，但是由于 NBMA 网络又是非广播的，因此它不能保证所有相连的路由器都能收到其他路由器所发送的 Hello 数据包。因此所有的路由器不一定能够自动地了解它的所有邻居，因而不一定能够正确地进行 DR 的选取。</p>
+<p>接下来将介绍几个解决 NBMA 网络问题的方案，具体的方案选择依赖于实现该解决方案的网络的特征。</p>
+<p>第一种解决方案出现在 Cisco IOS 10.0 版本之前，它是使用 neighbor 命令以手工方式指定每一台路由器的邻居并创建 DR 的。neighbor 命令只在老的 IOS 版本上才是必要的，而新的解决方案中，使用 ip ospf network 命令可以改变缺省的 OSPF 网络类型。这条命令的一个选项是改变网络类型为广播型，这可以在每个帧中继接口上使用 ip ospf network broadcast 来实现。这个网络类型的更改会让 OSPF 把这个 NBMA 视为一个广播型网络。</p>
+<p>影响 DR 选取的另一种方案是实现一个全网状连接的拓扑结构，即每一台路由器都一个 PVC 电路和其他所有的路由器相连。从路由器的角度来看，这种方案实际上是所有 NBMA 网络实现中最有效的方案。但是其有一个明显缺点：开销相当昂贵。</p>
+<p>另外一种方案是将网络改为点到多点网络，这样就可以避免 DR&#x2F;BDR 选取的处理。点到多点网络把 PVC 当做一个点到点链路的集合，因此就没有 DR&#x2F;BDR 的选取的发生。OSPF 点到多点的网络类型把下层的网络看作一组点到点链路的集合，而不是一个多路访问网络，并且 OSPF 数据包以组播方式发送到它的邻居。这种解决方案在那些动态连接的网络上会产生问题，像帧中继 SVC 或者 ATM SVC。自 IOS 11.3 开始，这个问题可以通过同时将一个网络声明为点到多点和非广播的方式得到解决。由于网络是非广播的，邻居将不会被自动地发现，因此必须手动地配置。</p>
+<p>最后一种解决方案就是，使用它们各自本身的子网把每一个 PVC 连接作为一个单独的点到点网络。这种解决方案可以通过子接口来完成。</p>
+<p>案例研究：运行在按需电路上的 OSPF<br>配置运行在按需电路上的 OSPF 是很简单的，这可以在与按需电路相连的接口上，通过增加 ip ospf demand-circuit 命令来实现。而且只需要在点到点电路的一端，或者点到多点电路的多点端宣告为按需电路就可以了。</p>
+<p>OSPF 故障诊断<br>OSPF 协议的故障排除有时是令人恐怖的，这在一个大型网络上显得尤其明显。但是 OSPF 产生的路由选择问题和其他任何路由选择协议的路由选择问题没有什么不同，故障可能是下列某种原因之一引起的：</p>
+<p>路由信息丢失<br>错误的或不精确的路由信息<br>对路由器的检查仍然是获取故障排除信息的主要来源。使用命令 show ip ospf database 查看不同的 LSA 也会得到重要的信息。需要记住，在一个区域内所有路由器的链路状态数据库都是相同的。</p>
+<p>当检查单独一台路由器的配置时，需要考虑以下几点：</p>
+<p>所有接口配置的地址和掩码是否正确<br>network area 语句使用的反向掩码是否正确，是否匹配正确的接口<br>network area 语句是否把所有的接口都指定到正确的区域中<br>network area 语句使用的顺序是否正确<br>当检查邻接关系时，需要考虑如下问题：</p>
+<p>从这两台邻居路由器中有 Hello 数据包正在发送吗<br>这两台邻居路由器之间的计时器设置相同吗<br>这两个邻居路由器之间的可选字段设置相同吗<br>接口是配置在同一个子网上吗（也就是说它们的地址&#x2F;掩码是否属于同一个子网）<br>邻居路由器的接口是否属于同一种网络类型<br>一台路由器是否正在试图和它的邻居路由器的辅助地址形成一种邻接关系<br>如果使用了认证，那么在邻居路由器之间的认证类型是否相同？口令和秘钥是否相同，在区域内的所有路由器是否都启用了认证<br>在所有的访问列表中，是否有正在阻塞 OSPF 的访问列表<br>如果邻居关系穿过一条虚链路，那么这条链路是否配置在一个末梢区域内<br>如果怀疑一个链路状态数据库出现问题，或者两个数据库不同步，那么可以使用命令 show ip ospf database database-summary 来观察每一台路由器中数据库的 LSA 数量。</p>
+<p>当检查一个区域层面上的问题时，需要确认以下几个问题：</p>
+<p>ABR 路由器是否配置正确<br>对于相同区域的类型是否在所有的路由器都配置正确<br>如果配置了汇总地址，配置的是否正确<br>如果是路由器性能出现了问题，那么可以在路由器上检查它们的 CPU 和内存使用情况。末梢区域和地址汇总能够帮助减小链路数据库的大小并能容忍网络的一些不稳定性。</p>
+<p>当区域内的数据包可以进行路由转发，但是所有区域间通信的尝试都失败了，此时应该首先怀疑该区域的 ABR 路由器出现故障。</p>
+<p>总结<br>当提到链路状态路由选择协议的时候，大多数人首先想到的是 OSPF 协议，但是 OSPF 协议并不是 IP 网络上唯一的链路状态协议。ISO 的中间系统-中间系统（IS-IS）虽然是设计用来为其它网络协议进行路由选择的，但是它也可以为 IP 网络进行路由选择。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Route/" rel="tag"># Route</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/07/02/network-multicast-address/" rel="prev" title="network-multicast-address">
+      <i class="fa fa-chevron-left"></i> network-multicast-address
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/05/12/routing-tcp-ip-07/" rel="next" title="TCP/IP 路由技术 07：增强型内部网关路由选择协议（EIGRP）">
+      TCP/IP 路由技术 07：增强型内部网关路由选择协议（EIGRP） <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#OSPF-%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E4%B8%8E%E5%AE%9E%E7%8E%B0"><span class="nav-number">1.</span> <span class="nav-text">OSPF 的基本原理与实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%82%BB%E5%B1%85%E5%92%8C%E9%82%BB%E6%8E%A5%E5%85%B3%E7%B3%BB"><span class="nav-number">1.1.</span> <span class="nav-text">邻居和邻接关系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Hello-%E5%8D%8F%E8%AE%AE"><span class="nav-number">1.2.</span> <span class="nav-text">Hello 协议</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BD%91%E7%BB%9C%E7%B1%BB%E5%9E%8B"><span class="nav-number">1.3.</span> <span class="nav-text">网络类型</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8C%87%E5%AE%9A%E8%B7%AF%E7%94%B1%E5%99%A8%E5%92%8C%E5%A4%87%E4%BB%BD%E8%B7%AF%E7%94%B1%E5%99%A8"><span class="nav-number">2.</span> <span class="nav-text">指定路由器和备份路由器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#OSPF-%E6%8E%A5%E5%8F%A3"><span class="nav-number">2.1.</span> <span class="nav-text">OSPF 接口</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#OSPF-%E9%82%BB%E5%B1%85"><span class="nav-number">3.</span> <span class="nav-text">OSPF 邻居</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B3%9B%E6%B4%AA%E6%89%A9%E6%95%A3"><span class="nav-number">3.1.</span> <span class="nav-text">泛洪扩散</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%BA%E5%9F%9F"><span class="nav-number">3.2.</span> <span class="nav-text">区域</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E5%99%A8%E7%B1%BB%E5%9E%8B"><span class="nav-number">3.3.</span> <span class="nav-text">路由器类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E6%AE%B5%E5%8C%BA%E5%9F%9F"><span class="nav-number">3.4.</span> <span class="nav-text">分段区域</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%99%9A%E9%93%BE%E8%B7%AF"><span class="nav-number">3.5.</span> <span class="nav-text">虚链路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%93%BE%E8%B7%AF%E7%8A%B6%E6%80%81%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">3.6.</span> <span class="nav-text">链路状态数据库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#LSA-%E7%9A%84%E7%B1%BB%E5%9E%8B"><span class="nav-number">3.7.</span> <span class="nav-text">LSA 的类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%AB%E6%A2%A2%E5%8C%BA%E5%9F%9F"><span class="nav-number">3.8.</span> <span class="nav-text">末梢区域</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E8%A1%A8"><span class="nav-number">3.9.</span> <span class="nav-text">路由表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E7%9A%84%E7%B1%BB%E5%9E%8B"><span class="nav-number">3.10.</span> <span class="nav-text">目的类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%AF%E5%BE%84%E7%B1%BB%E5%9E%8B"><span class="nav-number">3.11.</span> <span class="nav-text">路径类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E8%A1%A8%E7%9A%84%E6%9F%A5%E6%89%BE"><span class="nav-number">3.12.</span> <span class="nav-text">路由表的查找</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A4%E8%AF%81"><span class="nav-number">3.13.</span> <span class="nav-text">认证</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%89%E9%9C%80%E7%94%B5%E8%B7%AF%E4%B8%8A%E7%9A%84-OSPF"><span class="nav-number">3.14.</span> <span class="nav-text">按需电路上的 OSPF</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#OSPF-%E6%95%B0%E6%8D%AE%E5%8C%85%E6%A0%BC%E5%BC%8F"><span class="nav-number">4.</span> <span class="nav-text">OSPF 数据包格式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%8C%85%E5%A4%B4%E9%83%A8"><span class="nav-number">4.1.</span> <span class="nav-text">数据包头部</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Hello-%E6%95%B0%E6%8D%AE%E5%8C%85"><span class="nav-number">4.2.</span> <span class="nav-text">Hello 数据包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E6%8F%8F%E8%BF%B0%E6%95%B0%E6%8D%AE%E5%8C%85"><span class="nav-number">4.3.</span> <span class="nav-text">数据库描述数据包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%93%BE%E8%B7%AF%E7%8A%B6%E6%80%81%E8%AF%B7%E6%B1%82%E6%95%B0%E6%8D%AE%E5%8C%85"><span class="nav-number">4.4.</span> <span class="nav-text">链路状态请求数据包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%93%BE%E8%B7%AF%E7%8A%B6%E6%80%81%E6%9B%B4%E6%96%B0%E6%95%B0%E6%8D%AE%E5%8C%85"><span class="nav-number">4.5.</span> <span class="nav-text">链路状态更新数据包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%93%BE%E8%B7%AF%E7%8A%B6%E6%80%81%E7%A1%AE%E8%AE%A4%E6%95%B0%E6%8D%AE%E5%8C%85"><span class="nav-number">4.6.</span> <span class="nav-text">链路状态确认数据包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#OSPF-%E7%9A%84-LSA-%E6%A0%BC%E5%BC%8F"><span class="nav-number">4.7.</span> <span class="nav-text">OSPF 的 LSA 格式</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#LSA-%E7%9A%84%E5%A4%B4%E9%83%A8"><span class="nav-number">4.7.1.</span> <span class="nav-text">LSA 的头部</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E5%99%A8-LSA"><span class="nav-number">4.7.2.</span> <span class="nav-text">路由器 LSA</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%BD%91%E7%BB%9C-LSA"><span class="nav-number">4.7.3.</span> <span class="nav-text">网络 LSA</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">82</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">28</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2023</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
