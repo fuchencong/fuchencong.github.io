@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Lua 不支持真正的多线程，即不支持共享内存的抢占式线程。Lua 语言的线程（也就是所谓的协程）是协作式的，因此可以避免因为不可预知的线程切换而带来的问题，而且 Lua 状态之间不共享内存，这也为 Lua 实现并行化提供了很好的基础。 这篇文章将深入介绍 Lua 的线程以及 lua_State 数据结构。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="《lua 程序设计》读书笔记（16）：线程和状态">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2023/08/29/lua-programming-16/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="Lua 不支持真正的多线程，即不支持共享内存的抢占式线程。Lua 语言的线程（也就是所谓的协程）是协作式的，因此可以避免因为不可预知的线程切换而带来的问题，而且 Lua 状态之间不共享内存，这也为 Lua 实现并行化提供了很好的基础。 这篇文章将深入介绍 Lua 的线程以及 lua_State 数据结构。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-08-29T13:03:44.000Z">
+<meta property="article:modified_time" content="2023-08-29T13:15:17.818Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Lua">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2023/08/29/lua-programming-16/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>《lua 程序设计》读书笔记（16）：线程和状态 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2023/08/29/lua-programming-16/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          《lua 程序设计》读书笔记（16）：线程和状态
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-08-29 21:03:44" itemprop="dateCreated datePublished" datetime="2023-08-29T21:03:44+08:00">2023-08-29</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Lua/" itemprop="url" rel="index"><span itemprop="name">Lua</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>Lua 不支持真正的多线程，即不支持共享内存的抢占式线程。Lua 语言的线程（也就是所谓的协程）是协作式的，因此可以避免因为不可预知的线程切换而带来的问题，而且 Lua 状态之间不共享内存，这也为 Lua 实现并行化提供了很好的基础。</p>
+<p>这篇文章将深入介绍 Lua 的线程以及 lua_State 数据结构。</p>
+<span id="more"></span>
+
+<h2 id="多线程"><a href="#多线程" class="headerlink" title="多线程"></a>多线程</h2><p>在 Lua 中，协程的本质就是线程，可以认为协程是带有良好编程接口的线程，也可以认为线程是带有底层 API 的协程。从 C API 的角度来看，把线程当做一个栈会比较有用，一个栈包含了一个线程得以运行所需的所有信息。因此多个线程就意味着多个独立的栈。</p>
+<p>lua_State 不仅表示一个 Lua 状态，还表示带有该状态的一个线程（因此有人认为该类型应该叫做 lua_Thread）。当创建一个 Lua 状态时，Lua 就会自动用这个状态创建一个主线程，并返回代表该线程的 lua_State。该主线程永远不会被垃圾回收，它只会在调用 lua_close 关闭状态时随着状态一起释放。</p>
+<p>调用 lua_newthread 可以在一个状态中创建其他的线程，他们在内部引用了相同的 Lua 状态。每个线程都有自己的栈，新线程从空栈开始运行，而老线程则在栈顶引用这个新线程：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">lua_State *lua_newthread(lua_State *L);</span><br></pre></td></tr></table></figure>
+
+<p>除了主线程以外，线程和其他 Lua 对象一样都是垃圾回收的对象。当新建一个线程时，新创建的线程会被压入栈中，这样就保证了新线程不会马上被垃圾收集。永远不要使用未被正确锚定在 Lua 状态中的线程（主线程是内部锚定的）。</p>
+<p>一旦拥有一个新线程，就可以像使用主线程一样来使用它了。可以将元素压入栈中，或者从栈中弹出元素，还可以用它来调用函数等。函数 <code>lua_xmove</code> 可以在同一个 Lua 状态的两个栈之间移动 Lua 值。</p>
+<p>使用多线程的主要目的是实现协程，从而可以挂起某些协程的执行，并在之后恢复运行，因此要用到函数 <code>lua_resume</code>。要启动一个协程，可以像使用 <code>lua_pcall</code> 一样使用 <code>lua_resume</code>：将待调用函数（协程体）压入栈中，然后压入协程的参数，并以参数数量作为 narg 调用 lau_resume。</p>
+<p>如果正在运行的函数被挂起，lua_resume 就会返回 LUA_YIELD，并将线程置于一个可以后续再恢复执行的状态中。当 lua_resume 返回 LUA_YIELD 时，线程栈的可见部分只包含传递给 <code>yield</code> 的值。要恢复一个挂起的线程，可以再次调用 lua_resume。在这种调用中，Lua 假设栈中所有值都会被调用的 yield 返回。</p>
+<p>一个协程也可以调用 C 语言函数，而 C 函数又可以反过来调用其他 Lua 函数。C 语言函数也可以交出控制权，此时它必须提供一个在线程恢复时被调用的延续函数。要交出控制权，C 语言函数需要调用 <code>lua_yieldk</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">lua_yieldk</span> <span class="params">(lua_State *L, <span class="type">int</span> nresults, lua_KContext ctx, lua_KFunction k)</span>;</span><br></pre></td></tr></table></figure>
+
+<p>该调用会挂起正在运行的协程。当协程恢复运行时，控制权会直接交给延续函数 k。如果 C 语言函数在交出控制权之后什么都不做，那么它可以不带延续函数调用 <code>lua_yieldk</code> 或者宏 <code>lua_yield</code>。</p>
+<h2 id="Lua-状态"><a href="#Lua-状态" class="headerlink" title="Lua 状态"></a>Lua 状态</h2><p>每次调用 <code>luaL_newstate(或者 lua_newsate)</code> 都会创建一个新的 Lua 状态。不同的 Lua 状态之间是完全独立的，他们不共享数据。这也意味着 Lua 状态之间不能直接通信，必须借助一些 C 语言代码的帮助。由于所有数据都需要由 C 语言进行传递，因此 Lua 状态之间只能交换能够用 C 语言表示的类型。</p>
+<p>在支持多线程的系统中，一种设计模型是为每个线程创建一个独立的 Lua 状态。这种设计使得线程类似于 POSIX 线程，实现了非共享内存的并发。如下是该系统的一个简单原型：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br><span class="line">175</span><br><span class="line">176</span><br><span class="line">177</span><br><span class="line">178</span><br><span class="line">179</span><br><span class="line">180</span><br><span class="line">181</span><br><span class="line">182</span><br><span class="line">183</span><br><span class="line">184</span><br><span class="line">185</span><br><span class="line">186</span><br><span class="line">187</span><br><span class="line">188</span><br><span class="line">189</span><br><span class="line">190</span><br><span class="line">191</span><br><span class="line">192</span><br><span class="line">193</span><br><span class="line">194</span><br><span class="line">195</span><br><span class="line">196</span><br><span class="line">197</span><br><span class="line">198</span><br><span class="line">199</span><br><span class="line">200</span><br><span class="line">201</span><br><span class="line">202</span><br><span class="line">203</span><br><span class="line">204</span><br><span class="line">205</span><br><span class="line">206</span><br><span class="line">207</span><br><span class="line">208</span><br><span class="line">209</span><br><span class="line">210</span><br><span class="line">211</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;pthread.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;lua.h&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;lauxlib.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">Proc</span> &#123;</span></span><br><span class="line">    lua_State *L;</span><br><span class="line">    <span class="type">pthread_t</span> thread;</span><br><span class="line">    <span class="type">pthread_cond_t</span> cond;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *channel;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">Proc</span> *<span class="title">previous</span>, *<span class="title">next</span>;</span></span><br><span class="line">&#125; Proc;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> Proc *waitsend = <span class="literal">NULL</span>;</span><br><span class="line"><span class="type">static</span> Proc *waitreceive = <span class="literal">NULL</span>;</span><br><span class="line"><span class="type">static</span> <span class="type">pthread_mutex_t</span> kernel_access = PTHREAD_MUTEX_INITIALIZER;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> Proc *<span class="title function_">getself</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    Proc *p;</span><br><span class="line"></span><br><span class="line">    lua_getfield(L, LUA_REGISTRYINDEX, <span class="string">&quot;_SELF&quot;</span>);</span><br><span class="line">    p = (Proc*)lua_touserdata(L, <span class="number">-1</span>);</span><br><span class="line">    lua_pop(L, <span class="number">1</span>);</span><br><span class="line">    <span class="keyword">return</span> p;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">movevalues</span><span class="params">(lua_State *send, lua_State *rec)</span> &#123;</span><br><span class="line">    <span class="type">int</span> n = lua_gettop(send);</span><br><span class="line">    <span class="type">int</span> i;</span><br><span class="line"></span><br><span class="line">    luaL_checkstack(rec, n, <span class="string">&quot;too many results&quot;</span>);</span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">2</span>; i &lt; n; i++) &#123;</span><br><span class="line">        lua_pushstring(rec, lua_tostring(send, i));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> Proc *<span class="title function_">searchmatch</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *channel, Proc **<span class="built_in">list</span>)</span> &#123;</span><br><span class="line">    Proc *node;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> (node = *<span class="built_in">list</span>; node != <span class="literal">NULL</span>; node = node-&gt;next) &#123;</span><br><span class="line">        <span class="keyword">if</span> (<span class="built_in">strcmp</span>(channel, node-&gt;channel) == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">if</span> (*<span class="built_in">list</span> == node) &#123;</span><br><span class="line">                *<span class="built_in">list</span> = (node-&gt;next == node) ? <span class="literal">NULL</span> : node-&gt;next;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            node-&gt;previous-&gt;next = node-&gt;next;</span><br><span class="line">            node-&gt;next-&gt;previous = node-&gt;previous;</span><br><span class="line">            <span class="keyword">return</span> node;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">waitonlist</span><span class="params">(lua_State *L, <span class="type">const</span> <span class="type">char</span> *channel, Proc **<span class="built_in">list</span>)</span> &#123;</span><br><span class="line">    Proc *p = getself(L);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (*<span class="built_in">list</span> == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        *<span class="built_in">list</span> = p;</span><br><span class="line">        p-&gt;previous = p-&gt;next = p;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        p-&gt;previous = (*<span class="built_in">list</span>)-&gt;previous;</span><br><span class="line">        p-&gt;next = *<span class="built_in">list</span>;</span><br><span class="line">        p-&gt;previous-&gt;next = p-&gt;next-&gt;previous = p;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    p-&gt;channel = channel;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">do</span> &#123;</span><br><span class="line">        pthread_cond_wait(&amp;p-&gt;cond, &amp;kernel_access);</span><br><span class="line">    &#125; <span class="keyword">while</span> (p-&gt;channel);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">ll_send</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    Proc *p;</span><br><span class="line"></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *channel = luaL_checkstring(L, <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">    pthread_mutex_lock(&amp;kernel_access);</span><br><span class="line"></span><br><span class="line">    p = searchmatch(channel, &amp;waitreceive);</span><br><span class="line">    <span class="keyword">if</span> (p) &#123;</span><br><span class="line">        movevalues(L, p-&gt;L);</span><br><span class="line">        p-&gt;channel = <span class="literal">NULL</span>;</span><br><span class="line">        pthread_cond_signal(&amp;p-&gt;cond);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        waitonlist(L, channel, &amp;waitsend);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    pthread_mutex_unlock(&amp;kernel_access);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">ll_receive</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    Proc *p;</span><br><span class="line"></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *channel = luaL_checkstring(L, <span class="number">1</span>);</span><br><span class="line">    lua_settop(L, <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">    pthread_mutex_lock(&amp;kernel_access);</span><br><span class="line"></span><br><span class="line">    p = searchmatch(channel, &amp;waitsend);</span><br><span class="line">    <span class="keyword">if</span> (p) &#123;</span><br><span class="line">        movevalues(p-&gt;L, L);</span><br><span class="line">        p-&gt;channel = <span class="literal">NULL</span>;</span><br><span class="line">        pthread_cond_signal(&amp;p-&gt;cond);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        waitonlist(L, channel, &amp;waitreceive);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    pthread_mutex_unlock(&amp;kernel_access);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> lua_gettop(L) - <span class="number">1</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">registerlib</span><span class="params">(lua_State *L, <span class="type">const</span> <span class="type">char</span> *name, lua_CFunction f)</span> &#123;</span><br><span class="line">    lua_getglobal(L, <span class="string">&quot;package&quot;</span>);</span><br><span class="line">    lua_getfield(L, <span class="number">-1</span>, <span class="string">&quot;preload&quot;</span>);</span><br><span class="line">    lua_pushcfunction(L, f);</span><br><span class="line">    lua_setfield(L, <span class="number">-2</span>, name);</span><br><span class="line">    lua_pop(L, <span class="number">2</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">openlibs</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    luaL_requiref(L, <span class="string">&quot;_G&quot;</span>, luaopen_base, <span class="number">1</span>);</span><br><span class="line">    luaL_requiref(L, <span class="string">&quot;package&quot;</span>, luaopen_package, <span class="number">1</span>);</span><br><span class="line">    lua_pop(L, <span class="number">2</span>);</span><br><span class="line">    registerlib(L, <span class="string">&quot;coroutine&quot;</span>, luaopen_coroutine);</span><br><span class="line">    registerlib(L, <span class="string">&quot;table&quot;</span>, luaopen_table);</span><br><span class="line">    registerlib(L, <span class="string">&quot;io&quot;</span>, luaopen_io);</span><br><span class="line">    registerlib(L, <span class="string">&quot;os&quot;</span>, luaopen_os);</span><br><span class="line">    registerlib(L, <span class="string">&quot;string&quot;</span>, luaopen_string);</span><br><span class="line">    registerlib(L, <span class="string">&quot;math&quot;</span>, luaopen_math);</span><br><span class="line">    registerlib(L, <span class="string">&quot;utf8&quot;</span>, luaopen_utf8);</span><br><span class="line">    registerlib(L, <span class="string">&quot;debug&quot;</span>, luaopen_debug);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">luaopen_lproc</span><span class="params">(lua_State *L)</span>;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> *<span class="title function_">ll_thread</span><span class="params">(<span class="type">void</span> *arg)</span> &#123;</span><br><span class="line">    lua_State *L = (lua_State *) arg;</span><br><span class="line">    Proc *self;</span><br><span class="line"></span><br><span class="line">    openlibs(L);</span><br><span class="line">    luaL_requiref(L, <span class="string">&quot;lproc&quot;</span>, luaopen_lproc, <span class="number">1</span>);</span><br><span class="line">    lua_pop(L, <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">    self = (Proc *)lua_newuserdata(L, <span class="keyword">sizeof</span>(Proc));</span><br><span class="line">    lua_setfield(L, LUA_REGISTRYINDEX, <span class="string">&quot;_SELF&quot;</span>);</span><br><span class="line">    self-&gt;L = L;</span><br><span class="line">    self-&gt;thread = pthread_self();</span><br><span class="line">    self-&gt;channel = <span class="literal">NULL</span>;</span><br><span class="line">    pthread_cond_init(&amp;self-&gt;cond, <span class="literal">NULL</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (lua_pcall(L, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>) != <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;thread error: %s&quot;</span>, lua_tostring(L, <span class="number">-1</span>));</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    pthread_cond_destroy(&amp;getself(L)-&gt;cond);</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">ll_start</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    <span class="type">pthread_t</span> thread;</span><br><span class="line"></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *chunk = luaL_checkstring(L, <span class="number">1</span>);</span><br><span class="line">    lua_State *L1 = luaL_newstate();</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (L1 == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        luaL_error(L, <span class="string">&quot;unable to create new state&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (luaL_loadstring(L1, chunk) != <span class="number">0</span>) &#123;</span><br><span class="line">        luaL_error(L, <span class="string">&quot;error in thread body: %s&quot;</span>, lua_tostring(L1, <span class="number">-1</span>));</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (pthread_create(&amp;thread, <span class="literal">NULL</span>, ll_thread, L1) != <span class="number">0</span>) &#123;</span><br><span class="line">        luaL_error(L, <span class="string">&quot;unable to create new thread&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    pthread_detach(thread);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">ll_exit</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    pthread_exit(<span class="literal">NULL</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">luaL_Reg</span> <span class="title">ll_funcs</span>[] =</span> &#123;</span><br><span class="line">    &#123;<span class="string">&quot;start&quot;</span>, ll_start&#125;,</span><br><span class="line">    &#123;<span class="string">&quot;send&quot;</span>, ll_send&#125;,</span><br><span class="line">    &#123;<span class="string">&quot;receive&quot;</span>, ll_receive&#125;,</span><br><span class="line">    &#123;<span class="string">&quot;exit&quot;</span>, ll_exit&#125;,</span><br><span class="line">    &#123;<span class="literal">NULL</span>, <span class="literal">NULL</span>&#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">luaopen_lproc</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    luaL_newlib(L, ll_funcs);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Lua/" rel="tag"># Lua</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2023/08/29/lua-programming-15/" rel="next" title="《lua 程序设计》读书笔记（15）：C 语言中的用户自定义类型 & 管理资源">
+      《lua 程序设计》读书笔记（15）：C 语言中的用户自定义类型 & 管理资源 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A4%9A%E7%BA%BF%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">多线程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Lua-%E7%8A%B6%E6%80%81"><span class="nav-number">2.</span> <span class="nav-text">Lua 状态</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">95</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">28</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2023</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
