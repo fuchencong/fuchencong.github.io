@@ -28,7 +28,7 @@
 <meta property="og:description" content="Lua 不支持真正的多线程，即不支持共享内存的抢占式线程。Lua 语言的线程（也就是所谓的协程）是协作式的，因此可以避免因为不可预知的线程切换而带来的问题，而且 Lua 状态之间不共享内存，这也为 Lua 实现并行化提供了很好的基础。 这篇文章将深入介绍 Lua 的线程以及 lua_State 数据结构。">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2023-08-29T13:03:44.000Z">
-<meta property="article:modified_time" content="2023-08-29T13:15:17.818Z">
+<meta property="article:modified_time" content="2023-09-15T09:00:09.403Z">
 <meta property="article:author" content="fuchencong">
 <meta property="article:tag" content="Lua">
 <meta name="twitter:card" content="summary">
@@ -217,16 +217,22 @@
 <p>这篇文章将深入介绍 Lua 的线程以及 lua_State 数据结构。</p>
 <span id="more"></span>
 
-<h2 id="多线程"><a href="#多线程" class="headerlink" title="多线程"></a>多线程</h2><p>在 Lua 中，协程的本质就是线程，可以认为协程是带有良好编程接口的线程，也可以认为线程是带有底层 API 的协程。从 C API 的角度来看，把线程当做一个栈会比较有用，一个栈包含了一个线程得以运行所需的所有信息。因此多个线程就意味着多个独立的栈。</p>
-<p>lua_State 不仅表示一个 Lua 状态，还表示带有该状态的一个线程（因此有人认为该类型应该叫做 lua_Thread）。当创建一个 Lua 状态时，Lua 就会自动用这个状态创建一个主线程，并返回代表该线程的 lua_State。该主线程永远不会被垃圾回收，它只会在调用 lua_close 关闭状态时随着状态一起释放。</p>
-<p>调用 lua_newthread 可以在一个状态中创建其他的线程，他们在内部引用了相同的 Lua 状态。每个线程都有自己的栈，新线程从空栈开始运行，而老线程则在栈顶引用这个新线程：</p>
+<h2 id="多线程"><a href="#多线程" class="headerlink" title="多线程"></a>多线程</h2><p>在 Lua 中，协程的本质就是线程，可以认为协程是带有良好编程接口的线程，也可以认为线程是带有底层 API 的协程。<strong>从 C API 的角度来看，把线程当做一个栈会比较有用，一个栈包含了一个线程得以运行所需的所有信息。因此多个线程就意味着多个独立的栈</strong>。</p>
+<p>lua_State 不仅表示一个 Lua 状态，还表示带有该状态的一个线程（因此有人认为该类型应该叫做 lua_Thread）。当创建一个 Lua 状态时，Lua 就会自动用这个状态创建一个主线程，并返回代表该线程的 lua_State。该主线程永远不会被垃圾回收，它只会在调用 lua_close 关闭状态时随着状态一起释放。Lua 的 CAPI 的大多数函数都需要操作栈，而这些函数的第一个参数 <code>lua_State</code> 就指定了是哪个线程的栈。</p>
+<p>调用 lua_newthread 可以在一个状态中创建其他的线程，他们在内部引用了相同的 Lua 状态。但是每个线程都有自己的栈，新线程从空栈开始运行，而老线程则在栈顶引用这个新线程：</p>
 <figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">lua_State *lua_newthread(lua_State *L);</span><br></pre></td></tr></table></figure>
 
-<p>除了主线程以外，线程和其他 Lua 对象一样都是垃圾回收的对象。当新建一个线程时，新创建的线程会被压入栈中，这样就保证了新线程不会马上被垃圾收集。永远不要使用未被正确锚定在 Lua 状态中的线程（主线程是内部锚定的）。</p>
+<p>除了主线程以外，线程和其他 Lua 对象一样都是垃圾回收的对象。当新建一个线程时，新创建的线程会被压入栈中，这样就保证了新线程不会马上被垃圾收集。永远不要使用未被正确锚定（引用）在 Lua 状态中的线程（主线程是内部锚定的）。</p>
 <p>一旦拥有一个新线程，就可以像使用主线程一样来使用它了。可以将元素压入栈中，或者从栈中弹出元素，还可以用它来调用函数等。函数 <code>lua_xmove</code> 可以在同一个 Lua 状态的两个栈之间移动 Lua 值。</p>
-<p>使用多线程的主要目的是实现协程，从而可以挂起某些协程的执行，并在之后恢复运行，因此要用到函数 <code>lua_resume</code>。要启动一个协程，可以像使用 <code>lua_pcall</code> 一样使用 <code>lua_resume</code>：将待调用函数（协程体）压入栈中，然后压入协程的参数，并以参数数量作为 narg 调用 lau_resume。</p>
-<p>如果正在运行的函数被挂起，lua_resume 就会返回 LUA_YIELD，并将线程置于一个可以后续再恢复执行的状态中。当 lua_resume 返回 LUA_YIELD 时，线程栈的可见部分只包含传递给 <code>yield</code> 的值。要恢复一个挂起的线程，可以再次调用 lua_resume。在这种调用中，Lua 假设栈中所有值都会被调用的 yield 返回。</p>
-<p>一个协程也可以调用 C 语言函数，而 C 函数又可以反过来调用其他 Lua 函数。C 语言函数也可以交出控制权，此时它必须提供一个在线程恢复时被调用的延续函数。要交出控制权，C 语言函数需要调用 <code>lua_yieldk</code>：</p>
+<p>**使用多线程的主要目的是实现协程，从而可以挂起某些协程的执行，并在之后恢复运行，因此要用到函数 <code>lua_resume</code>**。要启动一个协程，可以像使用 <code>lua_pcall</code> 一样使用 <code>lua_resume</code>：将待调用函数（协程体）压入栈中，然后压入协程的参数，并以参数数量作为 narg 调用 lau_resume。</p>
+<p>如果正在运行的函数被挂起（例如通过 lua_yield），lua_resume 就会返回 LUA_YIELD，并将线程置于一个可以后续再恢复执行的状态中。当 lua_resume 返回 LUA_YIELD 时，线程栈的可见部分只包含传递给 <code>yield</code> 的值。要恢复一个挂起的线程，可以再次调用 lua_resume。在这种调用中，Lua 假设栈中所有值都会被调用的 yield 返回。</p>
+<p>通常，会将一个 Lua 函数作为协程体启动线程，这个 Lua 函数可以调用其他 Lua 函数，并且其中任意一个函数都可以挂起，从而结束对 lua_resume 的调用。例如：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">foo</span><span class="params">(x)</span></span> <span class="built_in">coroutine</span>.<span class="built_in">yield</span>(<span class="number">10</span>, x) <span class="keyword">end</span></span><br><span class="line"><span class="function"><span class="keyword">function</span> <span class="title">foo1</span><span class="params">(x)</span></span> foo(x + <span class="number">1</span>); <span class="keyword">return</span> <span class="number">3</span> <span class="keyword">end</span></span><br></pre></td></tr></table></figure>
+
+<p>而运行的 C 代码如下所示：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">lua_State *L1 = lua_newthread(L);</span><br><span class="line">lua_getglobal(L1, <span class="string">&quot;foo1&quot;</span>);</span><br><span class="line">lua_pushinteger(L1, <span class="number">20</span>);</span><br><span class="line">lua_resume(L1, L, <span class="number">1</span>);</span><br></pre></td></tr></table></figure>
+
+<p>一个协程也可以调用 C 语言函数，而 C 函数又可以反过来调用其他 Lua 函数。之前介绍过通过 <code>延续函数</code> 可以让 Lua 函数交出控制权。<strong>其实 C 语言函数自己也可以交出控制权</strong>，此时它必须提供一个在线程恢复时被调用的延续函数。要交出控制权，C 语言函数需要调用 <code>lua_yieldk</code>：</p>
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">lua_yieldk</span> <span class="params">(lua_State *L, <span class="type">int</span> nresults, lua_KContext ctx, lua_KFunction k)</span>;</span><br></pre></td></tr></table></figure>
 
 <p>该调用会挂起正在运行的协程。当协程恢复运行时，控制权会直接交给延续函数 k。如果 C 语言函数在交出控制权之后什么都不做，那么它可以不带延续函数调用 <code>lua_yieldk</code> 或者宏 <code>lua_yield</code>。</p>
@@ -249,7 +255,10 @@
 
         
     <div class="post-nav">
-      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2023/09/12/go-library-cobra/" rel="prev" title="go 库学习之 Cobra">
+      <i class="fa fa-chevron-left"></i> go 库学习之 Cobra
+    </a></div>
       <div class="post-nav-item">
     <a href="/fuchencong.github.io/2023/08/29/lua-programming-15/" rel="next" title="《lua 程序设计》读书笔记（15）：C 语言中的用户自定义类型 & 管理资源">
       《lua 程序设计》读书笔记（15）：C 语言中的用户自定义类型 & 管理资源 <i class="fa fa-chevron-right"></i>
@@ -328,7 +337,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">95</span>
+          <span class="site-state-item-count">102</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -341,7 +350,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">28</span>
+        <span class="site-state-item-count">29</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>

@@ -28,7 +28,7 @@
 <meta property="og:description" content="上一篇文章主要讲解如何在 C 代码中调用 Lua 代码，即将 C 代码作为应用程序代码，Lua 代码作为库代码。这篇文章将介绍如何在 Lua 代码中调用 C 语言，即将 Lua 代码作为应用代码，将 C 代码作为库代码。">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2023-08-27T02:50:23.000Z">
-<meta property="article:modified_time" content="2023-08-27T03:34:46.615Z">
+<meta property="article:modified_time" content="2023-09-15T09:17:39.206Z">
 <meta property="article:author" content="fuchencong">
 <meta property="article:tag" content="Lua">
 <meta name="twitter:card" content="summary">
@@ -234,10 +234,10 @@
 <figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dirent.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;errno.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;lua.h&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;lauxlib.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">l_dir</span><span class="params">(lua_State *L)</span> &#123;</span><br><span class="line">    DIR *dir;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">dirent</span> *<span class="title">entry</span>;</span></span><br><span class="line">    <span class="type">int</span> i;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *path = luaL_checkstring(L, <span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">    dir = opendir(path);</span><br><span class="line">    <span class="keyword">if</span> (dir == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        lua_pushnil(L);</span><br><span class="line">        lua_pushstring(L, strerror(errno));</span><br><span class="line">        <span class="keyword">return</span> <span class="number">2</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    lua_newtable(L);</span><br><span class="line">    i = <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">while</span> ((entry = readdir(dir)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        lua_pushinteger(L, i++);</span><br><span class="line">        lua_pushstring(L, entry-&gt;d_name);</span><br><span class="line">        lua_settable(L, <span class="number">-3</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    closedir(dir);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 
 <p>注意，由于 <code>l_dir</code> 是在 lua 中被调用的，因此上述代码中所以一 <code>lua_</code> 开头的函数都是在向 Lua 返回值。</p>
-<h3 id="延续"><a href="#延续" class="headerlink" title="延续"></a>延续</h3><p>通过 <code>lua_pcall</code> 和 <code>lua_call</code>，一个被 Lua 调用的 C 函数也可以回调 Lua 函数。通常 Lua 是可以处理这种调用顺序的，毕竟与 C 的集成是一大特点。但是有一种情况这种调用会有问题，就是协程。</p>
-<p>Lua 中每个协程都有自己的栈，其中保存了该协程所挂起调用的信息，具体来说就是栈中存储了每一个调用的返回地址、参数和局部变量。对于 Lua 的调用，解释器只需要这个栈即可，我们称其为软栈。然而对于 C 的调用，解释器必须使用 C 语言栈，因为 C 函数的返回地址和局部变量都位于 C 语言栈中。</p>
-<p>对于解释器来说，拥有多个软栈并不难，但是 ISO C 的运行时环境却只能拥有一个内部栈。因此 Lua 中的协程并不能挂起 C 函数的执行，如果一个 C 函数位于从 resume 到对应 yield 的调用路径中，那么 Lua 无法保存 C 函数的状态以便于在下次 resume 时恢复状态。</p>
-<p>Lua 5.2 及后续版本中，用延续（continuation）改善了对这个问题的处理。一个 C 函数 foo 可以指定一个延续函数 foo_k。当解释器发现它应该恢复 foo 执行时，如果长跳转（long jump）已经丢弃了 C 语言栈中有关 foo 信息，则调用 foo_k 来替代。</p>
+<h3 id="延续"><a href="#延续" class="headerlink" title="延续"></a>延续</h3><p>由于 Lua 的 CAPI 提供了 <code>lua_pcall</code> 和 <code>lua_call</code>，因此一个被 Lua 调用的 C 函数也可以通过这些 API 回调 Lua 函数。通常 Lua 是可以处理这种调用顺序的，毕竟与 C 的集成是一大特点。但是有一种情况这种调用会有问题，就是协程。此时调用顺序为：宿主程序（C）-&gt; 脚本代码（Lua） -&gt; C 库接口（C）-&gt; Lua 函数（Lua）。</p>
+<p>一般 Lua 是可以处理这种调用顺序的。Lua 中每个协程都有自己的栈，其中保存了该协程所挂起调用的信息，具体来说就是栈中存储了每一个调用的返回地址、参数和局部变量。对于 Lua 的调用，解释器只需要这个栈即可，我们称其为软栈。然而对于 C 的调用，解释器必须使用 C 语言栈，因为 C 函数的返回地址和局部变量都位于 C 语言栈中。</p>
+<p>对于解释器来说，拥有多个软栈并不难，但是 ISO C 的运行时环境却只能拥有一个内部栈。<strong>因此 Lua 中的协程并不能挂起 C 函数的执行，如果一个 C 函数位于从 resume 到对应 yield 的调用路径中，那么 Lua 无法保存 C 函数的状态以便于在下次 resume 时恢复状态</strong>。</p>
+<p>Lua 5.2 及后续版本中，用延续（continuation）改善了对这个问题的处理。Lua 5.2 使用长跳转实现了 yield，并用相同的方式实现了错误处理。长跳转简单丢弃 C 语言栈中关于 C 函数的所有信息，因而无法 resume 这些函数。但是一个 C 函数 foo 可以指定一个延续函数 foo_k。当解释器发现它应该恢复 foo 执行时，如果长跳转（long jump）已经丢弃了 C 语言栈中有关 foo 信息，则调用 foo_k 来替代。</p>
 <p><code>lua_pcalllk</code> 和 <code>lua_pcall</code> 类似，但是支持被调用的函数中途 yield。<code>lua_pcalllk</code> 支持设置一个延续函数，当解释器发现需要 resume 时，它会调用延续函数。</p>
 <p>延续体系是一种为了支持 yield 而设计的精巧机制，但它也不是万能的，某些 C 函数可能会需要给他们的延续传递相当多的上下文。</p>
 <h3 id="C-模块"><a href="#C-模块" class="headerlink" title="C 模块"></a>C 模块</h3><p>Lua 模块就是一个代码段，其中定义了一些函数并将其存储在恰当的地方（通常是表中的元素）。为 Lua 编写的 C 语言模块可以模仿这种行为。除了 C 函数定义外，C 模块还必须定义一个特殊的函数，该特殊函数相当于 Lua 库中的主代码段，用于注册模块中的所有 C 函数，并将其存储在恰当的地方（通常也是表中）。其他初始化工作也应该在函数中完成。</p>
@@ -435,7 +435,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">95</span>
+          <span class="site-state-item-count">102</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
@@ -448,7 +448,7 @@
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">28</span>
+        <span class="site-state-item-count">29</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
