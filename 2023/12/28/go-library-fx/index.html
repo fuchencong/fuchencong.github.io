@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Fx 库是 Uber 开源的一个依赖注入（dependency injection）库，Uber 内部大量服务都使用了 Fx 库，Cilium 的 hive 包 也是对 Fx 库的封装。这篇文章将学习 Fx 库的使用。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go 库学习之 Fx">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2023/12/28/go-library-fx/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="Fx 库是 Uber 开源的一个依赖注入（dependency injection）库，Uber 内部大量服务都使用了 Fx 库，Cilium 的 hive 包 也是对 Fx 库的封装。这篇文章将学习 Fx 库的使用。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2023/12/28/go-library-fx/images/lifecycle.jpg">
+<meta property="article:published_time" content="2023-12-28T12:05:42.000Z">
+<meta property="article:modified_time" content="2024-01-01T05:47:19.777Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2023/12/28/go-library-fx/images/lifecycle.jpg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2023/12/28/go-library-fx/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go 库学习之 Fx | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2023/12/28/go-library-fx/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go 库学习之 Fx
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-12-28 20:05:42" itemprop="dateCreated datePublished" datetime="2023-12-28T20:05:42+08:00">2023-12-28</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go-%E5%BC%80%E5%8F%91%E7%AC%94%E8%AE%B0/" itemprop="url" rel="index"><span itemprop="name">Go 开发笔记</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>Fx 库是 Uber 开源的一个依赖注入（dependency injection）库，Uber 内部大量服务都使用了 Fx 库，<a target="_blank" rel="noopener" href="https://docs.cilium.io/en/stable/contributing/development/hive/">Cilium 的 hive 包</a> 也是对 Fx 库的封装。这篇文章将学习 Fx 库的使用。</p>
+<span id="more"></span>
+
+<h2 id="Fx-库简介"><a href="#Fx-库简介" class="headerlink" title="Fx 库简介"></a>Fx 库简介</h2><p>Fx 是 Go 语言下的一个依赖注入库，通过 Fx，你可以实现如下目标：</p>
+<ul>
+<li>减少程序启动时的 <code>boilerplate code</code>（指那些具有固定模式的代码）</li>
+<li>减少程序中的全局状态，不再需要 <code>init()</code> 或者全局变量，<strong>而是使用 Fx 管理的单例</strong></li>
+<li>增加新的组件后，可以立即在程序中使用它</li>
+<li>构建通用的、松耦合的、可共享的模块</li>
+</ul>
+<h2 id="Get-Started"><a href="#Get-Started" class="headerlink" title="Get Started"></a>Get Started</h2><p>首先通过一个示例程序来快速了解 Fx 库。</p>
+<h3 id="建立最小-Fx-程序"><a href="#建立最小-Fx-程序" class="headerlink" title="建立最小 Fx 程序"></a>建立最小 Fx 程序</h3><ul>
+<li>首先新建一个 Go 项目，并安装 Fx 库的最新版本</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># mkdir fxdemo</span></span><br><span class="line"><span class="comment"># cd fxdemo/</span></span><br><span class="line"><span class="comment"># go mod init example.com/fxdemo</span></span><br><span class="line"><span class="comment"># go get go.uber.org/fx@latest</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>然后编写一个 Fx 库的最小程序，<code>main.go</code> 如下所示：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;go.uber.org/fx&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New().Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>运行该程序</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go run .</span></span><br><span class="line">[Fx] PROVIDE    fx.Lifecycle &lt;= go.uber.org/fx.New.func1()</span><br><span class="line">[Fx] PROVIDE    fx.Shutdowner &lt;= go.uber.org/fx.(*App).shutdowner-fm()</span><br><span class="line">[Fx] PROVIDE    fx.DotGraph &lt;= go.uber.org/fx.(*App).dotGraph-fm()</span><br><span class="line">[Fx] RUNNING</span><br></pre></td></tr></table></figure>
+
+<p>在这个最小程序中，我们不带任何参数地调用了 <code>fx.New()</code> 来创建一个 <code>Fx App</code>。而实际使用中我们通常会给 <code>fx.New()</code> 传递多个参数来启动程序的多个组件。之后通过调用 <code>App.Run()</code> 方法来运行应用程序，该方法会一直阻塞，直到收到停止信号。最后在它退出之前会运行必要的清理操作。</p>
+<h3 id="添加一个-HTTP-Server"><a href="#添加一个-HTTP-Server" class="headerlink" title="添加一个 HTTP Server"></a>添加一个 HTTP Server</h3><p>上个最小 Fx 程序没有实现任何功能，接下来我们会给这个程序增加一个 HTTP Server 的功能。</p>
+<ul>
+<li>首先编写一个函数，创建 HTTP server</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewHTTPServer</span><span class="params">(lc fx.Lifecycle)</span></span> *http.Server &#123;</span><br><span class="line">        srv := &amp;http.Server&#123;Addr: <span class="string">&quot;:8080&quot;</span>&#125;</span><br><span class="line">        <span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>仅仅创建 HTTP server 是不够的，我们还需要告诉 Fx 如何启动该 HTTP server，这也是为什么 <code>NewHTTPServer</code> 需要一个 <code>fx.Lifecycle</code>。我们可以在 <code>fx.Lifecycle</code> 对象上注册 <code>OnStart hook</code>、<code>OnStop hook</code>，通过这两个 hook 我们就可以告诉 Fx 如何启动、停止 HTTP server</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewHTTPServer</span><span class="params">(lc fx.Lifecycle)</span></span> *http.Server &#123;</span><br><span class="line">        srv := &amp;http.Server&#123;Addr: <span class="string">&quot;:8088&quot;</span>&#125;</span><br><span class="line">        lc.Append(fx.Hook&#123;</span><br><span class="line">                OnStart: <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">                        ln, err := net.Listen(<span class="string">&quot;tcp&quot;</span>, srv.Addr)</span><br><span class="line">                        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                         <span class="keyword">return</span> err</span><br><span class="line">                        &#125;</span><br><span class="line"></span><br><span class="line">                        fmt.Println(<span class="string">&quot;Starting HTTP server at&quot;</span>, srv.Addr)</span><br><span class="line">                        <span class="keyword">go</span> srv.Serve(ln)</span><br><span class="line">                        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">                &#125;,</span><br><span class="line">                OnStop: <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">                        <span class="keyword">return</span> srv.Shutdown(ctx)</span><br><span class="line">                &#125;,</span><br><span class="line">        &#125;)</span><br><span class="line">        <span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>接下来通过 <code>fx.Provide</code> 将该构造函数提供给 <code>Fx App</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New(fx.Provide(NewHTTPServer)).Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>仅仅注册 <code>构造器</code> 是不够的。接下来还要通过 <code>fx.Invoke()</code> 注册 <code>触发器</code>，触发构造 <code>HTTP server</code>。通常这些 <code>触发器</code> 的参数就是使用由 <code>Provide()</code> 注册的构造器来创建的。可以注册多个 <code>触发器</code>，这些触发器总是会按注册顺序执行。</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New(fx.Provide(NewHTTPServer),</span><br><span class="line">                fx.Invoke(<span class="function"><span class="keyword">func</span><span class="params">(*http.Server)</span></span> &#123;&#125;),</span><br><span class="line">        ).Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>接下来就可以运行该程序了</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go run .</span></span><br><span class="line">[Fx] PROVIDE    *http.Server &lt;= main.NewHTTPServer()</span><br><span class="line">[Fx] PROVIDE    fx.Lifecycle &lt;= go.uber.org/fx.New.func1()</span><br><span class="line">[Fx] PROVIDE    fx.Shutdowner &lt;= go.uber.org/fx.(*App).shutdowner-fm()</span><br><span class="line">[Fx] PROVIDE    fx.DotGraph &lt;= go.uber.org/fx.(*App).dotGraph-fm()</span><br><span class="line">[Fx] INVOKE             main.main.func1()</span><br><span class="line">[Fx] RUN        provide: go.uber.org/fx.New.func1()</span><br><span class="line">[Fx] RUN        provide: main.NewHTTPServer()</span><br><span class="line">[Fx] HOOK OnStart        main.NewHTTPServer.func1() executing (<span class="built_in">caller</span>: main.NewHTTPServer)</span><br><span class="line">Starting HTTP server at :8088</span><br><span class="line">[Fx] HOOK OnStart        main.NewHTTPServer.func1() called by main.NewHTTPServer ran successfully <span class="keyword">in</span> 182.506µs</span><br><span class="line">[Fx] RUNNING</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl localhost:8088</span></span><br><span class="line">404 page not found</span><br></pre></td></tr></table></figure>
+
+<h3 id="注册-Handler"><a href="#注册-Handler" class="headerlink" title="注册 Handler"></a>注册 Handler</h3><p>接下来给该 HTTP Server 添加 Handler，从而可以真正处理 HTTP 请求。</p>
+<ul>
+<li>定义一个 HTTP handler，直接将请求的 body 复制到响应中</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> EchoHandler <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewEchoHandler</span><span class="params">()</span></span> *EchoHandler &#123;</span><br><span class="line">        <span class="keyword">return</span> &amp;EchoHandler&#123;&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(*EchoHandler)</span></span> ServeHTTP(w http.ResponseWriter, r *http.Request) &#123;</span><br><span class="line">        <span class="keyword">if</span> _, err := io.Copy(w, r.Body); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                fmt.Fprintln(os.Stderr, <span class="string">&quot;Failed to handle request:&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>定义一个构造函数来构造 <code>*http.ServeMux</code>，<code>*http.ServeMux</code> 用于将 HTTP 请求路由到不同的 handler，这里我们直接将 <code>/echo</code> 的请求路由到 <code>*EchoHandler</code>，所以这个构造函数接收 <code>*EchoHandler</code> 作为参数</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServeMux</span><span class="params">(echo *EchoHandler)</span></span> *http.ServeMux &#123;</span><br><span class="line">        mux := http.NewServeMux()</span><br><span class="line">        mux.Handle(<span class="string">&quot;/echo&quot;</span>, echo)</span><br><span class="line">        <span class="keyword">return</span> mux</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>同样，通过 <code>Fx.Provide</code> 将上述构造函数注册到 <code>Fx App</code> 上</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New(fx.Provide(NewHTTPServer, NewEchoHandler, NewServeMux),</span><br><span class="line">                fx.Invoke(<span class="function"><span class="keyword">func</span><span class="params">(*http.Server)</span></span> &#123;&#125;),</span><br><span class="line">        ).Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>最后，修改 <code>NewHTTPServer</code>，让其接受 <code>*http.ServeMux</code> 作为参数</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewHTTPServer</span><span class="params">(lc fx.Lifecycle, mux *http.ServeMux)</span></span> *http.Server &#123;</span><br><span class="line">    srv := &amp;http.Server&#123;Addr: <span class="string">&quot;:8088&quot;</span>, Handler: mux&#125;</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>运行该程序并测试</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl localhost:8088/echo -X POST -d &quot;hello&quot;</span></span><br><span class="line">hello</span><br></pre></td></tr></table></figure>
+
+<p>这里我们通过 <code>fx.Provide</code> 提供了更多的组件。Fx 会根据构造函数的参数以及返回值来决定组件之间的依赖关系。</p>
+<h3 id="添加-logger"><a href="#添加-logger" class="headerlink" title="添加 logger"></a>添加 logger</h3><p>目前程序是在 <code>stdout</code> 和 <code>stderr</code> 输出日志和错误信息，从某种程度上说，<code>stdout</code> 和 <code>stderr</code> 都是全局状态，我们应该将日志信息输出到日志对象。这里使用 <code>Zap</code> 日志库。</p>
+<ul>
+<li>首先为 <code>Fx App</code> 提供 Zap logger 的构造函数</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New(</span><br><span class="line">                fx.Provide(NewHTTPServer, NewEchoHandler, NewServeMux, zap.NewExample),</span><br><span class="line">                ......</span><br><span class="line">        ).Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>NewEchoHandler</code> 接受 logger 对象作为参数，并将出错信息输出到 logger</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> EchoHandler <span class="keyword">struct</span> &#123;</span><br><span class="line">        log *zap.Logger</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewEchoHandler</span><span class="params">(log *zap.Logger)</span></span> *EchoHandler &#123;</span><br><span class="line">        <span class="keyword">return</span> &amp;EchoHandler&#123;log: log&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *EchoHandler)</span></span> ServeHTTP(w http.ResponseWriter, r *http.Request) &#123;</span><br><span class="line">        <span class="keyword">if</span> _, err := io.Copy(w, r.Body); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                h.log.Warn(<span class="string">&quot;Failed to handle request:&quot;</span>, zap.Error(err))</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>NewHTTPServer</code> 也做类似处理</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewHTTPServer</span><span class="params">(lc fx.Lifecycle, mux *http.ServeMux, log *zap.Logger)</span></span> *http.Server &#123;</span><br><span class="line">        srv := &amp;http.Server&#123;Addr: <span class="string">&quot;:8088&quot;</span>, Handler: mux&#125;</span><br><span class="line">        lc.Append(fx.Hook&#123;</span><br><span class="line">                OnStart: <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">                        ln, err := net.Listen(<span class="string">&quot;tcp&quot;</span>, srv.Addr)</span><br><span class="line">                        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                         <span class="keyword">return</span> err</span><br><span class="line">                        &#125;</span><br><span class="line"></span><br><span class="line">                        log.Info(<span class="string">&quot;Starting HTTP server&quot;</span>, zap.String(<span class="string">&quot;addr&quot;</span>, srv.Addr))</span><br><span class="line">                        <span class="keyword">go</span> srv.Serve(ln)</span><br><span class="line">                        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">                &#125;,</span><br><span class="line">                OnStop: <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">                        <span class="keyword">return</span> srv.Shutdown(ctx)</span><br><span class="line">                &#125;,</span><br><span class="line">        &#125;)</span><br><span class="line">        <span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>也可以使用 logger 对象来记录 Fx 自己的日志</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New(</span><br><span class="line">                fx.Provide(NewHTTPServer, NewEchoHandler, NewServeMux, zap.NewExample),</span><br><span class="line">                fx.Invoke(<span class="function"><span class="keyword">func</span><span class="params">(*http.Server)</span></span> &#123;&#125;),</span><br><span class="line">                fx.WithLogger(<span class="function"><span class="keyword">func</span><span class="params">(log *zap.Logger)</span></span> fxevent.Logger &#123;</span><br><span class="line">                        <span class="keyword">return</span> &amp;fxevent.ZapLogger&#123;Logger: log&#125;</span><br><span class="line">                &#125;),</span><br><span class="line">        ).Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>运行该程序，可以看到日志输出</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go run .</span></span><br><span class="line">&#123;<span class="string">&quot;level&quot;</span>:<span class="string">&quot;info&quot;</span>,<span class="string">&quot;msg&quot;</span>:<span class="string">&quot;provided&quot;</span>,<span class="string">&quot;constructor&quot;</span>:<span class="string">&quot;main.NewHTTPServer()&quot;</span>,<span class="string">&quot;stacktrace&quot;</span>:[<span class="string">&quot;main.main (/root/code/private/go/fx/fxdemo/main.go:56)&quot;</span>,<span class="string">&quot;runtime.main (/usr/local/go/src/runtime/proc.go:250)&quot;</span>],<span class="string">&quot;moduletrace&quot;</span>:[<span class="string">&quot;main.main (/root/code/private/go/fx/fxdemo/main.go:56)&quot;</span>,<span class="string">&quot;main.main (/root/code/private/go/fx/fxdemo/main.go:55)&quot;</span>],<span class="string">&quot;type&quot;</span>:<span class="string">&quot;*http.Server&quot;</span>&#125;</span><br><span class="line">&#123;<span class="string">&quot;level&quot;</span>:<span class="string">&quot;info&quot;</span>,<span class="string">&quot;msg&quot;</span>:<span class="string">&quot;provided&quot;</span>,<span class="string">&quot;constructor&quot;</span>:<span class="string">&quot;main.NewEchoHandler()&quot;</span>,<span class="string">&quot;stacktrace&quot;</span>:[<span class="string">&quot;main.main (/root/code/private/go/fx/fxdemo/main.go:56)&quot;</span>,<span class="string">&quot;runtime.main (/usr/local/go/src/runtime/proc.go:250)&quot;</span>],<span class="string">&quot;moduletrace&quot;</span>:[<span class="string">&quot;main.main (/root/code/private/go/fx/fxdemo/main.go:56)&quot;</span>,<span class="string">&quot;main.main (/root/code/private/go/fx/fxdemo/main.go:55)&quot;</span>],<span class="string">&quot;type&quot;</span>:<span class="string">&quot;*main.EchoHandler&quot;</span>&#125;</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<h3 id="解耦注册"><a href="#解耦注册" class="headerlink" title="解耦注册"></a>解耦注册</h3><p>在上面的例子上，<code>NewServeMux</code> 显式将 <code>EchoHandler</code> 声明为依赖，这带来不必要的耦合性，因为 <code>NewServeMux</code> 并不需要知道某个具体的 handler 实现。接下来将修复这个问题。</p>
+<ul>
+<li>定义 <code>Route</code> 接口类型</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Route <span class="keyword">interface</span> &#123;</span><br><span class="line">        http.Handler</span><br><span class="line">        Pattern() <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>EchoHandler</code> 类型实现了 Route 接口</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *EchoHandler)</span></span> Pattern() <span class="type">string</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;/echo&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>修改 <code>NewServeMux</code> 接收 Route 类型</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServeMux</span><span class="params">(route Route)</span></span> *http.ServeMux &#123;</span><br><span class="line">        mux := http.NewServeMux()</span><br><span class="line">        mux.Handle(route.Pattern(), route)</span><br><span class="line">        <span class="keyword">return</span> mux</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>修改 main 函数，对 <code>NewEchoHandler</code> 进行注解，<code>fx.As()</code> 用于注解函数的返回类型，这样 Fx 就认为 <code>NewEchoHandler</code> 返回的是 <code>type</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fx.New(</span><br><span class="line">                fx.Provide(</span><br><span class="line">                        NewHTTPServer,</span><br><span class="line">                        NewServeMux,</span><br><span class="line">                        fx.Annotate(NewEchoHandler,</span><br><span class="line">                         fx.As(<span class="built_in">new</span>(Route))),</span><br><span class="line">                        zap.NewExample),</span><br><span class="line">                fx.Invoke(<span class="function"><span class="keyword">func</span><span class="params">(*http.Server)</span></span> &#123;&#125;),</span><br><span class="line">                fx.WithLogger(<span class="function"><span class="keyword">func</span><span class="params">(log *zap.Logger)</span></span> fxevent.Logger &#123;</span><br><span class="line">                        <span class="keyword">return</span> &amp;fxevent.ZapLogger&#123;Logger: log&#125;</span><br><span class="line">                &#125;),</span><br><span class="line">        ).Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里我们通过接口来让使用者和具体实现解耦，这时用到了 <code>fx.Annotate</code>、<code>fx.As</code> 来对构造器进行注解。</p>
+<h3 id="继续注册-handler"><a href="#继续注册-handler" class="headerlink" title="继续注册 handler"></a>继续注册 handler</h3><p>接下来在 HTTP server 中继续增加一个 handler。</p>
+<ul>
+<li>首先增加一个 Handler，用于输出 <code>Hello XXX</code></li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">type</span> HelloHandler struct &#123;</span><br><span class="line">        <span class="built_in">log</span> *zap.Logger</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">func NewHelloHandler(<span class="built_in">log</span> *zap.Logger) *HelloHandler &#123;</span><br><span class="line">        <span class="built_in">return</span> &amp;HelloHandler&#123;<span class="built_in">log</span>: <span class="built_in">log</span>&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">func (h *HelloHandler) Pattern() string &#123;</span><br><span class="line">        <span class="built_in">return</span> <span class="string">&quot;/hello&quot;</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">func (h *HelloHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) &#123;</span><br><span class="line">        body, err := io.ReadAll(r.Body)</span><br><span class="line">        <span class="keyword">if</span> err != nil &#123;</span><br><span class="line">                h.log.Error(<span class="string">&quot;Failed to read request&quot;</span>, zap.Error(err))</span><br><span class="line">                http.Error(w, <span class="string">&quot;Internal server error&quot;</span>, http.StatusInternalServerError)</span><br><span class="line">                <span class="built_in">return</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> _, err := fmt.Fprintf(w, <span class="string">&quot;Hello, %s\n&quot;</span>, body); err != nil &#123;</span><br><span class="line">                h.log.Error(<span class="string">&quot;Failed to handle request:&quot;</span>, zap.Error(err))</span><br><span class="line">                http.Error(w, <span class="string">&quot;Internal server error&quot;</span>, http.StatusInternalServerError)</span><br><span class="line">                <span class="built_in">return</span></span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>修改 <code>NewServeMux</code>，让其可以接受两个 Handler</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServeMux</span><span class="params">(route1, route2 Route)</span></span> *http.ServeMux &#123;</span><br><span class="line">        mux := http.NewServeMux()</span><br><span class="line">        mux.Handle(route1.Pattern(), route1)</span><br><span class="line">        mux.Handle(route2.Pattern(), route2)</span><br><span class="line">        <span class="keyword">return</span> mux</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>最后修改 <code>fx.Provide</code>，增加 NewHelloHandler 这个构造器</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">fx.Provide(</span><br><span class="line">        NewHTTPServer,</span><br><span class="line">        NewServeMux,</span><br><span class="line">        fx.Annotate(NewEchoHandler,</span><br><span class="line">                fx.As(<span class="built_in">new</span>(Route))),</span><br><span class="line">        fx.Annotate(NewHelloHandler,</span><br><span class="line">                fx.As(<span class="built_in">new</span>(Route))),</span><br><span class="line">        zap.NewExample),</span><br></pre></td></tr></table></figure>
+
+
+<ul>
+<li>但是直接运行，会报错，其中最关键的原因就是 <code>Route</code> 实例被重复注册。<code>Fx App</code> 内不允许同一个类型的两个实例同时存在，为了解决这个问题，我们仍然需要使用注解以区分两个不同的 <code>Route</code> 实例。<strong>这里我们用 <code>fx.ResultTags</code> 来为构造器的结果增加 <code>tag 注解</code></strong></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">fx.Provide(</span><br><span class="line">        ......</span><br><span class="line">        fx.Annotate(</span><br><span class="line">                NewEchoHandler,</span><br><span class="line">                fx.As(<span class="built_in">new</span>(Route)),</span><br><span class="line">                fx.ResultTags(<span class="string">`name:&quot;echo&quot;`</span>)),</span><br><span class="line">        fx.Annotate(</span><br><span class="line">                NewHelloHandler,</span><br><span class="line">                fx.As(<span class="built_in">new</span>(Route)),</span><br><span class="line">                fx.ResultTags(<span class="string">`name:&quot;hello&quot;`</span>)),</span><br><span class="line">        zap.NewExample),</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>同样的，由于 <code>NewServeMux</code> 接受两个 Route 实例作为参数，为了将它们区分，<strong>使用 <code>fx.ParamTags</code> 对构造器的参数增加 <code>tag 注解</code></strong></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">fx.Provide(</span><br><span class="line">        ......</span><br><span class="line">        fx.Annotate(</span><br><span class="line">                NewServeMux,</span><br><span class="line">                fx.ParamTags(<span class="string">`name:&quot;echo&quot;`</span>, <span class="string">`name:&quot;hello&quot;`</span>)),</span><br><span class="line">        .....),</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>该程序正常运行：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl localhost:8088/hello -X POST -d &quot;gopher&quot;</span></span><br><span class="line">Hello, gopher</span><br></pre></td></tr></table></figure>
+
+<p>所以可以看到 <code>fx.ResultTags</code> 和 <code>fx.ParamTags</code> 是配套使用的。<code>fx.ResultTags</code> 对构造器结果增加 Tag 注解，<code>fx.ParamTags</code> 则是对构造器参数增加 Tag 注解，从而在 <code>Fx App</code> 中支持同一个类型的多个实例。这些被注解的实例也被称为 <code>Named Values</code>（需要使用 <code>name:&quot;..&quot;</code> tag 注解）。</p>
+<h3 id="注册多个-Handler"><a href="#注册多个-Handler" class="headerlink" title="注册多个 Handler"></a>注册多个 Handler</h3><p>接下来我们继续扩展该程序，让 <code>NewServeMux</code> 可以接受多个 handler。</p>
+<ul>
+<li>首先修改 <code>NewServeMux</code> 让其可以接收 Route 的 slice</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServeMux</span><span class="params">(routes []Route)</span></span> *http.ServeMux &#123;</span><br><span class="line">        mux := http.NewServeMux()</span><br><span class="line">        <span class="keyword">for</span> _, route := <span class="keyword">range</span> routes &#123;</span><br><span class="line">                mux.Handle(route.Pattern(), route)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> mux</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>接下来注解 <code>NewServeMux</code>，表明其接受一个 <code>Value Groups</code> 来作为参数。Fx 使用 <code>group:&quot;..&quot;</code> 这个注解 tag 来表明 slice 参数是一个 <code>Value Groups</code>，这会使得 Fx 执行所有的、会往该 group 中产生 Value 的 provider（执行顺序不确定），并将得到的结果保存到该 slice 参数中。除了使用 slice 作为参数，<code>Value Groups</code> 也支持 <code>可变参数</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">fx.Provide(</span><br><span class="line">        ......</span><br><span class="line">        fx.Annotate(</span><br><span class="line">                NewServeMux,</span><br><span class="line">                fx.ParamTags(<span class="string">`group:&quot;routes&quot;`</span>)),</span><br><span class="line">        ......</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>然后定义一个 Helper 函数 <code>AsRoute</code> 来让 Route 的 Provider 可以往这个 <code>Value Groups</code> 中产生 Value，这是通过 fx.ResultTags(<code>group:&quot;routes&quot;</code>) 实现的：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AsRoute</span><span class="params">(f any)</span></span> any &#123;</span><br><span class="line">        <span class="keyword">return</span> fx.Annotate(</span><br><span class="line">                f,</span><br><span class="line">                fx.As(<span class="built_in">new</span>(Route)),</span><br><span class="line">                fx.ResultTags(<span class="string">`group:&quot;routes&quot;`</span>),</span><br><span class="line">        )</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>最后借助 <code>AsRoute</code>，将已有的 Route Provider 注册到 <code>Fx App</code> 中</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">fx.Provide(</span><br><span class="line">        NewHTTPServer,</span><br><span class="line">        fx.Annotate(</span><br><span class="line">                NewServeMux,</span><br><span class="line">                fx.ParamTags(<span class="string">`group:&quot;routes&quot;`</span>)),</span><br><span class="line">        AsRoute(NewEchoHandler),</span><br><span class="line">        AsRoute(NewHelloHandler),</span><br><span class="line">        zap.NewExample),</span><br></pre></td></tr></table></figure>
+
+<p>这一步我们主要借助 <code>Value Groups</code> 来让 <code>NewServeMux</code> 可以接收一组 handler 作为参数。需要注意，如果 <code>Value Groups</code> 的构造函数返回类型 T，那么 <code>Value Groups</code> 的消费者其参数类型应该是 <code>[]T</code>。</p>
+<h2 id="Fx-其他特性"><a href="#Fx-其他特性" class="headerlink" title="Fx 其他特性"></a>Fx 其他特性</h2><p>上一小节通过一个实例介绍了 Fx 主要特性，接下来继续介绍一些没有覆盖到的 Fx 重要特性。</p>
+<h3 id="参数对象"><a href="#参数对象" class="headerlink" title="参数对象"></a><code>参数对象</code></h3><p>在上面的示例中，构造函数都是通过参数来声明它自己的依赖。如果构造函数有很多依赖，并都通过函数参数的方式来指明这些依赖，代码的可读性就会越来越差，例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewHandler</span><span class="params">(users *UserGateway, comments *CommentGateway, posts *PostGateway, votes *VoteGateway, authz *AuthZGateway)</span></span> *Handler &#123;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>参数对象</code>（<code>Parameter Objects</code>）就是用来解决这个问题的：定义一个结构体并将函数的所有依赖定义为该结构体的字段，之后函数以 <code>该结构体</code> 作为参数，这样就解决了函数参数过多带来的代码可读性问题。</p>
+<p>Fx 中，通过在结构体中嵌入 <code>Fx.In</code> 来定义 <code>参数对象</code>。如下是一个简单示例：</p>
+<ul>
+<li>定义一个结构体，例如 <code>ClientParams</code>（通常 Fx 的 <code>参数对象</code> 只用于作为构造器的参数，不要把它用于通用的业务逻辑）</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientParams <span class="keyword">struct</span> &#123;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在该结构体中嵌入 <code>Fx.In</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientParams <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.In</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>让构造函数接收该类型作为参数</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewClient</span><span class="params">(p ClientParams)</span></span> (*Client, <span class="type">error</span>) &#123;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在 <code>参数对象</code> 结构体中添加真正的依赖类型字段，其需要是结构体的导出字段：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientParams <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.In</span><br><span class="line"></span><br><span class="line">  Config     ClientConfig</span><br><span class="line">  HTTPClient *http.Client</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在构造函数中使用这些字段</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewClient</span><span class="params">(p ClientParams)</span></span> (*Client, <span class="type">error</span>) &#123;</span><br><span class="line">  <span class="keyword">return</span> &amp;Client&#123;</span><br><span class="line">    url:  p.Config.URL,</span><br><span class="line">    http: p.HTTPClient,</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">  &#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>当我们需要给构造函数增加新的依赖时，只需要在 <code>参数对象</code> 中接续添加新的字段。如果需要实现向后兼容，可以为新增的字段添加 <code>optional:&quot;true&quot;</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Params <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.In</span><br><span class="line"></span><br><span class="line">  Config     ClientConfig</span><br><span class="line">  HTTPClient *http.Client</span><br><span class="line">  Logger *zap.Logger <span class="string">`optional:&quot;true&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>之后在构造函数中继续处理新增的依赖。注意如果没有提供该字段，那么其是对应类型的 <code>零值</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(p Params)</span></span> (*Client, <span class="type">error</span>) &#123;</span><br><span class="line">  log := p.Logger</span><br><span class="line">  <span class="keyword">if</span> log == <span class="literal">nil</span> &#123;</span><br><span class="line">    log = zap.NewNop()</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><code>参数对象</code> 通过 <code>name:&quot;...&quot; tag</code> 来支持 <code>named value</code>，通过 <code>group:&quot;...&quot;</code> 来支持 <code>value groups</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> GatewayParams <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.In</span><br><span class="line"></span><br><span class="line">  WriteToConn  *sql.DB <span class="string">`name:&quot;rw&quot;`</span></span><br><span class="line">  ReadFromConn *sql.DB <span class="string">`name:&quot;ro&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> ServerParams <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.In</span><br><span class="line"></span><br><span class="line">  Handlers []Handler <span class="string">`group:&quot;server&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="结果对象"><a href="#结果对象" class="headerlink" title="结果对象"></a><code>结果对象</code></h3><p>与参数对象对应的是 <code>结果对象</code>（Result Objects），用于指定函数的返回类型。通过在结构体中新增 <code>fx.Out</code> 字段，这样就可以定义 <code>结果对象</code>。</p>
+<p>如下是一个示例：</p>
+<ul>
+<li>定义一个结构体，例如 <code>ClientResult</code>（Fx 的 <code>结果对象</code> 只用于作为构造器的返回类型，不要把它用于通用的业务逻辑）</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientResult <span class="keyword">struct</span> &#123;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在该结构体中嵌入 <code>fx.Out</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientResult <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.Out</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>将 <code>结果对象</code> 类型声明为 <code>构造函数</code> 的返回类型</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewClient</span><span class="params">()</span></span> (ClientResult, <span class="type">error</span>) &#123;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在 <code>结果对象</code> 类型中新增真正的生成字段，需要是导出字段</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientResult <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.Out</span><br><span class="line"></span><br><span class="line">  Client *Client</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在构造函数中增加设置这些字段的逻辑</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewClient</span><span class="params">()</span></span> (ClientResult, <span class="type">error</span>) &#123;</span><br><span class="line">  client := &amp;Client&#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">return</span> ClientResult&#123;Client: client&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li><p>如果需要继续新增字段，直接在 <code>结果对象</code> 类型中继续新增字段即可</p>
+</li>
+<li><p><code>结果对象</code> 通过 <code>name:&quot;...&quot;</code> tag 来支持 <code>named value</code>，通过 <code>group:&quot;...&quot;</code> 来支持 <code>value groups</code></p>
+</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ConnectionResult <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.Out</span><br><span class="line"></span><br><span class="line">  ReadWrite *sql.DB <span class="string">`name:&quot;rw&quot;`</span></span><br><span class="line">  ReadOnly  *sql.DB <span class="string">`name:&quot;ro&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> HandlerResult <span class="keyword">struct</span> &#123;</span><br><span class="line">  fx.Out</span><br><span class="line"></span><br><span class="line">  Handler Handler <span class="string">`group:&quot;server&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="应用程序生命周期"><a href="#应用程序生命周期" class="headerlink" title="应用程序生命周期"></a>应用程序生命周期</h3><p><code>Fx App</code> 的生命周期可以分为两个阶段：<code>initialization</code> 和 <code>execution</code>。每个阶段包含多个步骤，在 <code>initialization</code> 期间，包含以下步骤：</p>
+<ul>
+<li>注册 <code>fx.Provide</code> 提供的所有构造函数</li>
+<li>注册 <code>fx.Decorate</code> 提供的所有装饰函数</li>
+<li>运行 <code>fx.Invoke</code> 指定的所有函数</li>
+</ul>
+<p>在 <code>execution</code> 期间，Fx 执行如下步骤：</p>
+<ul>
+<li>运行所有的 <code>OnStart hooks</code>，这些 hooks 可以是由 <code>providers</code>、<code>decorators</code>、<code>invoked 函数</code> 中注册的</li>
+<li>等待程序停止运行的信号</li>
+<li>运行所有的 <code>OnStop hooks</code></li>
+</ul>
+<img src="/fuchencong.github.io/2023/12/28/go-library-fx/images/lifecycle.jpg" class="">
+
+<h3 id="模块"><a href="#模块" class="headerlink" title="模块"></a>模块</h3><p>Fx 模块是一个可共享的 Go 库或包，可以给 <code>Fx App</code> 提供自包含的功能。如下提供一个简单示例：</p>
+<ul>
+<li>首先通过 <code>fx.Module()</code> 定义一个 <code>Module</code> 类型的顶层变量</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> Module = fx.Module(<span class="string">&quot;server&quot;</span>,</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>仍然是通过 <code>fx.Provide</code> 为模块添加组件</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> Module = fx.Module(<span class="string">&quot;server&quot;</span>,</span><br><span class="line">  fx.Provide(</span><br><span class="line">    New,</span><br><span class="line">    parseConfig,</span><br><span class="line">  ),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>如果模块总是运行某个函数，可以使用 <code>fx.Invoke</code></li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> Module = fx.Module(<span class="string">&quot;server&quot;</span>,</span><br><span class="line">  fx.Provide(</span><br><span class="line">    New,</span><br><span class="line">    parseConfig,</span><br><span class="line">  ),</span><br><span class="line">  fx.Invoke(startServer),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>在使用依赖之前，也支持使用 <code>fx.Decorate</code> 来装饰这些依赖</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> Module = fx.Module(<span class="string">&quot;server&quot;</span>,</span><br><span class="line">  fx.Provide(</span><br><span class="line">    New,</span><br><span class="line">    parseConfig,</span><br><span class="line">  ),</span><br><span class="line">  fx.Invoke(startServer),</span><br><span class="line">  fx.Decorate(wrapLogger),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>如果你只想让你构造函数的结果只限于本模块使用（还有你模块所包含的子模块），可以在 Provide 的时候使用 <code>fx.Private</code>。如下 <code>parseConfig</code> 只对 <code>server</code> 模块有效，其他模块不能使用这个构造函数</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> Module = fx.Module(<span class="string">&quot;server&quot;</span>,</span><br><span class="line">  fx.Provide(</span><br><span class="line">    New,</span><br><span class="line">  ),</span><br><span class="line">  fx.Provide(</span><br><span class="line">    fx.Private,</span><br><span class="line">    parseConfig,</span><br><span class="line">  ),</span><br><span class="line">  fx.Invoke(startServer),</span><br><span class="line">  fx.Decorate(wrapLogger),</span><br><span class="line"></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>以下列举了一些在 Uber 中使用 Fx 模块的约定。</p>
+<ul>
+<li>可以作为独立包发布的 Fx 模块需要以 fx 作为命名后缀，包内的 Fx 模块可以不用这个后缀</li>
+<li><code>参数对象</code> 以 <code>Params</code> 后缀命名、<code>结果对象</code> 以 <code>Result</code> 后缀命名</li>
+<li>模块正常工作所依赖的函数（这些函数通常需要通过 <code>fx.Provide</code> 或 <code>fx.Invoke</code> 注册）需要被导出，这是为了保证即使没有 Fx，我们的模块也可以被使用</li>
+<li>模块暴露的函数需要以 <code>参数对象</code> 作为参数，而不是直接接受多个参数，这样可以保持可扩展性</li>
+<li>类似地，模块暴露的函数需要以 <code>结果对象</code> 作为返回值，而不是直接返回多个值</li>
+<li>只提供你真正能提供的类型，不要提供本模块的 <code>依赖</code>，也不要捆绑其他模块</li>
+<li>Fx 模块应该很少包含业务逻辑。如果一个 Fx 模块包含了真正的业务逻辑，它不应该以 <code>fx</code> 后缀命名。这样做的好处是让用户可以自由决定是否使用 Fx</li>
+<li>谨慎使用 <code>Invoke</code>，因为 <code>fx.Invoke</code> 注册的函数总是无条件运行，它不像 <code>fx.Provide</code> 注册的构造函数总是在真正需要的时候才运行</li>
+</ul>
+<h2 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://github.com/uber-go/fx">uber-go&#x2F;fx</a></li>
+<li><a target="_blank" rel="noopener" href="https://uber-go.github.io/fx/">Fx docs</a></li>
+<li><a target="_blank" rel="noopener" href="https://pkg.go.dev/go.uber.org/fx">Fx package</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2024/01/01/2023-summary/" rel="prev" title="2023 年终总结：感受生活">
+      <i class="fa fa-chevron-left"></i> 2023 年终总结：感受生活
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2023/12/27/go-library-viper/" rel="next" title="go 库学习之 Viper">
+      go 库学习之 Viper <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Fx-%E5%BA%93%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text">Fx 库简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Get-Started"><span class="nav-number">2.</span> <span class="nav-text">Get Started</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BB%BA%E7%AB%8B%E6%9C%80%E5%B0%8F-Fx-%E7%A8%8B%E5%BA%8F"><span class="nav-number">2.1.</span> <span class="nav-text">建立最小 Fx 程序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B7%BB%E5%8A%A0%E4%B8%80%E4%B8%AA-HTTP-Server"><span class="nav-number">2.2.</span> <span class="nav-text">添加一个 HTTP Server</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B3%A8%E5%86%8C-Handler"><span class="nav-number">2.3.</span> <span class="nav-text">注册 Handler</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B7%BB%E5%8A%A0-logger"><span class="nav-number">2.4.</span> <span class="nav-text">添加 logger</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%A3%E8%80%A6%E6%B3%A8%E5%86%8C"><span class="nav-number">2.5.</span> <span class="nav-text">解耦注册</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%A7%E7%BB%AD%E6%B3%A8%E5%86%8C-handler"><span class="nav-number">2.6.</span> <span class="nav-text">继续注册 handler</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B3%A8%E5%86%8C%E5%A4%9A%E4%B8%AA-Handler"><span class="nav-number">2.7.</span> <span class="nav-text">注册多个 Handler</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Fx-%E5%85%B6%E4%BB%96%E7%89%B9%E6%80%A7"><span class="nav-number">3.</span> <span class="nav-text">Fx 其他特性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%82%E6%95%B0%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.1.</span> <span class="nav-text">参数对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%93%E6%9E%9C%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.2.</span> <span class="nav-text">结果对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F"><span class="nav-number">3.3.</span> <span class="nav-text">应用程序生命周期</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E5%9D%97"><span class="nav-number">3.4.</span> <span class="nav-text">模块</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reference"><span class="nav-number">4.</span> <span class="nav-text">Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">117</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">29</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
