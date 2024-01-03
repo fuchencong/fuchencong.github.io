@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章介绍如何在阿里云虚拟机上安装 k8s，并使用 Cilium 作为网络插件。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Ubuntu22.04 阿里云环境安装 k8s 以及 Cilium">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2024/01/03/cilium-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章介绍如何在阿里云虚拟机上安装 k8s，并使用 Cilium 作为网络插件。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2024-01-03T09:26:08.000Z">
+<meta property="article:modified_time" content="2024-01-03T09:30:08.078Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Cilium">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2024/01/03/cilium-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Ubuntu22.04 阿里云环境安装 k8s 以及 Cilium | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2024/01/03/cilium-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Ubuntu22.04 阿里云环境安装 k8s 以及 Cilium
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-01-03 17:26:08" itemprop="dateCreated datePublished" datetime="2024-01-03T17:26:08+08:00">2024-01-03</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章介绍如何在阿里云虚拟机上安装 k8s，并使用 Cilium 作为网络插件。</p>
+<span id="more"></span>
+
+<h2 id="准备工作"><a href="#准备工作" class="headerlink" title="准备工作"></a>准备工作</h2><p>准备如下 3 台机器，操作系统均为 ubuntu 22.04</p>
+<table>
+<thead>
+<tr>
+<th>虚拟机</th>
+<th>IP</th>
+<th></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>master</td>
+<td>172.16.131.181</td>
+<td></td>
+</tr>
+<tr>
+<td>worker1</td>
+<td>172.16.131.180</td>
+<td></td>
+</tr>
+<tr>
+<td>worker2</td>
+<td>172.16.131.182</td>
+<td></td>
+</tr>
+</tbody></table>
+<ul>
+<li>在每个节点上，增加主机名配置：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cat</span> &gt;&gt; /etc/hosts &lt;&lt; <span class="string">EOF</span></span><br><span class="line"><span class="string">172.16.131.181 master</span></span><br><span class="line"><span class="string">172.16.131.180 worker1</span></span><br><span class="line"><span class="string">172.16.131.182 worker2</span></span><br><span class="line"><span class="string">EOF</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>关闭 swap 分区</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看 swapoff 版本</span></span><br><span class="line">swapoff --version</span><br><span class="line"></span><br><span class="line"><span class="comment"># 临时关闭</span></span><br><span class="line">swapoff -a</span><br><span class="line"></span><br><span class="line"><span class="comment"># 永久关闭</span></span><br><span class="line">sed  -ri <span class="string">&#x27;s/.*swap.*/#&amp;/&#x27;</span> /etc/fstab</span><br><span class="line"></span><br><span class="line"><span class="comment"># 检查的确关闭了：输出为空</span></span><br><span class="line">swapon -v</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>修改网络配置</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cat</span> &lt;&lt;<span class="string">EOF &gt;  /etc/sysctl.d/k8s.conf</span></span><br><span class="line"><span class="string">net.bridge.bridge-nf-call-ip6tables = 1</span></span><br><span class="line"><span class="string">net.bridge.bridge-nf-call-iptables = 1</span></span><br><span class="line"><span class="string">EOF</span></span><br><span class="line">sysctl --system</span><br></pre></td></tr></table></figure>
+
+<h2 id="安装-k8s"><a href="#安装-k8s" class="headerlink" title="安装 k8s"></a>安装 k8s</h2><h3 id="安装容器运行时"><a href="#安装容器运行时" class="headerlink" title="安装容器运行时"></a>安装容器运行时</h3><ul>
+<li>首先先清理环境中已有的 docker 相关组件：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sudo apt-get remove docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>安装 containerd：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">curl -<span class="comment"># -O  https://mirrors.aliyun.com/docker-ce/linux/ubuntu/dists/jammy/pool/stable/amd64/containerd.io_1.6.25-1_amd64.deb</span></span><br><span class="line"></span><br><span class="line">dpkg -i containerd.io_1.6.25-1_amd64.deb</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>导出默认配置</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">containerd config default &gt; /etc/containerd/config.toml</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>修改生成的默认配置 <code>/etc/containerd/config.toml</code></li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">修改sandbox_image行替换为aliyun的pause镜像</span><br><span class="line">sandbox_image = <span class="string">&quot;registry.aliyuncs.com/google_containers/pause:3.6&quot;</span></span><br><span class="line"></span><br><span class="line">配置 systemd cgroup 驱动</span><br><span class="line">[plugins.<span class="string">&quot;io.containerd.grpc.v1.cri&quot;</span>.containerd.runtimes.runc]</span><br><span class="line">  ...</span><br><span class="line">  [plugins.<span class="string">&quot;io.containerd.grpc.v1.cri&quot;</span>.containerd.runtimes.runc.options]</span><br><span class="line">    SystemdCgroup = <span class="literal">true</span></span><br><span class="line"></span><br><span class="line">配置镜像加速</span><br><span class="line">[plugins.<span class="string">&quot;io.containerd.grpc.v1.cri&quot;</span>.registry]</span><br><span class="line">      [plugins.<span class="string">&quot;io.containerd.grpc.v1.cri&quot;</span>.registry.mirrors]</span><br><span class="line">        [plugins. <span class="string">&quot;io.contianerd.grpc.v1.cri&quot;</span>.registry.mirrors.<span class="string">&quot;docker.io&quot;</span>]</span><br><span class="line">          endpoint = [<span class="string">&quot;https://registry.aliyuncs.com&quot;</span>]</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>启动 containerd 服务</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">systemctl <span class="built_in">enable</span> containerd</span><br><span class="line">systemctl restart containerd</span><br></pre></td></tr></table></figure>
+
+<h3 id="安装-kubeadm、kubelet-以及-kubectl"><a href="#安装-kubeadm、kubelet-以及-kubectl" class="headerlink" title="安装 kubeadm、kubelet 以及 kubectl"></a>安装 kubeadm、kubelet 以及 kubectl</h3><p>接下来在所有主机上安装 kubeadm、kubelet 以及 kubectl，有一点需要注意，需要自行确保之后 kubeadm 安装的 k8s 控制平面与 kubelet、kubectl 兼容。</p>
+<p>同样使用阿里云镜像源来安装以上组件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">apt-get update &amp;&amp; apt-get install -y apt-transport-https</span><br><span class="line">curl https://mirrors.aliyun.com/kubernetes/apt/doc/apt-key.gpg | apt-key add -</span><br><span class="line"><span class="built_in">cat</span> &lt;&lt;<span class="string">EOF &gt;/etc/apt/sources.list.d/kubernetes.list</span></span><br><span class="line"><span class="string">deb https://mirrors.aliyun.com/kubernetes/apt/ kubernetes-xenial main</span></span><br><span class="line"><span class="string">EOF</span></span><br><span class="line">apt-get update</span><br><span class="line">apt-get install -y kubelet kubeadm kubectl</span><br></pre></td></tr></table></figure>
+
+<h3 id="初始化-master"><a href="#初始化-master" class="headerlink" title="初始化 master"></a>初始化 master</h3><p>首先生成初始化文件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubeadm config <span class="built_in">print</span> init-defaults &gt; kubeadm-init.yaml</span><br></pre></td></tr></table></figure>
+
+<p>对生成的 <code>kubeadm-init.yaml</code>，需要修改如下配置项：</p>
+<ul>
+<li><code>advertiseAddress: 1.2.3.4</code>：修改为本机地址</li>
+<li><code>imageRepository: registry.k8s.io</code> 替换为 <code>imageRepository: registry.aliyuncs.com/google_containers</code></li>
+<li><code>name: node</code> 需要修改为本机真实的主机名称，这里是 <code>master</code></li>
+</ul>
+<p>接下来下载镜像，要下载的镜像可以通过 <code>kubeadm config images list</code> 提前查看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubeadm config images list</span></span><br><span class="line">registry.k8s.io/kube-apiserver:v1.28.4</span><br><span class="line">registry.k8s.io/kube-controller-manager:v1.28.4</span><br><span class="line">registry.k8s.io/kube-scheduler:v1.28.4</span><br><span class="line">registry.k8s.io/kube-proxy:v1.28.4</span><br><span class="line">registry.k8s.io/pause:3.9</span><br><span class="line">registry.k8s.io/etcd:3.5.9-0</span><br><span class="line">registry.k8s.io/coredns/coredns:v1.10.1</span><br></pre></td></tr></table></figure>
+
+<p>执行如下命令下载镜像：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubeadm config images pull --config kubeadm-init.yaml</span><br></pre></td></tr></table></figure>
+
+<p>执行初始化：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubeadm init --config kubeadm-init.yaml</span></span><br><span class="line"></span><br><span class="line">......</span><br><span class="line">Then you can <span class="built_in">join</span> any number of worker nodes by running the following on each as root:</span><br><span class="line"></span><br><span class="line">kubeadm <span class="built_in">join</span> 172.16.131.181:6443 --token abcdef.0123456789abcdef \</span><br><span class="line">        --discovery-token-ca-cert-hash sha256:96eff832d9eb08f00955d9e33e96fe9b6e560ee30cbf86e742eca781e73b6af2</span><br></pre></td></tr></table></figure>
+
+<p>接下来配置环境信息，让当前用户可以执行 <code>kubectl</code> 命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">mkdir</span> -p <span class="variable">$HOME</span>/.kube</span><br><span class="line"><span class="built_in">cp</span> -i /etc/kubernetes/admin.conf <span class="variable">$HOME</span>/.kube/config</span><br><span class="line"><span class="built_in">chown</span> $(<span class="built_in">id</span> -u):$(<span class="built_in">id</span> -g) <span class="variable">$HOME</span>/.kube/config</span><br></pre></td></tr></table></figure>
+
+<h3 id="加入-worker-节点"><a href="#加入-worker-节点" class="headerlink" title="加入 worker 节点"></a>加入 worker 节点</h3><p>根据 <code>master</code> 节点初始化成功后的提示，在两个 worker 节点上分别执行如下命令，将 worker 节点加入进集群：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubeadm <span class="built_in">join</span> 172.16.131.181:6443 --token abcdef.0123456789abcdef \</span><br><span class="line">        --discovery-token-ca-cert-hash sha256:96eff832d9eb08f00955d9e33e96fe9b6e560ee30cbf86e742eca781e73b6af2</span><br></pre></td></tr></table></figure>
+
+<p>在 master 节点上，执行如下命令，确认所有节点都已经加入，由于当前还没有配置网络插件，所有节点状态都是 <code>NotReady</code></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get node</span></span><br><span class="line">NAME      STATUS     ROLES           AGE    VERSION</span><br><span class="line">master    NotReady   control-plane   2m2s   v1.28.2</span><br><span class="line">worker1   NotReady   &lt;none&gt;          77s    v1.28.2</span><br><span class="line">worker2   NotReady   &lt;none&gt;          74s    v1.28.2</span><br></pre></td></tr></table></figure>
+
+<h3 id="重新初始化集群"><a href="#重新初始化集群" class="headerlink" title="重新初始化集群"></a>重新初始化集群</h3><p>如果需要重新初始化集群，执行如下命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubeadm reset</span><br></pre></td></tr></table></figure>
+
+<p>手动删除环境配置：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">rm</span> -rf <span class="variable">$HOME</span>/.kube</span><br></pre></td></tr></table></figure>
+
+<p>如果有网络相关配置，还需要注意网络配置的清理。</p>
+<h2 id="安装-Cilium"><a href="#安装-Cilium" class="headerlink" title="安装 Cilium"></a>安装 Cilium</h2><h3 id="安装-Cilium-CLI"><a href="#安装-Cilium-CLI" class="headerlink" title="安装 Cilium CLI"></a>安装 Cilium CLI</h3><p>首先需要安装 Cilium CLI，它可以用于安装 cilium：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)</span><br><span class="line">CLI_ARCH=amd64</span><br><span class="line"><span class="keyword">if</span> [ <span class="string">&quot;<span class="subst">$(uname -m)</span>&quot;</span> = <span class="string">&quot;aarch64&quot;</span> ]; <span class="keyword">then</span> CLI_ARCH=arm64; <span class="keyword">fi</span></span><br><span class="line">curl -L --fail --remote-name-all https://github.com/cilium/cilium-cli/releases/download/<span class="variable">$&#123;CILIUM_CLI_VERSION&#125;</span>/cilium-linux-<span class="variable">$&#123;CLI_ARCH&#125;</span>.tar.gz&#123;,.<span class="built_in">sha256sum</span>&#125;</span><br><span class="line"><span class="built_in">sha256sum</span> --check cilium-linux-<span class="variable">$&#123;CLI_ARCH&#125;</span>.tar.gz.sha256sum</span><br><span class="line">sudo tar xzvfC cilium-linux-<span class="variable">$&#123;CLI_ARCH&#125;</span>.tar.gz /usr/local/bin</span><br><span class="line"><span class="built_in">rm</span> cilium-linux-<span class="variable">$&#123;CLI_ARCH&#125;</span>.tar.gz&#123;,.<span class="built_in">sha256sum</span>&#125;</span><br></pre></td></tr></table></figure>
+
+<p>确认 Cilium CLI 安装成功：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">cilium version --client</span><br></pre></td></tr></table></figure>
+
+<h3 id="安装-Cilium-1"><a href="#安装-Cilium-1" class="headerlink" title="安装 Cilium"></a>安装 Cilium</h3><p>执行如下命令，安装 Cilium</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">cilium install --version 1.14.4</span><br></pre></td></tr></table></figure>
+
+<p>通过如下命令，确认 Cilium 状态正常：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"># cilium status --wait</span><br><span class="line">    /¯¯\</span><br><span class="line"> /¯¯\__/¯¯\    Cilium:             OK</span><br><span class="line"> \__/¯¯\__/    Operator:           OK</span><br><span class="line"> /¯¯\__/¯¯\    Envoy DaemonSet:    disabled (using embedded mode)</span><br><span class="line"> \__/¯¯\__/    Hubble Relay:       disabled</span><br><span class="line">    \__/       ClusterMesh:        disabled</span><br><span class="line"></span><br><span class="line">Deployment             cilium-operator    Desired: 1, Ready: 1/1, Available: 1/1</span><br><span class="line">DaemonSet              cilium             Desired: 3, Ready: 3/3, Available: 3/3</span><br><span class="line">Containers:            cilium-operator    Running: 1</span><br><span class="line">                       cilium             Running: 3</span><br><span class="line">Cluster Pods:          2/2 managed by Cilium</span><br><span class="line">Helm chart version:    1.14.4</span><br><span class="line">Image versions         cilium             quay.io/cilium/cilium:v1.14.4@sha256:4981767b787c69126e190e33aee93d5a076639083c21f0e7c29596a519c64a2e: 3</span><br><span class="line">                       cilium-operator    quay.io/cilium/operator-generic:v1.14.4@sha256:f0f05e4ba3bb1fe0e4b91144fa4fea637701aba02e6c00b23bd03b4a7e1dfd55: 1</span><br></pre></td></tr></table></figure>
+
+<p>可以执行如下命令，进行连通性测试：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># cilium connectivity test</span></span><br><span class="line">......</span><br><span class="line">✅ All 44 tests (295 actions) successful, 14 tests skipped, 1 scenarios skipped.</span><br></pre></td></tr></table></figure>
+
+<p>网络插件安装成功后，节点状态也变成 Ready 了：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get nodes</span></span><br><span class="line">NAME      STATUS   ROLES           AGE   VERSION</span><br><span class="line">master    Ready    control-plane   28m   v1.28.2</span><br><span class="line">worker1   Ready    &lt;none&gt;          28m   v1.28.2</span><br><span class="line">worker2   Ready    &lt;none&gt;          28m   v1.28.2</span><br></pre></td></tr></table></figure>
+
+<h2 id="reference"><a href="#reference" class="headerlink" title="reference"></a>reference</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://www.aledk.com/2022/10/29/ubuntu-k8s/">基于Ubuntu-22.04 kubeadm安装K8s-v1.25.0</a></li>
+<li><a target="_blank" rel="noopener" href="https://juejin.cn/post/6844903943051411469#heading-12">跟着官方文档从零搭建K8S</a></li>
+<li><a target="_blank" rel="noopener" href="https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/">Installing kubeadm</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default/">Cilium Quick Installation</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Cilium/" rel="tag"># Cilium</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2024/01/01/2023-summary/" rel="next" title="2023 年终总结：感受生活">
+      2023 年终总结：感受生活 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%87%86%E5%A4%87%E5%B7%A5%E4%BD%9C"><span class="nav-number">1.</span> <span class="nav-text">准备工作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-k8s"><span class="nav-number">2.</span> <span class="nav-text">安装 k8s</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85%E5%AE%B9%E5%99%A8%E8%BF%90%E8%A1%8C%E6%97%B6"><span class="nav-number">2.1.</span> <span class="nav-text">安装容器运行时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-kubeadm%E3%80%81kubelet-%E4%BB%A5%E5%8F%8A-kubectl"><span class="nav-number">2.2.</span> <span class="nav-text">安装 kubeadm、kubelet 以及 kubectl</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9D%E5%A7%8B%E5%8C%96-master"><span class="nav-number">2.3.</span> <span class="nav-text">初始化 master</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8A%A0%E5%85%A5-worker-%E8%8A%82%E7%82%B9"><span class="nav-number">2.4.</span> <span class="nav-text">加入 worker 节点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8D%E6%96%B0%E5%88%9D%E5%A7%8B%E5%8C%96%E9%9B%86%E7%BE%A4"><span class="nav-number">2.5.</span> <span class="nav-text">重新初始化集群</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-Cilium"><span class="nav-number">3.</span> <span class="nav-text">安装 Cilium</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-Cilium-CLI"><span class="nav-number">3.1.</span> <span class="nav-text">安装 Cilium CLI</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-Cilium-1"><span class="nav-number">3.2.</span> <span class="nav-text">安装 Cilium</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">4.</span> <span class="nav-text">reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">119</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">30</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
