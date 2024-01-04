@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上篇文章中，我们在阿里云环境安装了 k8s 以及 cilium，这里我们将跟随 cilium 官方上的一个 Demo 示例，来实际体验 cilium。 环境说明在这个例子中，将启动三个微服务程序：  deathstar：在 80 端口上运行一个 HTTP 微服务，该服务通过 k8s service 的形式暴露，从而可以将请求负载分担到上游的两个 Pod 中。从业务角度上来讲，该服务提供提供了 l">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Cilium 实际上手体验">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2024/01/04/cilium-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上篇文章中，我们在阿里云环境安装了 k8s 以及 cilium，这里我们将跟随 cilium 官方上的一个 Demo 示例，来实际体验 cilium。 环境说明在这个例子中，将启动三个微服务程序：  deathstar：在 80 端口上运行一个 HTTP 微服务，该服务通过 k8s service 的形式暴露，从而可以将请求负载分担到上游的两个 Pod 中。从业务角度上来讲，该服务提供提供了 l">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2024-01-04T03:05:02.000Z">
+<meta property="article:modified_time" content="2024-01-04T03:09:54.726Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Cilium">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2024/01/04/cilium-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Cilium 实际上手体验 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2024/01/04/cilium-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Cilium 实际上手体验
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-01-04 11:05:02" itemprop="dateCreated datePublished" datetime="2024-01-04T11:05:02+08:00">2024-01-04</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上篇文章中，我们在<a target="_blank" rel="noopener" href="https://fuchencong.com/2024/01/03/cilium-01/">阿里云环境安装了 k8s 以及 cilium</a>，这里我们将跟随 cilium 官方上的一个 Demo 示例，来实际体验 cilium。</p>
+<h2 id="环境说明"><a href="#环境说明" class="headerlink" title="环境说明"></a>环境说明</h2><p>在这个例子中，将启动三个微服务程序：</p>
+<ul>
+<li>deathstar：在 80 端口上运行一个 HTTP 微服务，该服务通过 <code>k8s service</code> 的形式暴露，从而可以将请求负载分担到上游的两个 Pod 中。从业务角度上来讲，该服务提供提供了 <code>landing</code> 接口，允许整个 <code>empire</code> 的飞船进行 <code>着陆</code></li>
+<li>tiefighter：代表一个客户端服务，它会发出一个 <code>empire</code> ship 的 <code>着陆</code> 请求</li>
+<li>xwing：也代表一个类似的客户端服务，但是发出的是 <code>alliance</code> ship 的 <code>着陆</code> 请求</li>
+</ul>
+<p>使用如下命令下载我们的 k8s 配置文件，该 <code>http-sw-app.yaml</code> 文件定义了上述 service 以及 Pod：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">wget https://raw.githubusercontent.com/cilium/cilium/1.14.4/examples/minikube/http-sw-app.yaml</span><br></pre></td></tr></table></figure>
+
+<p>根据该配置文件，创建应用：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl create -f http-sw-app.yaml</span></span><br><span class="line">service/deathstar created</span><br><span class="line">deployment.apps/deathstar created</span><br><span class="line">pod/tiefighter created</span><br><span class="line">pod/xwing created</span><br></pre></td></tr></table></figure>
+
+<p>之后 kubectl 会在后台部署服务、创建对应的 Pod，使用如下命令确认所有 Service、Pod 都处于 Running 状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get pods,svc</span></span><br><span class="line">NAME                            READY   STATUS    RESTARTS   AGE</span><br><span class="line">pod/deathstar-f449b9b55-klltm   1/1     Running   0          14m</span><br><span class="line">pod/deathstar-f449b9b55-psh9w   1/1     Running   0          14m</span><br><span class="line">pod/tiefighter                  1/1     Running   0          14m</span><br><span class="line">pod/xwing                       1/1     Running   0          14m</span><br><span class="line"></span><br><span class="line">NAME                 TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE</span><br><span class="line">service/deathstar    ClusterIP   10.111.234.48   &lt;none&gt;        80/TCP    14m</span><br><span class="line">service/kubernetes   ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP   14h</span><br></pre></td></tr></table></figure>
+
+<p>每个 Pod 在 cilium 中都会表示为 cilium agent 中的一个 endpoint，可以通过如下命令查看所有的 cilium agent，然后选择某个 cilium agent 查看其中的 endpoint：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl -n kube-system get pods -l k8s-app=cilium</span></span><br><span class="line">NAME           READY   STATUS    RESTARTS   AGE</span><br><span class="line">cilium-9sxk7   1/1     Running   0          14h</span><br><span class="line">cilium-fmst8   1/1     Running   0          14h</span><br><span class="line">cilium-xjtb8   1/1     Running   0          14h</span><br><span class="line"></span><br><span class="line"><span class="comment"># kubectl -n kube-system exec  cilium-9sxk7 -- cilium endpoint list</span></span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+
+<h2 id="检查当前连通性"><a href="#检查当前连通性" class="headerlink" title="检查当前连通性"></a>检查当前连通性</h2><p>由于当前没有配置任何网络策略，所以 xwing 和 tiefighter 发出的 <code>着陆</code> 请求都可以被响应：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec xwing -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing</span></span><br><span class="line">Ship landed</span><br><span class="line"></span><br><span class="line"><span class="comment"># kubectl exec tiefighter -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing</span></span><br><span class="line">Ship landed</span><br></pre></td></tr></table></figure>
+
+<p>其实这个并不符合业务预期，因为我们只希望 <code>org=empire</code> 的 ship 才能 <code>着陆</code>。后面我们会通过网络策略来解决这个问题。</p>
+<h2 id="应用-L3-x2F-L4-policy"><a href="#应用-L3-x2F-L4-policy" class="headerlink" title="应用 L3&#x2F;L4 policy"></a>应用 L3&#x2F;L4 policy</h2><p>在 Cilium 中，endpoint 的 IP 其实对安全策略是无关紧要的，因为 Cilium 会使用 Pod 的标签来定义安全策略，所以只要 Pod 的标签能够匹配安全规则，这些规则就会对这些 Pod 生效，而不管这些 Pod 的 IP 是什么。</p>
+<p>如下定义了一条网络策略，只允许拥有 <code>org=empire</code> 标签的 endpoint 才能访问 <code>deathstar</code>（<code>org=empire, class=deathstar</code>）的 80 端口，由于该策略是在 IP 层和 TCP 层生效，因此通常称为 L3&#x2F;L4 网络安全策略。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">apiVersion: <span class="string">&quot;cilium.io/v2&quot;</span></span><br><span class="line">kind: CiliumNetworkPolicy</span><br><span class="line">metadata:</span><br><span class="line">  name: <span class="string">&quot;rule1&quot;</span></span><br><span class="line">spec:</span><br><span class="line">  description: <span class="string">&quot;L3-L4 policy to restrict deathstar access to empire ships only&quot;</span></span><br><span class="line">  endpointSelector:</span><br><span class="line">    matchLabels:</span><br><span class="line">      org: empire</span><br><span class="line">      class: deathstar</span><br><span class="line">  ingress:</span><br><span class="line">  - fromEndpoints:</span><br><span class="line">    - matchLabels:</span><br><span class="line">        org: empire</span><br><span class="line">    toPorts:</span><br><span class="line">    - ports:</span><br><span class="line">      - port: <span class="string">&quot;80&quot;</span></span><br><span class="line">        protocol: TCP</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>应用如下策略：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl create -f sw_l3_l4_policy.yaml</span></span><br><span class="line">ciliumnetworkpolicy.cilium.io/rule1 created</span><br></pre></td></tr></table></figure>
+
+<p>此时再次发送请求，可以看到拥有 <code>org=empire</code> 标签 的 <code>tiefighter</code> 可以访问 <code>deathstar</code> 的 <code>着陆</code> 服务，</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec tiefighter -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing</span></span><br><span class="line">Ship landed</span><br></pre></td></tr></table></figure>
+
+<p>而 <code>xwing</code> 访问则一直卡主：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl <span class="built_in">exec</span> xwing -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing</span><br></pre></td></tr></table></figure>
+
+<p>再次查看 cilium endpoint 的网络策略，可以看到 <code>ingress enabled</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl -n kube-system exec cilium-9sxk7 -- cilium endpoint list</span></span><br><span class="line">437        Enabled            Disabled          12079      k8s:app.kubernetes.io/name=deathstar</span><br></pre></td></tr></table></figure>
+
+<p>也可以这样确认：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get cnp</span></span><br><span class="line">NAME    AGE</span><br><span class="line">rule1   5m53s</span><br><span class="line"></span><br><span class="line"><span class="comment"># kubectl describe cnp rule1</span></span><br><span class="line">Name:         rule1</span><br><span class="line">Namespace:    default</span><br><span class="line">Labels:       &lt;none&gt;</span><br><span class="line">Annotations:  &lt;none&gt;</span><br><span class="line">API Version:  cilium.io/v2</span><br><span class="line">Kind:         CiliumNetworkPolicy</span><br><span class="line">Metadata:</span><br><span class="line">  Creation Timestamp:  2023-11-30T04:13:23Z</span><br><span class="line">  Generation:          1</span><br><span class="line">  Resource Version:    110474</span><br><span class="line">  UID:                 4737ae78-a155-401c-8aa1-893f215b5f5a</span><br><span class="line">Spec:</span><br><span class="line">  Description:  L3-L4 policy to restrict deathstar access to empire ships only</span><br><span class="line">  Endpoint Selector:</span><br><span class="line">    Match Labels:</span><br><span class="line">      Class:  deathstar</span><br><span class="line">      Org:    empire</span><br><span class="line">  Ingress:</span><br><span class="line">    From Endpoints:</span><br><span class="line">      Match Labels:</span><br><span class="line">        Org:  empire</span><br><span class="line">    To Ports:</span><br><span class="line">      Ports:</span><br><span class="line">        Port:      80</span><br><span class="line">        Protocol:  TCP</span><br><span class="line">Events:            &lt;none&gt;</span><br></pre></td></tr></table></figure>
+
+<h2 id="能够感知-HTTP-协议的-L7-Policy"><a href="#能够感知-HTTP-协议的-L7-Policy" class="headerlink" title="能够感知 HTTP 协议的 L7 Policy"></a>能够感知 HTTP 协议的 L7 Policy</h2><p>对于简单的场景，的确能够控制 tiefighter&#x2F;xwing 的访问权限，但是如果想实现最小安全原则，例如 <code>tiefighter</code> 虽然能够访问  <code>deathstar</code> 的 <code>landing</code> 接口，但是不能访问其 <code>maintenance</code> API。对于该需求，L3&#x2F;L4 网络策略就无能为力了，因为这涉及 HTTP 协议内容，需要 <code>L7 policy</code>。</p>
+<p>Cilium 支持使用 HTTP 层的 L7 policy 来限制 <code>tiefighter</code> 能够访问的 API 接口，如下是一个示例，它只允许 <code>tiefighter</code> 访问 <code>deathstar</code> 的 <code>POST /v1/request-landing</code> API，而其他 API 都无法访问：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">apiVersion: <span class="string">&quot;cilium.io/v2&quot;</span></span><br><span class="line">kind: CiliumNetworkPolicy</span><br><span class="line">metadata:</span><br><span class="line">  name: <span class="string">&quot;rule1&quot;</span></span><br><span class="line">spec:</span><br><span class="line">  description: <span class="string">&quot;L7 policy to restrict access to specific HTTP call&quot;</span></span><br><span class="line">  endpointSelector:</span><br><span class="line">    matchLabels:</span><br><span class="line">      org: empire</span><br><span class="line">      class: deathstar</span><br><span class="line">  ingress:</span><br><span class="line">  - fromEndpoints:</span><br><span class="line">    - matchLabels:</span><br><span class="line">        org: empire</span><br><span class="line">    toPorts:</span><br><span class="line">    - ports:</span><br><span class="line">      - port: <span class="string">&quot;80&quot;</span></span><br><span class="line">        protocol: TCP</span><br><span class="line">      rules:</span><br><span class="line">        http:</span><br><span class="line">        - method: <span class="string">&quot;POST&quot;</span></span><br><span class="line">          path: <span class="string">&quot;/v1/request-landing&quot;</span></span><br></pre></td></tr></table></figure>
+
+<p>应用该规则：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f sw_l3_l4_l7_policy.yaml</span><br></pre></td></tr></table></figure>
+
+<p>之后再次访问，可以看到 <code>tiefighter</code> 只能访问 <code>request-landing</code> API，而其他 API 则无法访问：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec tiefighter -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing</span></span><br><span class="line">Ship landed</span><br><span class="line"></span><br><span class="line"><span class="comment"># kubectl exec tiefighter -- curl -s -XPUT deathstar.default.svc.cluster.local/v1/exhaust-port</span></span><br><span class="line">Access denied</span><br></pre></td></tr></table></figure>
+
+<p>而 <code>xwing</code> 仍然无法访问，一直卡主：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl <span class="built_in">exec</span> xwing -- curl -s -XPOST deathstar.default.svc.cluster.local/v1/request-landing</span><br></pre></td></tr></table></figure>
+
+<p>可以通过如下方式查看 L7 policy：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl describe ciliumnetworkpolicies</span><br></pre></td></tr></table></figure>
+
+<p>或者</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl -n kube-system <span class="built_in">exec</span> cilium-9sxk7 -- cilium policy get</span><br></pre></td></tr></table></figure>
+
+<p>可以通过 <code>cilium monitor</code> 实时监控流量：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl -n kube-system <span class="built_in">exec</span> cilium-9sxk7 -- cilium monitor</span><br></pre></td></tr></table></figure>
+
+<p>如下方式只监控 http 请求：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec -it -n kube-system cilium-9sxk7 -- cilium monitor -v --type l7 -n</span></span><br><span class="line">Defaulted container <span class="string">&quot;cilium-agent&quot;</span> out of: cilium-agent, config (init), mount-cgroup (init), apply-sysctl-overwrites (init), mount-bpf-fs (init), clean-cilium-state (init), install-cni-binaries (init)</span><br><span class="line">Listening <span class="keyword">for</span> events on 4 CPUs with 64x4096 of shared memory</span><br><span class="line">Press Ctrl-C to quit</span><br><span class="line">&lt;- Request http from 854 ([k8s:app.kubernetes.io/name=tiefighter k8s:class=tiefighter k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name=default k8s:io.cilium.k8s.policy.cluster=kubernetes k8s:io.cilium.k8s.policy.serviceaccount=default k8s:io.kubernetes.pod.namespace=default k8s:org=empire]) to 437 ([k8s:org=empire k8s:app.kubernetes.io/name=deathstar k8s:class=deathstar k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name=default k8s:io.cilium.k8s.policy.cluster=kubernetes k8s:io.cilium.k8s.policy.serviceaccount=default k8s:io.kubernetes.pod.namespace=default]), identity 1110-&gt;12079, verdict Forwarded POST http://deathstar.default.svc.cluster.local/v1/request-landing =&gt; 0</span><br><span class="line">&lt;- Response http to 854 ([k8s:app.kubernetes.io/name=tiefighter k8s:class=tiefighter k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name=default k8s:io.cilium.k8s.policy.cluster=kubernetes k8s:io.cilium.k8s.policy.serviceaccount=default k8s:io.kubernetes.pod.namespace=default k8s:org=empire]) from 437 ([k8s:io.cilium.k8s.policy.serviceaccount=default k8s:io.kubernetes.pod.namespace=default k8s:org=empire k8s:app.kubernetes.io/name=deathstar k8s:class=deathstar k8s:io.cilium.k8s.namespace.labels.kubernetes.io/metadata.name=default k8s:io.cilium.k8s.policy.cluster=kubernetes]), identity 12079-&gt;1110, verdict Forwarded POST http://deathstar.default.svc.cluster.local/v1/request-landing =&gt; 200</span><br></pre></td></tr></table></figure>
+
+<h2 id="清理环境"><a href="#清理环境" class="headerlink" title="清理环境"></a>清理环境</h2><p>以上就完成了 cilium demo 的体验，如果需要清理环境，可以执行如下命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ kubectl delete -f http-sw-app.yaml</span><br><span class="line">$ kubectl delete cnp rule1</span><br></pre></td></tr></table></figure>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Cilium/" rel="tag"># Cilium</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2024/01/03/cilium-01/" rel="next" title="Ubuntu22.04 阿里云环境安装 k8s 以及 Cilium">
+      Ubuntu22.04 阿里云环境安装 k8s 以及 Cilium <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E8%AF%B4%E6%98%8E"><span class="nav-number">1.</span> <span class="nav-text">环境说明</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A3%80%E6%9F%A5%E5%BD%93%E5%89%8D%E8%BF%9E%E9%80%9A%E6%80%A7"><span class="nav-number">2.</span> <span class="nav-text">检查当前连通性</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BA%94%E7%94%A8-L3-x2F-L4-policy"><span class="nav-number">3.</span> <span class="nav-text">应用 L3&#x2F;L4 policy</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%83%BD%E5%A4%9F%E6%84%9F%E7%9F%A5-HTTP-%E5%8D%8F%E8%AE%AE%E7%9A%84-L7-Policy"><span class="nav-number">4.</span> <span class="nav-text">能够感知 HTTP 协议的 L7 Policy</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B8%85%E7%90%86%E7%8E%AF%E5%A2%83"><span class="nav-number">5.</span> <span class="nav-text">清理环境</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">121</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">30</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
