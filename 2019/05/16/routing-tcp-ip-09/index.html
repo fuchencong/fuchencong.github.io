@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="IPv6 的路由选择需要对协议进行一些改动。首先最主要的改动就是，每个协议消息都必须改为能够传送长度为 IPv4 地址 4 倍的地址。这些可以通过更改最短路径优先（OSPF）协议来实现，要么通过更改现有的链路状态通告（LSA），要么定义新的 LSA。同时，OSPF 协议的发展早在 20 世纪 80 年代末就开始了，当时路由器的性能很低，时延很大，而且内存昂贵。现在这些问题都不存在了，OSPFv2">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TCP&#x2F;IP 路由技术 09：OSPFv3">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="IPv6 的路由选择需要对协议进行一些改动。首先最主要的改动就是，每个协议消息都必须改为能够传送长度为 IPv4 地址 4 倍的地址。这些可以通过更改最短路径优先（OSPF）协议来实现，要么通过更改现有的链路状态通告（LSA），要么定义新的 LSA。同时，OSPF 协议的发展早在 20 世纪 80 年代末就开始了，当时路由器的性能很低，时延很大，而且内存昂贵。现在这些问题都不存在了，OSPFv2">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/message.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/hello.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/dd.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_1.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_2.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_3.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_4.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_5.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_6.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_7.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_8.jpg">
+<meta property="article:published_time" content="2019-05-16T10:22:27.000Z">
+<meta property="article:modified_time" content="2024-03-18T10:16:07.253Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Route">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/message.jpg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>TCP/IP 路由技术 09：OSPFv3 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          TCP/IP 路由技术 09：OSPFv3
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-05-16 18:22:27" itemprop="dateCreated datePublished" datetime="2019-05-16T18:22:27+08:00">2019-05-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>IPv6 的路由选择需要对协议进行一些改动。首先最主要的改动就是，每个协议消息都必须改为能够传送长度为 IPv4 地址 4 倍的地址。这些可以通过更改最短路径优先（OSPF）协议来实现，要么通过更改现有的链路状态通告（LSA），要么定义新的 LSA。同时，OSPF 协议的发展早在 20 世纪 80 年代末就开始了，当时路由器的性能很低，时延很大，而且内存昂贵。现在这些问题都不存在了，OSPFv2 的一些用来适应和调节那些早期连网实际情况的特性现在已不实用了。因此，OSPFv2 协议的大量实际应用经验表明，它在某些领域显得没有效率。</p>
+<p>因此，在起初考虑扩展 OSPF 支持 IPv6 的时候，就意识到这是一个改进优化 OSPF 协议本身的机会。结果是，不仅为 IPv6 对 OSPFv2 进行了扩展，还创建了一个新的 OSPF 的改进版本：OSPFv3。</p>
+<span id="more"></span>
+
+<h2 id="OSPFv3-的基本原理与实现"><a href="#OSPFv3-的基本原理与实现" class="headerlink" title="OSPFv3 的基本原理与实现"></a>OSPFv3 的基本原理与实现</h2><p>OSPFv3 在 RFC 2740 中有详细描述。OSPFv3 与 OSPFv2 的关系，非常类似于 RIPng 与 RIPv2 的关系。最重要的是，OSPFv3 使用了与 OSPFv2 相同的基本实现机制：SPF 算法、泛洪扩散、DR 选举、区域等。还有一些像计时器与度量等常量和变量也是相同的。另外，OSPFv3 也不向后兼容 OSPFv2。因此，如果读者希望在 IPv4 和 IPv6 环境中同时使用 OSPF 协议，就必须同时运行 OSPFv2 和 OSPFv3 协议。</p>
+<h3 id="OSPFv3-与-OSPFv2-的不同之处"><a href="#OSPFv3-与-OSPFv2-的不同之处" class="headerlink" title="OSPFv3 与 OSPFv2 的不同之处"></a>OSPFv3 与 OSPFv2 的不同之处</h3><p>接下来将讲述 OSPFv3 与 OSPFv2 的最重要的变化：</p>
+<ul>
+<li><p>每个链路上的协议处理：一条链路上的接口可以拥有多个 IPv6 地址，事实上，单条链路可以属于多个子网，与同一条链路相连但属于不同的 IPv6 子网的两个接口仍然可以通信。在 OSPFv3 中将 OSPFv2 的子网概念改变为链路概念，而且允许在同一条链路上但属于不同 IPv6 子网的两个邻居交换数据包</p>
+</li>
+<li><p>取消了寻址的概念：OSPFv3 的路由器 LSA 和网络 LSA 都不再携带 IP 地址。这里会定义一个新的 LSA 来实现该功能。但是 32 位的 RID、AID 以及 LSA ID 都保留</p>
+</li>
+<li><p>邻居总是通过路由器 ID 来标识：在广播网络和 NBMA 网络的链路上，OSPFv2 邻居是通过它们的接口地址来标识，而其他类型链路上的邻居是通过 RID 来标识的。OSPFv3 取消了这种不一致性，在所有类型的链路上的邻居都是通过 RID 来标识的</p>
+</li>
+<li><p>增加了链路本地泛洪扩散范围：OSPFv3 保留了 OSPFv2 中域（AS）和区域（area）泛洪扩散的范围，但增加了一个链路本地泛洪扩散的范围。增加了新的 LSA：链路 LSA 用来携带仅仅与单个链路上的邻居相关联的信息。这种 LSA 具有链路本地泛洪扩散的范围</p>
+</li>
+<li><p>链路本地地址的使用：OSPFv2 的数据包具有链路本地的范围，它不能被任何路由器转发。OSPFv3 则使用路由器的链路本地 IPv6 地址作为源地址和下一跳地址</p>
+</li>
+<li><p>对每个链路上多个实例的支持：这种支持应用在多台 OSPF 路由器连接到单个广播链路上，但它们又不属于单个邻接关系的情况。这种情况的一个例子就是共享的网络接入点（Network Acess Point，NAP）。OSPFv3 允许每条链路上具有多个不同的实例，这是通过在 OSPF 包头里增加一个实例标识（Instance ID）区别不同的额实例来实现的。一个分配了给定实例标识的实例将会丢弃那些与该实例标识不匹配的 OSPF 数据包</p>
+</li>
+<li><p>取消了 OSPF 特有的认证：IPv6 协议使用认证扩展报头，这是一个标准的认证过程。由于这个原因，OSPFv3 不需要自己的数据包认证，而它只使用 IPv6 的认证即可</p>
+</li>
+<li><p>更灵活地处理未知 LSA 类型：在 OSPFv2 中总是丢弃未知的 LSA 类型，而 OSPFv3 可以把他们在链路本地泛洪扩散范围，或者像它们被识别一样保存和泛洪扩散，但在它们自己的 SPF 算法中将被忽略。结果是，在 OSPFv3 中处理网络变化和继承新的特性比在 OSPFv2 中更容易</p>
+</li>
+</ul>
+<h3 id="OSPFv3-的消息"><a href="#OSPFv3-的消息" class="headerlink" title="OSPFv3 的消息"></a>OSPFv3 的消息</h3><p>OSPFv3 和 OSPFv2 使用相同的协议号：89。和 OSPFv2 一样，OSPFv3 尽可能的使用多播。IPv6 的 AllSPFRouters 的多播地址为 FF02::5，AllDRouters 多播地址为 FF02::6。它们都是链路本地的范围。</p>
+<p>OSPFv3 同样使用相同的 5 种消息类型：Hello、DD、LS 数据库请求、LS 数据库更新和 LS 确认。这和 OSPFv2 一样，包括它们的编号也相同。如下显示了 OSPFv3 的消息头部：</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/message.jpg" class="">
+
+<p>它和 OSPFv2 消息头部稍微有些不同：</p>
+<ul>
+<li>版本号为 3</li>
+<li>没有认证字段</li>
+<li>包含一个实例标识，用来允许在同一个链路上运行多个 OSPFv3 的实例</li>
+</ul>
+<p>除了消息包头之外，还有两种 OSPFv3 消息的格式和 OSPFv2 对应的消息不同：Hello 和数据库描述消息。如下显示了 OSPFv3 的 Hello 消息格式，和 OSPFv2 不同，由于 IPv6 不需要网络掩码，这里的消息格式中没有网络掩码字段</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/hello.jpg" class="">
+
+<p>除此之外，两个版本的数据包都具有相同的字段。如下显示了 OSPFv3 数据库描述数据包的格式，与 OSPFv2 的对应部分所不同的仅仅是更大一点的可选字段：</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/dd.jpg" class="">
+
+<h3 id="OSPFv3-的-LSA-概述"><a href="#OSPFv3-的-LSA-概述" class="headerlink" title="OSPFv3 的 LSA 概述"></a>OSPFv3 的 LSA 概述</h3><p>如下显示了 OSPFv3 的 LSA 报头，和 OSPFv2 的 LSA 报头相比有两处不同：一是没有可选字段，二是链路状态类型字段的大小是 16 位。</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa.jpg" class="">
+
+<p>OSPFv3 的 LSA 报头中链路状态类型字段加长的原因是因为它包含了 3 个前置位：</p>
+<ul>
+<li>U 位：指出了一台路由器如果不能识别 LSA 的功能代码时，应该如何处理该 LSA。如果该位没有设置，未知的 LSA 将被作为链路本地泛洪扩散的泛洪处理。如果该位被设置，未知的 LSA 将会像识别的 LSA 一样被保存和扩散</li>
+<li>S2 和 S1 位：指出了 LSA 的泛洪扩散范围</li>
+</ul>
+<p>LSA 功能代码是 LS 类型字段的最后 13 位。这和 OSPFv2 的类型字段相一致。OSPFv3 的路由器与网络 LSA 并不通告前缀，在协议的扩展性方面这是一个重要的改进。之前讲过，这些 LSA 把路由器看作 SPF 树上的一个节点。因此，当路由器 LSA 或网络 LSA 扩散时，就假定网络拓扑已经发生改变，区域内的所有路由器在收到 LSA 后就要重新运行 SPF。但是由于 OSPFv2 路由器也使用这些 LSA 通告它们所连接的子网，如果子网发生变化，相应的 LSA 也必须进行扩散以便通告这种变化。即使是像一些并不影响 SPF 拓扑的地址变化，收到路由器 LSA 或网络 LSA 也总会触发一个 SPF 算法的运行，这在那些具有很多定期变化的末梢链路的边界或接入路由器上特别容易出现问题。</p>
+<p>OSPFv3 在路由器 LSA 和网络 LSA 中取消了通告前缀的功能，而是把这项功能放入新的区域内前缀 LSA 当中。这样路由器 LSA 和网络 LSA 对于 SPF 来说就只代表路由器的节点信息，并且只有当与 SPF 算法相关的信息发生变化时它们才会进行扩散。如果前缀发生变化，或者末梢链路的状态发生改变，这些信息将在区域内前缀 LSA 中进行泛洪扩散，而区域内前缀 LSA 不会触发 SPF 的运行。</p>
+<p>路由器与网络 LSA 在两个 OSPF 版本之间的另外一个不同之处是：一些只与直连邻居相关的信息的交换。OSPFv2 把这个信息放入路由器与网络 LSA 里，虽然只有直连邻居关心这个信息，但它伴随着路由器与网络 LSA 在整个区域里进行扩散。OSPFv3 则把这个邻居特有的信息放入新的链路 LSA 中，链路 LSA 只具有链路本地的扩散范围。链路 LSA 的引入确实提高了 OSPFv2 的效率。</p>
+<h3 id="OSPFv3-的-LSA-格式"><a href="#OSPFv3-的-LSA-格式" class="headerlink" title="OSPFv3 的 LSA 格式"></a>OSPFv3 的 LSA 格式</h3><p>接下来将详细讲述 OSPFv3 的 LSA 格式，这里仅讨论与 OSPFv2 的对应部分有所不同的 LSA 字段特性。</p>
+<p><strong>路由器 LSA</strong></p>
+<p>如下显示了 OSPFv3 路由器 LSA 的格式。在路由器 LSA 中没有包含前缀信息，而 OSPFv2 版本对应的路由器 LSA 是包含的。OSPFv3 的路由器 LSA 仅仅描述始发路由器和连接到邻居的链路，用于 SPF 的计算。前缀信息则在区域内前缀 LSA 中携带。在 OSPFv2 中已经淘汰的 ToS 度量字段也没有包含在这个 LSA 中。</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_1.jpg" class="">
+
+<ul>
+<li>可选字段：与 OSPFv2 的可选项字段相比，它在 LSA 格式中的位置不同，长度也加长了，但他们承担的作用是相同的，都是标识一些可选的性能</li>
+</ul>
+<p>跟在可选项字段之后的是一组多次出现用来描述每一种相关联的接口的字段集合：</p>
+<ul>
+<li>类型（Type）：是指接口的类型</li>
+<li>度量（Metric）：是指接口的出站代价</li>
+<li>接口 ID：是一个 32 位的值，用来区分始发路由器的不同接口</li>
+<li>邻居接口 ID：是在 Hello 数据包中链路上邻居通告的接口 ID，或是类型 2 的链路上链路的指定路由器（DR）的接口 ID</li>
+<li>邻居路由器 ID：是指邻居的 RID，或者是类型 2 的链路上指定路由器（DR）的 RID</li>
+</ul>
+<p><strong>网络 LSA</strong></p>
+<p>如下显示了 OSPFv3 的网络 LSA 格式，其功能和 OSPFv2 的网络 LSA 是相同的（始发于 DR，代表一个伪节点，假定到与它直接相连的邻居的代价为 0）。它们之间唯一的重要不同之处在于可选字段的位置不同，OSPFv3 取消了在 IPv6 协议中没有意义的网络掩码：</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_2.jpg" class="">
+
+<p><strong>区域间前缀 LSA</strong></p>
+<p>如下显示了 OSPFv3 区域间 LSA 的格式，它的作用和 OSPFv2 中类型 3 汇总 LSA 相同：由 ABR 路由器始发这种 LSA 到一个区域，通告该区域外部但仍属于它的 OSPF 区域内的网络。在 OSPFv3 中只是名字变得更具有描述性。ABR 路由器必须为每一个需要通告到区域内的 IPv6 前缀生成一条单独的区域间前缀 LSA。ABR 路由器也可以也可以生成一个区域间 LSA 来向末梢区域通告一条缺省路由。</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_3.jpg" class="">
+
+<p><strong>区域间路由器 LSA</strong></p>
+<p>在 OSPFv3 中区域间路由器 LSA 的功能和 OSPFv2 中类型 4 汇总 LSA 所承担的功能是相同的。ABR 向一个区域内始发一条区域间路由器 LSA，用来通告一个在该区域外的 ASBR 路由器。对于所通告的每一个 ASBR，ABR 都需要始发单独的区域间路由器 LSA。</p>
+<p>如下显示了 OSPFv3 区域间路由器 LSA 的格式：</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_4.jpg" class="">
+
+<ul>
+<li>可选项：表示 ASBR 的可选功能</li>
+<li>度量：表示 ASBR 的代价</li>
+<li>目的路由器 ID：是指 ASBR 的 RID</li>
+</ul>
+<p><strong>AS 外部 LSA</strong></p>
+<p>和 OSPFv2 一样，AS 外部 LSA 通告处于 OSPF 路由选择域外部的前缀。对于每一条需要通告的外部前缀都需要一条这样的 LSA。OSPFv3 中 AS 外部 LSA 的格式如下：</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_5.jpg" class="">
+
+<ul>
+<li>E 标记：两个 OSPF 版本中该字段功能相同，如果设置该位，表示度量是类型 2 的外部度量。如果没有设置该位，表示度量是类型 1 的外部度量。</li>
+<li>F 标记：当设置该位时，表示该 LSA 中包含一个转发地址</li>
+<li>T 标记：当设置该位时，表示该 LSA 中包含一个外部路由标记</li>
+<li>度量：表示路由的代价</li>
+<li>前缀长度、前缀可选项和地址前缀：完整地描述了嵌套的前缀</li>
+<li>转发地址：如果包含这一项，它是一个完整的 128 位 IPv6 地址，用来表示目的前缀的下一跳地址。只有设置了 F 标记才会包含这一项</li>
+<li>外部路由标记：如果包含这一项，它所承担的作用和 OSPFv2 中 AS 外部 LSA 的外部路由标记字段的作用是相同的，只有设置了 T 标记才会包含这一项</li>
+<li>引用链路状态 ID 和引用链路状态类型：如果包含这两项，将允许该前缀的附加信息包含在另一个 LSA 中。如果使用了这两个字段，它们将描述携带附加信息的 LSA 的链路状态 ID 和类型。所引用的 LSA 的通告路由器字段也必须与该 AS 外部 LSA 中通告路由器字段的值相匹配。如果带有外部路由标记，那么这些附加信息就和 OSPFv3 本身无关，它们可以在边界路由器之间穿越整个 OSPF 域。如果这个功能项没有使用，那么引用链路状态类型字段就设置为全 0</li>
+</ul>
+<p><strong>链路 LSA</strong></p>
+<p>链路 LSA 只有用于两个直接相连的邻居之间的信息通信才是有意义的。如下显示了链路 LSA 的格式。每一个与路由器相连并属于同一个 OSPFv3 域的链路都要始发一个单独的链路 LSA，而且由于它属于链路本地扩散的范围，收到它的路由器从来不会把它转发到其他链路上。</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_6.jpg" class="">
+
+<ul>
+<li>路由器优先级：标识了分配给始发路由器接口的路由器优先级</li>
+<li>可选项：表示始发路由器应该在为该链路发起的网络 LSA 中设置的可选项位</li>
+<li>链路本地前缀：用来标识始发路由器与该链路相连接口的 128 链路本地前缀</li>
+<li>前缀数目：是指在 LSA 中包含的 IPv6 前缀的数量，这些前缀通过前缀长度、前缀可选项和地址前缀字段来描述</li>
+<li>前缀长度、前缀可选项和地址前缀：用来描述一台或多台始发路由器上与链路相连的 IPv6 前缀。这个字段集合不仅用于链路 LSA，还用于区域内前缀、区域间前缀和 AS 外部 LSA。所通告的前缀的长度可以是 0-128 位之间的任意值。当前缀不是 32 位的偶数倍时，就会被填充 0 来到达地址前缀字段的 32 位边界</li>
+</ul>
+<p>链路 LSA 具有以下 3 个功能：</p>
+<ul>
+<li>链路 LSA 向与这条链路相连的其他所有路由器提供始发路由器的链路本地地址</li>
+<li>链路 LSA 提供了与这条链路有关的 IPv6 前缀列表</li>
+<li>链路 LSA 提供了这条链路始发的网络 LSA 有关的一组可选位的集合</li>
+</ul>
+<p><strong>区域内前缀 LSA</strong></p>
+<p>如下显示了区域内前缀 LSA 的格式。在 OSPFv2 版本中由路由器与网络 LSA 携带的前缀信息在 OSPFv3 版本中则由区域内前缀 LSA 携带。前缀的变化都不会以任何方式影响 SPF 树的分支的变化。而 OSPFv2 在路由器和网络 LSA 中通告前缀，无论前缀是否发生变化，都会引起区域内所有路由器进行 SPF 计算。</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_7.jpg" class="">
+
+<p>在 OSPFv3 中，当一条链路获或它的前缀发生变化时，相连的路由器只会始发一台区域内前缀 LSA 整个区域内扩散这个信息。这个 LSA 并不会触发 SPF 的计算，收到该 LSA 的路由器只是简单地把这个新的前缀信息与始发路由器关联起来。在 OSPFv3 中，路由器与网络 LSA 只用来提供拓扑的信息服务。因此，这个新的 LSA 将使得 OSPFv3 在处理存在大量频繁变化的前缀的网络方面具有更好的扩展性。</p>
+<ul>
+<li>前缀数目：表示该 LSA 中包含的前缀的数量</li>
+<li>引用链路状态 ID、引用链路状态类型和引用通告路由器：用来标识与所包含的前缀相关联的路由器或网络 LSA。如果一个前缀与一个路由器 LSA 相关联，那么引用链路状态类型为 1，引用链路状态 ID 为 0，而引用通告路由器的值则为始发路由器的 RID。如果一个前缀与一个网络 LSA 相关联，那么引用链路状态类型为 2，引用链路状态 ID 为该链路的 DR 的接口 ID，而引用通告路由器的值则为 DR 路由器的 RID</li>
+</ul>
+<p><strong>可选字段</strong></p>
+<p>可选字段的长度为 24 位，用来指定始发路由器的可选功能。在路由器、网络、区域间路由器，以及链路 LSA 中都可以携带这个字段，这个字段还可以在 Hello 与数据库描述数据包中携带。如下显示了可选字段的格式：</p>
+<img src="/fuchencong.github.io/2019/05/16/routing-tcp-ip-09/images/lsa_8.jpg" class="">
+
+<ul>
+<li>DC 位：表示具有支持按需电路的能力</li>
+<li>R 位：指明始发路由器是否是一台有效的路由器。当该位清 0 时，该始发节点传送的路由将不被计算。</li>
+<li>N 位：表示支持 NSSA LSA</li>
+<li>MC 位：表示支持 MOSPF 协议</li>
+<li>E 位：表示为了形成末梢区域，AS 外部 LSA 是怎样进行扩散的</li>
+<li>V6 位：如果该位清 0，表示应该从 IPv6 路由选择计算中排除该路由器或链路</li>
+</ul>
+<h2 id="OSPFv3-的配置"><a href="#OSPFv3-的配置" class="headerlink" title="OSPFv3 的配置"></a>OSPFv3 的配置</h2><p>OSPFv3 的配置选项和 OSPFv2 中的相关选项基本相同。在 OSPFv3 中也需要指定进程 ID 和区域，在进程中需要包含接口和地址。区域可以定义为末梢、完全末梢或者 NSSA 区域。在区域之间进行前缀汇总。OSPFv3 能够在按需电路和 NBMA 网络中配置。OSPFv3 的大多数配置都和 OSPFv2 中的配置一样，在某些情况下需要增加 IPv6 关键字，或者使用 IPv6 的前缀地址替代 IPv4 中的子网或地址。</p>
+<h3 id="案例研究：OSPFv3-的基本配置"><a href="#案例研究：OSPFv3-的基本配置" class="headerlink" title="案例研究：OSPFv3 的基本配置"></a>案例研究：OSPFv3 的基本配置</h3><p>OSPFv3 的配置和 OSPFv2 的配置基本是相同的。支持 IPv6 的 OSPFv3 协议是通过在路由器的接口配置模式下指定一个 OSPF 进程 ID 和一个区域激活的。如果一个 OSPFv3 进程还没有创建，那么它会自动地创建。配置在路由器接口上的所有 IPv6 地址都被包含在这个指定的 OSPF 进程中运行。</p>
+<p>使用命令 <code>ipv6 ospf area</code> 在路由器的接口上启用 OSPFv3 协议。在 OSPFv2 中，在多个接口上启用 OSPF 可以使用单条 <code>network area</code> 命令，但是在 OSPFv3 中，必须在每一个运行 OSPFv3 协议的接口上配置 <code>ipv6 ospf area</code> 命令。</p>
+<p>使用命令 <code>show ipv6 protocol</code> 可以查看路由器上 IPv6 的 OSPF 进程 ID 和配置到每一个区域的接口。</p>
+<p>需要注意，接口上的 IPv6 地址不能有选择地加入到 OSPFv3 进程中，它要么在接口上配置 OSPFv3 使接口的所有地址都加入到 OSPFv3 进程，要么在接口上不配置 OSPFv3，从而没有任何地址加入到 OSPFv3 进程中。</p>
+<p>OSPFv3 路由器使用他们的链路本地地址作为 Hello 数据包的源地址。在 Hello 数据包中没有包含 IPv6 前缀的信息。在一条链路上能够配置多个 IPv6 地址，而且不需要定义成辅助地址（不同于 IPv4）。在邻居之间即使他们没有共同的 IPv6 前缀，他们也可以建立邻接关系。这也是 OSPFv3 与 OSPFv2 的不同之处之一。</p>
+<p>两个邻居之间在建立起邻接关系之前，其他的一些参数都必须匹配，这些参数和 IPv4 中的参数是相同的。</p>
+<p>IPv6 邻居总是通过他们的 RID 进行告知，这与 IPv4 不同。在 IPv4 中，点到点网络的邻居是通过 RID 告知的，而广播网络、NBMA 和点到多点网络的邻居都是通过它们的接口地址告知的。OSPFv3 使用 32 位数字作为路由器 ID。如果路由器配置了 IPv4，缺省情况下，选择 RID 的方式与 OSPFv2 中的方式相同。即路由器 loopback 接口配置的最高 IPv4 地址将作为该路由器的 RID。如果没有配置 loopback 接口，则选择所有其他接口上配置的最高地址作为它的 RID。</p>
+<p>如果在网络中没有配置 IPv4 协议地址，那么在启动 OSPF 进程之前，就必须使用 IPv6 的 OSPF 路由选择进程命令 router-id 配置路由器 ID。</p>
+<h3 id="案例研究：末梢区域"><a href="#案例研究：末梢区域" class="headerlink" title="案例研究：末梢区域"></a>案例研究：末梢区域</h3><p>命令 ipv6 router ospf 可以让路由器切换到全局的进程配置模式，IPv6 的配置方式与 IPv4 中的配置也是一样的。在 IPv6 中，可以用与 IPv4 中 OSPFv2 完全相同的方式利用 <code>area stub</code>、<code>area nssa</code> 和 <code>area stub no-summary</code> 命令来支持和配置末梢、NSSA 和完全末梢等区域。</p>
+<h3 id="案例研究：一条链路上的多个实例"><a href="#案例研究：一条链路上的多个实例" class="headerlink" title="案例研究：一条链路上的多个实例"></a>案例研究：一条链路上的多个实例</h3><p>OSPFv3 的 Hello 数据包包含了一个实例 ID，这个实例 ID 可以用来把运行在同一个 LAN 中的两个 OSPF 进程分开。所收到的 Hello 数据包中的实例 ID 必须与接收该数据包的路由器接口上配置的实例 ID 相匹配，否则该数据包将被丢弃。如果实例 ID 的值没有指定，那么缺省地使用实例 ID 0。</p>
+<h3 id="案例研究：运行在-NBMA-网络上的-OSPFv3-配置"><a href="#案例研究：运行在-NBMA-网络上的-OSPFv3-配置" class="headerlink" title="案例研究：运行在 NBMA 网络上的 OSPFv3 配置"></a>案例研究：运行在 NBMA 网络上的 OSPFv3 配置</h3><p>对于 NBMA 网络，OSPFv3 和 OSPFv2 的配置选项是相同的。在 OSPFv3 能够学习到相关的邻居之前，OSPF 用到的邻居地址必须先与穿过 NBMA 网络的特定虚链路相关联。建立帧中继映射来标识远程的 IPv6 地址映射到与本地路由器相连的某条 PVC 电路上。由于 IPv6 可以在单个接口上配置多个地址，那么对于每一条 PVC 电路都需要多个 map 语句。所有的 OSPFv3 数据包都是使用链路本地地址作为源地址，对于单播的 OSPFv3 数据包来说，也使用链路本地地址作为目的地址和在路由选择转发时的下一跳地址。</p>
+<p>使用 <code>frame-relay map</code> 命令可以将远程路由器的链路本地地址映射到正确的 DLCI 上，使用命令 <code>ipv6 ospf neighbor</code> 命令定义 IPv6 OSPFv3 邻居，该命令可以使用 priority 关键字指定优先级，以便指出哪一台路由器将成为 DR 和 BDR。</p>
+<p>配置 OSPFv3 路由器的另一种方法是，OSPFv3 动态地发现它的邻居。这种配置方法需要两个步骤：</p>
+<ul>
+<li>使用 <code>ipv6 ospf network broadcast</code> 命令将一个 OSPF 网络定义成广播网络</li>
+<li>在 frame-relay map 语句中使用关键字 broadcast 指出在 PVC 电路上进行广播转发</li>
+</ul>
+<p>如果 NBMA 网络并不是全连接的网络结构（每一台路由器都与其他的任何一台路由器之间都有 PVC 电路相连），那么 DR 和 BDR 的选择必须谨慎。DR 和 BDR 路由器和其他的任何一台路由器都必须具有完整的虚电路连接，这样才能建立起正确的邻接关系。使用接口配置模式命令 ipv6 ospf priority 可以在你希望作为 DR 的路由器上指定一个较高的优先级。</p>
+<p>为了避免进行 DR&#x2F;BDR 的选举，可以将 OSPF 网络的类型改为点到多点的网络类型，使用 ipv6 ospf network point-to-multipoint 命令可以将 OSPFv3 的网络类型定义为点到多点类型。将一个 NBMA 网络配置成 OSPF 点到多点网络也不需要 PVC 电路具有全连接。</p>
+<h2 id="OSPFv3-的故障诊断"><a href="#OSPFv3-的故障诊断" class="headerlink" title="OSPFv3 的故障诊断"></a>OSPFv3 的故障诊断</h2><p>IPv6 协议的 OSPFv3 故障诊断所使用的方法实际上与 IPv4 协议中的 OSPFv2 是相同的。主要的不同之处是寻址：直接发送数据包到一个邻居时，OSPFv3 使用链路本地地址作为数据包的源地址和目的地址。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>OSPF 协议不仅是众所周知的链路状态路由选择协议，可能还是 IP 路由选择协议中使用最为广泛的协议。下一篇文章将讲述一个不太知名的链路状态协议：IS-IS 协议。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Route/" rel="tag"># Route</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/07/02/network-multicast-address/" rel="prev" title="IP 组播地址">
+      <i class="fa fa-chevron-left"></i> IP 组播地址
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/05/15/routing-tcp-ip-08/" rel="next" title="TCP/IP 路由技术 08：开放最短路径优先协议（OSPFv2）">
+      TCP/IP 路由技术 08：开放最短路径优先协议（OSPFv2） <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#OSPFv3-%E7%9A%84%E5%9F%BA%E6%9C%AC%E5%8E%9F%E7%90%86%E4%B8%8E%E5%AE%9E%E7%8E%B0"><span class="nav-number">1.</span> <span class="nav-text">OSPFv3 的基本原理与实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#OSPFv3-%E4%B8%8E-OSPFv2-%E7%9A%84%E4%B8%8D%E5%90%8C%E4%B9%8B%E5%A4%84"><span class="nav-number">1.1.</span> <span class="nav-text">OSPFv3 与 OSPFv2 的不同之处</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#OSPFv3-%E7%9A%84%E6%B6%88%E6%81%AF"><span class="nav-number">1.2.</span> <span class="nav-text">OSPFv3 的消息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#OSPFv3-%E7%9A%84-LSA-%E6%A6%82%E8%BF%B0"><span class="nav-number">1.3.</span> <span class="nav-text">OSPFv3 的 LSA 概述</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#OSPFv3-%E7%9A%84-LSA-%E6%A0%BC%E5%BC%8F"><span class="nav-number">1.4.</span> <span class="nav-text">OSPFv3 的 LSA 格式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#OSPFv3-%E7%9A%84%E9%85%8D%E7%BD%AE"><span class="nav-number">2.</span> <span class="nav-text">OSPFv3 的配置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9AOSPFv3-%E7%9A%84%E5%9F%BA%E6%9C%AC%E9%85%8D%E7%BD%AE"><span class="nav-number">2.1.</span> <span class="nav-text">案例研究：OSPFv3 的基本配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E6%9C%AB%E6%A2%A2%E5%8C%BA%E5%9F%9F"><span class="nav-number">2.2.</span> <span class="nav-text">案例研究：末梢区域</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E4%B8%80%E6%9D%A1%E9%93%BE%E8%B7%AF%E4%B8%8A%E7%9A%84%E5%A4%9A%E4%B8%AA%E5%AE%9E%E4%BE%8B"><span class="nav-number">2.3.</span> <span class="nav-text">案例研究：一条链路上的多个实例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E8%BF%90%E8%A1%8C%E5%9C%A8-NBMA-%E7%BD%91%E7%BB%9C%E4%B8%8A%E7%9A%84-OSPFv3-%E9%85%8D%E7%BD%AE"><span class="nav-number">2.4.</span> <span class="nav-text">案例研究：运行在 NBMA 网络上的 OSPFv3 配置</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#OSPFv3-%E7%9A%84%E6%95%85%E9%9A%9C%E8%AF%8A%E6%96%AD"><span class="nav-number">3.</span> <span class="nav-text">OSPFv3 的故障诊断</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">126</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">28</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
