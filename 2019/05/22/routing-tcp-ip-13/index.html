@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="任何时间指向相同目标网络的路由都会被多台路由器重新分配到路由选择域，其中可能会存在错误的路由选择，在某些情况下，可能会发生路由选择环路和黑洞。被通告路由沿错误方向穿过重新分配路由器的现象叫做路由回馈（route feedback）。 路由过滤可以使网络管理员对路由通告施加严格的控制。任何时刻路由器从一种协议向另一种协议重新分配路由，管理员可以使用路由过滤控制哪些路由被重新分配，同样的，路由器执行相">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TCP&#x2F;IP 路由技术 13：路由过滤">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="任何时间指向相同目标网络的路由都会被多台路由器重新分配到路由选择域，其中可能会存在错误的路由选择，在某些情况下，可能会发生路由选择环路和黑洞。被通告路由沿错误方向穿过重新分配路由器的现象叫做路由回馈（route feedback）。 路由过滤可以使网络管理员对路由通告施加严格的控制。任何时刻路由器从一种协议向另一种协议重新分配路由，管理员可以使用路由过滤控制哪些路由被重新分配，同样的，路由器执行相">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/01.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/02.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/03.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/04.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/05.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/06.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/07.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/08.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/09.jpg">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/10.jpg">
+<meta property="article:published_time" content="2019-05-22T06:04:40.000Z">
+<meta property="article:modified_time" content="2024-04-08T06:20:01.684Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Route">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/01.jpg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>TCP/IP 路由技术 13：路由过滤 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          TCP/IP 路由技术 13：路由过滤
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2019-05-22 14:04:40" itemprop="dateCreated datePublished" datetime="2019-05-22T14:04:40+08:00">2019-05-22</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Network/" itemprop="url" rel="index"><span itemprop="name">Network</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>任何时间指向相同目标网络的路由都会被多台路由器重新分配到路由选择域，其中可能会存在错误的路由选择，在某些情况下，可能会发生路由选择环路和黑洞。被通告路由沿错误方向穿过重新分配路由器的现象叫做路由回馈（route feedback）。</p>
+<p>路由过滤可以使网络管理员对路由通告施加严格的控制。任何时刻路由器从一种协议向另一种协议重新分配路由，管理员可以使用路由过滤控制哪些路由被重新分配，同样的，路由器执行相互重新分配，在两个或多个路由选择协议之间相互共享路由，使用路由器过滤器可以确保沿着唯一的方向通告路由。</p>
+<span id="more"></span>
+
+<h2 id="路由过滤"><a href="#路由过滤" class="headerlink" title="路由过滤"></a>路由过滤</h2><p>如下给出了路由过滤器的另一种用途，在这里，一个路由选择域被分割成多个子域，连接两个子域的路由器将对路由进行过滤，以便子域 B 中的路由器仅知道子域 A 中的部分路由。</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/01.jpg" class="">
+
+<p>此外，路由过滤器的另一个常见用途是建立路由防火墙，在互联路由器上使用路由过滤，将确保路由器仅接收合法的路由，这种方法是一种安全的形式。无论哪一种应用，路由过滤器都作为基本构建单元，被用于创建路由选择策略（routing policy）。路由选择策略是控制网络中数据包如何转发以及改变数据包缺省转发属性的一组规则。</p>
+<p>外部的路由可以进入到路由表中，路由表中的路由也可以被通告出去，路由过滤器正是通过管制这些出入路由表的路由来工作的。路由过滤器对链路状态路由选择协议的影响和对距离矢量路由选择协议的影响有点不同：</p>
+<ul>
+<li>运行距离矢量协议的路由器是基于自身路由表通告路由的，其结果是路由过滤器将会对路由器通告给其邻居路由器的路由产生影响</li>
+<li>运行链路状态协议的路由器是基于自身链路状态数据库的信息来确定他们的路由，而不是基于被邻居路由器通告的路由条目。路由过滤器对链路状态的通告或链路状态数据库没有影响。所以路由过滤器会对配置了过滤器的路由器的路由表产生影响，但不会对邻居路由器的路由条目有任何影响。正因为这种特性，路由过滤器主要被用在进入链路状态域的重新分配节点上。例如 OSPF 的 ASBR（自主系统边界路由器），在那里路由过滤器可以控制那些进入或离开该域的路由。在链路状态域内，路由过滤器的作用是有限的。</li>
+</ul>
+<h2 id="配置路由过滤器"><a href="#配置路由过滤器" class="headerlink" title="配置路由过滤器"></a>配置路由过滤器</h2><p>使用下面给出的任意一种方法都可以实现路由过滤：</p>
+<ul>
+<li>使用命令 distribute-list 过滤特定路由</li>
+<li>使用命令 distance 操作路由的管理距离</li>
+</ul>
+<h3 id="案例研究：过滤特定路由"><a href="#案例研究：过滤特定路由" class="headerlink" title="案例研究：过滤特定路由"></a>案例研究：过滤特定路由</h3><p>如下网络运行 RIPv2 和 RIPng。Barkis 经 Traddles 提供了到网络其余部分的连接，除了 BigNet 内 700 个明确的 IPv4 路由之外，Traddles 还向 Barkis 通告了一条 IPv4 缺省路由。由于这条缺省路由，Barkis、Micawber、Peggotty 和 Heep 不需要知道 BigNet 中 700 条以外的路由。因此，在 Barkis 上配置过滤器的目的是从 Traddles 仅接收缺省路由，并拒绝其他所有路由。</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/02.jpg" class="">
+
+<p>Barkis 的配置如下：</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/03.jpg" class="">
+
+<p>该路由过滤器检查从 S1 入站的路由，指定 Barkis 的 RIP 进程仅接收那些被访问列表 1 许可的路由，而访问列表 1 仅允许 0.0.0.0。IPv6 的路由也可以按照相同的方法进行过滤，唯一的不同是，IPv4 的命令 distribute-list 参照访问列表，而 IPv6 则参照一个前缀列表（prefix-list）。</p>
+<p>这里沿串行链路通告的 700 条路由在链路远端被全部丢弃，这对带宽而言是一种浪费，因此更好的配置方法是将过滤器放在 Traddles 上，仅允许向 Barkis 通告缺省路由。如下所示，配置 Traddle 过滤出站的 RIP IPv4 路由：</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/04.jpg" class="">
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/05.jpg" class="">
+
+<p>当在链路状态协议（例如 OSPF）下配置命令 distribute-list 时，关键字 out 不能与接口联合使用。因为不像距离矢量协议，链路状态协议不从自身的路由表中通告路由，没有更新信息被过滤。</p>
+<h3 id="案例研究：路由过滤和重新分配"><a href="#案例研究：路由过滤和重新分配" class="headerlink" title="案例研究：路由过滤和重新分配"></a>案例研究：路由过滤和重新分配</h3><p>路由器在任何时候执行相互重新分配时，路由回馈都可能会存在。如下所示，来自 RIP 方的路由会被重新分配到 OSPF，并且再从 OSPF 重新分配回到 RIP。</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/06.jpg" class="">
+
+<p>因此，使用路由过滤器控制路由通告的方向是一种明智的方法，Cruncher 可以在几个接口上同时使用 RIP 和 OSPF，其配置示例如下：</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/07.jpg" class="">
+
+<p>到 OSPF 域内目标网络的路由将不会从 RIP 向 OSPF 通告，同样到 RIP 域内目标网络的路由也不会从 OSPF 向 RIP 通告。</p>
+<p>在重新分配点部署路由过滤的另一种方法是借助路由进程进行过滤，而不是接口。如下的配置仅允许重新分配某些 IPv4 路由：</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/08.jpg" class="">
+
+<p>在 OSPF 配置下的路由过滤器允许 OSPF 通告 RIP 协议发现的路由，但是这些路由必须是访问列表 10 许可的路由。同样的，在 RIP 配置下的路由过滤器允许 RIP 通告 OSPF 25 发现的路由，但这些路由必须是访问列表 20 许可的路由。在这两种情况下，路由过滤器对其他协议发现的路由没有影响。</p>
+<p>同样的配置也可以应用在 IPv6 前缀上，对于 RIPng 和 OSPFv3，分配列表会参照前缀列表，而不是访问列表，其中前缀列表被用来允许和禁止 IPv6 前缀，而不是 IPv4 地址。</p>
+<p>当通过进程进行过滤时，仅允许使用关键字 out。在 OSPF 下使用 distribute-list 10 in rip 是没有意义的，因为路由已经通过 RIP 进入路由表了，OSPF 要么通告它（out），要么不通告。</p>
+<p>虽然通过路由选择协议进行过滤对于指定那些将要被重新分配的路由是很有用处的，但是它并不是防止路由回馈的好办法。为了阻止路由回馈，必须在路由进入路由表之前，在路由入站时进行过滤。</p>
+<h3 id="案例研究：协议迁移"><a href="#案例研究：协议迁移" class="headerlink" title="案例研究：协议迁移"></a>案例研究：协议迁移</h3><p>命令 distance 可以为路由指定管理距离，这些路由是从一个特殊的 IPv4 或 IPv6 路由协议那里学习到的。命令在使用时不带任何可选参数。在最初考虑时，该操作看上去不像路由过滤功能，但是当运行多个路由协议时就不同了，这时会基于路由的管理距离来确定是否接受或拒绝路由。</p>
+<p>如下网络运行 RIP，并且计划将路由选择协议转换为 EIGRP。有几种方法可以完成这样的迁移。一种方法是在每一台路由器上关闭老的协议，然后打开新的协议。对于小型网络这种方法是合适的，但是对于更大的网络，这是不切实际的。另一种选择是不删除旧协议的同时添加新的协议。如果新协议的缺省管理距离小于旧协议，那么每台路由器将选择新协议通告的路由。随着路由器转换完毕，网络将收敛到的新的协议上。在整个网络收敛到新的协议之后，则可以从所有路由器上删除旧的协议。</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/09.jpg" class="">
+
+<p>这种方法的问题是，在重新配置的时候可能会存在路由环路和黑洞，对这种双协议方法的改进是使用命令 distance，以确保禁止新协议的路由，一直到所有路由器为转换做好准备。虽然这种方法仍然可能产生环路和黑洞，但是因为仅需要修改管理距离，所以这种转换速度会更快，认为的错误也更小。这种方法的另一个优点是，万一出现问题可以很容易地停止切换工作。</p>
+<p>在使用双协议方法之前需要考虑一件事情，即同时在每台路由器上运行两个协议可能会影响路由器的内存用量和处理速度。如果路由器不能胜任，那么在配置新协议之前需要更加复杂的过程来删除旧协议，这可能是唯一的选择。</p>
+<p>使用双协议迁移到新的路由选择协议还需要注意一点的是：确认你已经理解两种协议的行为。例如，某些协议（例如 EIGRP）不会老化自身的路由条目。因此，如果要取代 EIGRP，需要额外增加的一步，就是在改变管理距离之后使用命令 <code>clear ip route *</code> 清除路由表。</p>
+<h3 id="案例研究：多个重新分配点"><a href="#案例研究：多个重新分配点" class="headerlink" title="案例研究：多个重新分配点"></a>案例研究：多个重新分配点</h3><p>在多个重新分配点时，可能由于管理距离而导致路由器选择了不满意的路由，解决这个问题的一种方法是，在重新分配点使用命令 distribute-list 来控制路由源点。</p>
+<p>使用这种配置方法的问题是，消除了多个重新分配点内在的冗余性。对 IPv4 来说，一种更好的方法是使用命令 distance 的两种形式来设置首选路由。</p>
+<p>还有另一种在互相重新分配路由的路由选择协议之间帮助过滤地址的方法，就是路由标记（tag）。当路由被重新分配到某个路由选择协议时，这些路由标记可以被标记。标记是管理员设置的一个数字，可以唯一地标识重新分配到该路由器的一组路由集合。这个标记可以在另一台路由器上用于在重新分配会原来的路由选择协议时过滤掉这些路由。标记可以使用路由映射进行设置。</p>
+<h3 id="案例研究：使用管理距离设置路由器优先权"><a href="#案例研究：使用管理距离设置路由器优先权" class="headerlink" title="案例研究：使用管理距离设置路由器优先权"></a>案例研究：使用管理距离设置路由器优先权</h3><p>在上述网络中，假设策略规定把 Grimwig 作为到 OSPF 域的主路由器，仅当 Grimwig 不可达时才选择经过 Bumble 的路由。策略实施前，Monks 通过在 Grimwig 和 Bumble 之间执行等价负载均衡到达 OSPF 的网络。通过降低来自 Grimwig 的路由的管理距离，可以使得 Monks 优先选择 Grimwig，相应的配置如下：</p>
+<img src="/fuchencong.github.io/2019/05/22/routing-tcp-ip-13/images/10.jpg" class="">
+
+<p>在这里，命令 distance 没有参考访问列表。所有 Grimwig（192.168.6.2）通告的路由的管理距离都被指定为 100。所有其他路由（来自 Bumble）都被指定为 RIP 的缺省管理距离 120。因此 Grimwig 的路由被优先选择。</p>
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>对控制网络的行为来说，路由过滤器是一个非常有用的工具。在大型网络中，路由过滤器几乎是不可缺少的。但是路由过滤器的所有效用仅限于允许或不接受路由。接下来将介绍另一个强大的工具：路由映射。路由映射不仅可以标识路由，还可以主动地修改路由。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Route/" rel="tag"># Route</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/07/02/network-multicast-address/" rel="prev" title="IP 组播地址">
+      <i class="fa fa-chevron-left"></i> IP 组播地址
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2019/05/20/routing-tcp-ip-12/" rel="next" title="TCP/IP 路由技术 12：缺省路由和按需路由选择">
+      TCP/IP 路由技术 12：缺省路由和按需路由选择 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E8%BF%87%E6%BB%A4"><span class="nav-number">1.</span> <span class="nav-text">路由过滤</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E8%B7%AF%E7%94%B1%E8%BF%87%E6%BB%A4%E5%99%A8"><span class="nav-number">2.</span> <span class="nav-text">配置路由过滤器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E8%BF%87%E6%BB%A4%E7%89%B9%E5%AE%9A%E8%B7%AF%E7%94%B1"><span class="nav-number">2.1.</span> <span class="nav-text">案例研究：过滤特定路由</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E8%B7%AF%E7%94%B1%E8%BF%87%E6%BB%A4%E5%92%8C%E9%87%8D%E6%96%B0%E5%88%86%E9%85%8D"><span class="nav-number">2.2.</span> <span class="nav-text">案例研究：路由过滤和重新分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E5%8D%8F%E8%AE%AE%E8%BF%81%E7%A7%BB"><span class="nav-number">2.3.</span> <span class="nav-text">案例研究：协议迁移</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E5%A4%9A%E4%B8%AA%E9%87%8D%E6%96%B0%E5%88%86%E9%85%8D%E7%82%B9"><span class="nav-number">2.4.</span> <span class="nav-text">案例研究：多个重新分配点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E4%BD%BF%E7%94%A8%E7%AE%A1%E7%90%86%E8%B7%9D%E7%A6%BB%E8%AE%BE%E7%BD%AE%E8%B7%AF%E7%94%B1%E5%99%A8%E4%BC%98%E5%85%88%E6%9D%83"><span class="nav-number">2.5.</span> <span class="nav-text">案例研究：使用管理距离设置路由器优先权</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">3.</span> <span class="nav-text">总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">131</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">29</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
