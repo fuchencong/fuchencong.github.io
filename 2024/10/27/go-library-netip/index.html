@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在编写网络相关的程序代码时，我们经常需要处理 IP 地址。当同时需要对 IPv4&#x2F;IPv6 双栈网络支持时，如何简洁、优雅地表示 IP 地址也是需要些技巧的。 这篇文章将分析 Go 库的 net&#x2F;netip 包，学习 Go 标准库如何表示和处理 IP 地址&#x2F;网段。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go 库学习之 netip">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2024/10/27/go-library-netip/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在编写网络相关的程序代码时，我们经常需要处理 IP 地址。当同时需要对 IPv4&#x2F;IPv6 双栈网络支持时，如何简洁、优雅地表示 IP 地址也是需要些技巧的。 这篇文章将分析 Go 库的 net&#x2F;netip 包，学习 Go 标准库如何表示和处理 IP 地址&#x2F;网段。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2024-10-27T13:31:45.000Z">
+<meta property="article:modified_time" content="2024-10-27T13:32:32.026Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2024/10/27/go-library-netip/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go 库学习之 netip | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2024/10/27/go-library-netip/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go 库学习之 netip
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-10-27 21:31:45" itemprop="dateCreated datePublished" datetime="2024-10-27T21:31:45+08:00">2024-10-27</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在编写网络相关的程序代码时，我们经常需要处理 IP 地址。当同时需要对 IPv4&#x2F;IPv6 双栈网络支持时，如何简洁、优雅地表示 IP 地址也是需要些技巧的。</p>
+<p>这篇文章将分析 Go 库的 <code>net/netip</code> 包，学习 Go 标准库如何表示和处理 IP 地址&#x2F;网段。</p>
+<span id="more"></span>
+
+<h2 id="Addr-类型"><a href="#Addr-类型" class="headerlink" title="Addr 类型"></a>Addr 类型</h2><p><code>netip.Addr</code> 类型可以表示 IPv4 或者 IPv6 地址，它是整个 <code>netip</code> 包的核心类型。它的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Addr <span class="keyword">struct</span> &#123;</span><br><span class="line">    addr uint128</span><br><span class="line">    z unique.Handle[addrDetail]</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> uint128 <span class="keyword">struct</span> &#123;</span><br><span class="line">	hi <span class="type">uint64</span></span><br><span class="line">	lo <span class="type">uint64</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> addrDetail <span class="keyword">struct</span> &#123;</span><br><span class="line">	isV6   <span class="type">bool</span></span><br><span class="line">	zoneV6 <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>addr</code> 字段是一个 <code>uint128</code> 类型的字段，<code>uint128</code> 是 <code>netip</code> 包内部定义的一个类型，可以用来存储 16 字节长度的整型数。<code>Addr</code> 类型使用该字段来存储 IPv4&#x2F;IPv6 中的地址数据：它将 16 字节长的地址以大端序的方式存储在该 <code>uint128</code> 类型中，其中最高有效位在 <code>uint128.hi</code> 中、最低有效位在 <code>uint128.lo</code> 中。例如，对于 IPv6 地址 <code>0011:2233:4455:6677:8899:aabb:ccdd:eeff</code> 按照如下方式保存：</p>
+<ul>
+<li>addr.hi &#x3D; 0x0011223344556677</li>
+<li>addr.lo &#x3D; 0x8899aabbccddeeff</li>
+</ul>
+<p>使用两个 <code>uint64</code> 类型的字段而不是 <code>[16]byte</code> 来保存地址数据，使得 IP 地址的绝大多数操作都可以变成 64 位寄存器的算术&#x2F;位运算，这样比字节操作运算更快。</p>
+<p><strong>对于 IPv4 地址，<code>addr</code> 字段保存的是 IPv4-mapped 格式的 IPv6 地址</strong>。此时为了快速判断一个 <code>Addr</code> 对象的 IP 地址类型，就需要依赖 <code>z</code> 字段了。它使用了 <code>unique</code> 包来实现 <code>addrDetail</code> 类型值的 <code>intern</code> 化，用于表示该 IP 地址的细节信息，例如区分 IPv4&#x2F;IPv6 地址、保存 IPv6 地址的 zone 信息。使用 <code>intern</code> 技术来保存地址的详细信息可以节省内存，同时提高比较效率。<code>netip</code> 包预定义了如下 <code>Addr.z</code> 类型的变量，分别表示 <code>Addr</code> 零值、IPv4 地址、IPv6 地址（不含 zone 信息）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> (</span><br><span class="line">	z0    unique.Handle[addrDetail]</span><br><span class="line">	z4    = unique.Make(addrDetail&#123;&#125;)</span><br><span class="line">	z6noz = unique.Make(addrDetail&#123;isV6: <span class="literal">true</span>&#125;)</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>接下来看 <code>netip</code> 包提供的两个构造 <code>Addr</code> 对象的函数实现，以便加深对 <code>Addr</code> 类型的理解：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 从 4 字节的 IPv4 地址数据生成 Addr 结构</span></span><br><span class="line"><span class="comment">// AddrFrom4 returns the address of the IPv4 address given by the bytes in addr.</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddrFrom4</span><span class="params">(addr [4]<span class="type">byte</span>)</span></span> Addr &#123;</span><br><span class="line">	<span class="keyword">return</span> Addr&#123;</span><br><span class="line">		<span class="comment">// 以 IPv4-mapped 格式保存地址数据，即 10 字节 0x0 + 2 字节 0xFF + 4 字节的 IPv4 地址，但是 z 字段仍然为 z4</span></span><br><span class="line">		addr: uint128&#123;<span class="number">0</span>, <span class="number">0xffff00000000</span> | <span class="type">uint64</span>(addr[<span class="number">0</span>])&lt;&lt;<span class="number">24</span> | <span class="type">uint64</span>(addr[<span class="number">1</span>])&lt;&lt;<span class="number">16</span> | <span class="type">uint64</span>(addr[<span class="number">2</span>])&lt;&lt;<span class="number">8</span> | <span class="type">uint64</span>(addr[<span class="number">3</span>])&#125;,</span><br><span class="line">		z:    z4,</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 从 16 字节的 IPv6 地址数据生成 Addr 结构</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddrFrom16</span><span class="params">(addr [16]<span class="type">byte</span>)</span></span> Addr &#123;</span><br><span class="line">	<span class="keyword">return</span> Addr&#123;</span><br><span class="line">		addr: uint128&#123;</span><br><span class="line">			byteorder.BeUint64(addr[:<span class="number">8</span>]),</span><br><span class="line">			byteorder.BeUint64(addr[<span class="number">8</span>:]),</span><br><span class="line">		&#125;,</span><br><span class="line">		z: z6noz,</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，<code>AddrFrom4</code>&#x2F;<code>AddrFrom16</code> 函数以大端字节序的方式将代表 IP 地址的字节切片保存到到 <code>uint128</code> 中，同时根据地址类型的不同，设置 <code>Addr.z</code> 字段的值。</p>
+<p>接下来简单列举与 <code>netip.Addr</code> 相关的函数及方法。</p>
+<h3 id="Addr-构造相关函数"><a href="#Addr-构造相关函数" class="headerlink" title="Addr 构造相关函数"></a>Addr 构造相关函数</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 从 4 字节的 IPv4 地址数据生成 Addr 对象</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddrFrom4</span><span class="params">(addr [4]<span class="type">byte</span>)</span></span> Addr</span><br><span class="line"></span><br><span class="line"><span class="comment">// 从 16 字节的 IPv6 地址数据生成 Addr 对象</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddrFrom16</span><span class="params">(addr [16]<span class="type">byte</span>)</span></span> Addr</span><br><span class="line"></span><br><span class="line"><span class="comment">// 从字节切片生成 Addr 对象，字节切片长度必须是 4 或 16，否则无效</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddrFromSlice</span><span class="params">(slice []<span class="type">byte</span>)</span></span> (ip Addr, ok <span class="type">bool</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 解析字符串格式的 IP 地址，返回 Addr 对象。如果解析失败，则返回 Addr 零值以及错误</span></span><br><span class="line"><span class="comment">// 该函数可以正确解析形如 &quot;192.0.2.1&quot;、&quot;2001:db8::68&quot;、&quot;fe80::1cc0:3e8c:119f:c2e1%ens18&quot;（携带 zone 标识的 IPv6 地址）</span></span><br><span class="line"><span class="comment">// 该函数内部实现就是根据字符串中遇到的第一个 `.` 或 `:` 符号来判断待解析的字符串是 IPv4 还是 IPv6 地址，然后再根据对应的规则去解析地址中的各个字节</span></span><br><span class="line"><span class="comment">// 对于 IPv4-mapped 格式的 IPv6 地址，例如 ::FFFF:192.168.1.1 会被认为是 IPv6 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParseAddr</span><span class="params">(s <span class="type">string</span>)</span></span> (Addr, <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对 ParseAddr 函数的封装，如果解析失败，直接 panic</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MustParseAddr</span><span class="params">(s <span class="type">string</span>)</span></span> Addr</span><br></pre></td></tr></table></figure>
+
+<h3 id="Addr-判断相关函数-x2F-方法"><a href="#Addr-判断相关函数-x2F-方法" class="headerlink" title="Addr 判断相关函数&#x2F;方法"></a>Addr 判断相关函数&#x2F;方法</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 是否是一个有效的 Addr 对象，即不是 Addr 对象的零值</span></span><br><span class="line"><span class="comment">// 注意 0.0.0.0 和 `::` 都是有效的 Addr，因为它们不是 Addr 的零值</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsValid() <span class="type">bool</span> &#123; <span class="keyword">return</span> ip.z != z0 &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回该 IP 地址的位长，返回值可以是 0（Addr 零值）、32（IPv4 地址）或 128（IPv6 地址）</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> BitLen() <span class="type">int</span> &#123;</span><br><span class="line">	<span class="keyword">switch</span> ip.z &#123;</span><br><span class="line">	<span class="keyword">case</span> z0:</span><br><span class="line">		<span class="keyword">return</span> <span class="number">0</span></span><br><span class="line">	<span class="keyword">case</span> z4:</span><br><span class="line">		<span class="keyword">return</span> <span class="number">32</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="number">128</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 判断是否是 IPv4 地址，直接判断 Addr.z 字段是否等于 z4 即可</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Is4() <span class="type">bool</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> ip.z == z4</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 判断是否是 IPv6 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Is6() <span class="type">bool</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> ip.z != z0 &amp;&amp; ip.z != z4</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是 IPv4-mapped 格式的 IPv6 地址，它必须首先是个 IPv6 地址，然后前十二字节还需要满足 ::FFFF 要求</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Is4In6() <span class="type">bool</span> &#123;</span><br><span class="line">	<span class="comment">// 首先该地址是 IPv6 地址，必须满足要求</span></span><br><span class="line">	<span class="keyword">return</span> ip.Is6() &amp;&amp; ip.addr.hi == <span class="number">0</span> &amp;&amp; ip.addr.lo&gt;&gt;<span class="number">32</span> == <span class="number">0xffff</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>尤其需要注意 Is4()&#x2F;Is6()&#x2F;Is4In6() 的判断，虽然在 Addr 中始终都是以 <code>IPv4inIPv6</code> 格式来存储 IPv4 地址数据，但是对于 IPv4 地址，其 z 字段始终都是 <code>z4</code>。而对于真正的 <code>IPv4-mapped</code> 的 IPv6 地址，其 z 字段则不是 <code>z4</code>。以下例子说明了这个区别：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;net/netip&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	a4 := netip.MustParseAddr(<span class="string">&quot;192.168.1.0&quot;</span>)</span><br><span class="line">	a46 := netip.MustParseAddr(<span class="string">&quot;::FFFF:192.168.1.0&quot;</span>)</span><br><span class="line">	a6 := netip.MustParseAddr(<span class="string">&quot;::FFFF:192:168:1:0&quot;</span>)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// true false false</span></span><br><span class="line">	fmt.Println(a4.Is4(), a4.Is6(), a4.Is4In6())</span><br><span class="line">	<span class="comment">// false true true</span></span><br><span class="line">	fmt.Println(a46.Is4(), a46.Is6(), a46.Is4In6())</span><br><span class="line">	<span class="comment">// false true false</span></span><br><span class="line">	fmt.Println(a6.Is4(), a6.Is6(), a6.Is4In6())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>以下函数则用来判断某个 Addr 是否属于某类特殊地址：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 是否是链路本地地址</span></span><br><span class="line"><span class="comment">// 对于 IPv4，为 169.254.0.0/16</span></span><br><span class="line"><span class="comment">// 对于 IPv6，为 fe80::/10</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsLinkLocalUnicast() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是环回地址</span></span><br><span class="line"><span class="comment">// 对于 IPv4，为 127.0.0.0/8</span></span><br><span class="line"><span class="comment">// 对于 IPv6，为 ::1/128</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsLoopback() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是组播地址</span></span><br><span class="line"><span class="comment">// 对于 IPv4，为 224.0.0.0/4</span></span><br><span class="line"><span class="comment">// 对于 IPv6，为 0xFF00::/8</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsMulticast() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是接口本地多播地址</span></span><br><span class="line"><span class="comment">// https://datatracker.ietf.org/doc/html/rfc4291#section-2.7.1</span></span><br><span class="line"><span class="comment">// FF01::/16</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsInterfaceLocalMulticast() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是链路本地多播地址</span></span><br><span class="line"><span class="comment">// 对于 IPv4，为 224.0.0.0/24</span></span><br><span class="line"><span class="comment">// 对于 IPv6，为 0xFF02::/16</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsLinkLocalMulticast() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是全球单播地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsGlobalUnicast() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是私有地址</span></span><br><span class="line"><span class="comment">// 对于 IPv4，为 10.0.0.0/8、172.16.0.0/12 和 192.168.0.0/16</span></span><br><span class="line"><span class="comment">// 对于 IPv6，为 fc00::/7</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> IsPrivate() <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是未指定地址</span></span><br><span class="line"><span class="comment">// 对于 IPv4，为 0.0.0.0</span></span><br><span class="line"><span class="comment">// 对于 IPv6，为 ::</span></span><br><span class="line"><span class="comment">// func (ip Addr) IsUnspecified() bool</span></span><br></pre></td></tr></table></figure>
+
+<p>另外，<code>netip</code> 库也提供了以下函数，直接生成某些特殊地址：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv4Unspecified</span><span class="params">()</span></span> Addr</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv6Unspecified</span><span class="params">()</span></span> Addr</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv6LinkLocalAllNodes</span><span class="params">()</span></span> Addr</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv6LinkLocalAllRouters</span><span class="params">()</span></span> Addr</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv6Loopback</span><span class="params">()</span></span> Addr</span><br></pre></td></tr></table></figure>
+
+<h3 id="Addr-其他函数-x2F-方法"><a href="#Addr-其他函数-x2F-方法" class="headerlink" title="Addr 其他函数&#x2F;方法"></a>Addr 其他函数&#x2F;方法</h3><figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 返回该 IP 地址的 zone 信息，仅对 IPv6 地址有意义。对于 Addr 零值或者 IPv4 地址，都是返回空字符串</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Zone() <span class="type">string</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 为 Addr 设置指定的 zone 信息，仅对 IPv6 地址有意义</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> WithZone(zone <span class="type">string</span>) Addr</span><br><span class="line"></span><br><span class="line"><span class="comment">// Addr 的比较函数，如果 ip &lt; ip2，返回 -1；如果 ip == ip2，返回 0；如果 ip &gt; ip2，返回 1</span></span><br><span class="line"><span class="comment">// 按照位长、地址数据、zone 信息的优先级依次比较</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Compare(ip2 Addr) <span class="type">int</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// Addr 的小于判断函数</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Less(ip2 Addr) <span class="type">bool</span> &#123; <span class="keyword">return</span> ip.Compare(ip2) == <span class="number">-1</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IPv4-mapped 的 IPv6 地址 unmap 成 IPv4 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Unmap() Addr</span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IP 地址转换为 16 字节的数组</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> As16() (a16 [<span class="number">16</span>]<span class="type">byte</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IP 地址转换为 4 字节的数组，只对 IPv4 地址以及 IPv4-mapped 的 IPv6 地址有意义</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> As4() (a4 [<span class="number">4</span>]<span class="type">byte</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IP 地址转换为字节切片，如果是 Addr 零值，返回 nil</span></span><br><span class="line"><span class="comment">// 对于 IPv4 地址，返回 4 字节的切片，对于 IPv6 地址，返回 16 字节的切片</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> AsSlice() []<span class="type">byte</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回指定 IP 地址的下一个地址，如果已经是最后一个地址，则返回 Addr 零值</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Next() Addr</span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回指定 IP 地址的上一个地址，如果已经是全 0 地址，则返回 Addr 零值</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Prev() Addr</span><br><span class="line"></span><br><span class="line"><span class="comment">// 实现了 fmt.Stringer 接口，返回 IP 地址的字符串表示，对于 Addr 零值，返回 &quot;invalid IP&quot;</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> String() <span class="type">string</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IP 地址转换为字符字符串，并添加到指定的字节切片 b 中</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> AppendTo(b []<span class="type">byte</span>) []<span class="type">byte</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 同样将 IP 地址转换为字符串，但是对于 IPv6 地址会对每个分段正确填充前导 0，以及对于 `::` 缩写法也会进行扩展</span></span><br><span class="line"><span class="comment">// 例如对于地址 &quot;2001:db8::1&quot;，会表示为 &quot;2001:0db8:0000:0000:0000:0000:0000:0001&quot; 形式</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> StringExpanded() <span class="type">string</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 分别实现了 encoding.TextMarshaler 和 encoding.TextUnmarshaler 接口，用于实现 Addr 与文本字节串之间的转换</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> MarshalText() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip *Addr)</span></span> UnmarshalText(text []<span class="type">byte</span>) <span class="type">error</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 分别实现了 encoding.BinaryMarshaler 和 encoding.BinaryUnmarshaler 接口，用于实现 Addr 与二进制字节串之间的转换</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> MarshalBinary() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip *Addr)</span></span> UnmarshalBinary(b []<span class="type">byte</span>) <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="AddrPort-类型"><a href="#AddrPort-类型" class="headerlink" title="AddrPort 类型"></a>AddrPort 类型</h2><p><code>AddrPort</code> 类型表示 IP 地址和端口的组合，它的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> AddrPort <span class="keyword">struct</span> &#123;</span><br><span class="line">	ip   Addr</span><br><span class="line">	port <span class="type">uint16</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>AddrPort</code> 类型的定义非常简单，使用 <code>Addr</code> 表示 IP 地址，使用 <code>uint16</code> 表示端口。下面再简单列举 <code>AddrPort</code> 提供的相关函数及方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 基于 ip 和 port 生成 AddrPort 对象</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">AddrPortFrom</span><span class="params">(ip Addr, port <span class="type">uint16</span>)</span></span> AddrPort</span><br><span class="line"><span class="comment">// 解析 &quot;IP:Port&quot; 或 &quot;[IP]:Port&quot; 格式的字符串，生成 AddrPort 对象</span></span><br><span class="line"><span class="comment">// IPv4 类型的地址需要使用 &quot;IP:Port&quot; 字符串格式</span></span><br><span class="line"><span class="comment">// IPv6 类型的地址需要使用 &quot;[IP]:Port&quot; 字符串格式</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParseAddrPort</span><span class="params">(s <span class="type">string</span>)</span></span> (AddrPort, <span class="type">error</span>)</span><br><span class="line"><span class="comment">// 对 ParseAddrPort 的封装，如果解析失败，直接 panic</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MustParseAddrPort</span><span class="params">(s <span class="type">string</span>)</span></span> AddrPort</span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回 AddrPort 中的 IP 地址和端口</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> Addr() Addr &#123; <span class="keyword">return</span> p.ip &#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> Port() <span class="type">uint16</span> &#123; <span class="keyword">return</span> p.port &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 是否是 AddrPort 类型的有效值，只要 IP 地址不是零值即可</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> IsValid() <span class="type">bool</span> &#123; <span class="keyword">return</span> p.ip.IsValid() &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// AddrPort 的比较函数，按照 IP 地址、端口的顺序进行比较</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> Compare(p2 AddrPort) <span class="type">int</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// AddrPort 实现了 fmt.Stringer 接口，返回 AddrPort 的字符串表示</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> String() <span class="type">string</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 AddrPort 转换为字符字符串形式，并添加到指定的字节切片 b 中</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> AppendTo(b []<span class="type">byte</span>) []<span class="type">byte</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// AddrPort 实现了 encoding.TextMarshaler 和 encoding.TextUnmarshaler 接口，用于实现 AddrPort 与文本字节串之间的转换</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> MarshalText() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *AddrPort)</span></span> UnmarshalText(text []<span class="type">byte</span>) <span class="type">error</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// AddrPort 实现了 encoding.BinaryMarshaler 和 encoding.BinaryUnmarshaler 接口，用于实现 AddrPort 与二进制字节串之间的转换。注意其中的 Port 是以小端序保存的</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p AddrPort)</span></span> MarshalBinary() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *AddrPort)</span></span> UnmarshalBinary(b []<span class="type">byte</span>) <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="Prefix-类型"><a href="#Prefix-类型" class="headerlink" title="Prefix 类型"></a>Prefix 类型</h2><p>与网路地址息息相关的一个概念是网段，用于表示一个网络。<code>netip</code> 包定义了 <code>Prefix</code> 类型来表示一个网段，它的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Prefix <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 该 IP 网段的 IP 地址</span></span><br><span class="line">	ip Addr</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 该网段的掩码长度 + 1</span></span><br><span class="line">    <span class="comment">// 因为 0 是有效的掩码长度，为了将其与 0 值本身进行区分，这里存储为掩码长度 + 1</span></span><br><span class="line">    <span class="comment">// 这样当 bitsPlusOne 为 0 时，代表是 Prefix 的零值</span></span><br><span class="line">    <span class="comment">// 当 bitsPlusOne 为 1 时，代表掩码长度为 0</span></span><br><span class="line">	bitsPlusOne <span class="type">uint8</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><strong>注意 Prefix 中的 ip 可以是任意的 IP 地址，并不一定要真的是一个网络地址（即主机位全为 0 的 IP 地址）</strong>。而且 Prefix 中的 ip 总是没有 zone 信息的。</p>
+<p>下面同样列举与 Prefix 类型相关的函数及方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 基于指定的 IP 地址和掩码长度生成 Prefix，注意生成的 Prefix 只是简单地保存原始的 IP 地址，并不会对 IP 地址进行位掩码运算</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">PrefixFrom</span><span class="params">(ip Addr, bits <span class="type">int</span>)</span></span> Prefix</span><br><span class="line"><span class="comment">// Addr 类型提供的一个方法，用于对指定的 IP 地址进行位掩码运算，生成一个 Prefix 对象。此时 Prefix 对象中保存的 IP 地址就是一个掩码运算后的值（即一个网络地址，主机位全为 0）</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip Addr)</span></span> Prefix(b <span class="type">int</span>) (Prefix, <span class="type">error</span>)</span><br><span class="line"><span class="comment">// 解析 CIDR 格式字符串，例如 `192.168.1.0/24` `2001:db8::/32`</span></span><br><span class="line"><span class="comment">// 该函数生成的 Prefix 对象中所保存的 ip 地址也不是掩码后的值</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParsePrefix</span><span class="params">(s <span class="type">string</span>)</span></span> (Prefix, <span class="type">error</span>)</span><br><span class="line"><span class="comment">// 对 ParsePrefix 的包装，解析失败直接 panic</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MustParsePrefix</span><span class="params">(s <span class="type">string</span>)</span></span> Prefix</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回 Prefix 中保存的 IP 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> Addr() Addr &#123; <span class="keyword">return</span> p.ip &#125;</span><br><span class="line"><span class="comment">// 返回 Prefix 的有效掩码长度</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> Bits() <span class="type">int</span> &#123; <span class="keyword">return</span> <span class="type">int</span>(p.bitsPlusOne) - <span class="number">1</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 判断是否是一个有效的 Prefix 对象，即非 Prefix 零值</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> IsValid() <span class="type">bool</span> &#123; <span class="keyword">return</span> p.bitsPlusOne &gt; <span class="number">0</span> &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 判断该 Prefix 表示的网段是否只包含一个 IP 地址，也就是位掩码长度必须是 32（IPv4） 或 128（IPv6）</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> IsSingleIP() <span class="type">bool</span> &#123; <span class="keyword">return</span> p.IsValid() &amp;&amp; p.Bits() == p.ip.BitLen() &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对 Prefix 中的 IP 地址进行掩码运算后，重新生成一个 Prefix 对象。此时新生成的 Prefix 对象中中保存的 IP 地址就是一个网络地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> Masked() Prefix</span><br><span class="line"><span class="comment">// 判断 Prefix 所表示的网段是否包含指定的 ip 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> Contains(ip Addr) <span class="type">bool</span></span><br><span class="line"><span class="comment">// 判断两个 Prefix 是否存在重叠的 IP 地址范围</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> Overlaps(o Prefix) <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 Prefix 转换为文本字节序列，并添加到字节切片 b 中</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> AppendTo(b []<span class="type">byte</span>) []<span class="type">byte</span></span><br><span class="line"><span class="comment">// Prefix 实现了 encoding.TextMarshaler 和 encoding.TextUnmarshaler 接口，用于实现 Prefix 与文本字节串之间的转换</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> MarshalText() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *Prefix)</span></span> UnmarshalText(text []<span class="type">byte</span>) <span class="type">error</span></span><br><span class="line"><span class="comment">// Prefix 实现了 encoding.BinaryMarshaler 和 encoding.BinaryUnmarshaler 接口，用于实现 Prefix 与二进制字节串之间的转换</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> MarshalBinary() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *Prefix)</span></span> UnmarshalBinary(b []<span class="type">byte</span>) <span class="type">error</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// Prefix 实现了 fmt.Stringer 接口，返回 Prefix 的字符串表示</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Prefix)</span></span> String() <span class="type">string</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="net-IP、net-IPMask-和-net-IPNet-类型"><a href="#net-IP、net-IPMask-和-net-IPNet-类型" class="headerlink" title="net.IP、net.IPMask 和 net.IPNet 类型"></a><code>net.IP</code>、<code>net.IPMask</code> 和 <code>net.IPNet</code> 类型</h2><p>除了 <code>net/netip</code> 包提供的 <code>Addr</code> 及相关类型外，标准库 <code>net</code> 包中还定义了 <code>IP</code>、<code>IPMask</code> 和 <code>IPNet</code> 类型，分别用于表示 IP 地址、IP 掩码、IP 网段。相关的代码位于 <code>src/net/ip.go</code> 文件中。相比于 <code>netip</code> 包，<code>net</code> 包中的 IP 地址实现更加简单，但是是不可比较的（即不支持 &#x3D;&#x3D; 或者作为 map 的 key）。而且 <code>net</code> 包的部分实现也依赖于 <code>netip</code> 包。</p>
+<p>如下展示了 <code>net</code> 包中这些类型的定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> net</span><br><span class="line"></span><br><span class="line"><span class="comment">// IP 地址</span></span><br><span class="line"><span class="keyword">type</span> IP []<span class="type">byte</span></span><br><span class="line"><span class="comment">// IP 掩码</span></span><br><span class="line"><span class="keyword">type</span> IPMask []<span class="type">byte</span></span><br><span class="line"><span class="comment">// IP 网段</span></span><br><span class="line"><span class="keyword">type</span> IPNet <span class="keyword">struct</span> &#123;</span><br><span class="line">    IP IP</span><br><span class="line">    Mask IPMask</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，IP 和 IPMask 都是基于字节切片类型实现的，因此它们都是不可比较类型。无论对于 IPv4 还是 IPv6 地址，内部实现总是使用 <code>16</code> 字节来保存 IP 地址数据。即对于 IPv4 地址，总是保存其 <code>IPv4-mapped</code> 格式。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> v4InV6Prefix = []<span class="type">byte</span>&#123;<span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0xff</span>, <span class="number">0xff</span>&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 构造一个 IPv4 类型的 IP 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv4</span><span class="params">(a, b, c, d <span class="type">byte</span>)</span></span> IP &#123;</span><br><span class="line">	<span class="comment">// 内部总是使用 16 字节来存储 IP 地址</span></span><br><span class="line">	<span class="comment">// 即使用 IPv4-mapped 的 IPv6 地址格式来存储该 IPv4 地址</span></span><br><span class="line">	<span class="comment">// ::ffff:.a.b.c.d</span></span><br><span class="line">	p := <span class="built_in">make</span>(IP, IPv6len)</span><br><span class="line">	<span class="built_in">copy</span>(p, v4InV6Prefix)</span><br><span class="line">	p[<span class="number">12</span>] = a</span><br><span class="line">	p[<span class="number">13</span>] = b</span><br><span class="line">	p[<span class="number">14</span>] = c</span><br><span class="line">	p[<span class="number">15</span>] = d</span><br><span class="line">	<span class="keyword">return</span> p</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>而 IPMask 则是根据实际的地址类型，分配对应的字节切片长度：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">	IPv4len = <span class="number">4</span></span><br><span class="line">	IPv6len = <span class="number">16</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 构造一个 IPv4 类型的网络掩码</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv4Mask</span><span class="params">(a, b, c, d <span class="type">byte</span>)</span></span> IPMask &#123;</span><br><span class="line">	<span class="comment">// 掩码只使用 4 字节</span></span><br><span class="line">	p := <span class="built_in">make</span>(IPMask, IPv4len)</span><br><span class="line">	p[<span class="number">0</span>] = a</span><br><span class="line">	p[<span class="number">1</span>] = b</span><br><span class="line">	p[<span class="number">2</span>] = c</span><br><span class="line">	p[<span class="number">3</span>] = d</span><br><span class="line">	<span class="keyword">return</span> p</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在使用 <code>net</code> 包提供的 IP 相关功能时，一定要注意上述实现细节。不能简单的根据字节切片长度来区分是否是 IPv4 还是 IPv6：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;net&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	ip := net.IPv4(<span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>)</span><br><span class="line">	m := net.IPv4Mask(<span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>, <span class="number">1</span>)</span><br><span class="line">	<span class="comment">// 16, 4</span></span><br><span class="line">	<span class="built_in">println</span>(<span class="built_in">len</span>(ip), <span class="built_in">len</span>(m))</span><br><span class="line"></span><br><span class="line">	ip = ip.To4()</span><br><span class="line">	<span class="comment">// 4, 4</span></span><br><span class="line">	<span class="built_in">println</span>(<span class="built_in">len</span>(ip), <span class="built_in">len</span>(m))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>下面简单列举 <code>net</code> 包提供的 IP 地址&#x2F;网络相关的函数及方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 根据 4 个字节创建 IPv4 类型的 IP，内部总是使用 IPv4-mapped 格式存储该 IP 地址（16 字节）</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv4</span><span class="params">(a, b, c, d <span class="type">byte</span>)</span></span> IP</span><br><span class="line"><span class="comment">// 将字符串格式解析为 IP 地址。如果解析成功，返回的 IP 地址总是 16 字节长度。但是不支持携带 zone 信息</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParseIP</span><span class="params">(s <span class="type">string</span>)</span></span> IP</span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IPv4 地址转换为 4 字节表示</span></span><br><span class="line"><span class="comment">// 如果该 IP 地址已经是 4 字节表示形式，直接返回即可</span></span><br><span class="line"><span class="comment">// 否则如果该 IP 地址是 IPv4-mapped 的 IPv6 地址，直接其中的 IPv4 地址数据即可（最后 4 字节）</span></span><br><span class="line"><span class="comment">// 否则返回 nil</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> To4() IP</span><br><span class="line"></span><br><span class="line"><span class="comment">// 将 IP 地址转换为 16 字节表示形式</span></span><br><span class="line"><span class="comment">// 如果当前 IP 地址是 4 字节表示形式，转换为其对应的 IPv4-mapped 的 IPv6 地址</span></span><br><span class="line"><span class="comment">// 如果当前 IP 地址已经是 16 字节表示形式，直接返回即可</span></span><br><span class="line"><span class="comment">// 否则返回 nil</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> To16() IP</span><br><span class="line"></span><br><span class="line"><span class="comment">// 根据 IP 地址的分类（A 类、B 类、C 类），返回其对应的网络掩码。该函数只对 IPv4 地址有效</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> DefaultMask() IPMask</span><br><span class="line"></span><br><span class="line"><span class="comment">// 对指定的 IP 地址应用 mask 位掩码运算后，得到的 IP 地址</span></span><br><span class="line"><span class="comment">// 如果 mask 是 16 字节长度，但 IP 地址是 4 字节长度，会取 mask 的最后 4 个字节参与运算（前提是 mask 的前 12 个字节全是 0xFF）</span></span><br><span class="line"><span class="comment">// 如果 mask 是 4 字节长度，但 IP 地址是 16 字节长度，且为 IPv4-mapped 的 IPv6 地址，会取地址中的 IPv4 部分（最后 4 个字节）参与运算</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> Mask(mask IPMask) IP</span><br><span class="line"></span><br><span class="line"><span class="comment">// IP 类型实现了 format.Stringer 接口，返回 IP 地址的字符串表示</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> String() <span class="type">string</span></span><br><span class="line"><span class="comment">// IP 类型实现了 encoding.TextMarshaler 和 encoding.TextUnmarshaler 接口，用于 IP 类型与文本字节串之间的相关转换</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> MarshalText() ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip *IP)</span></span> UnmarshalText(text []<span class="type">byte</span>) <span class="type">error</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 判断两个 IP 地址是否相等。IPv4 地址和其 IPv4-mapped 的 IPv6 地址被认为是相等的</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ip IP)</span></span> Equal(x IP) <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// IP 类型也提供了一些判断特殊地址类型的函数，这里就不再列举了</span></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 基于 4 个字节创建 Ipv4 类型的网络掩码。不同于 IPv4 地址，该 IPMask 只占据 4 字节</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IPv4Mask</span><span class="params">(a, b, c, d <span class="type">byte</span>)</span></span> IPMask</span><br><span class="line"><span class="comment">// 根据掩码中 1 的个数以及掩码的总位数，生成对应的 IPMask。bits 值必须是 32 或 128</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CIDRMask</span><span class="params">(ones, bits <span class="type">int</span>)</span></span> IPMask</span><br><span class="line"></span><br><span class="line"><span class="comment">// 返回 IPMask 中 1 的个数以及掩码的总位数</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m IPMask)</span></span> Size() (ones, bits <span class="type">int</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// IPMask 实现了 format.Stringer 接口，返回 IPMask 的字符串表示</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m IPMask)</span></span> String() <span class="type">string</span></span><br></pre></td></tr></table></figure>
+
+
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 对将 CIDR 格式的字符串进行解析</span></span><br><span class="line"><span class="comment">// 如果解析成功，返回值 IP 表示解析到的 IP 地址，而 `IPNet` 中的 IP 地址则是运用了掩码运算后的 IP 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParseCIDR</span><span class="params">(s <span class="type">string</span>)</span></span> (IP, *IPNet, <span class="type">error</span>)</span><br><span class="line"><span class="comment">// 判断一个 IP 网络中是否包含指定的 IP 地址</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(n *IPNet)</span></span> Contains(ip IP) <span class="type">bool</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// IPNet 实现了 format.Stringer 接口，返回其字符串表示</span></span><br><span class="line"> <span class="function"><span class="keyword">func</span> <span class="params">(n *IPNet)</span></span> String() <span class="type">string</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>文本介绍了 Go 标准库为 IP 地址&#x2F;网络等功能提供的基础设施。<code>net/netip</code> 和 <code>net</code> 包都提供了 IP 地址相关的 API，我们可以根据实际需要选择使用对应的工具。但是需要注意，这些包中提供的地址类型被用于同时表示 IPv4 或 IPv6，而 <code>IPv4-mapped</code> 的 IPv6 地址又使情况更加复杂，因此在使用相关接口时需要额外小心。</p>
+<h2 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://datatracker.ietf.org/doc/html/rfc4007">IPv6 Scoped Address Architecture</a></li>
+<li><a target="_blank" rel="noopener" href="https://tonybai.com/2024/09/18/understand-go-unique-package-by-example/">Go unique包：突破字符串局限的通用值Interning技术实现</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2024/10/18/go-library-errors/" rel="next" title="go 库学习之 errors 包">
+      go 库学习之 errors 包 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#Addr-%E7%B1%BB%E5%9E%8B"><span class="nav-number">1.</span> <span class="nav-text">Addr 类型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Addr-%E6%9E%84%E9%80%A0%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0"><span class="nav-number">1.1.</span> <span class="nav-text">Addr 构造相关函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Addr-%E5%88%A4%E6%96%AD%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0-x2F-%E6%96%B9%E6%B3%95"><span class="nav-number">1.2.</span> <span class="nav-text">Addr 判断相关函数&#x2F;方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Addr-%E5%85%B6%E4%BB%96%E5%87%BD%E6%95%B0-x2F-%E6%96%B9%E6%B3%95"><span class="nav-number">1.3.</span> <span class="nav-text">Addr 其他函数&#x2F;方法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#AddrPort-%E7%B1%BB%E5%9E%8B"><span class="nav-number">2.</span> <span class="nav-text">AddrPort 类型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Prefix-%E7%B1%BB%E5%9E%8B"><span class="nav-number">3.</span> <span class="nav-text">Prefix 类型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#net-IP%E3%80%81net-IPMask-%E5%92%8C-net-IPNet-%E7%B1%BB%E5%9E%8B"><span class="nav-number">4.</span> <span class="nav-text">net.IP、net.IPMask 和 net.IPNet 类型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text">小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reference"><span class="nav-number">6.</span> <span class="nav-text">Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">161</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">30</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
