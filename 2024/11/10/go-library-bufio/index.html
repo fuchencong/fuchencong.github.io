@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="标准库的 bufio 包实现了带缓冲的 I&#x2F;O。它对 io.Reader 或 io.Writer 进行封装，并返回一个新的 io.Reader 或 io.Writer 对象。新的 I&#x2F;O 对象在原有的 io.Reader 或 io.Writer 对象之上提供缓冲功能，从而减少系统调用次数，以提高 I&#x2F;O 性能。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go 库学习之 bufio">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2024/11/10/go-library-bufio/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="标准库的 bufio 包实现了带缓冲的 I&#x2F;O。它对 io.Reader 或 io.Writer 进行封装，并返回一个新的 io.Reader 或 io.Writer 对象。新的 I&#x2F;O 对象在原有的 io.Reader 或 io.Writer 对象之上提供缓冲功能，从而减少系统调用次数，以提高 I&#x2F;O 性能。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2024-11-10T13:41:35.000Z">
+<meta property="article:modified_time" content="2024-11-10T13:46:33.643Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2024/11/10/go-library-bufio/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go 库学习之 bufio | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2024/11/10/go-library-bufio/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go 库学习之 bufio
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2024-11-10 21:41:35" itemprop="dateCreated datePublished" datetime="2024-11-10T21:41:35+08:00">2024-11-10</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>标准库的 bufio 包实现了带缓冲的 I&#x2F;O。它对 io.Reader 或 io.Writer 进行封装，并返回一个新的 io.Reader 或 io.Writer 对象。新的 I&#x2F;O 对象在原有的 io.Reader 或 io.Writer 对象之上提供缓冲功能，从而减少系统调用次数，以提高 I&#x2F;O 性能。</p>
+<span id="more"></span>
+
+<h2 id="带缓冲的-Reader"><a href="#带缓冲的-Reader" class="headerlink" title="带缓冲的 Reader"></a>带缓冲的 Reader</h2><p><code>bufio.Reader</code> 类型实现了带缓冲的 <code>io.Reader</code>。它在实现读取操作时，会尽量一次性地从底层 Reader 读取数据并保存到缓冲区中。之后用户从缓冲 Reader 中读取数据时，它会尝试先返回缓冲区中的数据，只有必要时才继续从底层 Reader 读取数据。<code>bufio.Reader</code> 的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Reader <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 所使用的缓冲区</span></span><br><span class="line">	buf []<span class="type">byte</span></span><br><span class="line">	<span class="comment">// 封装的底层 Reader</span></span><br><span class="line">	rd io.Reader <span class="comment">// reader provided by the client</span></span><br><span class="line">	<span class="comment">// r 表示缓冲区中当前读取的位置，即用户代码从缓冲 Reader 读取数据时，会从 r 处读取</span></span><br><span class="line">    <span class="comment">// w 表示缓冲区中当前写入的位置，即从底层 Reader 读取到数据后，会从 w 处写入</span></span><br><span class="line">	r, w         <span class="type">int</span> <span class="comment">// buf read and write positions</span></span><br><span class="line">    <span class="comment">// 错误信息</span></span><br><span class="line">	err          <span class="type">error</span></span><br><span class="line">    <span class="comment">// 上次读取的最后一个字节，以支持 UnreadByte 操作</span></span><br><span class="line">	lastByte     <span class="type">int</span> <span class="comment">// last byte read for UnreadByte; -1 means invalid</span></span><br><span class="line">    <span class="comment">// 上次读取的 rune，以支持 UnreadRune 操作</span></span><br><span class="line">	lastRuneSize <span class="type">int</span> <span class="comment">// size of last rune read for UnreadRune; -1 means invalid</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="缓冲-Reader-管理相关函数"><a href="#缓冲-Reader-管理相关函数" class="headerlink" title="缓冲 Reader 管理相关函数"></a>缓冲 Reader 管理相关函数</h3><p><code>NewReader()</code> 函数以默认缓冲区大小 4096 创建一个带缓冲的 Reader：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewReader</span><span class="params">(rd io.Reader)</span></span> *Reader &#123;</span><br><span class="line">    <span class="keyword">return</span> NewReaderSize(rd, defaultBufSize)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>NewReaderSize()</code> 函数在创建缓冲 Reader 时，可以指定缓冲区的大小，但是最小长度为 16。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewReaderSize</span><span class="params">(rd io.Reader, size <span class="type">int</span>)</span></span> *Reader</span><br></pre></td></tr></table></figure>
+
+<p>值得说明的是，Reader 所使用的缓冲区在创建时长度就已经设置为对应的缓冲区大小了，它是靠 <code>Reader.r</code> 和 <code>Reader.w</code> 来实现对缓冲区读、写位置的管理。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewReaderSize</span><span class="params">(rd io.Reader, size <span class="type">int</span>)</span></span> *Reader &#123;</span><br><span class="line">    ......</span><br><span class="line">    r.reset(<span class="built_in">make</span>([]<span class="type">byte</span>, max(size, minReadBufferSize)), rd)</span><br><span class="line">    <span class="keyword">return</span> r</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Reader.Reset()</code> 方法可以重新设置新的底层 Reader，该方法会丢弃缓冲区中已有的数据：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewReader</span><span class="params">(rd io.Reader)</span></span> *Reader</span><br></pre></td></tr></table></figure>
+
+<p><code>Reader.Size()</code> 方法用于返回缓冲区的大小：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> Size() <span class="type">int</span> &#123; <span class="keyword">return</span> <span class="built_in">len</span>(b.buf) &#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Reader.Buffered()</code> 方法返回该 Reader 底层缓冲区中尚未处理的字节数，即可以直接从缓冲区中读取的数据长度。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> Buffered() <span class="type">int</span> &#123; <span class="keyword">return</span> b.w - b.r &#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="Read-系列方法"><a href="#Read-系列方法" class="headerlink" title="Read 系列方法"></a><code>Read</code> 系列方法</h3><p><code>Reader.Read()</code> 方法用于从缓冲 Reader 中读取数据，它的代码实现如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> Read(p []<span class="type">byte</span>) (n <span class="type">int</span>, err <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="comment">// 如果 len(p) 为 0，无法读取</span></span><br><span class="line">	n = <span class="built_in">len</span>(p)</span><br><span class="line">	<span class="keyword">if</span> n == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="comment">// 如果我们自己内部有数据，返回 0, nil</span></span><br><span class="line">		<span class="keyword">if</span> b.Buffered() &gt; <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="number">0</span>, <span class="literal">nil</span></span><br><span class="line">		&#125;</span><br><span class="line">        <span class="comment">// 否则返回 0，可能的错误信息</span></span><br><span class="line">		<span class="keyword">return</span> <span class="number">0</span>, b.readErr()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 如果当前缓冲区中无数据</span></span><br><span class="line">	<span class="keyword">if</span> b.r == b.w &#123;</span><br><span class="line">		<span class="comment">// 判断 b.err</span></span><br><span class="line">		<span class="keyword">if</span> b.err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="number">0</span>, b.readErr()</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// 需要读取的字节数大于缓冲区大小，直接从底层 Reader 中读取数据数到 p 中</span></span><br><span class="line">		<span class="comment">// 这样省去了 copy 的开销</span></span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(p) &gt;= <span class="built_in">len</span>(b.buf) &#123;</span><br><span class="line">			n, b.err = b.rd.Read(p)</span><br><span class="line">			<span class="keyword">if</span> n &lt; <span class="number">0</span> &#123;</span><br><span class="line">				<span class="built_in">panic</span>(errNegativeRead)</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">if</span> n &gt; <span class="number">0</span> &#123;</span><br><span class="line">				b.lastByte = <span class="type">int</span>(p[n<span class="number">-1</span>])</span><br><span class="line">				b.lastRuneSize = <span class="number">-1</span></span><br><span class="line">			&#125;</span><br><span class="line">			<span class="comment">// 总是返回</span></span><br><span class="line">			<span class="keyword">return</span> n, b.readErr()</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="comment">// 需要读取的字节数小于 buffer 大小</span></span><br><span class="line">        <span class="comment">// 尝试从底层 Reader 中一次读取 len(buf) 个字节</span></span><br><span class="line">		b.r = <span class="number">0</span></span><br><span class="line">		b.w = <span class="number">0</span></span><br><span class="line">		n, b.err = b.rd.Read(b.buf)</span><br><span class="line">		<span class="keyword">if</span> n &lt; <span class="number">0</span> &#123;</span><br><span class="line">			<span class="built_in">panic</span>(errNegativeRead)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// 如果没有读到数据，则直接返回，因为没有数据可返回</span></span><br><span class="line">		<span class="keyword">if</span> n == <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="number">0</span>, b.readErr()</span><br><span class="line">		&#125;</span><br><span class="line">		b.w += n</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">//  将现有数据进行返回</span></span><br><span class="line">	n = <span class="built_in">copy</span>(p, b.buf[b.r:b.w])</span><br><span class="line">	b.r += n</span><br><span class="line">	b.lastByte = <span class="type">int</span>(b.buf[b.r<span class="number">-1</span>])</span><br><span class="line">	b.lastRuneSize = <span class="number">-1</span></span><br><span class="line">	<span class="keyword">return</span> n, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到该 <code>Reader.Read()</code> 方法的核心逻辑是：</p>
+<ul>
+<li>只有当缓冲区中没有数据时，才会从底层 Reader 中读取数据<ul>
+<li>如果需要的数据大于缓冲区大小，此时直接从底层 Reader 中读取数据到 p 中</li>
+<li>否则一次性地从底层 Reader 中读取 len(buf) 长度的数据到缓冲区中</li>
+</ul>
+</li>
+<li>如果缓冲区中存在数据，则本次直接返回缓冲区中的数据</li>
+</ul>
+<p><code>Reader.ReadByte()</code> 方法会尝试读取一个字节，它的实现如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 缓冲 Reader 实现了 ByteReader 接口，每次读取一个字节</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> ReadByte() (<span class="type">byte</span>, <span class="type">error</span>) &#123;</span><br><span class="line">	b.lastRuneSize = <span class="number">-1</span></span><br><span class="line">	<span class="comment">// 如果缓冲区中没有数据可读</span></span><br><span class="line">	<span class="keyword">for</span> b.r == b.w &#123;</span><br><span class="line">		<span class="comment">// 出现错误，返回 0 以及对应的错误码</span></span><br><span class="line">		<span class="keyword">if</span> b.err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="number">0</span>, b.readErr()</span><br><span class="line">		&#125;</span><br><span class="line">		b.fill() <span class="comment">// buffer is empty</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 返回当前字节</span></span><br><span class="line">	c := b.buf[b.r]</span><br><span class="line">	b.r++</span><br><span class="line">    <span class="comment">// 记录本次读取的字节，以支持 UnreadByte 操作</span></span><br><span class="line">	b.lastByte = <span class="type">int</span>(c)</span><br><span class="line">	<span class="keyword">return</span> c, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>该函数的核心逻辑是：</p>
+<ul>
+<li>如果底层缓冲区中有数据，则直接从缓冲区返回一个数据即可</li>
+<li>如果缓冲区中没有数据，会尝试调用 <code>b.fill()</code> 尝试从底层 reader 中读取数据，直到遇到错误</li>
+</ul>
+<p><code>Reader.fill()</code> 非导出方法实现了从底层 Reader 中读取数据并保存到缓冲区中，它的实现如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 从底层 reader 中读取数据</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> fill() &#123;</span><br><span class="line">	<span class="comment">// 将当前尚未被用户读取的数据移动到 buffer 最前面</span></span><br><span class="line">	<span class="keyword">if</span> b.r &gt; <span class="number">0</span> &#123;</span><br><span class="line">		<span class="built_in">copy</span>(b.buf, b.buf[b.r:b.w])</span><br><span class="line">		b.w -= b.r</span><br><span class="line">		b.r = <span class="number">0</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 如果写入位置已经超过 buffer 总长度</span></span><br><span class="line">	<span class="keyword">if</span> b.w &gt;= <span class="built_in">len</span>(b.buf) &#123;</span><br><span class="line">		<span class="built_in">panic</span>(<span class="string">&quot;bufio: tried to fill full buffer&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 尝试从底层 Reader 中读取数据</span></span><br><span class="line">	<span class="keyword">for</span> i := maxConsecutiveEmptyReads; i &gt; <span class="number">0</span>; i-- &#123;</span><br><span class="line">		<span class="comment">// 从 b.rd 中读取数据，数据保存到 buf[b.w:] 处</span></span><br><span class="line">        <span class="comment">// 因此最多读取 len(buf) - w 个字节数据</span></span><br><span class="line">		n, err := b.rd.Read(b.buf[b.w:])</span><br><span class="line">		<span class="keyword">if</span> n &lt; <span class="number">0</span> &#123;</span><br><span class="line">			<span class="built_in">panic</span>(errNegativeRead)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// 先处理 n</span></span><br><span class="line">		b.w += n</span><br><span class="line">		<span class="comment">// 如果返回了错误，包括 EOF 错误，则记录该错误</span></span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			b.err = err</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="comment">// 只要成功读取数据，就返回</span></span><br><span class="line">		<span class="keyword">if</span> n &gt; <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="comment">// 0, nil 则继续尝试读取</span></span><br><span class="line">		<span class="comment">// 但是 0, nil 的次数是有限制的</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 连续 maxConsecutiveEmptyReads 次都读到空数据，记录成 io.ErrNoProgress 错误</span></span><br><span class="line">	b.err = io.ErrNoProgress</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Reader.ReadRune()</code> 方法会尝试读一个 Rune，返回该 rune、该 rune 的字节长度以及错误信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> ReadRune() (r <span class="type">rune</span>, size <span class="type">int</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>如果无法读取到数据，该函数返回 0，0 以及错误信息</li>
+<li>即使字节序列是无效编码，该函数也会消耗一个字节，并返回 <code>unicode.ReplacementChar (U+FFFD)</code>，size 认为是 1，而错误信息则为 nil</li>
+</ul>
+<p><code>Reader.ReadSlice()</code> 会尝试一直读取，直到遇到 delim 字节或者遇到错误（对于该函数，底层缓冲区满了也是一种错误）。该函数返回所读取的所有内容（包括结尾的 delim 字节）以及错误信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> ReadSlice(delim <span class="type">byte</span>) (line []<span class="type">byte</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>如果在找到 delim 字节之前，就遇到了错误，该函数会返回 buffer 中所有的数据以及错误信息</li>
+<li>如果缓冲区已经满了，但是还是没有遇到 delim 字节，ReadSlice 返回的错误是 ErrBufferFull</li>
+<li>当且仅当返回的 line 不是以 delim 字节结尾时，err 才不为 nil</li>
+<li>由于该函数是直接返回底层 buffer 的切片而不是副本，因此在下次 I&#x2F;O 操作后，返回的切片数据可能就被覆盖掉了。为了避免这个问题，可以使用 <code>Reader.ReadBytes</code> 或者 <code>Reader.ReadString</code> 方法</li>
+<li>只要返回了数据，该接口都支持 <code>UnreadByte</code> 以回退上一个字节</li>
+</ul>
+<p><code>Reader.ReadLine()</code> 方法是一个低级别的行读取行数，一般不会用到该函数。它的原型如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> ReadLine() (line []<span class="type">byte</span>, isPrefix <span class="type">bool</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>该函数尝试读取一行，并返回该行内容（不包过结尾的结尾的 <code>\n</code> 或者 <code>\r\n</code>）</li>
+<li>如果因为缓冲区满而无法完整地读取改行，此时会先返回该行中已经读取到的数据部分并将 isPrefix 设置为 true，期待下次继续调用该函数已返回剩余的内容</li>
+<li>如果返回的是最后一个分段（不管结尾是否已 <code>/n</code> 或者 <code>/r/n</code>），isPrefix 设置为 false</li>
+</ul>
+<p><code>Reader.ReadBytes()</code> 函数类似于 <code>ReadSlice</code> 函数，但是它是以副本形式返回所读取到的数据（而不是直接返回底层 buffer 的切片），因此该函数不会返回 <code>ErrBufferFull</code> 错误，因为它总是新申请内存来保存所读取到的数据，因此它会一直尝试读取，直到遇到 delim 字节或者遇到错误，而不需要考虑底层缓冲区满的问题。同样，当且仅当返回的数据不是以 delim 字节结尾时，err 才不为 nil。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> ReadBytes(delim <span class="type">byte</span>) ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>Reader.ReadString()</code> 函数类似于 <code>Reader.ReadBytes()</code> 函数，但是它是以字符串的形式返回数据，因此也可以认为返回的是底层 buffer 数据的副本。同样，当且仅当返回的数据不是以 delim 字节结尾时，err 才不为 nil。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> ReadString(delim <span class="type">byte</span>) (<span class="type">string</span>, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<h3 id="Unread-系列方法"><a href="#Unread-系列方法" class="headerlink" title="Unread 系列方法"></a><code>Unread</code> 系列方法</h3><p>缓冲 Reader 实现了 <code>UnreadByte()</code> 方法，可以回退上一次读取操作的最后一个字节：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> UnreadByte() <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<p>缓冲 Reader 实现了 <code>UnreadRune()</code> 方法，可以回退上一次 <code>ReadRune</code> 操作所读取的 rune：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> UnreadRune() <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<p><code>bufio.Reader</code> 实现了 <code>io.WriterTo</code> 接口，因此提供了 <code>WriteTo()</code> 方法，其核心逻辑是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> WriteTo(w io.Writer) (n <span class="type">int64</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>首先将缓冲区中剩余的、未被读取的数据写入 w 中</li>
+<li>如果底层 rd 实现了 <code>io.WriterTo</code> 接口，则直接调用其 <code>rd.WriteTo</code> 即可</li>
+<li>如果 w 实现了 <code>io.ReaderFrom</code> 接口，则直接调用 <code>w.ReadFrom</code> 方法即可</li>
+<li>否则一直尝试从底层 rd 中读取数据，并写入 w 中</li>
+</ul>
+<p>需要注意，<code>WriteTo</code> 会使 Unread 系列函数失效。</p>
+<h3 id="其他方法"><a href="#其他方法" class="headerlink" title="其他方法"></a>其他方法</h3><p><code>Reader.Peek()</code> 方法用于 Peek n 个字节的数据，即获取 Reader 中接下来的 n 个字节数据，但不会影响 Reader 的状态</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> Peek(n <span class="type">int</span>) ([]<span class="type">byte</span>, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>由于是直接返回底层 buffer 的切片而不是副本，因此下次读取 I&#x2F;O 操作后，这个字节切片可能就失效了</li>
+<li>如果返回的字节数小于 n，则错误信息一定非 nil。如果返回的字节数等于 n，则错误信息为 nil</li>
+<li>如果是因为缓冲区满而导致返回的字节数小于 n，则错误值为 ErrBufferFull</li>
+<li>Peek 操作会使 Unread 系列函数失效</li>
+</ul>
+<p><code>Reader.Discard()</code> 方法丢弃 Reader 中的 n 个字节。它返回实际丢弃的字节数以及遇到的错误信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Reader)</span></span> Discard(n <span class="type">int</span>) (discarded <span class="type">int</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>如果返回值 为 n，则 err 为 nil。如果返回值小于 n，则 err 肯定不为 nil</li>
+<li>如果 <code>0 &lt;= n &lt;= Reader.Buffered()</code>，该函数肯定不会失败，因为它不需要从底层 Reader 中读取数据</li>
+<li>只有需要从底层 Reader 中读取数据进行丢弃时，才有可能遇到错误</li>
+<li>Discard 方法会使 Unread 系列函数失效</li>
+</ul>
+<h2 id="带缓冲的-Writer"><a href="#带缓冲的-Writer" class="headerlink" title="带缓冲的 Writer"></a>带缓冲的 Writer</h2><p><code>bufio.Writer</code> 实现了带缓冲的 <code>io.Writer</code>，它在实现写入操作时，首先尝试将数据写入缓冲 buffer 中，当缓冲区满了的时候会尝试将缓冲区数据写入底层 <code>io.Writer</code> 中。<code>bufio.Writer</code> 的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Writer <span class="keyword">struct</span> &#123;</span><br><span class="line">    <span class="comment">// 错误信息</span></span><br><span class="line">	err <span class="type">error</span></span><br><span class="line">    <span class="comment">// 所使用的缓冲区</span></span><br><span class="line">	buf []<span class="type">byte</span></span><br><span class="line">	<span class="comment">// 当前已经缓冲的字节数</span></span><br><span class="line">	n  <span class="type">int</span></span><br><span class="line">    <span class="comment">// 封装的底层 Writer</span></span><br><span class="line">	wr io.Writer</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="缓冲-Writer-管理相关函数"><a href="#缓冲-Writer-管理相关函数" class="headerlink" title="缓冲 Writer 管理相关函数"></a>缓冲 Writer 管理相关函数</h3><p><code>NewWriter()</code> 函数以默认缓冲区大小 4096 创建一个带缓冲的 Writer：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewWriter</span><span class="params">(w io.Writer)</span></span> *Writer &#123;</span><br><span class="line">	<span class="keyword">return</span> NewWriterSize(w, defaultBufSize)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>NewWriterSize()</code> 函数以指定大小创建带缓冲的 Writer：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewWriterSize</span><span class="params">(w io.Writer, size <span class="type">int</span>)</span></span> *Writer</span><br></pre></td></tr></table></figure>
+
+<p>同样，Writer 所使用的缓冲区在创建时长度就已经设置为对应的缓冲区大小了，它是靠 <code>Writer.n</code> 来实现对写入位置的管理。</p>
+<p><code>Writer.Reset()</code> 方法可以重新设置新的底层 Writer，同时也会丢弃缓冲区中已有的数据、错误信息等：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> Reset(w io.Writer)</span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.Size()</code> 方法返回整个缓冲区的大小：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> Size() <span class="type">int</span> &#123; <span class="keyword">return</span> <span class="built_in">len</span>(b.buf) &#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.Buffered()</code> 方法返回缓冲区中已经缓存的字节数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> Buffered() <span class="type">int</span> &#123; <span class="keyword">return</span> b.n &#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.Available()</code> 方法返回缓冲区中剩余可用的缓冲区长度，即当前缓冲区还可以继续缓存的字节数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> Available() <span class="type">int</span> &#123; <span class="keyword">return</span> <span class="built_in">len</span>(b.buf) - b.n &#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.AvailableBuffer()</code> 方法以字节切片的形式返回当前缓冲剩余可用的缓冲区，返回的字节切片长度为 0，但是 <code>capactity</code> 为 <code>Writer.Available()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> b.buf[b.n:][:<span class="number">0</span>]</span><br></pre></td></tr></table></figure>
+
+<p>一种典型用法是通过 <code>append</code> 等函数修改返回的 buffer 后，立即调用 <code>Writer</code> 方法进行写入：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	w := bufio.NewWriter(os.Stdout)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, i := <span class="keyword">range</span> []<span class="type">int64</span>&#123;<span class="number">1</span>, <span class="number">2</span>, <span class="number">3</span>, <span class="number">4</span>, <span class="number">5</span>&#125; &#123;</span><br><span class="line">		b := w.AvailableBuffer()</span><br><span class="line">		b = strconv.AppendInt(b, i, <span class="number">10</span>)</span><br><span class="line">		b = <span class="built_in">append</span>(b, <span class="string">&#x27; &#x27;</span>)</span><br><span class="line">		w.Write(b)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	w.Flush()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.Flush()</code> 方法将缓冲的数据都写入底层 io 中，并返回错误信息：</p>
+<ul>
+<li>如果写入时发生错误，此时将返回对应的错误信息。同时缓冲区中会保留剩余的未写入完成的数据</li>
+<li>如果写入的数据长度小于缓冲区长度，会返回 <code>io.ErrShortWrite</code></li>
+<li>如果缓冲区中的数据都写入成功，且没有发生错误，返回 nil</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> Flush() <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="Write-系列方法"><a href="#Write-系列方法" class="headerlink" title="Write 系列方法"></a>Write 系列方法</h3><p><code>Writer.Write()</code> 方法用于实现将数据写入缓冲 Writer 中。它的代码实现如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> Write(p []<span class="type">byte</span>) (nn <span class="type">int</span>, err <span class="type">error</span>) &#123;</span><br><span class="line">	<span class="comment">// 如果要写入的字节数超过当前 buffer 可用大小</span></span><br><span class="line">	<span class="keyword">for</span> <span class="built_in">len</span>(p) &gt; b.Available() &amp;&amp; b.err == <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">var</span> n <span class="type">int</span></span><br><span class="line">		<span class="comment">// 当前没有缓冲的数据，直接写入</span></span><br><span class="line">		<span class="keyword">if</span> b.Buffered() == <span class="number">0</span> &#123;</span><br><span class="line">			<span class="comment">// Large write, empty buffer.</span></span><br><span class="line">			<span class="comment">// Write directly from p to avoid copy.</span></span><br><span class="line">			n, b.err = b.wr.Write(p)</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="comment">// 将 p 中的部分数据拷贝到 buffer 中，进行一次性写入</span></span><br><span class="line">			n = <span class="built_in">copy</span>(b.buf[b.n:], p)</span><br><span class="line">			b.n += n</span><br><span class="line">			b.Flush()</span><br><span class="line">		&#125;</span><br><span class="line">		nn += n</span><br><span class="line">		p = p[n:]</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> b.err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> nn, b.err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 剩余的数据直接保存到 buffer 中即可</span></span><br><span class="line">	n := <span class="built_in">copy</span>(b.buf[b.n:], p)</span><br><span class="line">	b.n += n</span><br><span class="line">	nn += n</span><br><span class="line">	<span class="keyword">return</span> nn, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以看到，其核心逻辑是：</p>
+<ul>
+<li>当要写入的数据长度大于缓冲区剩余空间时<ul>
+<li>如果缓冲区没有数据，直接写入底层 Writer，避免 copy 的开销</li>
+<li>否则将数据写入剩余缓冲区空间中，再通过 <code>Writer.Flush</code> 一次性写入整个缓冲区数据</li>
+</ul>
+</li>
+<li>如果要写入的数据长度小于缓冲区空间时，直接保存到缓冲区中即可</li>
+</ul>
+<p><code>Writer.WriteByte()</code> 方法用于将单个字节写入缓冲 Write 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> WriteByte(c <span class="type">byte</span>) <span class="type">error</span></span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.WriteRune()</code> 方法用于将一个 rune 写入缓冲 Write 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> WriteRune(r <span class="type">rune</span>) (size <span class="type">int</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>Writer.WriteString()</code> 方法用于将一个字符串写入底层 Writer 中，它的实现逻辑类似于 <code>Writer.Write</code>，只不过当要写入的数据长度大于缓冲区长度，且当前缓冲区中又没有数据时，其会判断底层 Writer 是否实现 <code>WriteString</code> 方法，如果实现了则直接调用该方法进行写入。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> WriteString(s <span class="type">string</span>) (<span class="type">int</span>, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>bufio.Writer</code> 实现了 <code>io.ReaderFrom</code> 接口，其 <code>ReadFrom</code> 方法的核心逻辑如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *Writer)</span></span> ReadFrom(r io.Reader) (n <span class="type">int64</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>如果缓冲区中没有数据，且底层 Writer 实现了 <code>io.ReaderFrom</code>，则直接调用底层 Writer 的 <code>ReadFrom</code> 方法</li>
+<li>否则会尝试从 r 中读取数据并保存到缓冲区中，每次缓冲区满了，则尝试一次 Flush 操作</li>
+</ul>
+<h2 id="带缓冲的-ReadWriter"><a href="#带缓冲的-ReadWriter" class="headerlink" title="带缓冲的 ReadWriter"></a>带缓冲的 ReadWriter</h2><p>bufio 包还提供了一个带缓冲区的 ReadWriter 类型，它是直接通过嵌入匿名类型来实现的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ReadWriter <span class="keyword">struct</span> &#123;</span><br><span class="line">	*Reader</span><br><span class="line">	*Writer</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewReadWriter</span><span class="params">(r *Reader, w *Writer)</span></span> *ReadWriter &#123;</span><br><span class="line">	<span class="keyword">return</span> &amp;ReadWriter&#123;r, w&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="Scanner"><a href="#Scanner" class="headerlink" title="Scanner"></a>Scanner</h2><p><code>bufio.Scanner</code> 提供了一个方便的接口来读取数据，可以按行、按单词、或者自定义分隔符的方式来读取数据。每次调用 <code>Scanner.Scan</code> 方法，会返回输入源中的一段 <code>token</code>，tokens 之间的分隔字节会被跳过。可以通过 <code>Scanner.Split</code> 方法来指定如何分割 <code>token</code>，默认就是以 <code>换行符</code> 作为分隔字节。</p>
+<p>Scanner 也是基于一段缓冲区来保存从底层 Reader 中读取的数据，并基于缓冲区中的数据进行分割。缓冲区的最大长度是有限的，最大不能超过 64k。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Scanner <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// 底层 reader</span></span><br><span class="line">	r io.Reader <span class="comment">// The reader provided by the client.</span></span><br><span class="line">	<span class="comment">// 分割函数</span></span><br><span class="line">	split SplitFunc <span class="comment">// The function to split the tokens.</span></span><br><span class="line">	<span class="comment">// token 的最大大小</span></span><br><span class="line">	maxTokenSize <span class="type">int</span>    <span class="comment">// Maximum size of a token; modified by tests.</span></span><br><span class="line">    <span class="comment">// 分隔出的 token</span></span><br><span class="line">	token        []<span class="type">byte</span> <span class="comment">// Last token returned by split.</span></span><br><span class="line">    <span class="comment">// 所使用的底层 buffer</span></span><br><span class="line">	buf          []<span class="type">byte</span> <span class="comment">// Buffer used as argument to split.</span></span><br><span class="line">    <span class="comment">// buffer 中未处理数据的起始、结束位置</span></span><br><span class="line">	start        <span class="type">int</span>    <span class="comment">// First non-processed byte in buf.</span></span><br><span class="line">	end          <span class="type">int</span>    <span class="comment">// End of data in buf.</span></span><br><span class="line">    <span class="comment">// 错误信息</span></span><br><span class="line">	err          <span class="type">error</span>  <span class="comment">// Sticky error.</span></span><br><span class="line">    <span class="comment">// 连续读到空 token 的次数</span></span><br><span class="line">	empties      <span class="type">int</span>    <span class="comment">// Count of successive empty tokens.</span></span><br><span class="line">	<span class="comment">// 是否已经调用过 Scan 方法了</span></span><br><span class="line">	scanCalled <span class="type">bool</span> <span class="comment">// Scan has been called; buffer is in use.</span></span><br><span class="line">	<span class="comment">// 是否已经 done</span></span><br><span class="line">	done <span class="type">bool</span> <span class="comment">// Scan has finished.</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><code>NewScanner()</code> 函数用于创建一个 Scanner 对象，其中参数 r 指定了底层 reader，即从该 reader 中读取数据，再按照指定的分隔方法来返回 <code>token</code>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewScanner</span><span class="params">(r io.Reader)</span></span> *Scanner</span><br></pre></td></tr></table></figure>
+
+<p><code>Scanner.Scan()</code> 方法从输入源中读取下一段 token，读取到的 token 可以通过 <code>Scanner.Bytes()</code> 或者 <code>Scanner.Text()</code> 获取。如果没有更多 tokens（有可能是遇到 EOF 或者其他错误），该函数返回 false，此时可以通过 <code>Scanner.Err()</code> 获取对应的错误（如果是因为 EOF 而终止，该函数返回 nil 错误）。如果存在 token，则返回 true。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Scanner)</span></span> Scan() <span class="type">bool</span></span><br></pre></td></tr></table></figure>
+
+<p>Scan 函数的核心逻辑是：</p>
+<ul>
+<li>对缓冲区中已有的数据进行分割处理，判断是否能获取 token</li>
+<li>如果不能获取 token，则尝试从底层 reader 中继续读取数据并保存到缓冲区中，之后再重新进行分割处理</li>
+<li>如果缓冲区满了，会扩大缓冲区，但缓冲区大小不能超过 <code>s.maxTokenSize</code></li>
+</ul>
+<p><code>Scanner.Split()</code> 方法用于指定分割函数，分隔函数的原型为 <code>SplitFunc</code></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// data 参数是待处理的数据，atEOF 表示是否还有更多数据</span></span><br><span class="line"><span class="comment">// 返回值：advance 表示表次前进处理的字节数、token 则表示分割出的 token，err 则表示错误信息</span></span><br><span class="line"><span class="keyword">type</span> SplitFunc <span class="function"><span class="keyword">func</span><span class="params">(data []<span class="type">byte</span>, atEOF <span class="type">bool</span>)</span></span> (advance <span class="type">int</span>, token []<span class="type">byte</span>, err <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Scanner)</span></span> Split(split SplitFunc)</span><br></pre></td></tr></table></figure>
+
+<p>以下函数都是预定义的分隔函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 每次返回一字节</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ScanBytes</span><span class="params">(data []<span class="type">byte</span>, atEOF <span class="type">bool</span>)</span></span> (advance <span class="type">int</span>, token []<span class="type">byte</span>, err <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 每次返回一个 rune</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ScanRunes</span><span class="params">(data []<span class="type">byte</span>, atEOF <span class="type">bool</span>)</span></span> (advance <span class="type">int</span>, token []<span class="type">byte</span>, err <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 每次返回一行</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ScanLines</span><span class="params">(data []<span class="type">byte</span>, atEOF <span class="type">bool</span>)</span></span> (advance <span class="type">int</span>, token []<span class="type">byte</span>, err <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 每次返回一个单词</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ScanWords</span><span class="params">(data []<span class="type">byte</span>, atEOF <span class="type">bool</span>)</span></span> (advance <span class="type">int</span>, token []<span class="type">byte</span>, err <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>Scanner.Buffer()</code> 方法可以设置 Scanner 所使用的缓冲区，以及 token 的最大运行长度。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Scanner)</span></span> Buffer(buf []<span class="type">byte</span>, max <span class="type">int</span>)</span><br></pre></td></tr></table></figure>
+
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>bufio 包提供了带缓冲的 Reader 和 Writer，以提高 I&#x2F;O 性能。同时 bufio 包还提供了一个 Scanner 类型，可以方便地从 <code>io.Reader</code> 中按照字节、rune、单词或行的方式来返回数据。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2024/11/03/go-library-io/" rel="next" title="go 库学习之 io">
+      go 库学习之 io <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B8%A6%E7%BC%93%E5%86%B2%E7%9A%84-Reader"><span class="nav-number">1.</span> <span class="nav-text">带缓冲的 Reader</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%86%B2-Reader-%E7%AE%A1%E7%90%86%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0"><span class="nav-number">1.1.</span> <span class="nav-text">缓冲 Reader 管理相关函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Read-%E7%B3%BB%E5%88%97%E6%96%B9%E6%B3%95"><span class="nav-number">1.2.</span> <span class="nav-text">Read 系列方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Unread-%E7%B3%BB%E5%88%97%E6%96%B9%E6%B3%95"><span class="nav-number">1.3.</span> <span class="nav-text">Unread 系列方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B6%E4%BB%96%E6%96%B9%E6%B3%95"><span class="nav-number">1.4.</span> <span class="nav-text">其他方法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B8%A6%E7%BC%93%E5%86%B2%E7%9A%84-Writer"><span class="nav-number">2.</span> <span class="nav-text">带缓冲的 Writer</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%86%B2-Writer-%E7%AE%A1%E7%90%86%E7%9B%B8%E5%85%B3%E5%87%BD%E6%95%B0"><span class="nav-number">2.1.</span> <span class="nav-text">缓冲 Writer 管理相关函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Write-%E7%B3%BB%E5%88%97%E6%96%B9%E6%B3%95"><span class="nav-number">2.2.</span> <span class="nav-text">Write 系列方法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B8%A6%E7%BC%93%E5%86%B2%E7%9A%84-ReadWriter"><span class="nav-number">3.</span> <span class="nav-text">带缓冲的 ReadWriter</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Scanner"><span class="nav-number">4.</span> <span class="nav-text">Scanner</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text">小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">163</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">13</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">30</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
