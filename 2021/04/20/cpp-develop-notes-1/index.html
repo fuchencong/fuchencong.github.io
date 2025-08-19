@@ -215,80 +215,66 @@
       
         <p>昨天使用厂内 bthread 库（来源于 brpc，已开源）中的 TimerThread 工具来做定时重试任务，但是在打印返回的 TimerThread ID 时，始终打印的是 0，而 TimerThread 分明已经启动成功了。定位了将近一天，才找到原因，这里分享一下。</p>
 <span id="more"></span>
-
-<h2 id="问题现象"><a href="#问题现象" class="headerlink" title="问题现象"></a>问题现象</h2><p>问题可以简化为如下代码：</p>
+<h2 id="问题现象"><a class="markdownIt-Anchor" href="#问题现象"></a> 问题现象</h2>
+<p>问题可以简化为如下代码：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">thread::TimerThread temp_thread;</span><br><span class="line"><span class="keyword">if</span> (temp_thread.start(NULL)) &#123;</span><br><span class="line">    LOG(INFO) &lt;&lt; <span class="string">&quot;start failed&quot;</span>;</span><br><span class="line">&#125;</span><br><span class="line">LOG(INFO) &lt;&lt; <span class="string">&quot;Temp Thread id: &quot;</span> &lt;&lt; <span class="string">temp_thread.thread_id();</span></span><br></pre></td></tr></table></figure>
-
 <p>TimerThread 的 start 函数返回成功，但是调用 thread_id() 始终返回 0：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TRACE: 04-20 18:43:22:   * 0 baidu/vnet/dedicatedconn/src/dedicatedconn_cli_main.cpp:1732] Temp Thread <span class="built_in">id</span>: 0</span><br></pre></td></tr></table></figure>
-
 <p>TimerThread 的 start 函数内部会调用 <code>pthread_create</code> 创建一个线程，通过在 start 函数内部添加打印，可以看到 _thread 已经被正确赋值了：</p>
 <p>TimerThread 的 start 函数实现部分：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">...</span><br><span class="line">const int ret = pthread_create(&amp;_thread, NULL, TimerThread::run_this, this);</span><br><span class="line"><span class="keyword">if</span> (ret) &#123;</span><br><span class="line">    <span class="built_in">return</span> ret;</span><br><span class="line">&#125;</span><br><span class="line">_started = <span class="literal">true</span>;</span><br><span class="line">LOG(INFO) &lt;&lt; <span class="string">&quot;In bthread Timer thread id &quot;</span> &lt;&lt; <span class="string">_thread;</span></span><br></pre></td></tr></table></figure>
-
 <p>TimeThread 的内部打印，thread_id 是正确的：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TRACE: 04-20 18:43:22:   * 0 baidu/base/bthread/bthread/timer_thread.cpp:163] In bthread Timer thread <span class="built_in">id</span> 140271338514176</span><br></pre></td></tr></table></figure>
-
 <p>由于 thread_id 函数就是直接返回的 _thread 成员：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pthread_t thread_id() const &#123; <span class="built_in">return</span> _thread; &#125;</span><br></pre></td></tr></table></figure>
-
 <p>那为啥成员函数内部打印的结果和调用 thread_id public 函数返回的结果不一致呢，难道碰到了玄学问题?</p>
-<h2 id="定位问题"><a href="#定位问题" class="headerlink" title="定位问题"></a>定位问题</h2><p>为了定位该问题，将 TimerThread 类的 private 成员直接修改为 public 成员，然后在我自己的程序和 TimerThread 的 start 函数里分别打印对象地址、成员偏移量、成员大小，得到一个重要线索：TimerThread 类里 _mutex 的大小不一致：</p>
+<h2 id="定位问题"><a class="markdownIt-Anchor" href="#定位问题"></a> 定位问题</h2>
+<p>为了定位该问题，将 TimerThread 类的 private 成员直接修改为 public 成员，然后在我自己的程序和 TimerThread 的 start 函数里分别打印对象地址、成员偏移量、成员大小，得到一个重要线索：TimerThread 类里 _mutex 的大小不一致：</p>
 <p>应用程序打印：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TRACE: 04-20 18:43:22:   * 0 baidu/vnet/dedicatedconn/src/dedicatedconn_cli_main.cpp:1740] Timer _mutex size 40</span><br></pre></td></tr></table></figure>
-
 <p>TimerThread 内部打印：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">TRACE: 04-20 18:43:22:   * 0 baidu/base/bthread/bthread/timer_thread.cpp:171] Timer _mutex size 4</span><br></pre></td></tr></table></figure>
-
 <p>由于 _thread 成员定义在 _mutex 成员后面，这就导致了 _thread 在类对象内部的偏移量也不一致。这就造成了对于同一个类对象，两边看到的 _thread 偏移不同，得到的值也就不同。</p>
 <p>那为啥 _mutex 的大小两边不一致呢，原来  _mutex 的类型通过了一个编译宏控制：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">internal::FastPthreadMutex _mutex;    // protect _nearest_run_time</span><br><span class="line"></span><br><span class="line">namespace internal &#123;</span><br><span class="line"><span class="comment">#ifdef BTHREAD_USE_FAST_PTHREAD_MUTEX</span></span><br><span class="line">class FastPthreadMutex &#123;</span><br><span class="line">public:</span><br><span class="line">    FastPthreadMutex() : _futex(0) &#123;&#125;</span><br><span class="line">    ~<span class="function"><span class="title">FastPthreadMutex</span></span>() &#123;&#125;</span><br><span class="line">    void lock();</span><br><span class="line">    void unlock();</span><br><span class="line">    bool try_lock();</span><br><span class="line">private:</span><br><span class="line">    DISALLOW_COPY_AND_ASSIGN(FastPthreadMutex);</span><br><span class="line">    int lock_contended();</span><br><span class="line">    unsigned _futex;</span><br><span class="line">&#125;;</span><br><span class="line"><span class="comment">#else</span></span><br><span class="line">typedef base::Mutex FastPthreadMutex;</span><br><span class="line"><span class="comment">#endif</span></span><br></pre></td></tr></table></figure>
-
 <p>由于 bthread 库编译的 Makefile 中通过 <code>-DBTHREAD_USE_FAST_PTHREAD_MUTEX</code> 定义了该编译宏，而自己的应用程序编译时没有定义该宏，这就导致两边看到的 TimerThread 类的定义并不完全一致（ _mutex 成员大小不一致）。</p>
 <p>不知道大家有没有想过一个问题，即使类型定义不一致，但是在应用程序中我并不是直接访问的 _thread 成员，而是调用 thread_id 成员函数得到 _thread 的值。那在调用 TimerThread 的成员函数时，应该是按照 TimerThread 自己所看到的定义返回 _thread 的值，为啥实际上也没有返回正确结果呢？原因就是 thread_id 函数是在类内定义的，所以它是一个内联函数。这就使得它在函数调用点直接内联展开，这就和直接在应用程序访问 _thread 成员效果是等价的。</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">pthread_t thread_id() const &#123; <span class="built_in">return</span> _thread; &#125;</span><br></pre></td></tr></table></figure>
-
-<h2 id="解决问题"><a href="#解决问题" class="headerlink" title="解决问题"></a>解决问题</h2><p>在应用程序侧加上 BTHREAD_USE_FAST_PTHREAD_MUTEX 编译宏定义，thread id 打印成功，问题解决。</p>
+<h2 id="解决问题"><a class="markdownIt-Anchor" href="#解决问题"></a> 解决问题</h2>
+<p>在应用程序侧加上 BTHREAD_USE_FAST_PTHREAD_MUTEX 编译宏定义，thread id 打印成功，问题解决。</p>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">TRACE: 04-20 20:17:04:   * 0 baidu/base/bthread/bthread/timer_thread.cpp:163] In bthread Timer thread id 139925091317504</span><br><span class="line">TRACE: 04-20 20:17:04:   * 0 baidu/vnet/dedicatedconn/src/dedicatedconn_cli_main.cpp:1732] Temp Thread id: 139925091317504</span><br></pre></td></tr></table></figure>
-
-<h2 id="进一步验证"><a href="#进一步验证" class="headerlink" title="进一步验证"></a>进一步验证</h2><p>这里我写了一个简单的验证程序，该程序包含三个文件：</p>
+<h2 id="进一步验证"><a class="markdownIt-Anchor" href="#进一步验证"></a> 进一步验证</h2>
+<p>这里我写了一个简单的验证程序，该程序包含三个文件：</p>
 <p>common.h</p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">A</span> &#123;</span><br><span class="line">    <span class="type">int</span> a[<span class="number">10</span>];</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">ifdef</span> BTHREAD_USE_FAST_PTHREAD_MUTEX</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="type">int</span> LOCK;</span><br><span class="line"><span class="meta">#<span class="keyword">else</span></span></span><br><span class="line"><span class="keyword">typedef</span> <span class="keyword">struct</span> <span class="title class_">A</span> LOCK;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">TimerThread</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="built_in">TimerThread</span>();</span><br><span class="line">    <span class="function"><span class="type">int</span> <span class="title">get_magic</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;In TimerThread sizeof(t) is &quot;</span> &lt;&lt; <span class="built_in">sizeof</span>(*<span class="keyword">this</span>) &lt;&lt; std::endl;</span><br><span class="line">        <span class="keyword">return</span> magic_number;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    LOCK l;</span><br><span class="line">    <span class="type">int</span> magic_number;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
-
 <p>common.cpp</p>
 <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;common.h&quot;</span></span></span><br><span class="line"></span><br><span class="line">TimerThread::<span class="built_in">TimerThread</span>(): <span class="built_in">magic_number</span>(<span class="number">12345</span>) &#123;&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
-
 <p>use_common.cpp</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#include &lt;iostream&gt;</span></span><br><span class="line"><span class="comment">#include &quot;common.h&quot;</span></span><br><span class="line"></span><br><span class="line">int main(void)</span><br><span class="line">&#123;</span><br><span class="line">    TimerThread t;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;In main function: direct get magic number &quot;</span> &lt;&lt; <span class="string">t.magic_number &lt;&lt; std::endl;</span></span><br><span class="line"><span class="string">    std::cout &lt;&lt; &quot;In main function: sizeof is &quot; &lt;&lt; sizeof(t</span>) &lt;&lt; <span class="string">std::endl;</span></span><br><span class="line"><span class="string">    std</span>::cout &lt;&lt; <span class="string">&quot;In main function: call get_magic  &quot;</span> &lt;&lt; <span class="string">t.get_magic() &lt;&lt; std::endl;</span></span><br><span class="line"><span class="string">&#125;</span></span><br></pre></td></tr></table></figure>
-
 <p>按照如下方式生成可执行文件：</p>
 <ol>
 <li>编译 common.o，定义 BTHREAD_USE_FAST_PTHREAD_MUTEX 编译宏：</li>
 </ol>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">g++ -g -c common.cpp -DBTHREAD_USE_FAST_PTHREAD_MUTEX</span><br></pre></td></tr></table></figure>
-
 <ol start="2">
 <li>编译 use_common.o，不定义 BTHREAD_USE_FAST_PTHREAD_MUTEX 宏：</li>
 </ol>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">g++ -g -c use_common.cpp</span><br></pre></td></tr></table></figure>
-
 <ol start="3">
 <li>生成可执行程序：</li>
 </ol>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">g++ -g -o use_common common.o use_common.o</span><br></pre></td></tr></table></figure>
-
 <p>执行该程序可以看到，无论是直接访问 magic_number，还是调用内联成员函数，都没有得到正确的值。且即使在内联函数内部，得到的 TimerThread 大小也和应用程序看到的一致：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">./use_common</span><br><span class="line">In main <span class="keyword">function</span>: direct get magic number 4196288</span><br><span class="line">In main <span class="keyword">function</span>: sizeof is 44</span><br><span class="line">In TimerThread sizeof(t) is 44</span><br><span class="line">In main <span class="keyword">function</span>: call get_magic  4196288</span><br></pre></td></tr></table></figure>
-
 <p>接下来将 get_magic 定义为非内联函数，即：将 get_magic 的定义放到 common.cpp 中，其他代码保持不变，编译方法也保持不变，再次运行该程序，运行结果如下：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">$ ./use_common</span><br><span class="line">In main <span class="keyword">function</span>: direct get magic number 4196288</span><br><span class="line">In main <span class="keyword">function</span>: sizeof is 44</span><br><span class="line">In TimerThread sizeof(t) is 8</span><br><span class="line">In main <span class="keyword">function</span>: call get_magic  12345</span><br></pre></td></tr></table></figure>
-
 <ul>
 <li>在应用程序内直接访问 magic_number 成员变量得到错误值，这是因为应用程序编译时看到的 TimerThread 类型定义和该对象的实际内存分布并不一致</li>
 <li>在应用程序内调用 get_magic 成员函数返回的 magic_number 为正确值，这是因为 get_magic 函数是在编译 common.o 时编译的get_magic 函数的确能够按照该对象构造时的定义解释这个对象，所以能够得到正确结果</li>
 <li>在应用程序内看到的 TimerThread 大小为 44，而在 TimerThread 成员函数内部看到的对象大小为 8。sizeof 的结果在编译器就已经决定了，符合预期</li>
 </ul>
-<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>当同一个类对象的成员变量在不同的编译单元中显示为不同的值时，应该重点排查这些编译单元看到的类型定义是完全一致，造成不一致的可能原因有：</p>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>当同一个类对象的成员变量在不同的编译单元中显示为不同的值时，应该重点排查这些编译单元看到的类型定义是完全一致，造成不一致的可能原因有：</p>
 <ul>
 <li>包含的头文件版本不同</li>
 <li>类型的定义受编译宏控制，而不同编译单元可能使用不同的编译宏</li>
@@ -376,7 +362,7 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E7%8E%B0%E8%B1%A1"><span class="nav-number">1.</span> <span class="nav-text">问题现象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9A%E4%BD%8D%E9%97%AE%E9%A2%98"><span class="nav-number">2.</span> <span class="nav-text">定位问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%A7%A3%E5%86%B3%E9%97%AE%E9%A2%98"><span class="nav-number">3.</span> <span class="nav-text">解决问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%9B%E4%B8%80%E6%AD%A5%E9%AA%8C%E8%AF%81"><span class="nav-number">4.</span> <span class="nav-text">进一步验证</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text">总结</span></a></li></ol></div>
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E7%8E%B0%E8%B1%A1"><span class="nav-number">1.</span> <span class="nav-text"> 问题现象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9A%E4%BD%8D%E9%97%AE%E9%A2%98"><span class="nav-number">2.</span> <span class="nav-text"> 定位问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%A7%A3%E5%86%B3%E9%97%AE%E9%A2%98"><span class="nav-number">3.</span> <span class="nav-text"> 解决问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%9B%E4%B8%80%E6%AD%A5%E9%AA%8C%E8%AF%81"><span class="nav-number">4.</span> <span class="nav-text"> 进一步验证</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 
@@ -392,20 +378,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">197</span>
+          <span class="site-state-item-count">198</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/fuchencong.github.io/categories/">
           
-        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-count">17</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">33</span>
+        <span class="site-state-item-count">34</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
@@ -497,6 +483,11 @@
 
 
   
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
 
   
 

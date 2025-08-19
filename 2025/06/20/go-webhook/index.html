@@ -213,10 +213,10 @@
     <div class="post-body" itemprop="articleBody">
 
       
-        <p>这篇文章将学习 webhook 技术，会重点分析开源项目 <a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook">adnanh&#x2F;webhook</a> 的源码实现，以加深对 webhook 的理解。</p>
+        <p>这篇文章将学习 webhook 技术，会重点分析开源项目 <a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook">adnanh/webhook</a> 的源码实现，以加深对 webhook 的理解。</p>
 <span id="more"></span>
-
-<h2 id="webhook-简介"><a href="#webhook-简介" class="headerlink" title="webhook 简介"></a>webhook 简介</h2><p>webhook 并不是什么新的专有技术技术，它只是回调机制在 http&#x2F;web 场景下的一种实现。Webhook 是 <code>用户定义的 HTTP 回调</code>，当某个事件发生时，源站点会向 <code>Webhook 配置里的 URL</code> 发送 HTTP 请求，并在 HTTP 请求中携带事件的相关信息，这样 HTTP 请求的接收方就可以收到这些事件信息并执行相应的动作。</p>
+<h2 id="webhook-简介"><a class="markdownIt-Anchor" href="#webhook-简介"></a> webhook 简介</h2>
+<p>webhook 并不是什么新的专有技术技术，它只是回调机制在 http/web 场景下的一种实现。Webhook 是 <code>用户定义的 HTTP 回调</code>，当某个事件发生时，源站点会向 <code>Webhook 配置里的 URL</code> 发送 HTTP 请求，并在 HTTP 请求中携带事件的相关信息，这样 HTTP 请求的接收方就可以收到这些事件信息并执行相应的动作。</p>
 <p>具体来说：</p>
 <ul>
 <li><code>事件接收方</code>（消费者） 需要启动一个 HTTP 端点，用于接收 <code>事件发送方</code>（生产者） 发送过来的 HTTP 请求</li>
@@ -224,47 +224,50 @@
 <li>当对应的事件发生时，<code>事件发送方</code> 向注册的 URL 发送 HTTP 请求，并在 HTTP 请求中携带事件的相关信息</li>
 <li><code>事件接收方</code> 收到 HTTP 请求后，根据事件信息执行相应的动作</li>
 </ul>
-<p>相比于轮询机制，webhook 是一种更高效的事件通知机制，常用于 CI&#x2F;CD 系统的构建等。当然在使用 Webook 机制时也需要考虑安全问题，<code>事件接收方</code> 需要对收到的 HTTP 请求（事件信息）进行身份验证，以避免被欺骗攻击，同时也应该验证时间戳，防止重放攻击。</p>
-<h2 id="adnanh-webhook-源码分析"><a href="#adnanh-webhook-源码分析" class="headerlink" title="adnanh/webhook 源码分析"></a><code>adnanh/webhook</code> 源码分析</h2><p><a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook">adnanh&#x2F;webhook</a> 是一个轻量级、Go 编写的配置工具，允许你轻松创建 Webhook 端点，当接收到事件通知时（即接收到 <code>事件发送方</code> 发送的 HTTP 请求时），执行所配置的命令。另外允许你从 HTTP 请求中获取数据（例如查询参数、请求头、请求 body）并传递给所要执行的命令。</p>
+<p>相比于轮询机制，webhook 是一种更高效的事件通知机制，常用于 CI/CD 系统的构建等。当然在使用 Webook 机制时也需要考虑安全问题，<code>事件接收方</code> 需要对收到的 HTTP 请求（事件信息）进行身份验证，以避免被欺骗攻击，同时也应该验证时间戳，防止重放攻击。</p>
+<h2 id="adnanhwebhook-源码分析"><a class="markdownIt-Anchor" href="#adnanhwebhook-源码分析"></a> <code>adnanh/webhook</code> 源码分析</h2>
+<p><a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook">adnanh/webhook</a> 是一个轻量级、Go 编写的配置工具，允许你轻松创建 Webhook 端点，当接收到事件通知时（即接收到 <code>事件发送方</code> 发送的 HTTP 请求时），执行所配置的命令。另外允许你从 HTTP 请求中获取数据（例如查询参数、请求头、请求 body）并传递给所要执行的命令。</p>
 <p>该项目的核心逻辑就是：</p>
 <ul>
 <li>接收事件：启动一个 HTTP 服务器，接收 HTTP 请求</li>
 <li>解析数据：解析 HTTP 查询参数、请求头、请求 body 等数据</li>
 <li>匹配 hook 规则：检查该事件所匹配到的 hook 规则</li>
-<li>执行命令：执行所匹配到的 hook 规则中的命令（同时会根据规则定义，传递指定的参数&#x2F;环境变量等给所要执行的命令）</li>
+<li>执行命令：执行所匹配到的 hook 规则中的命令（同时会根据规则定义，传递指定的参数/环境变量等给所要执行的命令）</li>
 </ul>
 <p>接下来我们将详细分析该项目的基本实现原理。</p>
-<h3 id="服务启动"><a href="#服务启动" class="headerlink" title="服务启动"></a>服务启动</h3><p><code>[adnanh/webhook]</code> 是一个 http 服务程序，在 main 函数中完成了服务启动的所有逻辑，具体包括以下流程：</p>
-<h4 id="命令行选项解析"><a href="#命令行选项解析" class="headerlink" title="命令行选项解析"></a>命令行选项解析</h4><p>命令行选项的解析：使用标准库 flag 包来实现命令行选项的解析</p>
+<h3 id="服务启动"><a class="markdownIt-Anchor" href="#服务启动"></a> 服务启动</h3>
+<p><code>[adnanh/webhook]</code> 是一个 http 服务程序，在 main 函数中完成了服务启动的所有逻辑，具体包括以下流程：</p>
+<h4 id="命令行选项解析"><a class="markdownIt-Anchor" href="#命令行选项解析"></a> 命令行选项解析</h4>
+<p>命令行选项的解析：使用标准库 flag 包来实现命令行选项的解析</p>
 <ul>
 <li>因为不同平台可能支持的命令行选项可能有所不同，使用 <code>platformFlags()</code> 函数定义平台相关的 flags</li>
 <li>在 <code>platform_unix.go</code> 和 <code>platform_windows.go</code> 中分别定义了 unix 平台和 windows 平台的 <code>platformFlags()</code> 实现</li>
 <li>通过 <code>Go 的构建标签</code> 在编译时，选择性地编译对应平台的代码文件</li>
 </ul>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//go:build !windows</span></span><br><span class="line"><span class="comment">// +build !windows</span></span><br></pre></td></tr></table></figure>
-
-<h4 id="服务监听"><a href="#服务监听" class="headerlink" title="服务监听"></a>服务监听</h4><p>因为 <code>[adnanh/webhook]</code> 是个服务程序，因此需要监听一个网络端口。为了保证服务器的安全性，服务监听做了很多额外的考虑：</p>
+<h4 id="服务监听"><a class="markdownIt-Anchor" href="#服务监听"></a> 服务监听</h4>
+<p>因为 <code>[adnanh/webhook]</code> 是个服务程序，因此需要监听一个网络端口。为了保证服务器的安全性，服务监听做了很多额外的考虑：</p>
 <ul>
 <li>提供了 和 <code>-setuid</code> 和 <code>-setgid</code> 选项，这样允许进程在完成监听动作后（可能需要更高的权限），重新切换到指定的用户身份运行。这样就可以实现：<code>以高权限身份完成端口监听等初始化动作</code>，<code>以低权限身份运行服务业务逻辑</code></li>
 <li>使用了 systemd 的 <a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/708243347">socket activation</a> 功能，允许 systemd 先监听 socket，在实际收到连接请求时再启动服务进程，并将监听好的 socket 传递给该进程。<code>socekt activation</code> 机制具有 <code>服务按需启动</code>、<code>权限隔离</code>（systemd 负责监听 socket）、<code>无缝重启</code>（服务重启时 socket 由 systemd 保持，连接不会丢失）等优点</li>
 <li>通过 <a target="_blank" rel="noopener" href="https://pkg.go.dev/github.com/coreos/go-systemd/v22@v22.5.0/activation">go-systemd</a> 包来使用 systemd 的 socket activation 功能</li>
 </ul>
-<h4 id="信号处理"><a href="#信号处理" class="headerlink" title="信号处理"></a>信号处理</h4><ul>
+<h4 id="信号处理"><a class="markdownIt-Anchor" href="#信号处理"></a> 信号处理</h4>
+<ul>
 <li>通过 <code>signal.Notify</code> 注册信号处理器</li>
 <li><code>SIGUSR1</code> 和 <code>SIGHUP</code> 信号都可以用于重新加载 hooks 文件</li>
 <li>增加 <code>Interrupt</code> 和 <code>SIGTERM</code> 的信号处理，在退出前执行清理工作（例如删除 Pid 文件）</li>
 </ul>
-<h4 id="解析-hooks-文件"><a href="#解析-hooks-文件" class="headerlink" title="解析 hooks 文件"></a>解析 hooks 文件</h4><p>程序启动时，通过 <code>-hooks</code> 命令行选项指定 hooks 文件路径，可以指定多个文件。通过 <code>Hooks</code> 的 <code>LoadFromFile</code> 从指定的文件路径加载 hooks 配置</p>
+<h4 id="解析-hooks-文件"><a class="markdownIt-Anchor" href="#解析-hooks-文件"></a> 解析 hooks 文件</h4>
+<p>程序启动时，通过 <code>-hooks</code> 命令行选项指定 hooks 文件路径，可以指定多个文件。通过 <code>Hooks</code> 的 <code>LoadFromFile</code> 从指定的文件路径加载 hooks 配置</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Hooks []Hook</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h *Hooks)</span></span> LoadFromFile(path <span class="type">string</span>, asTemplate <span class="type">bool</span>) errorj</span><br></pre></td></tr></table></figure>
-
 <p>该函数支持按两种方式来解析 hooks 文件内容：</p>
 <ul>
-<li>一种是按照 Go 的 <code>text/template</code> 模板来解析内容，并将渲染后的内容按照 JSON&#x2F;YAML 格式进行解析</li>
-<li>另一种是直接将文件内容按照 JSON&#x2F;YAML 格式进行解析</li>
+<li>一种是按照 Go 的 <code>text/template</code> 模板来解析内容，并将渲染后的内容按照 JSON/YAML 格式进行解析</li>
+<li>另一种是直接将文件内容按照 JSON/YAML 格式进行解析</li>
 </ul>
 <p>按照模版解析时，提供了 3 个模版函数：<code>cat</code>、<code>credential</code>、<code>getenv</code>，我们可以在模版文件中使用这些函数</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">funcMap := template.FuncMap&#123;</span><br><span class="line">    <span class="string">&quot;cat&quot;</span>:        cat,</span><br><span class="line">    <span class="string">&quot;credential&quot;</span>: credential,</span><br><span class="line">    <span class="string">&quot;getenv&quot;</span>:     getenv,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <ul>
 <li>cat：从文件系统中读取内容</li>
 <li>getenv：从操作系统环境变量中获取值</li>
@@ -272,30 +275,28 @@
 </ul>
 <p>从 hooks 文件中解析得到一个 <code>Hooks</code> 对象，它是 <code>Hook</code> 对象的切片。<code>Hook</code> 对象就表示了一条 webhook 规则，我们下文再详细介绍 Hook 规则的定义。从各个 hooks 文件中解析得到的 hooks 规则都会保存到全局变量 <code>loadedHooksFromFiles</code> 中：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">loadedHooksFromFiles = <span class="built_in">make</span>(<span class="keyword">map</span>[<span class="type">string</span>]hook.Hooks)</span><br></pre></td></tr></table></figure>
-
-<h4 id="开启-hooks-文件监控"><a href="#开启-hooks-文件监控" class="headerlink" title="开启 hooks 文件监控"></a>开启 hooks 文件监控</h4><p>如果程序启动时指定了 <code>-hotReload</code> 选项，则支持对 <code>hooks</code> 文件进行热重载。此时会对 hooks 的文件变化进行实时监控，项目使用了 <code>[fsnotify/fsnotify](https://pkg.go.dev/github.com/fsnotify/fsnotify@v1.7.0)</code> 包来实现文件系统监控，<code>webhook</code> 会启动一个单独的 goroutine 来监控文件系统变化事件：</p>
+<h4 id="开启-hooks-文件监控"><a class="markdownIt-Anchor" href="#开启-hooks-文件监控"></a> 开启 hooks 文件监控</h4>
+<p>如果程序启动时指定了 <code>-hotReload</code> 选项，则支持对 <code>hooks</code> 文件进行热重载。此时会对 hooks 的文件变化进行实时监控，项目使用了 <code>[fsnotify/fsnotify](https://pkg.go.dev/github.com/fsnotify/fsnotify@v1.7.0)</code> 包来实现文件系统监控，<code>webhook</code> 会启动一个单独的 goroutine 来监控文件系统变化事件：</p>
 <ul>
 <li>如果是文件被写入，则重新加载对应的 hooks 文件</li>
 <li>如果是文件被删除，则移除对应的 hooks 文件</li>
 <li>如果是文件被重命名，则重新加载对应的 hooks 文件</li>
 </ul>
 <p>在 <code>reloadHooks()</code> 函数中重新加载 hooks 规则，它其实就是继续调用 <code>LoadFromFile</code> 函数解析新的 hooks 文件内容，并将更新后的 hooks 规则重新保存到全局变量 <code>loadedHooksFromFiles</code> 中。</p>
-<h4 id="启动-http-服务"><a href="#启动-http-服务" class="headerlink" title="启动 http 服务"></a>启动 http 服务</h4><p>接下来来到服务启动最关键的部分，即启动 http 服务，<code>[adnanh/webhook]</code> 使用了 <a target="_blank" rel="noopener" href="https://github.com/gorilla/mux">gorilla&#x2F;mux</a> 包来实现 http 路由，相比于标准库 <a target="_blank" rel="noopener" href="https://pkg.go.dev/net/http#ServeMux">http.ServeMux</a>，<code>gorilla/mux</code> 提供了更灵活的路由匹配规则，并且支持中间件。如下代码</p>
+<h4 id="启动-http-服务"><a class="markdownIt-Anchor" href="#启动-http-服务"></a> 启动 http 服务</h4>
+<p>接下来来到服务启动最关键的部分，即启动 http 服务，<code>[adnanh/webhook]</code> 使用了 <a target="_blank" rel="noopener" href="https://github.com/gorilla/mux">gorilla/mux</a> 包来实现 http 路由，相比于标准库 <a target="_blank" rel="noopener" href="https://pkg.go.dev/net/http#ServeMux">http.ServeMux</a>，<code>gorilla/mux</code> 提供了更灵活的路由匹配规则，并且支持中间件。如下代码</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 创建 http router</span></span><br><span class="line">r := mux.NewRouter()</span><br><span class="line"></span><br><span class="line"><span class="comment">// 使用中间件</span></span><br><span class="line">r.Use(middleware.RequestID(</span><br><span class="line">    middleware.UseXRequestIDHeaderOption(*useXRequestID),</span><br><span class="line">    middleware.XRequestIDLimitOption(*xRequestIDLimit),</span><br><span class="line">))</span><br><span class="line">r.Use(middleware.NewLogger())</span><br><span class="line">r.Use(chimiddleware.Recoverer)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> *debug &#123;</span><br><span class="line">    r.Use(middleware.Dumper(log.Writer()))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>接下来完成路由的注册：<code>hooksURL</code> 定义了 webhook HTTP 请求的 URL 模式，它由 <code>路由前缀</code> + <code>hook 规则 id 参数</code> 构成，路由前缀可以通过 <code>urlprefix</code> 选项指定，默认为 <code>hooks</code>，所以这个 URL 模式默认为 <code>/hooks/:hook-id</code>。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 定义 hooks URL</span></span><br><span class="line"><span class="comment">// 默认为 /hooks/&#123;id:.*&#125;</span></span><br><span class="line"><span class="comment">// &#123;name&#125; 或者 &#123;name:pattern&#125; 表示路径中的变量</span></span><br><span class="line"><span class="comment">// 变量名为 name，之后可以通过 mux.Vars() 返回的 map，获取变量值</span></span><br><span class="line">hooksURL := makeRoutePattern(hooksURLPrefix)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 处理根路径请求</span></span><br><span class="line">r.HandleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, req *http.Request)</span></span> &#123;</span><br><span class="line">    <span class="keyword">for</span> _, responseHeader := <span class="keyword">range</span> responseHeaders &#123;</span><br><span class="line">        w.Header().Set(responseHeader.Name, responseHeader.Value)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    fmt.Fprint(w, <span class="string">&quot;OK&quot;</span>)</span><br><span class="line">&#125;)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 设置 hooksURL 为 hookHandler</span></span><br><span class="line">r.HandleFunc(hooksURL, hookHandler)</span><br></pre></td></tr></table></figure>
-
 <p>由于，<code>mux.Router</code> 实现了 <code>http.Handler</code> 接口，因此它可以直接替代标准库的 <code>http.ServeMux</code>，作为 http 服务器的 <code>Handler</code>，如下代码完成 HTTP 服务器的启动：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 启动 http server</span></span><br><span class="line"><span class="comment">// Create common HTTP server settings</span></span><br><span class="line">svr := &amp;http.Server&#123;</span><br><span class="line">    Handler: r,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// Serve HTTP</span></span><br><span class="line"><span class="keyword">if</span> !*secure &#123;</span><br><span class="line">    log.Printf(<span class="string">&quot;serving hooks on http://%s%s&quot;</span>, addr, makeHumanPattern(hooksURLPrefix))</span><br><span class="line">    <span class="comment">// 启动 http 服务</span></span><br><span class="line">    log.Print(svr.Serve(ln))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// TLS 处理</span></span><br><span class="line">...</span><br><span class="line">log.Print(svr.ServeTLS(ln, *cert, *key))</span><br></pre></td></tr></table></figure>
-
 <p>以上就完成了整个服务的启动过程。</p>
-<h3 id="webhook-规则定义"><a href="#webhook-规则定义" class="headerlink" title="webhook 规则定义"></a>webhook 规则定义</h3><p>在代码中，通过如下结构体定义了 webhook 规则，理解了该结构体各个字段的含义，就基本理解了整个项目的核心功能：</p>
+<h3 id="webhook-规则定义"><a class="markdownIt-Anchor" href="#webhook-规则定义"></a> webhook 规则定义</h3>
+<p>在代码中，通过如下结构体定义了 webhook 规则，理解了该结构体各个字段的含义，就基本理解了整个项目的核心功能：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Hook <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// Hook 规则的 ID</span></span><br><span class="line">	ID <span class="type">string</span> <span class="string">`json:&quot;id,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 需要执行的命令</span></span><br><span class="line">	ExecuteCommand <span class="type">string</span> <span class="string">`json:&quot;execute-command,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 命令执行的工作目录</span></span><br><span class="line">	CommandWorkingDirectory <span class="type">string</span> <span class="string">`json:&quot;command-working-directory,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 响应消息</span></span><br><span class="line">	ResponseMessage <span class="type">string</span> <span class="string">`json:&quot;response-message,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 响应头</span></span><br><span class="line">	ResponseHeaders ResponseHeaders <span class="string">`json:&quot;response-headers,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 是否已命令的输出作为 http 响应消息 body</span></span><br><span class="line">	<span class="comment">// 开启的话，需要等待命令执行完成后，才会返回 HTTP 响应</span></span><br><span class="line">	<span class="comment">// 否则，命令启动后就会返回 HTTP 响应，不需要等待命令执行完成</span></span><br><span class="line">	CaptureCommandOutput <span class="type">bool</span> <span class="string">`json:&quot;include-command-output-in-response,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 当命令执行失败时，是否仍然以命令的输出作为响应</span></span><br><span class="line">	CaptureCommandOutputOnError <span class="type">bool</span> <span class="string">`json:&quot;include-command-output-in-response-on-error,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 哪些参数需要作为环境变量传入</span></span><br><span class="line">	PassEnvironmentToCommand []Argument <span class="string">`json:&quot;pass-environment-to-command,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 哪些参数直接作为命令的参数传入</span></span><br><span class="line">	PassArgumentsToCommand []Argument <span class="string">`json:&quot;pass-arguments-to-command,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 传递给命令的文件参数，</span></span><br><span class="line">	<span class="comment">// 此时参数内容会保存到临时文件，文件名称则会以环境变量的形式传给命令</span></span><br><span class="line">	PassFileToCommand []Argument <span class="string">`json:&quot;pass-file-to-command,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 哪些参数的格式是 JSON 格式，对于这些参数，webhook 程序会负责对其进行 json 反序列化</span></span><br><span class="line">	JSONStringParameters []Argument <span class="string">`json:&quot;parse-parameters-as-json,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// webhook 规则触发的条件</span></span><br><span class="line">	TriggerRule *Rules <span class="string">`json:&quot;trigger-rule,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// webhook 规则触发条件不匹配时的响应状态码</span></span><br><span class="line">	TriggerRuleMismatchHttpResponseCode <span class="type">int</span> <span class="string">`json:&quot;trigger-rule-mismatch-http-response-code,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 在 OR 规则中允许签名校验失败。如果没有开启的话，签名校验会被视为错误</span></span><br><span class="line">	TriggerSignatureSoftFailures <span class="type">bool</span> <span class="string">`json:&quot;trigger-signature-soft-failures,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 定义 webhook HTTP 请求的 payload 的 Content-Type</span></span><br><span class="line">	IncomingPayloadContentType <span class="type">string</span> <span class="string">`json:&quot;incoming-payload-content-type,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 成功时的响应状态码</span></span><br><span class="line">	SuccessHttpResponseCode <span class="type">int</span> <span class="string">`json:&quot;success-http-response-code,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 允许的 http 方法</span></span><br><span class="line">	HTTPMethods []<span class="type">string</span> <span class="string">`json:&quot;http-methods&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h4 id="参数定义"><a href="#参数定义" class="headerlink" title="参数定义"></a>参数定义</h4><p>为了给执行的命令传递各种数据，例如环境变量、命令参数等，代码使用 <code>Argument</code> 结构体来表示参数，它定义如下：</p>
+<h4 id="参数定义"><a class="markdownIt-Anchor" href="#参数定义"></a> 参数定义</h4>
+<p>为了给执行的命令传递各种数据，例如环境变量、命令参数等，代码使用 <code>Argument</code> 结构体来表示参数，它定义如下：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Argument <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// 参数的来源</span></span><br><span class="line">	Source <span class="type">string</span> <span class="string">`json:&quot;source,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 参数的名称，指定了如何从 Source 中提取参数值</span></span><br><span class="line">	Name <span class="type">string</span> <span class="string">`json:&quot;name,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 当把参数作为环境变量时传递的名字</span></span><br><span class="line">	EnvName <span class="type">string</span> <span class="string">`json:&quot;envname,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 是否对数据进行 base64 解码</span></span><br><span class="line">	Base64Decode <span class="type">bool</span> <span class="string">`json:&quot;base64decode,omitempty&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>这些参数的具体值则来自于 webhook 请求，通过 <code>Source</code> 字段指定参数的来源，支持以下 Source 来源：</p>
 <ul>
 <li><code>header</code>：从 HTTP 请求头中提取</li>
@@ -310,21 +311,18 @@
 </ul>
 <p><code>Source</code> 指定了参数的来源，而 <code>Name</code> 字段则指定了如何从该来源中提取参数值。例如如果 Source 是 <code>header</code>，则可以使用某个 <code>http header</code> 的名称作为 Name，这样程序就知道以该 header 的值作为参数值。<code>Name</code> 支持以 <code>.</code> 来提取嵌套数据中的某个字段，例如假设 <code>Source</code> 是 <code>payload</code>，并且 payload 是如下嵌套的 json 数据，则 <code>commits.0.commit.id</code> 可以提取到第一个 commit 的 id 值 <code>1</code>。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  <span class="string">&quot;commits&quot;</span>: [</span><br><span class="line">    &#123;</span><br><span class="line">      <span class="string">&quot;commit&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;id&quot;</span>: <span class="number">1</span></span><br><span class="line">      &#125;</span><br><span class="line">    &#125;, &#123;</span><br><span class="line">      <span class="string">&quot;commit&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;id&quot;</span>: <span class="number">2</span></span><br><span class="line">      &#125;</span><br><span class="line">    &#125;</span><br><span class="line">  ]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>参数提取的实现代码位于如下几个函数中，其中 <code>GetParameter</code> 使用递归的方法来提取嵌套数据：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ha *Argument)</span></span> Get(r *Request) (<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ExtractParameterAsString</span><span class="params">(s <span class="type">string</span>, params <span class="keyword">interface</span>&#123;&#125;)</span></span> (<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetParameter</span><span class="params">(s <span class="type">string</span>, params <span class="keyword">interface</span>&#123;&#125;)</span></span> (<span class="keyword">interface</span>&#123;&#125;, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
-
 <p>需要说明的是，如果想要提取嵌套数据，数据必须已经按照 JSON 格式进行解析过，在以下两种情况下，数据会被程序进行解析：</p>
 <ul>
 <li>对于请求 body，如果 <code>content-type</code> 为 <code>application/json</code>，则程序自动会对 body 进行 json 解析，得到结构化数据</li>
 <li>webhook 规则中，可以通过 <code>parse-parameters-as-json</code> 指定哪些参数的值需要按照 json 进行解析</li>
 </ul>
-<h4 id="触发规则"><a href="#触发规则" class="headerlink" title="触发规则"></a>触发规则</h4><p>定义 webhook 规则时支持指定触发条件，只有当该请求满足该 webhook 规则所指定的触发条件时，才会执行该 webhook 规则中定义的命令。触发条件是通过 <code>Rules</code> 结构体来表示的，它定义如下：</p>
+<h4 id="触发规则"><a class="markdownIt-Anchor" href="#触发规则"></a> 触发规则</h4>
+<p>定义 webhook 规则时支持指定触发条件，只有当该请求满足该 webhook 规则所指定的触发条件时，才会执行该 webhook 规则中定义的命令。触发条件是通过 <code>Rules</code> 结构体来表示的，它定义如下：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Rules <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// And 规则，只有所有的子规则都满足，才满足</span></span><br><span class="line">	And *AndRule <span class="string">`json:&quot;and,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// Or 规则，只要有一个子规则满足，就满足</span></span><br><span class="line">	Or *OrRule <span class="string">`json:&quot;or,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// Not 规则，只有当子规则不满足时，才满足</span></span><br><span class="line">	Not *NotRule <span class="string">`json:&quot;not,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// Match 规则，真正用来执行某个匹配逻辑</span></span><br><span class="line">	Match *MatchRule <span class="string">`json:&quot;match,omitempty&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> AndRule []Rules</span><br><span class="line"><span class="keyword">type</span> OrRule []Rules</span><br><span class="line"><span class="keyword">type</span> NotRule Rules</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> MatchRule <span class="keyword">struct</span> &#123;</span><br><span class="line">	<span class="comment">// 匹配类型</span></span><br><span class="line">	Type <span class="type">string</span> <span class="string">`json:&quot;type,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 正则表达式匹配时使用</span></span><br><span class="line">	Regex <span class="type">string</span> <span class="string">`json:&quot;regex,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 签名匹配时使用，计算 HMAC 签名时使用的密钥</span></span><br><span class="line">	Secret <span class="type">string</span> <span class="string">`json:&quot;secret,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 匹配值时使用</span></span><br><span class="line">	Value <span class="type">string</span> <span class="string">`json:&quot;value,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// 匹配参数来源，即待匹配的数据的来源</span></span><br><span class="line">	Parameter Argument <span class="string">`json:&quot;parameter,omitempty&quot;`</span></span><br><span class="line">	<span class="comment">// IP 白名单</span></span><br><span class="line">	IPRange <span class="type">string</span> <span class="string">`json:&quot;ip-range,omitempty&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>可以看到，AndRule、OrRule 和 NotRule 只是用来提供规则的 <code>与</code>、<code>或</code> 和 <code>非</code> 逻辑，真正的匹配动作则是通过 MatchRule 来实现的，如下是一个 MatchRule 的配置实例：</p>
 <figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;match&quot;</span><span class="punctuation">:</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;value&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="string">&quot;refs/heads/development&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;parameter&quot;</span><span class="punctuation">:</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;payload&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;ref&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
-
 <p>MatchRule 首先对 <code>Parameter</code> 字段所指定的参数进行求值，然后再将计算得到的参数值按照 <code>匹配类型</code> 进行匹配，目前支持以下几种匹配类型：</p>
 <ul>
 <li>value：将参数值与 MatchRule 中的 Value 字段进行比较</li>
@@ -337,23 +335,22 @@
 </ul>
 <p>例如对于如下规则，将计算请求 body 的 SHA1 HMAC 签名值，并与请求头 <code>X-Hub-Signature</code> 中提供的值进行比较，如果匹配，则认为这条 MatchRule 匹配成功。</p>
 <figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;match&quot;</span><span class="punctuation">:</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;payload-hmac-sha1&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;secret&quot;</span><span class="punctuation">:</span> <span class="string">&quot;yoursecret&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;parameter&quot;</span><span class="punctuation">:</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;X-Hub-Signature&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
-
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">X-Hub-Signature: sha1=the-first-signature,sha1=the-second-signature</span><br></pre></td></tr></table></figure>
-
 <p>项目文档中提供了一个多层次匹配规则的配置<a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook/blob/master/docs/Hook-Rules.md#multi-level">实例</a>，这里就不再展示。</p>
-<h3 id="webhook-请求的处理"><a href="#webhook-请求的处理" class="headerlink" title="webhook 请求的处理"></a>webhook 请求的处理</h3><p>了解完 webhook 规则的定义后，我们就可以分析程序是如何处理 webhook HTTP 请求的。从上面 <code>启动 http 服务</code> 的流程中我们可以看到，对 webhook HTTP 请求是通过 <code>hookHandler</code> 函数来处理的，它的核心实现可以分为以下几个步骤：</p>
+<h3 id="webhook-请求的处理"><a class="markdownIt-Anchor" href="#webhook-请求的处理"></a> webhook 请求的处理</h3>
+<p>了解完 webhook 规则的定义后，我们就可以分析程序是如何处理 webhook HTTP 请求的。从上面 <code>启动 http 服务</code> 的流程中我们可以看到，对 webhook HTTP 请求是通过 <code>hookHandler</code> 函数来处理的，它的核心实现可以分为以下几个步骤：</p>
 <ol>
 <li>从请求中获取 hook 规则 id：因为 <code>webhook</code> 请求中的 URL 模式为 <code>/hooks/:hook-id</code>，其中 <code>:hook-id</code> 是个路径参数（或者称为路径中的变量部分），<code>mux.Vars(r)</code> 返回一个 map，包含了请求中的所有路径参数，以 <code>id</code> 为 key，就能获取到对应的 hooks 规则 id</li>
 </ol>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">id := mux.Vars(r)[<span class="string">&quot;id&quot;</span>]</span><br></pre></td></tr></table></figure>
-
 <p>这里之所以是以 <code>id</code> 为 key，是因为在定义路由时，我们使用了 <code>&#123;id:.*&#125;</code> 来作为路径参数，参见 <code>makeRoutePattern</code> 的实现：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">makeRoutePattern</span><span class="params">(prefix *<span class="type">string</span>)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> makeBaseURL(prefix) + <span class="string">&quot;/&#123;id:.*&#125;&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <ol start="2">
-<li><p>调用 <code>matchLoadedHook</code> 从 <code>loadedHooksFromFiles</code> 查找对应 id 的 hook 规则</p>
+<li>
+<p>调用 <code>matchLoadedHook</code> 从 <code>loadedHooksFromFiles</code> 查找对应 id 的 hook 规则</p>
 </li>
-<li><p>检查 HTTP 方法是否匹配：</p>
+<li>
+<p>检查 HTTP 方法是否匹配：</p>
 </li>
 </ol>
 <ul>
@@ -365,35 +362,35 @@
 <li>返回指定的 HTTP 响应头，程序启动时可以通过 <code>-header</code> 选项指定要返回的 HTTP 响应头</li>
 </ol>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 设置响应头</span></span><br><span class="line"><span class="keyword">for</span> _, responseHeader := <span class="keyword">range</span> responseHeaders &#123;</span><br><span class="line">    w.Header().Set(responseHeader.Name, responseHeader.Value)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <ol start="5">
-<li><p>读取请求 body，解析请求头、URL 中的 query 参数</p>
+<li>
+<p>读取请求 body，解析请求头、URL 中的 query 参数</p>
 </li>
-<li><p>根据 <code>Content-Type</code>，对 payload 进行解码，并得到结构化数据，支持以下 payload 类型的解码：</p>
+<li>
+<p>根据 <code>Content-Type</code>，对 payload 进行解码，并得到结构化数据，支持以下 payload 类型的解码：</p>
 </li>
 </ol>
 <figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">* json</span><br><span class="line">* x-www-form-urlencoded</span><br><span class="line">* xml</span><br><span class="line">* multipart/form-data，如果 multipart/form-data 中携带了文件数据，并且文件是 json 格式，还会对 json 文件数据进行解码</span><br></pre></td></tr></table></figure>
-
 <ol start="7">
-<li><p>webhook 规则中，可以通过 <code>parse-parameters-as-json</code> 配置项来指定那些参数的值需要按照 json 格式解析，解析完成后，就可以在 webhook 规则中的参数以及 <code>pass-arguments-to-command</code> 中使用这些解析后的对象了</p>
+<li>
+<p>webhook 规则中，可以通过 <code>parse-parameters-as-json</code> 配置项来指定那些参数的值需要按照 json 格式解析，解析完成后，就可以在 webhook 规则中的参数以及 <code>pass-arguments-to-command</code> 中使用这些解析后的对象了</p>
 </li>
-<li><p>判断当前请求是否满足该 webhook 规则的触发条件</p>
+<li>
+<p>判断当前请求是否满足该 webhook 规则的触发条件</p>
 </li>
 </ol>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ok, err = matchedHook.TriggerRule.Evaluate(req)</span><br></pre></td></tr></table></figure>
-
 <ol start="9">
 <li>只有当触发条件满足时，才真正执行 webhook 规则中所定义的命令，这个流程是在 <code>handleHook</code> 函数中执行的</li>
 </ol>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">handleHook</span><span class="params">(h *hook.Hook, r *hook.Request)</span></span> (<span class="type">string</span>, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
-
-<h4 id="执行命令"><a href="#执行命令" class="headerlink" title="执行命令"></a>执行命令</h4><p><code>handleHook</code> 负责执行 webhook 规则中定义的命令，它的实现可以分为以下几个步骤：</p>
+<h4 id="执行命令"><a class="markdownIt-Anchor" href="#执行命令"></a> 执行命令</h4>
+<p><code>handleHook</code> 负责执行 webhook 规则中定义的命令，它的实现可以分为以下几个步骤：</p>
 <ul>
 <li>查找命令对应的可执行文件</li>
 <li>使用标准库 <code>os/exec</code> 包来执行命令，使用如下方法创建待执行的命令：</li>
 </ul>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">cmd := exec.Command(cmdPath)</span><br><span class="line"><span class="comment">// 设置命令执行的工作目录</span></span><br><span class="line">cmd.Dir = h.CommandWorkingDirectory</span><br></pre></td></tr></table></figure>
-
 <ul>
 <li>调用 <code>ExtractCommandArguments</code> 从请求中提取需要传递给命令的参数，webhook 规则中通过 <code>pass-arguments-to-command</code> 选项指定了需要给命令传递哪些参数</li>
 <li>调用 <code>ExtractCommandArgumentsForEnv</code> 从请求中提取需要传递给命令的环境变量参数，webhook 规则中通过 <code>pass-environment-to-command</code> 选项指定了需要给命令传递的环境变量</li>
@@ -401,28 +398,27 @@
 </ul>
 <p>完成命令参数、环境变量的设置后，最终就是执行该命令并获取命令的输出：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">out, err := cmd.CombinedOutput()</span><br></pre></td></tr></table></figure>
-
-<h2 id="实际测试"><a href="#实际测试" class="headerlink" title="实际测试"></a>实际测试</h2><p>以上就完成了对该 <code>adnanh/webhook</code> 项目代码的基本分析，接下来实际测试一下该项目，以加深对其的理解。</p>
+<h2 id="实际测试"><a class="markdownIt-Anchor" href="#实际测试"></a> 实际测试</h2>
+<p>以上就完成了对该 <code>adnanh/webhook</code> 项目代码的基本分析，接下来实际测试一下该项目，以加深对其的理解。</p>
 <ul>
 <li>下载项目代码后，通过如下命令构建项目：</li>
 </ul>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">make</span><br></pre></td></tr></table></figure>
-
 <ul>
 <li>以如下配置文件启动 webhook 服务：<code>./webhook --hooks hooks.json --verbose</code></li>
 </ul>
 <figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">[</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;rule1&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;execute-command&quot;</span><span class="punctuation">:</span> <span class="string">&quot;echo&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;include-command-output-in-response&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;parse-parameters-as-json&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">      <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;payload&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;body&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header2&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;pass-arguments-to-command&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">      <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header1&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;header2.value.1&quot;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;trigger-rule&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;match&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;value&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="string">&quot;true&quot;</span><span class="punctuation">,</span></span><br><span class="line">          <span class="attr">&quot;parameter&quot;</span><span class="punctuation">:</span></span><br><span class="line">          <span class="punctuation">&#123;</span></span><br><span class="line">              <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;payload&quot;</span><span class="punctuation">,</span></span><br><span class="line">              <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;body.execute&quot;</span></span><br><span class="line">          <span class="punctuation">&#125;</span></span><br><span class="line">      <span class="punctuation">&#125;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">]</span></span><br></pre></td></tr></table></figure>
-
 <ul>
 <li>通过如下方式，发送 webhook 请求：</li>
 </ul>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl 127.0.0.1:9000/hooks/rule1 -H &quot;Content-Type: x-www-form-urlencoded&quot; -d &#x27;body=&#123;&quot;execute&quot;:&quot;true&quot;&#125;&#x27; -H &quot;header1: value1&quot; -H &#x27;header2: &#123;&quot;value&quot;: [&quot;111111&quot;, &quot;22222&quot;]&#125;&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 输出结果</span></span><br><span class="line">value1 22222</span><br></pre></td></tr></table></figure>
-
-<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p>这篇文章重点分析了 <a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook/">adnanh&#x2F;webhook</a> 项目源码，学习其如何启动一个 HTTP 服务器以处理 webhook 请求，其支持灵活的配置参数（例如 webhook 规则中的触发条件、如何给命令传递参数），以满足不同场景下的业务需求。同时，该项目还使用了 systemd 的 <code>socket activation</code> 等机制，以提高服务的安全性。</p>
-<h2 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h2><ul>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章重点分析了 <a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook/">adnanh/webhook</a> 项目源码，学习其如何启动一个 HTTP 服务器以处理 webhook 请求，其支持灵活的配置参数（例如 webhook 规则中的触发条件、如何给命令传递参数），以满足不同场景下的业务需求。同时，该项目还使用了 systemd 的 <code>socket activation</code> 等机制，以提高服务的安全性。</p>
+<h2 id="reference"><a class="markdownIt-Anchor" href="#reference"></a> Reference</h2>
+<ul>
 <li><a target="_blank" rel="noopener" href="https://en.wikipedia.org/wiki/Webhook">Webhook</a></li>
-<li><a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook">adnanh&#x2F;webhook</a></li>
-<li><a target="_blank" rel="noopener" href="https://github.com/gorilla/mux">gorilla&#x2F;mux</a></li>
+<li><a target="_blank" rel="noopener" href="https://github.com/adnanh/webhook">adnanh/webhook</a></li>
+<li><a target="_blank" rel="noopener" href="https://github.com/gorilla/mux">gorilla/mux</a></li>
 </ul>
 
     </div>
@@ -507,7 +503,7 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#webhook-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text">webhook 简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#adnanh-webhook-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">adnanh&#x2F;webhook 源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E5%90%AF%E5%8A%A8"><span class="nav-number">2.1.</span> <span class="nav-text">服务启动</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E8%A7%A3%E6%9E%90"><span class="nav-number">2.1.1.</span> <span class="nav-text">命令行选项解析</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%9B%91%E5%90%AC"><span class="nav-number">2.1.2.</span> <span class="nav-text">服务监听</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%BF%A1%E5%8F%B7%E5%A4%84%E7%90%86"><span class="nav-number">2.1.3.</span> <span class="nav-text">信号处理</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%A7%A3%E6%9E%90-hooks-%E6%96%87%E4%BB%B6"><span class="nav-number">2.1.4.</span> <span class="nav-text">解析 hooks 文件</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%BC%80%E5%90%AF-hooks-%E6%96%87%E4%BB%B6%E7%9B%91%E6%8E%A7"><span class="nav-number">2.1.5.</span> <span class="nav-text">开启 hooks 文件监控</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8-http-%E6%9C%8D%E5%8A%A1"><span class="nav-number">2.1.6.</span> <span class="nav-text">启动 http 服务</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#webhook-%E8%A7%84%E5%88%99%E5%AE%9A%E4%B9%89"><span class="nav-number">2.2.</span> <span class="nav-text">webhook 规则定义</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%8F%82%E6%95%B0%E5%AE%9A%E4%B9%89"><span class="nav-number">2.2.1.</span> <span class="nav-text">参数定义</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%A7%A6%E5%8F%91%E8%A7%84%E5%88%99"><span class="nav-number">2.2.2.</span> <span class="nav-text">触发规则</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#webhook-%E8%AF%B7%E6%B1%82%E7%9A%84%E5%A4%84%E7%90%86"><span class="nav-number">2.3.</span> <span class="nav-text">webhook 请求的处理</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E5%91%BD%E4%BB%A4"><span class="nav-number">2.3.1.</span> <span class="nav-text">执行命令</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E6%B5%8B%E8%AF%95"><span class="nav-number">3.</span> <span class="nav-text">实际测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#Reference"><span class="nav-number">5.</span> <span class="nav-text">Reference</span></a></li></ol></div>
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#webhook-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> webhook 简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#adnanhwebhook-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text"> adnanh&#x2F;webhook 源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E5%90%AF%E5%8A%A8"><span class="nav-number">2.1.</span> <span class="nav-text"> 服务启动</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E8%A7%A3%E6%9E%90"><span class="nav-number">2.1.1.</span> <span class="nav-text"> 命令行选项解析</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%9B%91%E5%90%AC"><span class="nav-number">2.1.2.</span> <span class="nav-text"> 服务监听</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%BF%A1%E5%8F%B7%E5%A4%84%E7%90%86"><span class="nav-number">2.1.3.</span> <span class="nav-text"> 信号处理</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%A7%A3%E6%9E%90-hooks-%E6%96%87%E4%BB%B6"><span class="nav-number">2.1.4.</span> <span class="nav-text"> 解析 hooks 文件</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%BC%80%E5%90%AF-hooks-%E6%96%87%E4%BB%B6%E7%9B%91%E6%8E%A7"><span class="nav-number">2.1.5.</span> <span class="nav-text"> 开启 hooks 文件监控</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8-http-%E6%9C%8D%E5%8A%A1"><span class="nav-number">2.1.6.</span> <span class="nav-text"> 启动 http 服务</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#webhook-%E8%A7%84%E5%88%99%E5%AE%9A%E4%B9%89"><span class="nav-number">2.2.</span> <span class="nav-text"> webhook 规则定义</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%8F%82%E6%95%B0%E5%AE%9A%E4%B9%89"><span class="nav-number">2.2.1.</span> <span class="nav-text"> 参数定义</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%A7%A6%E5%8F%91%E8%A7%84%E5%88%99"><span class="nav-number">2.2.2.</span> <span class="nav-text"> 触发规则</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#webhook-%E8%AF%B7%E6%B1%82%E7%9A%84%E5%A4%84%E7%90%86"><span class="nav-number">2.3.</span> <span class="nav-text"> webhook 请求的处理</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E5%91%BD%E4%BB%A4"><span class="nav-number">2.3.1.</span> <span class="nav-text"> 执行命令</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E6%B5%8B%E8%AF%95"><span class="nav-number">3.</span> <span class="nav-text"> 实际测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text"> 小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">5.</span> <span class="nav-text"> Reference</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 
@@ -523,20 +519,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">197</span>
+          <span class="site-state-item-count">198</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/fuchencong.github.io/categories/">
           
-        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-count">17</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">33</span>
+        <span class="site-state-item-count">34</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
@@ -628,6 +624,11 @@
 
 
   
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
 
   
 

@@ -215,17 +215,16 @@
       
         <p>Go 语言推崇 <code>面向工程</code> 的设计哲学并自带强大的且为人所称道的工具链。这篇文章将学习 Go 在单元测试、性能测试以及代码调试方面的最佳实践方案。</p>
 <span id="more"></span>
-
-<h2 id="理解包内测试与包外测试的差别"><a href="#理解包内测试与包外测试的差别" class="headerlink" title="理解包内测试与包外测试的差别"></a>理解包内测试与包外测试的差别</h2><p>Go 语言在工具链和标准库中提供对测试的原生支持，这也算是 Go 在工程实践方面的一个创新。</p>
+<h2 id="理解包内测试与包外测试的差别"><a class="markdownIt-Anchor" href="#理解包内测试与包外测试的差别"></a> 理解包内测试与包外测试的差别</h2>
+<p>Go 语言在工具链和标准库中提供对测试的原生支持，这也算是 Go 在工程实践方面的一个创新。</p>
 <p>在 Go 中我们针对包编写测试代码。测试代码与包代码放在同一个目录下，并且 Go 要求所有测试代码都存放在以 <code>*_test.go</code> 结尾的文件中。</p>
 <p><code>go test</code> 命令也是通过同样的方式将包代码与包测试代码区分开来。<code>go test</code> 将所有包目录下的 <code>*_test.go</code> 编译成一个临时的二进制文件，并执行该文件，后者将执行各个测试源文件中名字为 <code>TestXxx</code> 的函数所代表的测试用例并输出测试执行结果。</p>
 <p>我们把将测试代码放在与被测包同名的包中的测试方法称为 <code>包内测试</code>。可以使用如下命令查看哪些源文件使用了包内测试：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> list -f=&#123;&#123;.TestGoFiles&#125;&#125; .</span><br></pre></td></tr></table></figure>
-
 <p>我们把将测试代码放在名为 <code>被测包包名+_test</code> 的包中的测试方法称为 <code>包外测试</code>，使用如下命令查看哪些源文件使用了包外测试：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> list -f=&#123;&#123;.XTestGoFiles&#125;&#125; .</span><br></pre></td></tr></table></figure>
-
-<h3 id="包内测试与包外测试"><a href="#包内测试与包外测试" class="headerlink" title="包内测试与包外测试"></a>包内测试与包外测试</h3><p>由于 Go 构建工具链在编译包时会自动根据文件名是否具有 <code>_test.go</code> 后缀将包源文件和包的测试文件分开，测试代码不会进入包正常构建的范围内。因此测试代码使用与被测包名相同的包内测试方法是一个很正常的选择。</p>
+<h3 id="包内测试与包外测试"><a class="markdownIt-Anchor" href="#包内测试与包外测试"></a> 包内测试与包外测试</h3>
+<p>由于 Go 构建工具链在编译包时会自动根据文件名是否具有 <code>_test.go</code> 后缀将包源文件和包的测试文件分开，测试代码不会进入包正常构建的范围内。因此测试代码使用与被测包名相同的包内测试方法是一个很正常的选择。</p>
 <p>包内测试这种方法本质上是一种白盒测试方法，由于测试代码与被测源码在同一包内，因此测试代码可以访问该包下的所有符号。因此包内测试可以很容易达到较高的测试覆盖率。但是实践中，包内测试也会经常遇到如下问题：</p>
 <ul>
 <li>测试代码自身需要经常性的维护：包内测试的白盒测试本质上意味着这是一种面向实现的测试，而包内部实现逻辑又是易变的，这也意味着采用包内测试的测试代码也需要经常性的维护</li>
@@ -236,12 +235,11 @@
 <p>包外测试这种纯黑盒测试还有一个功能域之外的好处，就是可以更加聚焦地从用户视角验证被测包导出 API 的设计的合理性和易用性。</p>
 <p>当然包外测试也有缺点，由于仅能通过导出 API 这一有限的窗口并结合构造特定的数据来验证被测包行为。在这样的约束下，容易出现测试覆盖不足的问题。解决该问题的一个惯用法是 <code>安插后门</code>，该后门就是前面提到的 <code>export_test.go</code> 文件。<strong>该文件的代码位于被测包名下，但是它既不会包含在正式的产品代码中（因为位于 _test.go 文件中）</strong>，而又不包含任何测试代码，仅用于将被测包的内部符号在测试阶段暴露给包外测试代码，或者定义一些辅助包外测试的代码：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// export_test.go</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">package</span> fmt</span><br><span class="line"><span class="keyword">var</span> IsSpace = isSpace</span><br><span class="line"><span class="keyword">var</span> Parsenum = parsenum</span><br></pre></td></tr></table></figure>
-
 <p><code>export_test.go</code> 相当于在测试阶段扩展了包外测试代码的视野，让很多本来很难覆盖到的测试路径变得容易了，进而让包外测试覆盖更多被测试包中的执行路径。</p>
 <p><code>go test</code> 完全支持对被测包同时运用包内测试和包外测试两种方法：</p>
 <ul>
 <li>包外测试由于将被测试代码放入独立的包中，它更适合编写偏向集成测试的用例</li>
-<li>包内测试更聚焦于内部测试的逻辑，通过给函数&#x2F;方法传入一些特意构造的数据的方式来验证内部逻辑的正确性</li>
+<li>包内测试更聚焦于内部测试的逻辑，通过给函数/方法传入一些特意构造的数据的方式来验证内部逻辑的正确性</li>
 </ul>
 <p>从实际开发的角度来说，还是更优先使用包外测试，因为包外测试可以：</p>
 <ul>
@@ -250,101 +248,108 @@
 <li>保持测试代码的健壮性，尽可能地降低对测试代码维护的投入</li>
 <li>不失灵活，可以通过 <code>export_test.go</code> 这个 <code>后门</code> 来导出我们需要的内部符号</li>
 </ul>
-<h2 id="有层次地组织测试代码"><a href="#有层次地组织测试代码" class="headerlink" title="有层次地组织测试代码"></a>有层次地组织测试代码</h2><p>接下来将聚焦如何组织测试包内的测试代码。</p>
-<h3 id="经典模式–平铺"><a href="#经典模式–平铺" class="headerlink" title="经典模式–平铺"></a>经典模式–平铺</h3><p><code>go test</code> 命令会执行 <code>_test.go</code> 中符合 TextXxx 命名规则的函数进而实现测试代码的执行。go test 并没有对测试代码的组织提出任何约束条件。于是最简单直接的组织测试代码的方式就是平铺。此时测试函数各自独立，测试函数之间没有层级关系，所有测试平铺在顶层。测试函数名称既用来区分测试，又用来关联测试。在 <code>go test</code> 命令中，我们还可以给 <code>-run</code> 选项提供正则表达式来匹配并选择执行哪些测试函数。</p>
+<h2 id="有层次地组织测试代码"><a class="markdownIt-Anchor" href="#有层次地组织测试代码"></a> 有层次地组织测试代码</h2>
+<p>接下来将聚焦如何组织测试包内的测试代码。</p>
+<h3 id="经典模式平铺"><a class="markdownIt-Anchor" href="#经典模式平铺"></a> 经典模式–平铺</h3>
+<p><code>go test</code> 命令会执行 <code>_test.go</code> 中符合 TextXxx 命名规则的函数进而实现测试代码的执行。go test 并没有对测试代码的组织提出任何约束条件。于是最简单直接的组织测试代码的方式就是平铺。此时测试函数各自独立，测试函数之间没有层级关系，所有测试平铺在顶层。测试函数名称既用来区分测试，又用来关联测试。在 <code>go test</code> 命令中，我们还可以给 <code>-run</code> 选项提供正则表达式来匹配并选择执行哪些测试函数。</p>
 <p>平铺模式的优点是：</p>
 <ul>
 <li>简单：没有额外的抽象，上手容易</li>
 <li>独立：每个测试函数都是独立的，互不关联，避免相互干扰</li>
 </ul>
-<h3 id="xUnit-家族模式"><a href="#xUnit-家族模式" class="headerlink" title="xUnit 家族模式"></a>xUnit 家族模式</h3><p>xUnix（例如 JUnit、PyUnit）家族单元测试框架对测试代码组织形式主要有：测试套件（Test Suit）和测试用例（Test Case）两个层级。一个测试工程（Test Project）通常包含多个测试套件，而一个测试套件中又包含多个测试用例。</p>
+<h3 id="xunit-家族模式"><a class="markdownIt-Anchor" href="#xunit-家族模式"></a> xUnit 家族模式</h3>
+<p>xUnix（例如 JUnit、PyUnit）家族单元测试框架对测试代码组织形式主要有：测试套件（Test Suit）和测试用例（Test Case）两个层级。一个测试工程（Test Project）通常包含多个测试套件，而一个测试套件中又包含多个测试用例。</p>
 <p>Go1.7 引入了对 subtest 的支持，让我们在 Go 中也可以使用上面的方式组织 Go 测试代码。此时：</p>
 <ul>
 <li>形如 <code>TestXxx</code> 的测试函数对应着测试套件，一般对应被测包的一个导出函数或方法的所有测试都放入一个测试套件中</li>
 <li>形如 <code>testXxx</code> 的测试函数则对应测试用例，并作为测试套件所对应的测试函数内部的子测试（subtest）</li>
 </ul>
-<h3 id="测试固件"><a href="#测试固件" class="headerlink" title="测试固件"></a>测试固件</h3><p>测试固件（test fixture）是指一个人造的、确定性的环境，一个测试用例或者一个测试套件下的一组测试用例在这个环境中进行测试，其测试结果是可重复的（多次测试运行的结果是相同的）。我们一般使用 setUp 和 tearDown来代表测试固件的创建与拆除。</p>
+<h3 id="测试固件"><a class="markdownIt-Anchor" href="#测试固件"></a> 测试固件</h3>
+<p>测试固件（test fixture）是指一个人造的、确定性的环境，一个测试用例或者一个测试套件下的一组测试用例在这个环境中进行测试，其测试结果是可重复的（多次测试运行的结果是相同的）。我们一般使用 setUp 和 tearDown来代表测试固件的创建与拆除。</p>
 <p>在平铺模式下，由于每个测试函数都是相互独立的，运行每个 <code>TestXXxx</code> 测试函数时，如果有对测试固件的需求，我们都需要为每个 TestXxx 测试函数单独创建和销毁测试固件。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> demo_test</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">setUp</span><span class="params">(testName <span class="type">string</span>)</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;\tsetUp fixture for %s\n&quot;</span>, testName)</span><br><span class="line">        <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                fmt.Printf(<span class="string">&quot;\ttearDown fixture for %s\n&quot;</span>, testName)</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestFunc1</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">        <span class="keyword">defer</span> setUp(t.Name())()</span><br><span class="line">        fmt.Printf(<span class="string">&quot;\tExcute test: %s\n&quot;</span>, t.Name())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>在 setUp 中返回匿名函数来实现 tearDown 的好处是，可以在 setUp 中利用闭包特性在两个函数间共享一些变量，避免了包级别变量的使用。</p>
 <p>Go 1.14 版本中 testing 包增加了 <code>testing.Cleanup</code> 方法，为测试固件的销毁提供了包级原生的支持：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">setUp</span><span class="params">()</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestFunc1</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">    t.Cleanup(setUp())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>上述方式也适用于测试套件，我们可以尝试采用测试套件来减少测试固件的重复创建：将对测试固件需求相同的一组测试用例放在一个测试套件中，这样就可以针对测试套件来创建和销毁测试固件了。</p>
 <p>有时候我们需要将所有测试函数放入一个更大范围的测试固件环境中执行，这就是包级别测试固件。在 Go1.4 版本以前，仅能够在 init 函数中创建测试固件，而无法销毁包级别测试固件。Go1.4 版本引入了 TestMain 方法，使得包级别测试固件的创建和销毁成为可能：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// chapter8/sources/classic_package_level_testfixture_test.go</span></span><br><span class="line"><span class="keyword">package</span> demo_test</span><br><span class="line"></span><br><span class="line">......</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">pkgSetUp</span><span class="params">(pkgName <span class="type">string</span>)</span></span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">    fmt.Printf(<span class="string">&quot;package SetUp fixture for %s\n&quot;</span>, pkgName)</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Printf(<span class="string">&quot;package TearDown fixture for %s\n&quot;</span>, pkgName)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestMain</span><span class="params">(m *testing.M)</span></span> &#123;</span><br><span class="line">    <span class="keyword">defer</span> pkgSetUp(<span class="string">&quot;package demo_test&quot;</span>)()</span><br><span class="line">    m.Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <ul>
 <li>在所有测试函数运行之前，包级别测试固件被创建</li>
 <li>在所有测试函数运行完成后，包级别测试固件被销毁</li>
 </ul>
 <p>在这样的测试代码组织方式下，我们仍然可以单独为每个测试套件、测试用来创建和销毁测试固件，从而形成一种多层次的、更灵活的测试固件设置体系。</p>
-<h2 id="优先编写表驱动的测试"><a href="#优先编写表驱动的测试" class="headerlink" title="优先编写表驱动的测试"></a>优先编写表驱动的测试</h2><p>接下来将聚焦于测试函数的内部代码该如何编写。</p>
-<h3 id="Go-测试代码的一般逻辑"><a href="#Go-测试代码的一般逻辑" class="headerlink" title="Go 测试代码的一般逻辑"></a>Go 测试代码的一般逻辑</h3><p>Go 的测试函数就是一个普通的 Go 函数，Go 仅对测试函数的函数名和函数原型有特定要求，对在测试函数 TestXxx 或其子测试函数（subtest）中如何编写测试逻辑并没有显式的约束。对测试失败与否的判断在于测试代码逻辑是否进入了包含 Error&#x2F;Errorf、Fatal&#x2F;Fatalf 等方法调用的代码分支。一旦进入这些分支，即代表测试失败：</p>
+<h2 id="优先编写表驱动的测试"><a class="markdownIt-Anchor" href="#优先编写表驱动的测试"></a> 优先编写表驱动的测试</h2>
+<p>接下来将聚焦于测试函数的内部代码该如何编写。</p>
+<h3 id="go-测试代码的一般逻辑"><a class="markdownIt-Anchor" href="#go-测试代码的一般逻辑"></a> Go 测试代码的一般逻辑</h3>
+<p>Go 的测试函数就是一个普通的 Go 函数，Go 仅对测试函数的函数名和函数原型有特定要求，对在测试函数 TestXxx 或其子测试函数（subtest）中如何编写测试逻辑并没有显式的约束。对测试失败与否的判断在于测试代码逻辑是否进入了包含 Error/Errorf、Fatal/Fatalf 等方法调用的代码分支。一旦进入这些分支，即代表测试失败：</p>
 <ul>
-<li>Error&#x2F;Errorf 并不会立刻终止当前 goroutine 的执行，还会继续执行 goroutine 后续的测试</li>
-<li>Fatal&#x2F;Fatalf 会立刻终止当前 goroutine 的测试执行</li>
+<li>Error/Errorf 并不会立刻终止当前 goroutine 的执行，还会继续执行 goroutine 后续的测试</li>
+<li>Fatal/Fatalf 会立刻终止当前 goroutine 的测试执行</li>
 </ul>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> compare_test</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;strings&quot;</span></span><br><span class="line"><span class="keyword">import</span> <span class="string">&quot;testing&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestCompare</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">        a, b := <span class="string">&quot;a&quot;</span>, <span class="string">&quot;a&quot;</span></span><br><span class="line"></span><br><span class="line">        cmp := strings.Compare(a, b)</span><br><span class="line">        <span class="keyword">if</span> cmp != <span class="number">0</span> &#123;</span><br><span class="line">                t.Errorf(<span class="string">&quot;want %v, but Compare(%q, %q)= %v&quot;</span>, <span class="number">0</span>, a, b, cmp)</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        b = <span class="string">&quot;b&quot;</span></span><br><span class="line">        cmp = strings.Compare(a, b)</span><br><span class="line">        <span class="keyword">if</span> cmp == <span class="number">0</span> &#123;</span><br><span class="line">                t.Fatalf(<span class="string">&quot;not want %v, but Compare(%q, %q)= %v&quot;</span>, <span class="number">0</span>, a, b, cmp)</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<p>所以 Go 测试代码的一般逻辑是：针对给定的输入数据，比较被测试函数&#x2F;方法返回的实际结果值与预期值，如果有差异，则通过 testing 包提供的相关函数输出差异信息。</p>
-<h3 id="表驱动测试逻辑"><a href="#表驱动测试逻辑" class="headerlink" title="表驱动测试逻辑"></a>表驱动测试逻辑</h3><p>如下展示了一种测试代码设计：</p>
+<p>所以 Go 测试代码的一般逻辑是：针对给定的输入数据，比较被测试函数/方法返回的实际结果值与预期值，如果有差异，则通过 testing 包提供的相关函数输出差异信息。</p>
+<h3 id="表驱动测试逻辑"><a class="markdownIt-Anchor" href="#表驱动测试逻辑"></a> 表驱动测试逻辑</h3>
+<p>如下展示了一种测试代码设计：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> <span class="string">&quot;testing&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestCompare</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">        compareTests := []<span class="keyword">struct</span> &#123;</span><br><span class="line">                a, b <span class="type">string</span></span><br><span class="line">                i    <span class="type">int</span></span><br><span class="line">        &#125;&#123;</span><br><span class="line">                &#123;<span class="string">&quot;&quot;</span>, <span class="string">&quot;&quot;</span>, <span class="number">0</span>&#125;,</span><br><span class="line">                &#123;<span class="string">&quot;a&quot;</span>, <span class="string">&quot;&quot;</span>, <span class="number">1</span>&#125;,</span><br><span class="line">                &#123;<span class="string">&quot;&quot;</span>, <span class="string">&quot;a&quot;</span>, <span class="number">-1</span>&#125;,</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> _, tt := <span class="keyword">range</span> compareTests &#123;</span><br><span class="line">                cmp := strings.Compare(tt.a, tt.b)</span><br><span class="line">                <span class="keyword">if</span> cmp != tt.i &#123;</span><br><span class="line">                        t.Errorf(<span class="string">&quot;want %v, but Compare(%q, %q) = %v&quot;</span>, tt.i, tt.a, tt.b, cmp)</span><br><span class="line">                &#125;</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>这个自定义结构体类型的切片就是一个表（自定义结构体类型的字段就是列），而基于这个数据表的测试设计和实现则被称为 <code>表驱动的测试</code>。</p>
-<h3 id="表驱动测试的优点"><a href="#表驱动测试的优点" class="headerlink" title="表驱动测试的优点"></a>表驱动测试的优点</h3><p>虽然表驱动测试是 Go 测试代码的一个惯用法，但表驱动测试本身是与编程语言无关的，它具有如下优点：</p>
+<h3 id="表驱动测试的优点"><a class="markdownIt-Anchor" href="#表驱动测试的优点"></a> 表驱动测试的优点</h3>
+<p>虽然表驱动测试是 Go 测试代码的一个惯用法，但表驱动测试本身是与编程语言无关的，它具有如下优点：</p>
 <ul>
 <li>简单紧凑</li>
 <li>数据即测试：表驱动测试的实质是数据驱动的测试，扩展输入数据集即扩展测试</li>
 <li>结合子测试后，可单独运行某个数据项的测试（结合 <code>go test -run</code> 选项）</li>
 </ul>
-<h3 id="表驱动测试实践中的注意事项"><a href="#表驱动测试实践中的注意事项" class="headerlink" title="表驱动测试实践中的注意事项"></a>表驱动测试实践中的注意事项</h3><p>表除了可以是通过自定义结构体的切片来实现，也可以使用基于自定义结构体的其他集合类型（如 map）等来实现。但是使用 map 作为数据表时要注意，表内数据项的测试先后顺序是不确定的（这是由 map 类型自身性质决定的）。</p>
+<h3 id="表驱动测试实践中的注意事项"><a class="markdownIt-Anchor" href="#表驱动测试实践中的注意事项"></a> 表驱动测试实践中的注意事项</h3>
+<p>表除了可以是通过自定义结构体的切片来实现，也可以使用基于自定义结构体的其他集合类型（如 map）等来实现。但是使用 map 作为数据表时要注意，表内数据项的测试先后顺序是不确定的（这是由 map 类型自身性质决定的）。</p>
 <p>另外，为了在表测试驱动的测试中快速从输出的结果中定位导致测试失败的表项，我们需要在测试失败的输出结果中输出数据表项的唯一标识，例如输出数据表项在数据表中的偏移量来定位，或者通过名字来区分不同的数据项。</p>
 <p>另外，由于表驱动测试共享相同的判断逻辑，所以我们需要选择使用 Errorf 或者 Fatalf。一般来说：</p>
 <ul>
 <li>如果一个数据项导致的测试失败不会对后续数据项的测试结果造成影响，那么推荐 Errorf</li>
 <li>否则如果数据项导致的测试失败会直接影响到后续数据项的测试结果，那么可以使用 Fatalf 让测试尽快结束</li>
 </ul>
-<h2 id="使用-testdata-管理测试依赖的外部数据文件"><a href="#使用-testdata-管理测试依赖的外部数据文件" class="headerlink" title="使用 testdata 管理测试依赖的外部数据文件"></a>使用 testdata 管理测试依赖的外部数据文件</h2><p>测试固件是 Go 测试执行所需要的上下文环境，其中测试依赖的外部数据文件就是一种常见的测试固件（可以理解为静态测试固件，因为无需在测试代码中为其单独编写固件的创建和清理辅助函数）。接下来介绍 Go 管理测试依赖的外部数据文件所采用的一些惯例和最佳实践。</p>
-<h3 id="testdata-目录"><a href="#testdata-目录" class="headerlink" title="testdata 目录"></a>testdata 目录</h3><p>Go 语言规定：Go 工具链将忽略名为 testdata 的目录，这样开发者在编写测试时，就可以在名为 testdata 的目录下存放和管理测试代码依赖的数据文件。而 <code>go test</code> 命令在执行时会将被测试程序包源码所在目录设置为其工作目录，因此可以通过如下方式定位充当测试固件的数据文件：</p>
+<h2 id="使用-testdata-管理测试依赖的外部数据文件"><a class="markdownIt-Anchor" href="#使用-testdata-管理测试依赖的外部数据文件"></a> 使用 testdata 管理测试依赖的外部数据文件</h2>
+<p>测试固件是 Go 测试执行所需要的上下文环境，其中测试依赖的外部数据文件就是一种常见的测试固件（可以理解为静态测试固件，因为无需在测试代码中为其单独编写固件的创建和清理辅助函数）。接下来介绍 Go 管理测试依赖的外部数据文件所采用的一些惯例和最佳实践。</p>
+<h3 id="testdata-目录"><a class="markdownIt-Anchor" href="#testdata-目录"></a> testdata 目录</h3>
+<p>Go 语言规定：Go 工具链将忽略名为 testdata 的目录，这样开发者在编写测试时，就可以在名为 testdata 的目录下存放和管理测试代码依赖的数据文件。而 <code>go test</code> 命令在执行时会将被测试程序包源码所在目录设置为其工作目录，因此可以通过如下方式定位充当测试固件的数据文件：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">f, err := os.Open(<span class="string">&quot;testdata/data-001.txt&quot;</span>)</span><br></pre></td></tr></table></figure>
-
 <p>除此之外，还经常将预期结果数据保存在文件中并放置在 testdata 下，然后再测试代码中将被测对象输出的数据与这些预置在文件中的数据进行比较。</p>
-<h3 id="golden-文件惯用法"><a href="#golden-文件惯用法" class="headerlink" title="golden 文件惯用法"></a>golden 文件惯用法</h3><p>Go 标准库为我们提供了一种 golden 文件惯用法：将预期数据采集到文件的过程与测试代码融合在一起。例如在测试用例中通过一个 flag 来控制是否需要更新 golden 文件：</p>
+<h3 id="golden-文件惯用法"><a class="markdownIt-Anchor" href="#golden-文件惯用法"></a> golden 文件惯用法</h3>
+<p>Go 标准库为我们提供了一种 golden 文件惯用法：将预期数据采集到文件的过程与测试代码融合在一起。例如在测试用例中通过一个 flag 来控制是否需要更新 golden 文件：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> update = flag.Bool(<span class="string">&quot;update&quot;</span>, <span class="literal">false</span>, <span class="string">&quot;update .golden file&quot;</span>)</span><br><span class="line"></span><br><span class="line">golden := filepath.Join(<span class="string">&quot;testdata&quot;</span>, <span class="string">&quot;t.golden&quot;</span>)</span><br><span class="line"><span class="keyword">if</span> *update &#123;</span><br><span class="line">        ioutil.WriteFile(golden, got, <span class="number">0644</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h2 id="正确运用-fake、stub-和-mock-等辅助单元测试"><a href="#正确运用-fake、stub-和-mock-等辅助单元测试" class="headerlink" title="正确运用 fake、stub 和 mock 等辅助单元测试"></a>正确运用 fake、stub 和 mock 等辅助单元测试</h2><p>测试代码除了可能依赖外部数据文件，还可能会依赖外部业务组件或服务。一般来说，为被测试对象建立真实依赖的外部组件或者服务是不明智的，因为这种测试运行失败的概率要远大于其运行成功的概率，失去了其存在的意义。</p>
+<h2 id="正确运用-fake-stub-和-mock-等辅助单元测试"><a class="markdownIt-Anchor" href="#正确运用-fake-stub-和-mock-等辅助单元测试"></a> 正确运用 fake、stub 和 mock 等辅助单元测试</h2>
+<p>测试代码除了可能依赖外部数据文件，还可能会依赖外部业务组件或服务。一般来说，为被测试对象建立真实依赖的外部组件或者服务是不明智的，因为这种测试运行失败的概率要远大于其运行成功的概率，失去了其存在的意义。</p>
 <p>为了让这类被测试代码运行下去，需要为这些被测试代码提供其依赖的外部组件或者服务的替身。替身不必与真实组件或服务完全相同，只需要提供与真实组件或服务相同的接口，只要被测试代码认为它是真实的即可。</p>
-<h3 id="fake：真实组件或服务的简化实现版替身"><a href="#fake：真实组件或服务的简化实现版替身" class="headerlink" title="fake：真实组件或服务的简化实现版替身"></a>fake：真实组件或服务的简化实现版替身</h3><p>fake 测试是指采用真实组件或服务的简化版实现作为替身，以满足被测代码的外部依赖需求。</p>
-<p>使用 fake 替身进行测试的最常见理由是在测试环境无法构造被测代码所依赖的外部组件或服务，或者这些组件&#x2F;服务有副作用。但是 fake 的实现通常有一个缺点：并不具备在测试前对返回结果进行预设置的能力（或者说预设置能力仅限于设置单一的返回值，即无论调用多少次，传入什么参数，返回值都是一个）。</p>
-<h3 id="stub：对返回结果有一定预设控制能力的替身"><a href="#stub：对返回结果有一定预设控制能力的替身" class="headerlink" title="stub：对返回结果有一定预设控制能力的替身"></a>stub：对返回结果有一定预设控制能力的替身</h3><p>stub 也是一种替身概念，和 fake 替身相比，stub 替身增强了对替身返回结果的间接控制能力，这种控制可以通过测试前对调用结果预设置来实现。不过，stub 替身通常仅针对计划之内的结果进行设置，对计划之外的请求也无能为力。例如 Go 标准库的 httptest 包就可以提供用于测试的 Web 服务。</p>
+<h3 id="fake真实组件或服务的简化实现版替身"><a class="markdownIt-Anchor" href="#fake真实组件或服务的简化实现版替身"></a> fake：真实组件或服务的简化实现版替身</h3>
+<p>fake 测试是指采用真实组件或服务的简化版实现作为替身，以满足被测代码的外部依赖需求。</p>
+<p>使用 fake 替身进行测试的最常见理由是在测试环境无法构造被测代码所依赖的外部组件或服务，或者这些组件/服务有副作用。但是 fake 的实现通常有一个缺点：并不具备在测试前对返回结果进行预设置的能力（或者说预设置能力仅限于设置单一的返回值，即无论调用多少次，传入什么参数，返回值都是一个）。</p>
+<h3 id="stub对返回结果有一定预设控制能力的替身"><a class="markdownIt-Anchor" href="#stub对返回结果有一定预设控制能力的替身"></a> stub：对返回结果有一定预设控制能力的替身</h3>
+<p>stub 也是一种替身概念，和 fake 替身相比，stub 替身增强了对替身返回结果的间接控制能力，这种控制可以通过测试前对调用结果预设置来实现。不过，stub 替身通常仅针对计划之内的结果进行设置，对计划之外的请求也无能为力。例如 Go 标准库的 httptest 包就可以提供用于测试的 Web 服务。</p>
 <p>Github 上有一个名为 gostub 的第三方包，可以简化 stub 替身的管理和编写。如下是一个例子：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TestComposeAndSendWithSign</span><span class="params">(t *testing.T)</span></span> &#123;</span><br><span class="line">    sender := <span class="string">&quot;test@example.com&quot;</span></span><br><span class="line">    timestamp := <span class="string">&quot;Mon, 04 May 2020 11:46:12 CST&quot;</span></span><br><span class="line"></span><br><span class="line">    stubs := gostub.Stub(&amp;getSign, <span class="function"><span class="keyword">func</span><span class="params">(sender <span class="type">string</span>)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">        selfSignTxt := senderSigns[sender]</span><br><span class="line">        <span class="keyword">return</span> selfSignTxt + <span class="string">&quot;\n&quot;</span> + timestamp</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">defer</span> stubs.Reset()</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
-<h3 id="mock：专用于行为观察和验证的替身"><a href="#mock：专用于行为观察和验证的替身" class="headerlink" title="mock：专用于行为观察和验证的替身"></a>mock：专用于行为观察和验证的替身</h3><p>和 fake、stub 替身相比，mock 替身更外强大：它除了能提供测试前的预设置返回结果和能力之外，还可以对 mock 替身对象在测试过程中的行为进行观察和验证。但是 mock 也存在应用局限：</p>
+<h3 id="mock专用于行为观察和验证的替身"><a class="markdownIt-Anchor" href="#mock专用于行为观察和验证的替身"></a> mock：专用于行为观察和验证的替身</h3>
+<p>和 fake、stub 替身相比，mock 替身更外强大：它除了能提供测试前的预设置返回结果和能力之外，还可以对 mock 替身对象在测试过程中的行为进行观察和验证。但是 mock 也存在应用局限：</p>
 <ul>
 <li>mock 应用范围更窄，只能用于实现某个接口的实现类型的替身</li>
 <li>一般需要通过第三方框架实现 mock 替身，Go 官方维护了一个 mock 框架：gomck，它通过代码生成的方式实现某接口的替身类型</li>
 </ul>
 <p>通过如下方式安装 gomock 框架，这个框架分成两部分：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> get github.com/golang/mock/mockgen</span><br></pre></td></tr></table></figure>
-
 <ul>
-<li>一部分用于生成 mock 替身的 mockgen 二进制程序。该程序会安装到 $GOPATH&#x2F;bin 目录下（需要确保该目录已经配置在 PATH 环境变量中）</li>
+<li>一部分用于生成 mock 替身的 mockgen 二进制程序。该程序会安装到 $GOPATH/bin 目录下（需要确保该目录已经配置在 PATH 环境变量中）</li>
 <li>生成代码所要使用的 gomock 包</li>
 </ul>
 <p>如下是一段 mock 核心示例代码：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">mockMailer.EXPECT().SendMail(<span class="string">&quot;hello, mock test&quot;</span>, sender,</span><br><span class="line">    <span class="string">&quot;dest1@example.com&quot;</span>,</span><br><span class="line">    <span class="string">&quot;the test body\n&quot;</span>+senderSigns[sender]+<span class="string">&quot;\n&quot;</span>+timestamp).Return(<span class="literal">nil</span>).Times(<span class="number">1</span>)</span><br></pre></td></tr></table></figure>
-
 <p>mock 可以在测试之前对预期返回结果进行设置，对替身在测试过程中的行为进行验证。例如 <code>Times(1)</code>  意味着以该参数列表调用的 SendMail 在测试过程中仅被调用一次。</p>
 <p>gomock 是一个通用的 mock 框架，社区还有一些专用的 mock 框架可用于快速创建 mock 替身。</p>
-<h2 id="使用模糊测试让潜在-bug-无处遁形"><a href="#使用模糊测试让潜在-bug-无处遁形" class="headerlink" title="使用模糊测试让潜在 bug 无处遁形"></a>使用模糊测试让潜在 bug 无处遁形</h2><p>模糊测试（fuzz testing）是指半自动或自动地为程序提供非法的、非预期的、随机的数据，并监控程序在这些输入数据下是否会出现崩溃、断言失败、内存泄漏、安全漏洞等情况。模糊测试最适合那些处理复杂输入数据的程序，例如文件格式解析、网络协议解析等。</p>
+<h2 id="使用模糊测试让潜在-bug-无处遁形"><a class="markdownIt-Anchor" href="#使用模糊测试让潜在-bug-无处遁形"></a> 使用模糊测试让潜在 bug 无处遁形</h2>
+<p>模糊测试（fuzz testing）是指半自动或自动地为程序提供非法的、非预期的、随机的数据，并监控程序在这些输入数据下是否会出现崩溃、断言失败、内存泄漏、安全漏洞等情况。模糊测试最适合那些处理复杂输入数据的程序，例如文件格式解析、网络协议解析等。</p>
 <p>传统软件测试一般会针对被测目标的特性进行人工测试设计。在设计一些异常测试用例的时候，测试用例质量好坏往往取决于测试设计人员对被测系统的理解程度及其个人能力。而且当系统涉及的自身服务组件、中间件、第三方系统多且复杂，这些系统中的潜在 bug 或者组合后形成的 bug 是无法预知的。而将随机测试、边界测试、试探性攻击等测试技术集于一身的模糊测试对于上述传统测试技术存在的问题是一个很好的补充和解决方案。</p>
 <p>go-fuzz 工具可以让 gopher 在 Go 语言中为被测代码建立模糊测试的条件。</p>
-<h3 id="go-fuzz-的初步工作原理"><a href="#go-fuzz-的初步工作原理" class="headerlink" title="go-fuzz 的初步工作原理"></a>go-fuzz 的初步工作原理</h3><p>go-fuzz 是基于老牌模糊测试项目 afl-fuzz 的逻辑设计和实现的。go-fuzz 是将输入用例中的数据传给如下 Fuzz 函数，这样就无需反复重启程序：</p>
+<h3 id="go-fuzz-的初步工作原理"><a class="markdownIt-Anchor" href="#go-fuzz-的初步工作原理"></a> go-fuzz 的初步工作原理</h3>
+<p>go-fuzz 是基于老牌模糊测试项目 afl-fuzz 的逻辑设计和实现的。go-fuzz 是将输入用例中的数据传给如下 Fuzz 函数，这样就无需反复重启程序：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Fuzz</span><span class="params">(data []<span class="type">byte</span>)</span></span> <span class="type">int</span></span><br></pre></td></tr></table></figure>
-
 <p>go-fuzz 的工作流程如下：</p>
 <ul>
 <li>生成随机数据</li>
@@ -356,13 +361,12 @@
 <li>突变（mutation）：对语料库的字节进行小修改</li>
 <li>改写（versify）：一种高级方法，可以学习文本结构，对输入进行简单分析，然后针对不同部分运用突变策略</li>
 </ul>
-<h3 id="go-fuzz-使用方法"><a href="#go-fuzz-使用方法" class="headerlink" title="go-fuzz 使用方法"></a>go-fuzz 使用方法</h3><p>通过如下方法安装 go-fuzz 的两个重要工具：go-fuzz 和 go-fuzz-build</p>
+<h3 id="go-fuzz-使用方法"><a class="markdownIt-Anchor" href="#go-fuzz-使用方法"></a> go-fuzz 使用方法</h3>
+<p>通过如下方法安装 go-fuzz 的两个重要工具：go-fuzz 和 go-fuzz-build</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ go install github.com/dvyukov/go-fuzz/go-fuzz@latest</span><br><span class="line">$ go install github.com/dvyukov/go-fuzz/go-fuzz-build@latest</span><br></pre></td></tr></table></figure>
-
-<p>这两个工具会被安装到 $GOROOT&#x2F;bin 或者 $GOPATH&#x2F;bin 目录下，因此需要确保系统的 PATH 环境变量中包含这两个路径。</p>
+<p>这两个工具会被安装到 $GOROOT/bin 或者 $GOPATH/bin 目录下，因此需要确保系统的 PATH 环境变量中包含这两个路径。</p>
 <p>假设待测试的 Go 包名为 foo，为了通过 go-fuzz 来为包 foo 建立模糊测试，一般会在 foo 下创建 fuzz.go 源文件，其内容模版如下：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// +build gofuzz</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">package</span> foo</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Fuzz</span><span class="params">(data []<span class="type">byte</span>)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">    <span class="comment">// Your code here.</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p><code>go-fuzz-build</code> 在构建用于 <code>go-fuzz</code> 命令输入的二进制文件时，会搜索带有 <code>+build gofuzz</code> 指示符的 Go 源文件以及其中的 Fuzz 函数。有时候待测试包的包内功能很多，一个 Fuzz 函数不够用，我们可以在 fuzztest 下建立多个目录来应对，每个目录各自为一个 go-fuzz 单元。</p>
 <p>每个 go-fuzz 测试单元有一套 <code>固定</code> 的目录组合，其中：</p>
 <ul>
@@ -378,7 +382,6 @@
 </ul>
 <p>一旦生成了 foo-fuzz.zip，就可以通过 go-fuzz 命令来运行模糊测试了。</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ <span class="built_in">cd</span> fuzz1</span><br><span class="line">$ go-fuzz -bin=./foo-fuzz.zip -workdir=./</span><br></pre></td></tr></table></figure>
-
 <p>如果 corpus 目录下没有初始预料数据，那么 go-fuzz 也会自行生成相关数据传递给 Fuzz 函数。并且采用遗传算法，不断基于 corpus 中的语料生成新的输入语料。</p>
 <p>go-fuzz 还会在指定的 workdir 中创建另外两个目录：</p>
 <ul>
@@ -387,23 +390,22 @@
 </ul>
 <p>如下是 go-fuzz 的一个完整示例：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// parse_complex.go</span></span><br><span class="line"><span class="keyword">package</span> parser</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ParseComplex</span><span class="params">(data []<span class="type">byte</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(data) == <span class="number">5</span> &#123;</span><br><span class="line">                <span class="keyword">if</span> data[<span class="number">0</span>] == <span class="string">&#x27;F&#x27;</span> &amp;&amp; data[<span class="number">1</span>] == <span class="string">&#x27;U&#x27;</span> &amp;&amp;</span><br><span class="line">                        data[<span class="number">2</span>] == <span class="string">&#x27;Z&#x27;</span> &amp;&amp; data[<span class="number">3</span>] == <span class="string">&#x27;Z&#x27;</span> &amp;&amp;</span><br><span class="line">                        data[<span class="number">4</span>] == <span class="string">&#x27;I&#x27;</span> &amp;&amp; data[<span class="number">5</span>] == <span class="string">&#x27;T&#x27;</span> &#123;</span><br><span class="line">                        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">                &#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// fuzz.go</span></span><br><span class="line"><span class="comment">//go:build gofuzz</span></span><br><span class="line"><span class="comment">// +build gofuzz</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">package</span> parser</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Fuzz</span><span class="params">(data []<span class="type">byte</span>)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">        ParseComplex(data)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go-fuzz-build .</span></span><br><span class="line"><span class="comment"># go-fuzz -bin=./parser-fuzz.zip -workdir=./</span></span><br></pre></td></tr></table></figure>
-
-<h3 id="让模糊测试成为一等公民"><a href="#让模糊测试成为一等公民" class="headerlink" title="让模糊测试成为一等公民"></a>让模糊测试成为一等公民</h3><p>Go 尚未将模糊测试当成一等公民对待，即还没有在 Go 工具链中原生支持模糊测试。模糊测试在 Go 中的应用还仅限于使用第三方的 go-fuzz 或者 google 开源的 gofuzz。</p>
+<h3 id="让模糊测试成为一等公民"><a class="markdownIt-Anchor" href="#让模糊测试成为一等公民"></a> 让模糊测试成为一等公民</h3>
+<p>Go 尚未将模糊测试当成一等公民对待，即还没有在 Go 工具链中原生支持模糊测试。模糊测试在 Go 中的应用还仅限于使用第三方的 go-fuzz 或者 google 开源的 gofuzz。</p>
 <p>目前模糊测试代码无法像普通单元测试代码那样直接编写在 <code>*_test.go</code> 文件中，这也说明模糊测试并不是真正的 <code>一等公民</code>，但这始终是模糊测试在 Go 语言中的努力方向。</p>
-<h2 id="为被测对象建立性能基准"><a href="#为被测对象建立性能基准" class="headerlink" title="为被测对象建立性能基准"></a>为被测对象建立性能基准</h2><p>通过为被测对象建立性能基准，可以让我们判断是否需要对代码进行优化，同时根据这些性能基准数据判断出对代码所做的任何更改是否对代码性能有所影响。</p>
-<h3 id="性能基准测试在-Go-语言中是一等公民"><a href="#性能基准测试在-Go-语言中是一等公民" class="headerlink" title="性能基准测试在 Go 语言中是一等公民"></a>性能基准测试在 Go 语言中是一等公民</h3><p>性能基准测试在 Go 语言中和普通的单元测试一样是被原生支持的，因此得到的是 <code>一等公民</code> 待遇。可以在 *_test.go 中创建被测对象的性能基准测试，每个以 Benchmark 前缀开头的函数都会被当做一个独立的性能基准测试。</p>
+<h2 id="为被测对象建立性能基准"><a class="markdownIt-Anchor" href="#为被测对象建立性能基准"></a> 为被测对象建立性能基准</h2>
+<p>通过为被测对象建立性能基准，可以让我们判断是否需要对代码进行优化，同时根据这些性能基准数据判断出对代码所做的任何更改是否对代码性能有所影响。</p>
+<h3 id="性能基准测试在-go-语言中是一等公民"><a class="markdownIt-Anchor" href="#性能基准测试在-go-语言中是一等公民"></a> 性能基准测试在 Go 语言中是一等公民</h3>
+<p>性能基准测试在 Go 语言中和普通的单元测试一样是被原生支持的，因此得到的是 <code>一等公民</code> 待遇。可以在 *_test.go 中创建被测对象的性能基准测试，每个以 Benchmark 前缀开头的函数都会被当做一个独立的性能基准测试。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BenchmarkJoinString</span><span class="params">(b *testing.B)</span></span> &#123;</span><br><span class="line">        <span class="keyword">for</span> n := <span class="number">0</span>; n &lt; b.N; n++ &#123;</span><br><span class="line">                joinString(sl)</span><br><span class="line">        &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>可以通过 <code>go test -bench</code> 命令来运行性能基准测试。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># <span class="keyword">go</span> test -bench . string_join_test.<span class="keyword">go</span></span><br><span class="line">goos: linux</span><br><span class="line">goarch: amd64</span><br><span class="line">cpu: Intel(R) Xeon(R) Platinum <span class="number">8269</span>CY CPU @ <span class="number">2.50</span>GHz</span><br><span class="line">BenchmarkJoinString<span class="number">-4</span>           <span class="number">12769330</span>                <span class="number">96.92</span> ns/op</span><br><span class="line">PASS</span><br><span class="line">ok      command-line-arguments  <span class="number">1.337</span>s</span><br></pre></td></tr></table></figure>
-
 <p>上述输出中的 <code>96.92 ns/op</code> 表示这个基准测试中 for 循环的每次循环平均执行时间为 49.1ns（op 代表每次循环操作）。</p>
 <p>性能基准测试还可以通过传入 <code>-benchmem</code> 命令行参数输出内存分配信息（与基准测试代码中显式调用 <code>b.ReportAllocs</code> 的效果是等价的）​。</p>
-<h3 id="顺序执行和并行执行的性能基准测试"><a href="#顺序执行和并行执行的性能基准测试" class="headerlink" title="顺序执行和并行执行的性能基准测试"></a>顺序执行和并行执行的性能基准测试</h3><p>根据是否并行执行，Go 的性能基准测试可以分为两类：</p>
+<h3 id="顺序执行和并行执行的性能基准测试"><a class="markdownIt-Anchor" href="#顺序执行和并行执行的性能基准测试"></a> 顺序执行和并行执行的性能基准测试</h3>
+<p>根据是否并行执行，Go 的性能基准测试可以分为两类：</p>
 <ul>
 <li>顺序执行的性能基准测试</li>
 <li>并行执行的性能基准测试</li>
@@ -411,17 +413,20 @@
 <p>上面示例的 <code>BenchmarkJoinString</code> 函数就是一个顺序执行的性能基准测试示例。默认情况下，每个性能基准测试函数的执行时间为 1s，可以使用 <code>-benchtime</code> 命令行参数来指定基准测试的执行时间，从而增加基准测试的迭代次数（即 <code>b.N</code> 的值）。除此之外，还可以通过 <code>-count</code> 来指定每个性能基准测试函数执行的次数。</p>
 <p>并行执行的性能基准测试代码写法如下：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BenchmarkXxx</span><span class="params">(b *testing.B)</span></span> &#123;</span><br><span class="line">        b.RunParallel(<span class="function"><span class="keyword">func</span><span class="params">(pb *testing.PB)</span></span> &#123;</span><br><span class="line">                <span class="keyword">for</span> pb.Next() &#123;</span><br><span class="line">                        <span class="comment">// Your code here.</span></span><br><span class="line">                &#125;</span><br><span class="line">        &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>并行执行的基准测试主要用于为包含多 goroutine 同步设施（如互斥锁、读写锁、原子操作等）的被测代码建立性能基准。并行执行的性能基准测试会启动多个 goroutine 并行执行基准测试函数中的循环。</p>
 <p>针对并行基准测试的每一轮执行，<code>go test</code> 都会启动 <code>GOMAXPROCS</code>（可以通过 -cpu 指定）数量的 新 goroutine，这些 goroutine 共同执行 <code>b.N</code> 次循环，每个 goroutine 会尽量相对均衡地分担循环次数。</p>
-<h3 id="使用性能基准比较工具"><a href="#使用性能基准比较工具" class="headerlink" title="使用性能基准比较工具"></a>使用性能基准比较工具</h3><p>为了避免手工对比性能基准，Go 核心开发团队先后开发了两款性能基准比较工具：</p>
+<h3 id="使用性能基准比较工具"><a class="markdownIt-Anchor" href="#使用性能基准比较工具"></a> 使用性能基准比较工具</h3>
+<p>为了避免手工对比性能基准，Go 核心开发团队先后开发了两款性能基准比较工具：</p>
 <ul>
 <li>benchcmp：上手快，简单易用。它接受两次性能基准测试结果文件作为输入，并将这两个文件中相同的基准测试的输出结果进行比较。但不关心这些结果数据在统计学层面上是否有效</li>
 <li>benchstat：提高了性能基准数据比较的科学性，建议使用</li>
 </ul>
-<h3 id="排除额外干扰，让基准测试更加精确"><a href="#排除额外干扰，让基准测试更加精确" class="headerlink" title="排除额外干扰，让基准测试更加精确"></a>排除额外干扰，让基准测试更加精确</h3><p>每个基准测试都可能会运行多轮，每个 BenchmarkXxx 函数都可能被执行多次。testing.B 提供了多种灵活操控基准测试计时器的方法，通过这些方法可以排除掉额外干扰，让基准测试结果更能反映被测试代码的真实性能。</p>
-<h2 id="使用-pprof-对程序进行性能剖析"><a href="#使用-pprof-对程序进行性能剖析" class="headerlink" title="使用 pprof 对程序进行性能剖析"></a>使用 pprof 对程序进行性能剖析</h2><p>有了性能基准后，我们就可以直到代码是否遇到了性能瓶颈。对于那些确认了性能瓶颈的代码，我们需要知道瓶颈在哪里。Go 是 <code>自带电池</code>（battery included）的编程语言，Go 内置了对代码进行性能瓶颈的工具：pprof。</p>
-<h3 id="pprof-的工作原理"><a href="#pprof-的工作原理" class="headerlink" title="pprof 的工作原理"></a>pprof 的工作原理</h3><p>使用 pprof 对性能进行性能剖析的工作一般分为两个阶段：数据采集和数据剖析。</p>
+<h3 id="排除额外干扰让基准测试更加精确"><a class="markdownIt-Anchor" href="#排除额外干扰让基准测试更加精确"></a> 排除额外干扰，让基准测试更加精确</h3>
+<p>每个基准测试都可能会运行多轮，每个 BenchmarkXxx 函数都可能被执行多次。testing.B 提供了多种灵活操控基准测试计时器的方法，通过这些方法可以排除掉额外干扰，让基准测试结果更能反映被测试代码的真实性能。</p>
+<h2 id="使用-pprof-对程序进行性能剖析"><a class="markdownIt-Anchor" href="#使用-pprof-对程序进行性能剖析"></a> 使用 pprof 对程序进行性能剖析</h2>
+<p>有了性能基准后，我们就可以直到代码是否遇到了性能瓶颈。对于那些确认了性能瓶颈的代码，我们需要知道瓶颈在哪里。Go 是 <code>自带电池</code>（battery included）的编程语言，Go 内置了对代码进行性能瓶颈的工具：pprof。</p>
+<h3 id="pprof-的工作原理"><a class="markdownIt-Anchor" href="#pprof-的工作原理"></a> pprof 的工作原理</h3>
+<p>使用 pprof 对性能进行性能剖析的工作一般分为两个阶段：数据采集和数据剖析。</p>
 <p>在数据采集阶段，Go 运行时会定期对剖析阶段所需要的不同类型数据进行采样记录。当前主要支持的采样数据有如下几种：</p>
 <ul>
 <li>CPU 数据：它能帮助我们识别出代码关键路径上消耗 CPU 最多的函数。一旦启用 CPU 数据采样，Go 运行时会每隔一段短暂的时间就中断一次（由 SIGPROF 信号触发），记录下当前所有 goroutine 的函数栈信息</li>
@@ -429,46 +434,42 @@
 <li>锁竞争数据：记录当前 Go 程序中互斥锁争用导致延迟的操作</li>
 <li>阻塞时间数据：记录 goroutine 在共享资源（一般是由同步原语保护）上的阻塞时间，也包括从无缓冲 channel 上收发数据等</li>
 </ul>
-<h4 id="性能数据的采样"><a href="#性能数据的采样" class="headerlink" title="性能数据的采样"></a>性能数据的采样</h4><p>采样不是免费的，因此一次采样尽量仅采集一种类型的数据，避免相互干扰。Go 目前主要支持两种性能数据采集方式：</p>
+<h4 id="性能数据的采样"><a class="markdownIt-Anchor" href="#性能数据的采样"></a> 性能数据的采样</h4>
+<p>采样不是免费的，因此一次采样尽量仅采集一种类型的数据，避免相互干扰。Go 目前主要支持两种性能数据采集方式：</p>
 <ul>
 <li>通过性能基准测试进行数据采集：我们可以通过执行性能基准测试采集到整个测试执行过程中有关被测方法的各类性能数据。在 <code>go test</code> 命令中增加一些命令行选项即可在执行性能基准测试的同时进行性能数据的采集。之后 <code>go test</code> 命令执行后会自动编译出一个与该测试对应的可执行文件，该可执行文件可以在性能数据剖析过程中提供剖析所需要的符号信息。</li>
 </ul>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$<span class="keyword">go</span> test -bench . xxx_test.<span class="keyword">go</span> -cpuprofile=cpu.prof</span><br></pre></td></tr></table></figure>
-
 <ul>
-<li>可以通过标准库 runtime&#x2F;pprof 包提供的低级别 API 对独立程序进行性能数据采集。</li>
+<li>可以通过标准库 runtime/pprof 包提供的低级别 API 对独立程序进行性能数据采集。</li>
 </ul>
 <p>如下是一个例子：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">        <span class="string">&quot;flag&quot;</span></span><br><span class="line">        <span class="string">&quot;os&quot;</span></span><br><span class="line">        <span class="string">&quot;os/signal&quot;</span></span><br><span class="line">        <span class="string">&quot;runtime/pprof&quot;</span></span><br><span class="line">        <span class="string">&quot;sync&quot;</span></span><br><span class="line">        <span class="string">&quot;syscall&quot;</span></span><br><span class="line">        <span class="string">&quot;time&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> cpuprofile = flag.String(<span class="string">&quot;cpuprofile&quot;</span>, <span class="string">&quot;&quot;</span>, <span class="string">&quot;write cpu profile to `file`&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        flag.Parse()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> *cpuprofile != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">                f, err := os.Create(*cpuprofile)</span><br><span class="line">                <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                        <span class="keyword">return</span></span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">defer</span> f.Close()</span><br><span class="line"></span><br><span class="line">                <span class="keyword">if</span> err := pprof.StartCPUProfile(f); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                        <span class="keyword">return</span></span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">defer</span> pprof.StopCPUProfile()</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">var</span> wg sync.WaitGroup</span><br><span class="line">        c := <span class="built_in">make</span>(<span class="keyword">chan</span> os.Signal, <span class="number">1</span>)</span><br><span class="line">        signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)</span><br><span class="line">        wg.Add(<span class="number">1</span>)</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                <span class="keyword">for</span> &#123;</span><br><span class="line">                        <span class="keyword">select</span> &#123;</span><br><span class="line">                        <span class="keyword">case</span> &lt;-c:</span><br><span class="line">                                &#123;</span><br><span class="line">                                        wg.Done()</span><br><span class="line">                                        <span class="keyword">return</span></span><br><span class="line">                                &#125;</span><br><span class="line">                        <span class="keyword">default</span>:</span><br><span class="line">                                &#123;</span><br><span class="line">                                        _ = <span class="string">&quot;hello&quot;</span> + <span class="string">&quot;world&quot;</span> + <span class="string">&quot;!&quot;</span></span><br><span class="line">                                &#125;</span><br><span class="line">                                time.Sleep(<span class="number">10</span> * time.Millisecond)</span><br><span class="line">                        &#125;</span><br><span class="line">                &#125;</span><br><span class="line">        &#125;()</span><br><span class="line"></span><br><span class="line">        wg.Wait()</span><br><span class="line">        <span class="built_in">println</span>(<span class="string">&quot;program exit!&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go run main.go -help</span></span><br><span class="line">Usage of /tmp/go-build3574322936/b001/exe/main:</span><br><span class="line">  -cpuprofile file</span><br><span class="line">        write cpu profile to file</span><br><span class="line"><span class="comment"># go run main.go -cpuprofile cpu.prof</span></span><br><span class="line">^Cprogram <span class="built_in">exit</span>!</span><br><span class="line"><span class="comment"># ls -l cpu.prof</span></span><br><span class="line">-rw-r--r-- 1 root root 228 Sep 22 22:06 cpu.prof</span><br></pre></td></tr></table></figure>
-
 <p>Go 在 <code>net/http/pprof</code> 包中还提供了一种更为高级的针对独立程序的性能数据采集方式，这种方式尤其适合那些内置了 HTTP 服务的独立程序。<code>net/http/pprof</code> 包可以直接利用已有的 HTTP 服务对外提供用于性能数据采集的服务端点（endpoint）​。要采用某个 HTTP 服务的性能数据，只需要直接导入该包即可：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> (</span><br><span class="line">        _ <span class="string">&quot;net/http/pprof&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
-
 <p>该包的 init 函数会向 HTTP 包的默认请求路由器 DefaultServeMux 注册多个服务端点和对应的处理函数，通过这些服务端点，可以在程序运行期间获取各种类型的性能采集数据。采集完成后，得到的数据文件会由浏览器自动下载到本地。</p>
 <p>如果是非 HTTP 服务程序，可以在导入包的同时启动一个用于性能数据采集的 goroutine。</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                log.Println(http.ListenAndServe(<span class="string">&quot;localhost:8080&quot;</span>, <span class="literal">nil</span>))</span><br><span class="line">        &#125;()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>这种方式侵入性更小，代码也更为独立。可以在无需停止程序的情况下，通过预置好的各类性能数据采集服务端点即可随时进行性能数据采集。</p>
-<h4 id="性能数据的剖析"><a href="#性能数据的剖析" class="headerlink" title="性能数据的剖析"></a>性能数据的剖析</h4><p>Go 工具链通过 pprof 子命令提供两种性能数据剖析方法：命令行交互式和 Web 图形化。</p>
+<h4 id="性能数据的剖析"><a class="markdownIt-Anchor" href="#性能数据的剖析"></a> 性能数据的剖析</h4>
+<p>Go 工具链通过 pprof 子命令提供两种性能数据剖析方法：命令行交互式和 Web 图形化。</p>
 <p>可以通过如下三种方式执行 <code>go tool pprof</code> 进入采用命令行交互式的性能数据剖析：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go tool pprof xxx.test cpu.prof</span></span><br><span class="line"><span class="comment"># go tool pprof app cpu.prof</span></span><br><span class="line"><span class="comment"># go tool pprof http://localhost:8080/debug/pprof/profile</span></span><br></pre></td></tr></table></figure>
-
 <p>如下是一个例子：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"># <span class="keyword">go</span> tool pprof main cpu.prof</span><br><span class="line">File: main</span><br><span class="line">Type: cpu</span><br><span class="line">Time: Sep <span class="number">22</span>, <span class="number">2024</span> at <span class="number">10</span>:<span class="number">20</span>pm (CST)</span><br><span class="line">Duration: <span class="number">1.86</span>s, Total samples = <span class="number">20</span>ms ( <span class="number">1.08</span>%)</span><br><span class="line">Entering interactive mode (<span class="keyword">type</span> <span class="string">&quot;help&quot;</span> <span class="keyword">for</span> commands, <span class="string">&quot;o&quot;</span> <span class="keyword">for</span> options)</span><br><span class="line">(pprof)</span><br></pre></td></tr></table></figure>
-
 <p>在命令行模式下，可以输入 top、list、png、web 等命令查看剖析结果。</p>
 <p><code>go tool pprof</code> 还提供了基于 web 图形化呈现所采集性能数据的方式。例如如下命令启动一个 Web 服务：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go tool pprof -http=10.9.33.133:8080 main cpu.prof</span></span><br></pre></td></tr></table></figure>
-
 <p>对于通过 <code>net/http/pprof</code> 暴露性能数据采样端点的独立程序，同样可以采用基于Web的图形化页面进行性能剖析。例如：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="variable">$go</span> tool pprof -http=:9090 http://localhost:8080/debug/pprof/profile</span><br><span class="line">Fetching profile over HTTP from http://localhost:8080/debug/pprof/profile</span><br><span class="line">Saved profile <span class="keyword">in</span> /Users/tonybai/pprof/pprof.samples.cpu.001.pb.gz</span><br><span class="line">Serving web UI on http://localhost:9090</span><br></pre></td></tr></table></figure>
-
-<h3 id="使用-pprof-进行性能剖析的实例"><a href="#使用-pprof-进行性能剖析的实例" class="headerlink" title="使用 pprof 进行性能剖析的实例"></a>使用 pprof 进行性能剖析的实例</h3><p>上面我们重点介绍了 CPU 性能剖析，除了 CPU 优化，内存优化也是一种常见的应用程序性能优化手段。Go 程序内存分配一旦过频过多，就会增加 Go GC 的工作负荷，这不仅会增加 GC 所使用的 CPU 开销，还会导致 GC 延迟增大，从而影响应用的整体性能。</p>
+<h3 id="使用-pprof-进行性能剖析的实例"><a class="markdownIt-Anchor" href="#使用-pprof-进行性能剖析的实例"></a> 使用 pprof 进行性能剖析的实例</h3>
+<p>上面我们重点介绍了 CPU 性能剖析，除了 CPU 优化，内存优化也是一种常见的应用程序性能优化手段。Go 程序内存分配一旦过频过多，就会增加 Go GC 的工作负荷，这不仅会增加 GC 所使用的 CPU 开销，还会导致 GC 延迟增大，从而影响应用的整体性能。</p>
 <p>为了反映代码在并发下多个 goroutine 的阻塞情况，使用并发性能基准测试，同时对阻塞事件类型数据（block.prof）进行采样和剖析，能够发现应用程序在并发场景下的可能优化点。</p>
-<h2 id="使用-expvar-输出度量数据，辅助定位性能瓶颈点"><a href="#使用-expvar-输出度量数据，辅助定位性能瓶颈点" class="headerlink" title="使用 expvar 输出度量数据，辅助定位性能瓶颈点"></a>使用 expvar 输出度量数据，辅助定位性能瓶颈点</h2><p>Go 标准库提供的 expvar 包按照统一接口、统一数据格式、一致的指标定义方法输出自定义的度量数据。这些可以反映应用运行状态的数据也被称为应用的内省（introspection）数据。相比于通过查询应用外部特征而获取的探针类数据，内省数据可以传达更为丰富、更多的有关应用程序状态的上下文信息。</p>
-<h3 id="expvar-包的工作原理"><a href="#expvar-包的工作原理" class="headerlink" title="expvar 包的工作原理"></a>expvar 包的工作原理</h3><p>Go 标准库中的 expvar 包提供了一种输出应用内部状态信息的标准化方案，它标准化了以下三方面的内容：</p>
+<h2 id="使用-expvar-输出度量数据辅助定位性能瓶颈点"><a class="markdownIt-Anchor" href="#使用-expvar-输出度量数据辅助定位性能瓶颈点"></a> 使用 expvar 输出度量数据，辅助定位性能瓶颈点</h2>
+<p>Go 标准库提供的 expvar 包按照统一接口、统一数据格式、一致的指标定义方法输出自定义的度量数据。这些可以反映应用运行状态的数据也被称为应用的内省（introspection）数据。相比于通过查询应用外部特征而获取的探针类数据，内省数据可以传达更为丰富、更多的有关应用程序状态的上下文信息。</p>
+<h3 id="expvar-包的工作原理"><a class="markdownIt-Anchor" href="#expvar-包的工作原理"></a> expvar 包的工作原理</h3>
+<p>Go 标准库中的 expvar 包提供了一种输出应用内部状态信息的标准化方案，它标准化了以下三方面的内容：</p>
 <ul>
 <li>数据输出接口形式</li>
 <li>输出数据的编码格式</li>
@@ -476,21 +477,17 @@
 </ul>
 <p>Go 应用如果需要输出自身状态数据，需要以下面的形式导入 expvar 包：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> _ <span class="string">&quot;expvar&quot;</span></span><br></pre></td></tr></table></figure>
-
-<p>expvar 会在自己的 init 函数中向 http 包的默认请求路由器 DefaultServeMux 注册服务端点 &#x2F;debug&#x2F;vars，这个服务端点就是 expvar 提供给外部的获取应用内部状态的唯一标准接口。如果应用程序没有使用默认的路由器 DefaultServeMux，那么就需要手动将 expvar 包的服务端点注册到应用程序所使用的 <code>路由器</code> 上。如果应用程序没有启动 HTTP 服务，那么还需要在一个单独的 goroutine 中启动一个 HTTP 服务，这样 expvar 提供的服务才能生效。</p>
+<p>expvar 会在自己的 init 函数中向 http 包的默认请求路由器 DefaultServeMux 注册服务端点 /debug/vars，这个服务端点就是 expvar 提供给外部的获取应用内部状态的唯一标准接口。如果应用程序没有使用默认的路由器 DefaultServeMux，那么就需要手动将 expvar 包的服务端点注册到应用程序所使用的 <code>路由器</code> 上。如果应用程序没有启动 HTTP 服务，那么还需要在一个单独的 goroutine 中启动一个 HTTP 服务，这样 expvar 提供的服务才能生效。</p>
 <p>expvar 包提供的内部状态服务端点返回的是标准的JSON格式数据。</p>
-<h3 id="自定义应用通过-expvar-输出的度量数据"><a href="#自定义应用通过-expvar-输出的度量数据" class="headerlink" title="自定义应用通过 expvar 输出的度量数据"></a>自定义应用通过 expvar 输出的度量数据</h3><p>expvar 包提供了 Publish 函数，该函数用于发布通过 debug&#x2F;vars 服务端点输出的数据。Publish 函数的原型如下：</p>
+<h3 id="自定义应用通过-expvar-输出的度量数据"><a class="markdownIt-Anchor" href="#自定义应用通过-expvar-输出的度量数据"></a> 自定义应用通过 expvar 输出的度量数据</h3>
+<p>expvar 包提供了 Publish 函数，该函数用于发布通过 debug/vars 服务端点输出的数据。Publish 函数的原型如下：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Publish</span><span class="params">(name <span class="type">string</span>, v Var)</span></span></span><br></pre></td></tr></table></figure>
-
 <p>v 的类型为 Var，这是一个接口类型：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Var <span class="keyword">interface</span> &#123;</span><br><span class="line">    String() <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>如下展示了自定义度量数据的使用方法：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">        <span class="string">&quot;expvar&quot;</span></span><br><span class="line">        <span class="string">&quot;fmt&quot;</span></span><br><span class="line">        <span class="string">&quot;net/http&quot;</span></span><br><span class="line">        <span class="string">&quot;strconv&quot;</span></span><br><span class="line">        <span class="string">&quot;sync/atomic&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> CustomVar <span class="keyword">struct</span> &#123;</span><br><span class="line">        value <span class="type">int64</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v *CustomVar)</span></span> String() <span class="type">string</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> strconv.FormatInt(atomic.LoadInt64(&amp;v.value), <span class="number">10</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">        c := CustomVar&#123;</span><br><span class="line">                value: <span class="number">17</span>,</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        expvar.Publish(<span class="string">&quot;CustomVar&quot;</span>, &amp;c)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">        fmt.Println(http.ListenAndServe(<span class="string">&quot;10.9.33.133:8080&quot;</span>, <span class="literal">nil</span>))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>此时就可以看到自定义度量数据的输出：</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line"><span class="string">&quot;CustomVar&quot;</span>: 17,</span><br><span class="line"><span class="string">&quot;cmdline&quot;</span>: [<span class="string">&quot;./main&quot;</span>],</span><br><span class="line"><span class="string">&quot;memstats&quot;</span>: .....</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-
 <p>我们在设计能够反映 Go 应用内部状态的自定义指标时，经常会设计如下两类指标：</p>
 <ul>
 <li>测量型：这类指标是数字，支持上下增减</li>
@@ -501,19 +498,24 @@
 <li>通过实现一个返回 <code>interface&#123;&#125;</code> 类型的函数，并通过 Publish 函数将该函数发布出去</li>
 <li>这个返回 <code>interface&#123;&#125;</code> 类型的函数的返回值底层类型必须是一个支持序列化为 JSON 格式的类型</li>
 </ul>
-<h3 id="输出数据的展示"><a href="#输出数据的展示" class="headerlink" title="输出数据的展示"></a>输出数据的展示</h3><p>通过 <code>/debug/vars</code> 服务端点，可以得到标准 JSON 格式的应用内部状态数据。JSON 格式的文本很容易反序列化，开发者可以自行解析后使用。</p>
+<h3 id="输出数据的展示"><a class="markdownIt-Anchor" href="#输出数据的展示"></a> 输出数据的展示</h3>
+<p>通过 <code>/debug/vars</code> 服务端点，可以得到标准 JSON 格式的应用内部状态数据。JSON 格式的文本很容易反序列化，开发者可以自行解析后使用。</p>
 <p>社区开发者开发了一款 expvarmon 工具，支持将从 expvar 输出的数据以基于终端的图形化方式展示出来。</p>
-<h2 id="使用-Delve-调试-Go-代码"><a href="#使用-Delve-调试-Go-代码" class="headerlink" title="使用 Delve 调试 Go 代码"></a>使用 Delve 调试 Go 代码</h2><p><code>凡是软件，必有 bug</code>，接下来学习 Go 调试领域应用即为广泛的工具：Delve。</p>
-<h3 id="关于调试，首先应该知道的几件事情"><a href="#关于调试，首先应该知道的几件事情" class="headerlink" title="关于调试，首先应该知道的几件事情"></a>关于调试，首先应该知道的几件事情</h3><ul>
+<h2 id="使用-delve-调试-go-代码"><a class="markdownIt-Anchor" href="#使用-delve-调试-go-代码"></a> 使用 Delve 调试 Go 代码</h2>
+<p><code>凡是软件，必有 bug</code>，接下来学习 Go 调试领域应用即为广泛的工具：Delve。</p>
+<h3 id="关于调试首先应该知道的几件事情"><a class="markdownIt-Anchor" href="#关于调试首先应该知道的几件事情"></a> 关于调试，首先应该知道的几件事情</h3>
+<ul>
 <li>调试前，首先做好心理准备</li>
-<li>预防 bug 的发生，降低 bug 的发生概率<ul>
+<li>预防 bug 的发生，降低 bug 的发生概率
+<ul>
 <li>充分的代码检查：编译器（将警告级别调高），静态代码分析工具（例如 go vet）等</li>
 <li>为调试版增加断言</li>
 <li>充分的单元测试</li>
 <li>代码同级评审</li>
 </ul>
 </li>
-<li>bug 原因定位和修正<ul>
+<li>bug 原因定位和修正
+<ul>
 <li>收集现场数据</li>
 <li>定位问题所在</li>
 <li>修改并验证</li>
@@ -521,17 +523,18 @@
 </li>
 <li>定期回顾 bug 列表，可能很多 bug 是能够在预防阶段就能规避，形成良性循环</li>
 </ul>
-<h3 id="go-调试工具的选择"><a href="#go-调试工具的选择" class="headerlink" title="go 调试工具的选择"></a>go 调试工具的选择</h3><p>我们可以通过文本输出（fmt.Print 等）调试 Go 代码和使用专业的调试器（如 Delve、GDB）调试 Go 代码，这两者互相补充、相辅相成。</p>
+<h3 id="go-调试工具的选择"><a class="markdownIt-Anchor" href="#go-调试工具的选择"></a> go 调试工具的选择</h3>
+<p>我们可以通过文本输出（fmt.Print 等）调试 Go 代码和使用专业的调试器（如 Delve、GDB）调试 Go 代码，这两者互相补充、相辅相成。</p>
 <p>通过 gccgo（与标准 Go 编译器不同的另外一个 go 编译器）编译而成的 Go 程序可以得到 GCC 成熟工具链的原生支持，包括可以使用 GDB 进行调试。对于标准 Go 编译器编译生成的 Go 程序，gdb 也能够进行调试，但是能力有限，因为 GDB 不了解 Go 程序：</p>
 <ul>
 <li>Go 的栈惯例、线程模型、运行时等与 GDB 所了解的执行模型不同</li>
-<li>使用复杂，需要加载插件（runtime-gdb.py）才能更好地理解 Go 符号</li>
+<li>使用复杂，需要加载插件（<a target="_blank" rel="noopener" href="http://runtime-gdb.py">runtime-gdb.py</a>）才能更好地理解 Go 符号</li>
 <li>GDB 无法识别一些 Go 类型信息等</li>
 </ul>
 <p>Delve 是另外一个 Go 调试器，旨在为 Go 提供一个简单的、功能齐全、易于使用和调用的调试工具，是目前 Go 调试器事实标准。</p>
-<h3 id="Delve-调试基础、原理和架构"><a href="#Delve-调试基础、原理和架构" class="headerlink" title="Delve 调试基础、原理和架构"></a>Delve 调试基础、原理和架构</h3><p>通过如下命令可以安装 delve，安装成功后，dlv 命令会出现在 $GOPATH&#x2F;bin 目录下：</p>
+<h3 id="delve-调试基础-原理和架构"><a class="markdownIt-Anchor" href="#delve-调试基础-原理和架构"></a> Delve 调试基础、原理和架构</h3>
+<p>通过如下命令可以安装 delve，安装成功后，dlv 命令会出现在 $GOPATH/bin 目录下：</p>
 <figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">go</span> install github.com/<span class="keyword">go</span>-delve/delve/cmd/dlv@latest</span><br></pre></td></tr></table></figure>
-
 <p>安装成功后，常用的调试命令包括：</p>
 <ul>
 <li>break：设置断点，支持设置条件断点</li>
@@ -541,16 +544,16 @@
 <li>next：执行下一行代码</li>
 <li>step：步进</li>
 <li>stack：查看调用栈信息</li>
-<li>up&#x2F;down：在调用栈的栈帧之间跳转</li>
+<li>up/down：在调用栈的栈帧之间跳转</li>
 <li>set：调试过程中修改变量的值</li>
 <li>call：手动调用某个函数</li>
 </ul>
 <p>在直接调试二进制文件时，Delve 会根据二进制文件中保存的源文件位置到对应的路径下寻找对应的源文件并展示对应源码。如果把那个路径下的源文件挪走，那么再通过 <code>list</code> 命令展示源码就会出现错误。</p>
 <p>有时候调试二进制文件时会有报错，有可能是 Go 编译器对目标代码进行了优化，<strong>为了避免这个问题，可以在编译时加入关闭优化的标志位</strong>。</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># go build -gcflags=all=&quot;-N -l&quot;  ...</span></span><br></pre></td></tr></table></figure>
-
 <p>Go 编译器以 DWARF 格式（一种标准的调试信息格式）写入目标二进制文件中的调试符号信息来了解被调试目标的源码信息，并实现了被调试目标进程中的地址、二进制文件中的调试符号及源码相关信息三者之间的关系映射。</p>
-<h3 id="并发、Coredump-文件与挂接进程调试"><a href="#并发、Coredump-文件与挂接进程调试" class="headerlink" title="并发、Coredump 文件与挂接进程调试"></a>并发、Coredump 文件与挂接进程调试</h3><p>Delve 提供了调试命令，可以让我们在各个运行的 goroutine 之间切换：</p>
+<h3 id="并发-coredump-文件与挂接进程调试"><a class="markdownIt-Anchor" href="#并发-coredump-文件与挂接进程调试"></a> 并发、Coredump 文件与挂接进程调试</h3>
+<p>Delve 提供了调试命令，可以让我们在各个运行的 goroutine 之间切换：</p>
 <ul>
 <li>goroutines：列出当前程序内的 goroutine 列表</li>
 <li>goroutine <id>：切换到指定的 goroutine 上下文</li>
@@ -641,7 +644,7 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%90%86%E8%A7%A3%E5%8C%85%E5%86%85%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%8C%85%E5%A4%96%E6%B5%8B%E8%AF%95%E7%9A%84%E5%B7%AE%E5%88%AB"><span class="nav-number">1.</span> <span class="nav-text">理解包内测试与包外测试的差别</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%85%E5%86%85%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%8C%85%E5%A4%96%E6%B5%8B%E8%AF%95"><span class="nav-number">1.1.</span> <span class="nav-text">包内测试与包外测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%89%E5%B1%82%E6%AC%A1%E5%9C%B0%E7%BB%84%E7%BB%87%E6%B5%8B%E8%AF%95%E4%BB%A3%E7%A0%81"><span class="nav-number">2.</span> <span class="nav-text">有层次地组织测试代码</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%8F%E5%85%B8%E6%A8%A1%E5%BC%8F%E2%80%93%E5%B9%B3%E9%93%BA"><span class="nav-number">2.1.</span> <span class="nav-text">经典模式–平铺</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#xUnit-%E5%AE%B6%E6%97%8F%E6%A8%A1%E5%BC%8F"><span class="nav-number">2.2.</span> <span class="nav-text">xUnit 家族模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95%E5%9B%BA%E4%BB%B6"><span class="nav-number">2.3.</span> <span class="nav-text">测试固件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BC%98%E5%85%88%E7%BC%96%E5%86%99%E8%A1%A8%E9%A9%B1%E5%8A%A8%E7%9A%84%E6%B5%8B%E8%AF%95"><span class="nav-number">3.</span> <span class="nav-text">优先编写表驱动的测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Go-%E6%B5%8B%E8%AF%95%E4%BB%A3%E7%A0%81%E7%9A%84%E4%B8%80%E8%88%AC%E9%80%BB%E8%BE%91"><span class="nav-number">3.1.</span> <span class="nav-text">Go 测试代码的一般逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E9%80%BB%E8%BE%91"><span class="nav-number">3.2.</span> <span class="nav-text">表驱动测试逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E7%9A%84%E4%BC%98%E7%82%B9"><span class="nav-number">3.3.</span> <span class="nav-text">表驱动测试的优点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E5%AE%9E%E8%B7%B5%E4%B8%AD%E7%9A%84%E6%B3%A8%E6%84%8F%E4%BA%8B%E9%A1%B9"><span class="nav-number">3.4.</span> <span class="nav-text">表驱动测试实践中的注意事项</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-testdata-%E7%AE%A1%E7%90%86%E6%B5%8B%E8%AF%95%E4%BE%9D%E8%B5%96%E7%9A%84%E5%A4%96%E9%83%A8%E6%95%B0%E6%8D%AE%E6%96%87%E4%BB%B6"><span class="nav-number">4.</span> <span class="nav-text">使用 testdata 管理测试依赖的外部数据文件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#testdata-%E7%9B%AE%E5%BD%95"><span class="nav-number">4.1.</span> <span class="nav-text">testdata 目录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#golden-%E6%96%87%E4%BB%B6%E6%83%AF%E7%94%A8%E6%B3%95"><span class="nav-number">4.2.</span> <span class="nav-text">golden 文件惯用法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%AD%A3%E7%A1%AE%E8%BF%90%E7%94%A8-fake%E3%80%81stub-%E5%92%8C-mock-%E7%AD%89%E8%BE%85%E5%8A%A9%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95"><span class="nav-number">5.</span> <span class="nav-text">正确运用 fake、stub 和 mock 等辅助单元测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#fake%EF%BC%9A%E7%9C%9F%E5%AE%9E%E7%BB%84%E4%BB%B6%E6%88%96%E6%9C%8D%E5%8A%A1%E7%9A%84%E7%AE%80%E5%8C%96%E5%AE%9E%E7%8E%B0%E7%89%88%E6%9B%BF%E8%BA%AB"><span class="nav-number">5.1.</span> <span class="nav-text">fake：真实组件或服务的简化实现版替身</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#stub%EF%BC%9A%E5%AF%B9%E8%BF%94%E5%9B%9E%E7%BB%93%E6%9E%9C%E6%9C%89%E4%B8%80%E5%AE%9A%E9%A2%84%E8%AE%BE%E6%8E%A7%E5%88%B6%E8%83%BD%E5%8A%9B%E7%9A%84%E6%9B%BF%E8%BA%AB"><span class="nav-number">5.2.</span> <span class="nav-text">stub：对返回结果有一定预设控制能力的替身</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#mock%EF%BC%9A%E4%B8%93%E7%94%A8%E4%BA%8E%E8%A1%8C%E4%B8%BA%E8%A7%82%E5%AF%9F%E5%92%8C%E9%AA%8C%E8%AF%81%E7%9A%84%E6%9B%BF%E8%BA%AB"><span class="nav-number">5.3.</span> <span class="nav-text">mock：专用于行为观察和验证的替身</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%A8%A1%E7%B3%8A%E6%B5%8B%E8%AF%95%E8%AE%A9%E6%BD%9C%E5%9C%A8-bug-%E6%97%A0%E5%A4%84%E9%81%81%E5%BD%A2"><span class="nav-number">6.</span> <span class="nav-text">使用模糊测试让潜在 bug 无处遁形</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#go-fuzz-%E7%9A%84%E5%88%9D%E6%AD%A5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="nav-number">6.1.</span> <span class="nav-text">go-fuzz 的初步工作原理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#go-fuzz-%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95"><span class="nav-number">6.2.</span> <span class="nav-text">go-fuzz 使用方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A9%E6%A8%A1%E7%B3%8A%E6%B5%8B%E8%AF%95%E6%88%90%E4%B8%BA%E4%B8%80%E7%AD%89%E5%85%AC%E6%B0%91"><span class="nav-number">6.3.</span> <span class="nav-text">让模糊测试成为一等公民</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BA%E8%A2%AB%E6%B5%8B%E5%AF%B9%E8%B1%A1%E5%BB%BA%E7%AB%8B%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86"><span class="nav-number">7.</span> <span class="nav-text">为被测对象建立性能基准</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%9C%A8-Go-%E8%AF%AD%E8%A8%80%E4%B8%AD%E6%98%AF%E4%B8%80%E7%AD%89%E5%85%AC%E6%B0%91"><span class="nav-number">7.1.</span> <span class="nav-text">性能基准测试在 Go 语言中是一等公民</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A1%BA%E5%BA%8F%E6%89%A7%E8%A1%8C%E5%92%8C%E5%B9%B6%E8%A1%8C%E6%89%A7%E8%A1%8C%E7%9A%84%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95"><span class="nav-number">7.2.</span> <span class="nav-text">顺序执行和并行执行的性能基准测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86%E6%AF%94%E8%BE%83%E5%B7%A5%E5%85%B7"><span class="nav-number">7.3.</span> <span class="nav-text">使用性能基准比较工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E9%99%A4%E9%A2%9D%E5%A4%96%E5%B9%B2%E6%89%B0%EF%BC%8C%E8%AE%A9%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E6%9B%B4%E5%8A%A0%E7%B2%BE%E7%A1%AE"><span class="nav-number">7.4.</span> <span class="nav-text">排除额外干扰，让基准测试更加精确</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-pprof-%E5%AF%B9%E7%A8%8B%E5%BA%8F%E8%BF%9B%E8%A1%8C%E6%80%A7%E8%83%BD%E5%89%96%E6%9E%90"><span class="nav-number">8.</span> <span class="nav-text">使用 pprof 对程序进行性能剖析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#pprof-%E7%9A%84%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="nav-number">8.1.</span> <span class="nav-text">pprof 的工作原理</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E6%95%B0%E6%8D%AE%E7%9A%84%E9%87%87%E6%A0%B7"><span class="nav-number">8.1.1.</span> <span class="nav-text">性能数据的采样</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E6%95%B0%E6%8D%AE%E7%9A%84%E5%89%96%E6%9E%90"><span class="nav-number">8.1.2.</span> <span class="nav-text">性能数据的剖析</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-pprof-%E8%BF%9B%E8%A1%8C%E6%80%A7%E8%83%BD%E5%89%96%E6%9E%90%E7%9A%84%E5%AE%9E%E4%BE%8B"><span class="nav-number">8.2.</span> <span class="nav-text">使用 pprof 进行性能剖析的实例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-expvar-%E8%BE%93%E5%87%BA%E5%BA%A6%E9%87%8F%E6%95%B0%E6%8D%AE%EF%BC%8C%E8%BE%85%E5%8A%A9%E5%AE%9A%E4%BD%8D%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%E7%82%B9"><span class="nav-number">9.</span> <span class="nav-text">使用 expvar 输出度量数据，辅助定位性能瓶颈点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#expvar-%E5%8C%85%E7%9A%84%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="nav-number">9.1.</span> <span class="nav-text">expvar 包的工作原理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E5%AE%9A%E4%B9%89%E5%BA%94%E7%94%A8%E9%80%9A%E8%BF%87-expvar-%E8%BE%93%E5%87%BA%E7%9A%84%E5%BA%A6%E9%87%8F%E6%95%B0%E6%8D%AE"><span class="nav-number">9.2.</span> <span class="nav-text">自定义应用通过 expvar 输出的度量数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E6%95%B0%E6%8D%AE%E7%9A%84%E5%B1%95%E7%A4%BA"><span class="nav-number">9.3.</span> <span class="nav-text">输出数据的展示</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-Delve-%E8%B0%83%E8%AF%95-Go-%E4%BB%A3%E7%A0%81"><span class="nav-number">10.</span> <span class="nav-text">使用 Delve 调试 Go 代码</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B3%E4%BA%8E%E8%B0%83%E8%AF%95%EF%BC%8C%E9%A6%96%E5%85%88%E5%BA%94%E8%AF%A5%E7%9F%A5%E9%81%93%E7%9A%84%E5%87%A0%E4%BB%B6%E4%BA%8B%E6%83%85"><span class="nav-number">10.1.</span> <span class="nav-text">关于调试，首先应该知道的几件事情</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#go-%E8%B0%83%E8%AF%95%E5%B7%A5%E5%85%B7%E7%9A%84%E9%80%89%E6%8B%A9"><span class="nav-number">10.2.</span> <span class="nav-text">go 调试工具的选择</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#Delve-%E8%B0%83%E8%AF%95%E5%9F%BA%E7%A1%80%E3%80%81%E5%8E%9F%E7%90%86%E5%92%8C%E6%9E%B6%E6%9E%84"><span class="nav-number">10.3.</span> <span class="nav-text">Delve 调试基础、原理和架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%B6%E5%8F%91%E3%80%81Coredump-%E6%96%87%E4%BB%B6%E4%B8%8E%E6%8C%82%E6%8E%A5%E8%BF%9B%E7%A8%8B%E8%B0%83%E8%AF%95"><span class="nav-number">10.4.</span> <span class="nav-text">并发、Coredump 文件与挂接进程调试</span></a></li></ol></li></ol></div>
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%90%86%E8%A7%A3%E5%8C%85%E5%86%85%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%8C%85%E5%A4%96%E6%B5%8B%E8%AF%95%E7%9A%84%E5%B7%AE%E5%88%AB"><span class="nav-number">1.</span> <span class="nav-text"> 理解包内测试与包外测试的差别</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%85%E5%86%85%E6%B5%8B%E8%AF%95%E4%B8%8E%E5%8C%85%E5%A4%96%E6%B5%8B%E8%AF%95"><span class="nav-number">1.1.</span> <span class="nav-text"> 包内测试与包外测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%89%E5%B1%82%E6%AC%A1%E5%9C%B0%E7%BB%84%E7%BB%87%E6%B5%8B%E8%AF%95%E4%BB%A3%E7%A0%81"><span class="nav-number">2.</span> <span class="nav-text"> 有层次地组织测试代码</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%8F%E5%85%B8%E6%A8%A1%E5%BC%8F%E5%B9%B3%E9%93%BA"><span class="nav-number">2.1.</span> <span class="nav-text"> 经典模式–平铺</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#xunit-%E5%AE%B6%E6%97%8F%E6%A8%A1%E5%BC%8F"><span class="nav-number">2.2.</span> <span class="nav-text"> xUnit 家族模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95%E5%9B%BA%E4%BB%B6"><span class="nav-number">2.3.</span> <span class="nav-text"> 测试固件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BC%98%E5%85%88%E7%BC%96%E5%86%99%E8%A1%A8%E9%A9%B1%E5%8A%A8%E7%9A%84%E6%B5%8B%E8%AF%95"><span class="nav-number">3.</span> <span class="nav-text"> 优先编写表驱动的测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#go-%E6%B5%8B%E8%AF%95%E4%BB%A3%E7%A0%81%E7%9A%84%E4%B8%80%E8%88%AC%E9%80%BB%E8%BE%91"><span class="nav-number">3.1.</span> <span class="nav-text"> Go 测试代码的一般逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E9%80%BB%E8%BE%91"><span class="nav-number">3.2.</span> <span class="nav-text"> 表驱动测试逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E7%9A%84%E4%BC%98%E7%82%B9"><span class="nav-number">3.3.</span> <span class="nav-text"> 表驱动测试的优点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A1%A8%E9%A9%B1%E5%8A%A8%E6%B5%8B%E8%AF%95%E5%AE%9E%E8%B7%B5%E4%B8%AD%E7%9A%84%E6%B3%A8%E6%84%8F%E4%BA%8B%E9%A1%B9"><span class="nav-number">3.4.</span> <span class="nav-text"> 表驱动测试实践中的注意事项</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-testdata-%E7%AE%A1%E7%90%86%E6%B5%8B%E8%AF%95%E4%BE%9D%E8%B5%96%E7%9A%84%E5%A4%96%E9%83%A8%E6%95%B0%E6%8D%AE%E6%96%87%E4%BB%B6"><span class="nav-number">4.</span> <span class="nav-text"> 使用 testdata 管理测试依赖的外部数据文件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#testdata-%E7%9B%AE%E5%BD%95"><span class="nav-number">4.1.</span> <span class="nav-text"> testdata 目录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#golden-%E6%96%87%E4%BB%B6%E6%83%AF%E7%94%A8%E6%B3%95"><span class="nav-number">4.2.</span> <span class="nav-text"> golden 文件惯用法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%AD%A3%E7%A1%AE%E8%BF%90%E7%94%A8-fake-stub-%E5%92%8C-mock-%E7%AD%89%E8%BE%85%E5%8A%A9%E5%8D%95%E5%85%83%E6%B5%8B%E8%AF%95"><span class="nav-number">5.</span> <span class="nav-text"> 正确运用 fake、stub 和 mock 等辅助单元测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#fake%E7%9C%9F%E5%AE%9E%E7%BB%84%E4%BB%B6%E6%88%96%E6%9C%8D%E5%8A%A1%E7%9A%84%E7%AE%80%E5%8C%96%E5%AE%9E%E7%8E%B0%E7%89%88%E6%9B%BF%E8%BA%AB"><span class="nav-number">5.1.</span> <span class="nav-text"> fake：真实组件或服务的简化实现版替身</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#stub%E5%AF%B9%E8%BF%94%E5%9B%9E%E7%BB%93%E6%9E%9C%E6%9C%89%E4%B8%80%E5%AE%9A%E9%A2%84%E8%AE%BE%E6%8E%A7%E5%88%B6%E8%83%BD%E5%8A%9B%E7%9A%84%E6%9B%BF%E8%BA%AB"><span class="nav-number">5.2.</span> <span class="nav-text"> stub：对返回结果有一定预设控制能力的替身</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#mock%E4%B8%93%E7%94%A8%E4%BA%8E%E8%A1%8C%E4%B8%BA%E8%A7%82%E5%AF%9F%E5%92%8C%E9%AA%8C%E8%AF%81%E7%9A%84%E6%9B%BF%E8%BA%AB"><span class="nav-number">5.3.</span> <span class="nav-text"> mock：专用于行为观察和验证的替身</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%A8%A1%E7%B3%8A%E6%B5%8B%E8%AF%95%E8%AE%A9%E6%BD%9C%E5%9C%A8-bug-%E6%97%A0%E5%A4%84%E9%81%81%E5%BD%A2"><span class="nav-number">6.</span> <span class="nav-text"> 使用模糊测试让潜在 bug 无处遁形</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#go-fuzz-%E7%9A%84%E5%88%9D%E6%AD%A5%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="nav-number">6.1.</span> <span class="nav-text"> go-fuzz 的初步工作原理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#go-fuzz-%E4%BD%BF%E7%94%A8%E6%96%B9%E6%B3%95"><span class="nav-number">6.2.</span> <span class="nav-text"> go-fuzz 使用方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A9%E6%A8%A1%E7%B3%8A%E6%B5%8B%E8%AF%95%E6%88%90%E4%B8%BA%E4%B8%80%E7%AD%89%E5%85%AC%E6%B0%91"><span class="nav-number">6.3.</span> <span class="nav-text"> 让模糊测试成为一等公民</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BA%E8%A2%AB%E6%B5%8B%E5%AF%B9%E8%B1%A1%E5%BB%BA%E7%AB%8B%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86"><span class="nav-number">7.</span> <span class="nav-text"> 为被测对象建立性能基准</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E5%9C%A8-go-%E8%AF%AD%E8%A8%80%E4%B8%AD%E6%98%AF%E4%B8%80%E7%AD%89%E5%85%AC%E6%B0%91"><span class="nav-number">7.1.</span> <span class="nav-text"> 性能基准测试在 Go 语言中是一等公民</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A1%BA%E5%BA%8F%E6%89%A7%E8%A1%8C%E5%92%8C%E5%B9%B6%E8%A1%8C%E6%89%A7%E8%A1%8C%E7%9A%84%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95"><span class="nav-number">7.2.</span> <span class="nav-text"> 顺序执行和并行执行的性能基准测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%80%A7%E8%83%BD%E5%9F%BA%E5%87%86%E6%AF%94%E8%BE%83%E5%B7%A5%E5%85%B7"><span class="nav-number">7.3.</span> <span class="nav-text"> 使用性能基准比较工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E9%99%A4%E9%A2%9D%E5%A4%96%E5%B9%B2%E6%89%B0%E8%AE%A9%E5%9F%BA%E5%87%86%E6%B5%8B%E8%AF%95%E6%9B%B4%E5%8A%A0%E7%B2%BE%E7%A1%AE"><span class="nav-number">7.4.</span> <span class="nav-text"> 排除额外干扰，让基准测试更加精确</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-pprof-%E5%AF%B9%E7%A8%8B%E5%BA%8F%E8%BF%9B%E8%A1%8C%E6%80%A7%E8%83%BD%E5%89%96%E6%9E%90"><span class="nav-number">8.</span> <span class="nav-text"> 使用 pprof 对程序进行性能剖析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#pprof-%E7%9A%84%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="nav-number">8.1.</span> <span class="nav-text"> pprof 的工作原理</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E6%95%B0%E6%8D%AE%E7%9A%84%E9%87%87%E6%A0%B7"><span class="nav-number">8.1.1.</span> <span class="nav-text"> 性能数据的采样</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%80%A7%E8%83%BD%E6%95%B0%E6%8D%AE%E7%9A%84%E5%89%96%E6%9E%90"><span class="nav-number">8.1.2.</span> <span class="nav-text"> 性能数据的剖析</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-pprof-%E8%BF%9B%E8%A1%8C%E6%80%A7%E8%83%BD%E5%89%96%E6%9E%90%E7%9A%84%E5%AE%9E%E4%BE%8B"><span class="nav-number">8.2.</span> <span class="nav-text"> 使用 pprof 进行性能剖析的实例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-expvar-%E8%BE%93%E5%87%BA%E5%BA%A6%E9%87%8F%E6%95%B0%E6%8D%AE%E8%BE%85%E5%8A%A9%E5%AE%9A%E4%BD%8D%E6%80%A7%E8%83%BD%E7%93%B6%E9%A2%88%E7%82%B9"><span class="nav-number">9.</span> <span class="nav-text"> 使用 expvar 输出度量数据，辅助定位性能瓶颈点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#expvar-%E5%8C%85%E7%9A%84%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="nav-number">9.1.</span> <span class="nav-text"> expvar 包的工作原理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E5%AE%9A%E4%B9%89%E5%BA%94%E7%94%A8%E9%80%9A%E8%BF%87-expvar-%E8%BE%93%E5%87%BA%E7%9A%84%E5%BA%A6%E9%87%8F%E6%95%B0%E6%8D%AE"><span class="nav-number">9.2.</span> <span class="nav-text"> 自定义应用通过 expvar 输出的度量数据</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E6%95%B0%E6%8D%AE%E7%9A%84%E5%B1%95%E7%A4%BA"><span class="nav-number">9.3.</span> <span class="nav-text"> 输出数据的展示</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-delve-%E8%B0%83%E8%AF%95-go-%E4%BB%A3%E7%A0%81"><span class="nav-number">10.</span> <span class="nav-text"> 使用 Delve 调试 Go 代码</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B3%E4%BA%8E%E8%B0%83%E8%AF%95%E9%A6%96%E5%85%88%E5%BA%94%E8%AF%A5%E7%9F%A5%E9%81%93%E7%9A%84%E5%87%A0%E4%BB%B6%E4%BA%8B%E6%83%85"><span class="nav-number">10.1.</span> <span class="nav-text"> 关于调试，首先应该知道的几件事情</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#go-%E8%B0%83%E8%AF%95%E5%B7%A5%E5%85%B7%E7%9A%84%E9%80%89%E6%8B%A9"><span class="nav-number">10.2.</span> <span class="nav-text"> go 调试工具的选择</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#delve-%E8%B0%83%E8%AF%95%E5%9F%BA%E7%A1%80-%E5%8E%9F%E7%90%86%E5%92%8C%E6%9E%B6%E6%9E%84"><span class="nav-number">10.3.</span> <span class="nav-text"> Delve 调试基础、原理和架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%B6%E5%8F%91-coredump-%E6%96%87%E4%BB%B6%E4%B8%8E%E6%8C%82%E6%8E%A5%E8%BF%9B%E7%A8%8B%E8%B0%83%E8%AF%95"><span class="nav-number">10.4.</span> <span class="nav-text"> 并发、Coredump 文件与挂接进程调试</span></a></li></ol></li></ol></div>
       </div>
       <!--/noindex-->
 
@@ -657,20 +660,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">197</span>
+          <span class="site-state-item-count">198</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/fuchencong.github.io/categories/">
           
-        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-count">17</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">33</span>
+        <span class="site-state-item-count">34</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
@@ -762,6 +765,11 @@
 
 
   
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
 
   
 

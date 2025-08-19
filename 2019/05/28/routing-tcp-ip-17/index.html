@@ -39,7 +39,7 @@
 <meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/10.jpg">
 <meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/11.jpg">
 <meta property="article:published_time" content="2019-05-28T10:20:00.000Z">
-<meta property="article:modified_time" content="2024-04-17T09:45:26.182Z">
+<meta property="article:modified_time" content="2024-04-17T09:47:37.100Z">
 <meta property="article:author" content="fuchencong">
 <meta property="article:tag" content="Route">
 <meta name="twitter:card" content="summary">
@@ -227,11 +227,12 @@
       
         <p>之前介绍了 EBGP 和 IBGP 会话的建立以及维护方式，与 IGP 不同，BGP 默认并不宣告任何可达性信息。这章将解释配置 BGP 以宣告 NLRI（Network Layer Reachachibility Information，网络层可达性信息）的相关技术。可达性信息指的是有关可达目的端的某些信息，虽然 IPv4 和 IPv6 前缀是最容易理解的 NLRI 类型，但是从广义上说，BGP 能够携带包括 IP 地址在内的多种可达性信息。</p>
 <span id="more"></span>
-
-<h2 id="在-BGP-中配置-NLRI"><a href="#在-BGP-中配置-NLRI" class="headerlink" title="在 BGP 中配置 NLRI"></a>在 BGP 中配置 NLRI</h2><p>BGP 路由与 IGP 路由采用的是不同的思考方式，BGP 必须独立考虑每个 EBGP 会话，而不是 IGP 域的全盘视图。这种概念上的变化也同样适用于 BGP 宣告的 NLRI。</p>
+<h2 id="在-bgp-中配置-nlri"><a class="markdownIt-Anchor" href="#在-bgp-中配置-nlri"></a> 在 BGP 中配置 NLRI</h2>
+<p>BGP 路由与 IGP 路由采用的是不同的思考方式，BGP 必须独立考虑每个 EBGP 会话，而不是 IGP 域的全盘视图。这种概念上的变化也同样适用于 BGP 宣告的 NLRI。</p>
 <p>IGP 的设计初衷是与受信邻居简单地交换前缀信息，因而配置 IGP 时通常需要指定 IGP 协议所运行的接口或子网，然后再由 IGP 将这些接口的子网宣告给邻居。<strong>而 BGP 却不自动宣告可达性信息，由于 BGP 假定不信任外部邻居，因而仅宣告那些被显式配置进行宣告的信息</strong>。</p>
 <p>因此应该始终记着向 BGP 注入前缀，当然也可以利用重分发操作将前缀注入到 IGP 中，但区别在于注入是将可达性信息传递给 BGP 的唯一方式。</p>
-<h3 id="利用-network-语句注入前缀"><a href="#利用-network-语句注入前缀" class="headerlink" title="利用 network 语句注入前缀"></a>利用 network 语句注入前缀</h3><p>将前缀注入 BGP 最常见的方式也是最可靠的方法就是使用 IOS 的 network 语句。BGP 的 network 语句与 IGP 的 network 语句作用完全不同：</p>
+<h3 id="利用-network-语句注入前缀"><a class="markdownIt-Anchor" href="#利用-network-语句注入前缀"></a> 利用 network 语句注入前缀</h3>
+<p>将前缀注入 BGP 最常见的方式也是最可靠的方法就是使用 IOS 的 network 语句。BGP 的 network 语句与 IGP 的 network 语句作用完全不同：</p>
 <ul>
 <li>如果正在配置 IGP，那么使用 network 语句的作用是指定地址范围，此后接口属于该 network 语句指定地址范围内的接口将启用该 IGP</li>
 <li>BGP 的 network 语句与在接口上启用协议毫无关系，而是指定将要注入本地 BGP 进程的前缀</li>
@@ -240,22 +241,24 @@
 <p>在默认情况下，被注入前缀的 IGP 度量将成为被宣告的 BGP 路由的 MED（MULTI_EXIT_DISC）属性，在 BGP 表中显示为 Metric。可以利用 default-metric 命令为重分发路由或其他路由的路由映射更改默认的 MED 值。</p>
 <p>权重是 IOS 的专有属性，对于控制单台路由器的 BGP 路由选择很有用，本地路由器注入前缀的默认权重值是 32768。Path 列给出了前缀的 AS_PATH 和 ORIGIN 属性信息。所有通过 network 语句注入的前缀的 ORIGIN 属性都是 IGP。</p>
 <p>收到 BGP 前缀信息时，BGP 进程也将检查 BGP 表中的每一条前缀，如果下一跳有效（也就是说路由器知道如何到达下一跳），那么就将该前缀添加到路由表中。配置 BGP 路由策略的主要目的就是改变默认的 BGP 决策进程。</p>
-<h3 id="利用-network-mask-语句注入前缀"><a href="#利用-network-mask-语句注入前缀" class="headerlink" title="利用 network mask 语句注入前缀"></a>利用 network mask 语句注入前缀</h3><p>在目前的 CIDR 环境中，需要宣告的前缀可能不是传统的 A、B、C 类前缀。之前说过 BGP Update 消息中的 NLRI 字段是由（长度、前缀）二元组组成的，其中的长度指的是前缀的长度。如果宣告的前缀是 A、B、C 类前缀，那么就可以仅使用 network 语句指定该前缀，IOS 的 BGP 实现向自动填充相应的 8 比特，16 比特或 24 比特长度值。如果前缀长度是其他数值，那么就需要告诉 IOS 在（长度、前缀）二元组的长度部分使用哪个数值，此时就需要使用 network mask 语句。</p>
-<h3 id="利用重分发注入前缀"><a href="#利用重分发注入前缀" class="headerlink" title="利用重分发注入前缀"></a>利用重分发注入前缀</h3><p>还可以利用重分发操作注入前缀，但强烈建议不要使用重分发技术。对穿越 AS 边界的信息共享实施严格控制是非常重要的，利用 network 语句注入前缀时可以明确指定需要宣告给 EBGP 对等体的前缀，而重分发在默认情况下意味着将自己 IGP 知道的一切告诉 EBGP 对等体。</p>
+<h3 id="利用-network-mask-语句注入前缀"><a class="markdownIt-Anchor" href="#利用-network-mask-语句注入前缀"></a> 利用 network mask 语句注入前缀</h3>
+<p>在目前的 CIDR 环境中，需要宣告的前缀可能不是传统的 A、B、C 类前缀。之前说过 BGP Update 消息中的 NLRI 字段是由（长度、前缀）二元组组成的，其中的长度指的是前缀的长度。如果宣告的前缀是 A、B、C 类前缀，那么就可以仅使用 network 语句指定该前缀，IOS 的 BGP 实现向自动填充相应的 8 比特，16 比特或 24 比特长度值。如果前缀长度是其他数值，那么就需要告诉 IOS 在（长度、前缀）二元组的长度部分使用哪个数值，此时就需要使用 network mask 语句。</p>
+<h3 id="利用重分发注入前缀"><a class="markdownIt-Anchor" href="#利用重分发注入前缀"></a> 利用重分发注入前缀</h3>
+<p>还可以利用重分发操作注入前缀，但强烈建议不要使用重分发技术。对穿越 AS 边界的信息共享实施严格控制是非常重要的，利用 network 语句注入前缀时可以明确指定需要宣告给 EBGP 对等体的前缀，而重分发在默认情况下意味着将自己 IGP 知道的一切告诉 EBGP 对等体。</p>
 <p>将 IGP 路由重分发到 BGP 中时，一般都要使用路由过滤器。默认情况下是重分发 IGP 知道的所有路由，如果 AS 管理员希望仅宣告部分 IGP 路由，那么就必须过滤其他路由。或者多归属 AS 不应该成为任何 AS 的转接 AS，此时就必须利用路由过滤器避免将学自某个 AS 的外部路由宣告给其他 AS，否则就存在路由反馈问题，也就是说学自 EBGP 的外部路由重分发到 IGP 中后，又从 IGP 再次重分发到 EBGP 中。</p>
 <p>从最低限度来说，最佳实践要求必须使用路由过滤器以确保重分发正确的路由，实际场合一般很少将 IGP 前缀重分发到 BPG 中，因为此时很难实施精确控制。但是重分发在某些场合也有用武之地。例如需要将来自某 AS 的大量前缀宣告到 AS 之外，那么就可以考虑重分发技术。虽然使用重分发技术的初衷是简化配置，避免使用一长串 network 语句，但实际上一种配置方式的简化带来的却是另一种配置方式的复杂化。</p>
 <p>重分发技术的另一个有用场景就是本地 AS 中的前缀经常发生变化，但这种场景比较罕见，不应该出现在正常网络中。</p>
 <p>从故障排除与检测的角度来讲也更希望使用 network 语句，而不是重分发技术。因为这样可以明确说明将要注入哪些前缀，而附加路由器过滤器的重分发操作只能说明不注入哪些前缀。重分发技术是一张 很宽松的网，会降低管理人员对注入 BGP 的前缀的控制力度。</p>
-<h2 id="NLRI-与-IBGP"><a href="#NLRI-与-IBGP" class="headerlink" title="NLRI 与 IBGP"></a>NLRI 与 IBGP</h2><h3 id="在-IBGP-拓扑结构中管理前缀"><a href="#在-IBGP-拓扑结构中管理前缀" class="headerlink" title="在 IBGP 拓扑结构中管理前缀"></a>在 IBGP 拓扑结构中管理前缀</h3><p>在如下网络中，需要配置 AS100 中的路由器，使得 Taos 能够学到 Alta 宣告的前缀，而且 Alta 也能看到 Taos 宣告的前缀。在 AS100 中使用的 IGP 是 OSPF，运行在 AS 内的所有接口上（最佳实践要求不要在任何外部链路上运行 IGP），在这三台路由器的环回接口之间配置了全网状的 IBGP 连接，Vail 和 Telluride 分别与 Taos 和 Alta 运行了 EBGP。</p>
+<h2 id="nlri-与-ibgp"><a class="markdownIt-Anchor" href="#nlri-与-ibgp"></a> NLRI 与 IBGP</h2>
+<h3 id="在-ibgp-拓扑结构中管理前缀"><a class="markdownIt-Anchor" href="#在-ibgp-拓扑结构中管理前缀"></a> 在 IBGP 拓扑结构中管理前缀</h3>
+<p>在如下网络中，需要配置 AS100 中的路由器，使得 Taos 能够学到 Alta 宣告的前缀，而且 Alta 也能看到 Taos 宣告的前缀。在 AS100 中使用的 IGP 是 OSPF，运行在 AS 内的所有接口上（最佳实践要求不要在任何外部链路上运行 IGP），在这三台路由器的环回接口之间配置了全网状的 IBGP 连接，Vail 和 Telluride 分别与 Taos 和 Alta 运行了 EBGP。</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/01.jpg" class="">
-
 <p>按照如下方式分别配置 AS100 中的 Vail、Aspen 以及 Telluride：</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/02.jpg" class="">
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/03.jpg" class="">
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/04.jpg" class="">
-
 <p>但是这些配置还无法满足允许前缀穿越 AS100 的要求。问题的原因在于路由器向 EBGP 对等体宣告路由时，会将其出站接口添加为该路由的 NETX_HOP 属性。在默认情况下，路由器向 IBGP 对等体宣告路由时，不会更改路由的 NEXT_HOP 属性。</p>
-<p>举例来说，对于前缀 192.168.100.0&#x2F;24 来说，Taos 将该路由宣告给 Vail 时，会将 NEXT_HOP 属性设置为出站接口 192.168.1.225，Vail 收到该路由后，NEXT_HOP 有效（因为从 Vail 的路由表可以看出，192.168.1.224&#x2F;30 是直连网络），由于 Vail 知道如何到达 NEXT_HOP，因而将该路由添加到路由表中。</p>
+<p>举例来说，对于前缀 192.168.100.0/24 来说，Taos 将该路由宣告给 Vail 时，会将 NEXT_HOP 属性设置为出站接口 192.168.1.225，Vail 收到该路由后，NEXT_HOP 有效（因为从 Vail 的路由表可以看出，192.168.1.224/30 是直连网络），由于 Vail 知道如何到达 NEXT_HOP，因而将该路由添加到路由表中。</p>
 <p>之后 Vail 又将该路由宣告给 IBGP 对等体 Telluride，从 Telluride 的 BGP 表中可以看到该路由的表项信息。但是根据 BGP 的基本原则，Vail 将路由表宣告给 IBGP 对等体时，不改变 NEXT_HOP，而且由于 Telluride 并不知道如何达到该地址，因而该路由视为无效路由，从而无法进入 Telluride 的路由表，Telluride 也不会将该路由宣告给自己的 EBGP 对等体。</p>
 <p>可以利用以下两种解决方案解决该问题：</p>
 <ul>
@@ -265,7 +268,8 @@
 <p>第一种解决方案的实现方式是在 AS 内部路由器上为所有的 EBGP 邻居都配置静态路由，但是如果 AS 的 EBGP 邻居太多的话，或者需要配置静态路由的 AS 内部路由器太多（或者两者），那么这种方式将无法管理。只能在连接外部对等体的边界路由器上配置静态路由，然后再重分发到 IGP 中，或者在边界路由器上使用 redistribute connected，但是这些做法都存在一些问题。实现第一种解决方案的更好方式是在连接外部对等体的接口上让 IGP 运行在被动模式下。</p>
 <p>第一种解决方案难点在于不应该让 IGP 运行在 AS 的外部链路上，虽然让 IGP 运行在被动模式下已经避免 IGP 有意无意暴露给管理域之外的连接方面做了最大程度的折中，但这种做法仍然不是最佳实践。例如服务提供商与 EBGP 邻居之间可能存在数以千计的链路，如果允许这些子网进入 IGP，那么就会导致严重的扩展性和性能问题。</p>
 <p>因此第二种解决方法（更改默认的 BGP_NEXT_HOP 行为）被视为最佳实践：路由器将学自 EBGP 对等体的路由宣告给 IBGP 对等体，路由器会将 NEXT_HOP 更改为自己的某个地址，且该地址在本地 AS 内部可知，而且几乎毫无例外地均使用路由器的环回接口的地址。虽然可以配置路由策略来更改 NEXT_HOP 地址，但是 IOS 提供了更简单的实现方式，neighbor next-hop-self 语句可以让路由器宣告给指定邻居的所有路由的 BGP NEXT_HOP 属性都更改为自己的环回地址。</p>
-<h3 id="IBGP-与-IGP-同步"><a href="#IBGP-与-IGP-同步" class="headerlink" title="IBGP 与 IGP 同步"></a>IBGP 与 IGP 同步</h3><p>上面的示例中，均加入了 no synchronization 语句。IGP 同步是早期网络时代的产物，目前几乎已经不再使用该功能。在之前的 IOS 均默认启用同步功能，大多数时候都必须记着关闭该功能。这里讲解释 IGP 同步功能，目的是：</p>
+<h3 id="ibgp-与-igp-同步"><a class="markdownIt-Anchor" href="#ibgp-与-igp-同步"></a> IBGP 与 IGP 同步</h3>
+<p>上面的示例中，均加入了 no synchronization 语句。IGP 同步是早期网络时代的产物，目前几乎已经不再使用该功能。在之前的 IOS 均默认启用同步功能，大多数时候都必须记着关闭该功能。这里讲解释 IGP 同步功能，目的是：</p>
 <ul>
 <li>如果面对的事早期 IOS 版本，那么就能理解为什么要禁用该功能</li>
 <li>如果偶然遇到同步仍适用的场景，那么也能正确理解该功能</li>
@@ -278,29 +282,34 @@
 </ul>
 <p>如下解释了同步规则存在的原因，在如下网络中，Alshan 与 Huaibei 之间存在 IBGP 连接并相互宣告学自 EBGP 的路由，而 AS600内的 IGP 是 OSPF。</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/05.jpg" class="">
-
-<p>假设 Alshan 从 AS500 学到了去往一条去往 196.223.18.0&#x2F;24 的路由并通过 IBGP 连接将该路由宣告给 Huaibei，利用 next-hop-self 属性将 NEXT_HOP 更改为自己的路由器 ID，然后再由 Huaibei 将该路由宣告到 AS700，此时 AS700 中的路由器将可以将去往 192.223.18.0&#x2F;24 的数据包转发给 Huaibei。</p>
-<p>Huaibei 在收到目的地为 192.223.18.0&#x2F;24 的数据包之后发现通过 Alshan 可达该网络，因而查找 Alshan 的 IP 地址，发现通过下一跳路由器 Nanshan 可达。但是外部路由是通过 IBGP 在 Alshan 和 Huaibei 之间进行了共享，OSPF 路由器并不知道这些外部路由，因此 Nanshan 在收到数据包之后，无法找到关于 192.223.18.0&#x2F;24 的路由表项，因而将丢弃该数据包预计后续去往该地址的其他数据包，致使去往网络 192.223.18.0&#x2F;24 的流量出现黑洞。</p>
+<p>假设 Alshan 从 AS500 学到了去往一条去往 196.223.18.0/24 的路由并通过 IBGP 连接将该路由宣告给 Huaibei，利用 next-hop-self 属性将 NEXT_HOP 更改为自己的路由器 ID，然后再由 Huaibei 将该路由宣告到 AS700，此时 AS700 中的路由器将可以将去往 192.223.18.0/24 的数据包转发给 Huaibei。</p>
+<p>Huaibei 在收到目的地为 192.223.18.0/24 的数据包之后发现通过 Alshan 可达该网络，因而查找 Alshan 的 IP 地址，发现通过下一跳路由器 Nanshan 可达。但是外部路由是通过 IBGP 在 Alshan 和 Huaibei 之间进行了共享，OSPF 路由器并不知道这些外部路由，因此 Nanshan 在收到数据包之后，无法找到关于 192.223.18.0/24 的路由表项，因而将丢弃该数据包预计后续去往该地址的其他数据包，致使去往网络 192.223.18.0/24 的流量出现黑洞。</p>
 <p>如果 OSPF 路由器知道这些外部路由，那么就不会出现上述问题了。同步规则的基础就是将 BGP 路由重新分发到 IGP 中，使 IGP 拥有正确的转发信息。但实际上很少这样使用，而且也没有长期使用，<strong>最佳实践是确保所有的转接路由器都能通过全网状 IBGP 连接获得自己所需的转发信息。让 BGP 路由留在 BGP 中，不但可以实现更为简单的逻辑结构，而且可以防止因大量的 BGP 路由重分发到 IGP 中而导致的性能劣化甚至系统奔溃</strong>。</p>
-<h2 id="将-BGP-NLRI-宣告到本地-AS-中"><a href="#将-BGP-NLRI-宣告到本地-AS-中" class="headerlink" title="将 BGP NLRI 宣告到本地 AS 中"></a>将 BGP NLRI 宣告到本地 AS 中</h2><p>除了末梢 AS 中的边缘路由器之外，其他路由器在绝大多数情况下都不需要学习 BGP 路由。如果与外部 AS 之间只有单一连接，那么只需要一条默认路由即可。默认路由对于大多数多归属末梢 AS 是足够的，AS 边界路由器将默认路由宣告到 IGP 中，内部路由器则选择去往最近的边界路由器。</p>
+<h2 id="将-bgp-nlri-宣告到本地-as-中"><a class="markdownIt-Anchor" href="#将-bgp-nlri-宣告到本地-as-中"></a> 将 BGP NLRI 宣告到本地 AS 中</h2>
+<p>除了末梢 AS 中的边缘路由器之外，其他路由器在绝大多数情况下都不需要学习 BGP 路由。如果与外部 AS 之间只有单一连接，那么只需要一条默认路由即可。默认路由对于大多数多归属末梢 AS 是足够的，AS 边界路由器将默认路由宣告到 IGP 中，内部路由器则选择去往最近的边界路由器。</p>
 <p>某些情况下，可能希望内部路由器拥有足够的路由信息，从而将数据包转发到最靠近外部目的端的边界路由器，而默认路由则无法做到这一点，除非拥有外部路由的更多细节信息，否则内部路由器都会将去往所有外部目的端的所有数据包都转发到最近的边界路由器（通常将该操作行为称为热土豆路由），将数据包转发到最近的 AS 出口点比将数据包转发到最靠近目的端的出口点更重要。</p>
 <p>虽然利用默认路由就可以很容易地实现热土豆路由，虽然热土豆路由能够节约内部带宽资源，但有时相应的代价就是潜在的长时延以及不对称流量模型。</p>
-<h3 id="将-BGP-NLRI-重分发到-IGP-中"><a href="#将-BGP-NLRI-重分发到-IGP-中" class="headerlink" title="将 BGP NLRI 重分发到 IGP 中"></a>将 BGP NLRI 重分发到 IGP 中</h3><p>让 AS 内部路由器获得更多路由信息的方式之一就是通过 redistribute bgp 语句将 BGP 学到的路由在 AS 边界路由器上重分发到 IGP 中。但是这种方法属于比较糟糕的做法：</p>
+<h3 id="将-bgp-nlri-重分发到-igp-中"><a class="markdownIt-Anchor" href="#将-bgp-nlri-重分发到-igp-中"></a> 将 BGP NLRI 重分发到 IGP 中</h3>
+<p>让 AS 内部路由器获得更多路由信息的方式之一就是通过 redistribute bgp 语句将 BGP 学到的路由在 AS 边界路由器上重分发到 IGP 中。但是这种方法属于比较糟糕的做法：</p>
 <ul>
 <li>BGP 与 IGP 之间的重分发操作打破了信任边界，从而可能将 IGP 暴露给有害信息</li>
 <li>BGP 的设计目的是处理 Internet 级别的路由器，而 IGP 并非如此。这么多的路由重分发到 OSPF 或 IS-IS 中会产生巨大的泛洪、处理以及数据库溢出问题。</li>
 </ul>
-<h3 id="案例研究：利用-IBGP-将-NLRI-重分发到末梢-AS-中"><a href="#案例研究：利用-IBGP-将-NLRI-重分发到末梢-AS-中" class="headerlink" title="案例研究：利用 IBGP 将 NLRI 重分发到末梢 AS 中"></a>案例研究：利用 IBGP 将 NLRI 重分发到末梢 AS 中</h3><p>让更多的路由信息进入多归属末梢 AS 的优选方式与将必要的路由信息传递给转接 AS 的方式相同：使用 IBGP。与重分发到 IGP 中相比，使用 IBGP 的好处主要有：</p>
+<h3 id="案例研究利用-ibgp-将-nlri-重分发到末梢-as-中"><a class="markdownIt-Anchor" href="#案例研究利用-ibgp-将-nlri-重分发到末梢-as-中"></a> 案例研究：利用 IBGP 将 NLRI 重分发到末梢 AS 中</h3>
+<p>让更多的路由信息进入多归属末梢 AS 的优选方式与将必要的路由信息传递给转接 AS 的方式相同：使用 IBGP。与重分发到 IGP 中相比，使用 IBGP 的好处主要有：</p>
 <ul>
 <li>外部路由器与 IGP 保持独立，避免对 IGP 性能造成负面影响</li>
 <li>可以有选择地分发外部路由信息。例如，可以从边界路由器到 AS 内不同区域的指定路由器之间创建 IBGP 邻接关系，并使用默认路由去往本地 BGP 路由器</li>
 <li>将外部路由保持在 IBGP 中，可以利用 BGP 提供的强大策略工具来表达路由优先级并进行前缀过滤</li>
 </ul>
-<h3 id="利用静态路由将-NLRI-宣告到末梢-AS-中"><a href="#利用静态路由将-NLRI-宣告到末梢-AS-中" class="headerlink" title="利用静态路由将 NLRI 宣告到末梢 AS 中"></a>利用静态路由将 NLRI 宣告到末梢 AS 中</h3><p>将 BGP 重分发到 IGP 中与在 AS 内使用 IBGP 两种方式的折中就是为希望达到的外部目的端创建静态路由并将该静态路由重分发到 IGP 中。如果只需要了解少量外部路由的细节信息，那么这种替代解决方案就非常有用。</p>
+<h3 id="利用静态路由将-nlri-宣告到末梢-as-中"><a class="markdownIt-Anchor" href="#利用静态路由将-nlri-宣告到末梢-as-中"></a> 利用静态路由将 NLRI 宣告到末梢 AS 中</h3>
+<p>将 BGP 重分发到 IGP 中与在 AS 内使用 IBGP 两种方式的折中就是为希望达到的外部目的端创建静态路由并将该静态路由重分发到 IGP 中。如果只需要了解少量外部路由的细节信息，那么这种替代解决方案就非常有用。</p>
 <p>配置静态路由时需要特别注意，因为这些静态路由的管理距离非常小，会替代路由表中的 BGP 路由去往指定目的端，因而这些路由必须指向 EBGP 邻居（引用去往该邻居的出站接口或者该邻居直连接口的地址），此后去往静态目的端的数据包就被转发给外部邻居。</p>
-<h3 id="将默认路由宣告给邻接-AS"><a href="#将默认路由宣告给邻接-AS" class="headerlink" title="将默认路由宣告给邻接 AS"></a>将默认路由宣告给邻接 AS</h3><p>有时（虽然很少）AS 必须将默认路由宣告给邻接 AS，例如某些服务提供商可能会控制客户自治系统中的边界路由器并希望从自己的边界路由器向这些客户网络发起默认路由。使用 neigbor default-originate 配置向邻居发送默认路由。语句 neighbor default-originate 并不会自动阻塞明细路由的宣告，这一点对于必须只向邻居宣告前缀的子集来说非常有用，可以使用默认路由来覆盖其他未宣告的前缀。</p>
+<h3 id="将默认路由宣告给邻接-as"><a class="markdownIt-Anchor" href="#将默认路由宣告给邻接-as"></a> 将默认路由宣告给邻接 AS</h3>
+<p>有时（虽然很少）AS 必须将默认路由宣告给邻接 AS，例如某些服务提供商可能会控制客户自治系统中的边界路由器并希望从自己的边界路由器向这些客户网络发起默认路由。使用 neigbor default-originate 配置向邻居发送默认路由。语句 neighbor default-originate 并不会自动阻塞明细路由的宣告，这一点对于必须只向邻居宣告前缀的子集来说非常有用，可以使用默认路由来覆盖其他未宣告的前缀。</p>
 <p>如果仅宣告默认路由以及已知 BGP 路由中的部分子集，那么就必须设置一定的路由策略。之前介绍过利用路由映射配置简单路由策略的示例，利用路由策略来控制将指定前缀分发到 BGP 中。虽然 neighbor distribute-list 是一种比较古老的前缀过滤工具，目前也更倾向于使用路由映射 、前缀列表以及其他策略工具，但该语句在简单过滤场合仍然非常有用。</p>
-<h2 id="利用-BGP-宣告聚合路由"><a href="#利用-BGP-宣告聚合路由" class="headerlink" title="利用 BGP 宣告聚合路由"></a>利用 BGP 宣告聚合路由</h2><p>路由聚合指的是以去往单个较短前缀的单条路由来表示去往多个目的前缀的多条路由，虽然路由聚合在很多网络中都很有用，但是对于保持大型 BGP 网络可控性来说尤为重要。路由聚合的好处有 ：</p>
+<h2 id="利用-bgp-宣告聚合路由"><a class="markdownIt-Anchor" href="#利用-bgp-宣告聚合路由"></a> 利用 BGP 宣告聚合路由</h2>
+<p>路由聚合指的是以去往单个较短前缀的单条路由来表示去往多个目的前缀的多条路由，虽然路由聚合在很多网络中都很有用，但是对于保持大型 BGP 网络可控性来说尤为重要。路由聚合的好处有 ：</p>
 <ul>
 <li>缩减路由表的规模，减少路由表宣告、存储以及处理所耗用的资源</li>
 <li>通过将明细前缀的变化隐藏到聚合点之后来提升网络的稳定性</li>
@@ -310,29 +319,27 @@
 <li>次路由选择</li>
 <li>提高了路由环路和黑洞数据包的风险</li>
 </ul>
-<h3 id="案例研究：利用静态路由进行聚合"><a href="#案例研究：利用静态路由进行聚合" class="headerlink" title="案例研究：利用静态路由进行聚合"></a>案例研究：利用静态路由进行聚合</h3><p>如下所示，AS100 包含了 8 个 24 位前缀，这些前缀可以汇总成一个 21 位聚合地址 192.168.192.0&#x2F;21，Stowe 通过 EIGRP 学习内部网络并通过 EBGP 将聚合地址宣告给 Sugarbush。</p>
+<h3 id="案例研究利用静态路由进行聚合"><a class="markdownIt-Anchor" href="#案例研究利用静态路由进行聚合"></a> 案例研究：利用静态路由进行聚合</h3>
+<p>如下所示，AS100 包含了 8 个 24 位前缀，这些前缀可以汇总成一个 21 位聚合地址 192.168.192.0/21，Stowe 通过 EIGRP 学习内部网络并通过 EBGP 将聚合地址宣告给 Sugarbush。</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/06.jpg" class="">
-
 <p>BGP 可以通过两种方法来创建聚合地址，第一种方法是在路由表中为聚合地址创建一条静态表项并通过 network 语句宣告给静态路由，第二种方法是利用 aggregate-address 语句。</p>
 <p>如下展示了 Stowe 的配置信息，通过 network 语句宣告了静态聚合地址：</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/07.jpg" class="">
-
 <p>由于聚合地址并不是一个合法的最终目的端，因此静态路由指向的是一个空接口。目的地址属于 AS100 前缀的数据包将在 AS100 的外部路由器上匹配该聚合地址并被转发到 Stowe 上，数据包在路由器 Stowe 上匹配明细地址并被转发给正确的内部下一跳路由器。如果处于某种原因导致明细前缀不在 Stowe 的路由表中，那么数据包将转发给空接口并被丢弃。</p>
-<h3 id="利用-aggregate-address-语句进行聚合"><a href="#利用-aggregate-address-语句进行聚合" class="headerlink" title="利用 aggregate-address 语句进行聚合"></a>利用 aggregate-address 语句进行聚合</h3><p>随着拓扑结构以及路由策略复杂度的提高，使用 aggregate-address 语句进行路由聚合是一种更好的方式。如果要宣告由 aggregate-address 语句指定的聚合地址，那么属于该聚合地址中的明细地址至少要有一个通过重分发或 network 语句进入 BGP 表。</p>
+<h3 id="利用-aggregate-address-语句进行聚合"><a class="markdownIt-Anchor" href="#利用-aggregate-address-语句进行聚合"></a> 利用 aggregate-address 语句进行聚合</h3>
+<p>随着拓扑结构以及路由策略复杂度的提高，使用 aggregate-address 语句进行路由聚合是一种更好的方式。如果要宣告由 aggregate-address 语句指定的聚合地址，那么属于该聚合地址中的明细地址至少要有一个通过重分发或 network 语句进入 BGP 表。</p>
 <p>如下给出了 Stowe 使用 aggregate-address 语句以及重分发机制的配置示例：</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/08.jpg" class="">
-
 <p>此时 Stowe 的 BGP 表包含了所有的明细路由，但 Sugarbush 的 BGP 表仍仅包含聚合路由。这是因为 aggregate-address 语句使用了选项 summary-only，如果没有该选项，那么就会同时宣告聚合路由和明细路由。</p>
 <p>在如下网络中，图中的 AS100 多归属到 AS200，AS200 需要获得全部路由信息，同时需要对宣告给 AS300 的路由设置策略，只能向 AS300 宣告聚合路由。</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/09.jpg" class="">
-
 <p>被称为 NO_EXPORT 的 COMMUNITY 路径属性对于这类应用场景来说非常有用，NO_EXPORT 属性是一种周知选项，路由器都能识别该属性，就会将这些路由宣告给 IBGP 对等体，而不宣告给 EBGP 对等体。也就是说这些路由可以在本地 AS 内部进行宣告，而无法宣告给其他自治系统。</p>
 <p>如下给出了 Stowe 的配置示例，由于删除了 aggregate-address 语句中的关键字 summary-only，因此 Stowe 将聚合路由和明细路由都宣告给了 AS200。而 neighbor 192.168.1.253 send-community 语句要求允许将路由中的 COMMUNITY 属性发送给 Sugarbush，neighbor 192.168.1.253 route-map COMMUNITY out 语句则通过名为 COMMUNITY 的路由映射过滤出站 BGP 路由。如果路由映射发现路由更新与 access list 101 匹配，那么就不设置 COMMUNITY 属性， set community none 语句会在发送前缀前删除全部已有的团体属性，如果路由不匹配 access list 101，那么就会将路由的 COMMUNITY 属性设置为 NO_EXPORT。</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/10.jpg" class="">
-
 <p>因此 Sugarbush 的 BGP 表将同时包含聚合路由和明细路由，而 show ip bgp community no-export 将显示携带了 NO_EXPORT COMMUNITY 属性的路由信息，列出了来自 Stowe 的全部路由（聚合路由除外）。</p>
 <p>Mammoth 的配置也类似，由于 Sugarbush 和 Diamond 已经抑制了拥有 NO_EXPORT COMMUNITY 属性的所有路由，因而 Burker 的 BGP 表只有聚合路由。请注意，不需要配置 Sugarbush 和 Diamond 来抑制这些路由，因为这些都是默认行为。</p>
-<h3 id="ATOMIC-AGGREGATE-与-AGGREGATOR-属性"><a href="#ATOMIC-AGGREGATE-与-AGGREGATOR-属性" class="headerlink" title="ATOMIC_AGGREGATE 与 AGGREGATOR 属性"></a>ATOMIC_AGGREGATE 与 AGGREGATOR 属性</h3><p>在使用 show ip bgp 命令中指定前缀，就可以进一步观察 BGP 表项的细节信息。对于在 Diamond 中的聚合路由 192.168.192.0&#x2F;21，其有两个有注意的属性，分别在表项中以 atomic-aggregate 和 100 192.168.199.2 加以说明，表示的路径属性分别是 ATOMIC_AGGREGATE 和 AGGREGATOR，这两个路径属性仅与聚合路由相关联。</p>
+<h3 id="atomic_aggregate-与-aggregator-属性"><a class="markdownIt-Anchor" href="#atomic_aggregate-与-aggregator-属性"></a> ATOMIC_AGGREGATE 与 AGGREGATOR 属性</h3>
+<p>在使用 show ip bgp 命令中指定前缀，就可以进一步观察 BGP 表项的细节信息。对于在 Diamond 中的聚合路由 192.168.192.0/21，其有两个有注意的属性，分别在表项中以 atomic-aggregate 和 100 192.168.199.2 加以说明，表示的路径属性分别是 ATOMIC_AGGREGATE 和 AGGREGATOR，这两个路径属性仅与聚合路由相关联。</p>
 <p>路由器在执行路径决策过程时，始终选择明细路径。但是在宣告路由时，可以通过以下 BGP 配置来处理重叠路由：</p>
 <ul>
 <li>同时宣告明细路由和较不明细的路由</li>
@@ -345,14 +352,15 @@
 <p>执行路由聚合操作会丢失某些路由信息，路由选择也将变得不够精确。如果 BGP 发话路由器执行了路由聚合操作，那么丢失的信息就是路径细节信息。</p>
 <p>在如下所示的网络中，AS3113 宣告了一个聚合地址，该聚合地址代表了多个自治系统中的多个地址，由于该聚合前缀源自 AS3113，因而 AS_PATH 属性中仅包含自己的 AS 号，从而该聚合前缀代表的明细前缀的部分路径信息就丢失了。</p>
 <img src="/fuchencong.github.io/2019/05/28/routing-tcp-ip-17/images/11.jpg" class="">
-
 <p>ATOMIC_AGGREGATE 是一种周知的自选属性，作用是通知下游路由器路径信息出现了丢失。BGP 发话路由器将明细路由汇总成较不明细的聚合路由之后，路劲信息就会出现丢失，BGP 发话路由器必须为聚合路由设置 ATOMIC_AGGREGATE 属性，下游 BGP 发话路由器收到携带 ATOMIC_AGGREGATE 属性的路由之后，都无法构造该路由更明细的 NLRI 信息，将该路由宣告给其他对等体时，也必须保留 ATOMIC_AGGREGATE 属性。</p>
 <p>设置了 ATOMIC_AGGREGATE 属性之后，BGP 发话路由器还可以配置 AGGREGATOR 属性，该可选传递性属性通过包含发起聚合路由的路由器的 AS 号和 IP 地址来提供聚合发生点的信息。IOS 的 BGP 实现是在 AGGREGATOR 属性中插入该 BGP 路由器的 ID。</p>
 <p>由于这两种路径属性都不会影响 BGP 决策进程，因而都不是策略工具。但是他们是在检测与排除聚合路由故障时能够提供非常有用的参考信息，ATOMIC_AGGREGATE 可以充当提醒该路由是聚合路由的标记，因为检查大量 BGP 路由时，聚合路由可能并非显而易见，特别是在离聚合点很远的上游位置检查路由时更加能以确定。接下来就可以利用 AGGREGATOR 属性往回找到聚合点。</p>
-<h3 id="聚合时使用-AS-SET"><a href="#聚合时使用-AS-SET" class="headerlink" title="聚合时使用 AS_SET"></a>聚合时使用 AS_SET</h3><p>在聚合点外丢失路径细节信息所产生的问题之一就是削弱了 BGP 环路避免机制，但 AS_PATH 属性中的有序 AS 号列表（AS_SEQUENCE）对环路避免机制来说并不是必须的，这是因为只要 AS 列表中存在某个 AS 号，那么路径就不会经该 AS 进行环回。为了恢复在聚合点丢失的环路避免信息，可以将被称为 AS_SET 的可选列表添加到 AS_PATH 属性中，AS_SET 是一个无序的 AS 号列表，与 AS_SEQUENCE 不同，AS_SET 能够说明聚合点后去往成员前缀的多条路径。</p>
+<h3 id="聚合时使用-as_set"><a class="markdownIt-Anchor" href="#聚合时使用-as_set"></a> 聚合时使用 AS_SET</h3>
+<p>在聚合点外丢失路径细节信息所产生的问题之一就是削弱了 BGP 环路避免机制，但 AS_PATH 属性中的有序 AS 号列表（AS_SEQUENCE）对环路避免机制来说并不是必须的，这是因为只要 AS 列表中存在某个 AS 号，那么路径就不会经该 AS 进行环回。为了恢复在聚合点丢失的环路避免信息，可以将被称为 AS_SET 的可选列表添加到 AS_PATH 属性中，AS_SET 是一个无序的 AS 号列表，与 AS_SEQUENCE 不同，AS_SET 能够说明聚合点后去往成员前缀的多条路径。</p>
 <p>由于 AS_SEQUENCE 是以发起聚合路由的 AS 为起始 AS，为了在宣告 AS_SEQUENCE（AS_PATH 属性的一部分）的同时也宣告 AS_SET，在 aggregate-address 语句中增加关键字 as-set 即可。AS_SET 是去往明细地址（构成该聚合路由）的路径上的无序 AS 号列表，与 AS_SEQUENCE 不同，AS_SET 的目的并不是确定最短路径，其唯一目的就是恢复聚合路由中的环路检测功能。</p>
 <p>需要注意，宣告 AS_SET 时，聚合路由将继承被聚合路由的所有属性。有时可能希望宣告携带 AS_SET 的聚合路由，但又不希望继承所有被聚合路由的所有属性。这里需要讨论的是 aggregate-address 命令的 advertise-map 选项，有了该选项之后，就可以基于聚合路由进行路由选择。例如如果在进行路由聚合时不考虑指定的明细路由，那么聚合路由就不会继承该路由的属性。</p>
-<h2 id="展望"><a href="#展望" class="headerlink" title="展望"></a>展望</h2><p>现在已经掌握了通过 BGP 邻居宣告前缀的各种方法以及收发前缀时可能遇到的各种问题，如与本地 IGP 之间的相互作用以及宣告聚合前缀，另外还介绍了很多与 BGP 前缀相关的查看以及故障检测与排除命令。接下来将进一步介绍 BGP 路由策略的相关概念、设置路由策略的相关属性以及更多创建 BGP 策略和检测与排除 BGP 策略故障的 IOS 工具。</p>
+<h2 id="展望"><a class="markdownIt-Anchor" href="#展望"></a> 展望</h2>
+<p>现在已经掌握了通过 BGP 邻居宣告前缀的各种方法以及收发前缀时可能遇到的各种问题，如与本地 IGP 之间的相互作用以及宣告聚合前缀，另外还介绍了很多与 BGP 前缀相关的查看以及故障检测与排除命令。接下来将进一步介绍 BGP 路由策略的相关概念、设置路由策略的相关属性以及更多创建 BGP 策略和检测与排除 BGP 策略故障的 IOS 工具。</p>
 
     </div>
 
@@ -436,7 +444,7 @@
 
       <!--noindex-->
       <div class="post-toc-wrap sidebar-panel">
-          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9C%A8-BGP-%E4%B8%AD%E9%85%8D%E7%BD%AE-NLRI"><span class="nav-number">1.</span> <span class="nav-text">在 BGP 中配置 NLRI</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-network-%E8%AF%AD%E5%8F%A5%E6%B3%A8%E5%85%A5%E5%89%8D%E7%BC%80"><span class="nav-number">1.1.</span> <span class="nav-text">利用 network 语句注入前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-network-mask-%E8%AF%AD%E5%8F%A5%E6%B3%A8%E5%85%A5%E5%89%8D%E7%BC%80"><span class="nav-number">1.2.</span> <span class="nav-text">利用 network mask 语句注入前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8%E9%87%8D%E5%88%86%E5%8F%91%E6%B3%A8%E5%85%A5%E5%89%8D%E7%BC%80"><span class="nav-number">1.3.</span> <span class="nav-text">利用重分发注入前缀</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#NLRI-%E4%B8%8E-IBGP"><span class="nav-number">2.</span> <span class="nav-text">NLRI 与 IBGP</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%A8-IBGP-%E6%8B%93%E6%89%91%E7%BB%93%E6%9E%84%E4%B8%AD%E7%AE%A1%E7%90%86%E5%89%8D%E7%BC%80"><span class="nav-number">2.1.</span> <span class="nav-text">在 IBGP 拓扑结构中管理前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#IBGP-%E4%B8%8E-IGP-%E5%90%8C%E6%AD%A5"><span class="nav-number">2.2.</span> <span class="nav-text">IBGP 与 IGP 同步</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%86-BGP-NLRI-%E5%AE%A3%E5%91%8A%E5%88%B0%E6%9C%AC%E5%9C%B0-AS-%E4%B8%AD"><span class="nav-number">3.</span> <span class="nav-text">将 BGP NLRI 宣告到本地 AS 中</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B0%86-BGP-NLRI-%E9%87%8D%E5%88%86%E5%8F%91%E5%88%B0-IGP-%E4%B8%AD"><span class="nav-number">3.1.</span> <span class="nav-text">将 BGP NLRI 重分发到 IGP 中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E5%88%A9%E7%94%A8-IBGP-%E5%B0%86-NLRI-%E9%87%8D%E5%88%86%E5%8F%91%E5%88%B0%E6%9C%AB%E6%A2%A2-AS-%E4%B8%AD"><span class="nav-number">3.2.</span> <span class="nav-text">案例研究：利用 IBGP 将 NLRI 重分发到末梢 AS 中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8%E9%9D%99%E6%80%81%E8%B7%AF%E7%94%B1%E5%B0%86-NLRI-%E5%AE%A3%E5%91%8A%E5%88%B0%E6%9C%AB%E6%A2%A2-AS-%E4%B8%AD"><span class="nav-number">3.3.</span> <span class="nav-text">利用静态路由将 NLRI 宣告到末梢 AS 中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B0%86%E9%BB%98%E8%AE%A4%E8%B7%AF%E7%94%B1%E5%AE%A3%E5%91%8A%E7%BB%99%E9%82%BB%E6%8E%A5-AS"><span class="nav-number">3.4.</span> <span class="nav-text">将默认路由宣告给邻接 AS</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-BGP-%E5%AE%A3%E5%91%8A%E8%81%9A%E5%90%88%E8%B7%AF%E7%94%B1"><span class="nav-number">4.</span> <span class="nav-text">利用 BGP 宣告聚合路由</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%EF%BC%9A%E5%88%A9%E7%94%A8%E9%9D%99%E6%80%81%E8%B7%AF%E7%94%B1%E8%BF%9B%E8%A1%8C%E8%81%9A%E5%90%88"><span class="nav-number">4.1.</span> <span class="nav-text">案例研究：利用静态路由进行聚合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-aggregate-address-%E8%AF%AD%E5%8F%A5%E8%BF%9B%E8%A1%8C%E8%81%9A%E5%90%88"><span class="nav-number">4.2.</span> <span class="nav-text">利用 aggregate-address 语句进行聚合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ATOMIC-AGGREGATE-%E4%B8%8E-AGGREGATOR-%E5%B1%9E%E6%80%A7"><span class="nav-number">4.3.</span> <span class="nav-text">ATOMIC_AGGREGATE 与 AGGREGATOR 属性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%81%9A%E5%90%88%E6%97%B6%E4%BD%BF%E7%94%A8-AS-SET"><span class="nav-number">4.4.</span> <span class="nav-text">聚合时使用 AS_SET</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B1%95%E6%9C%9B"><span class="nav-number">5.</span> <span class="nav-text">展望</span></a></li></ol></div>
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9C%A8-bgp-%E4%B8%AD%E9%85%8D%E7%BD%AE-nlri"><span class="nav-number">1.</span> <span class="nav-text"> 在 BGP 中配置 NLRI</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-network-%E8%AF%AD%E5%8F%A5%E6%B3%A8%E5%85%A5%E5%89%8D%E7%BC%80"><span class="nav-number">1.1.</span> <span class="nav-text"> 利用 network 语句注入前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-network-mask-%E8%AF%AD%E5%8F%A5%E6%B3%A8%E5%85%A5%E5%89%8D%E7%BC%80"><span class="nav-number">1.2.</span> <span class="nav-text"> 利用 network mask 语句注入前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8%E9%87%8D%E5%88%86%E5%8F%91%E6%B3%A8%E5%85%A5%E5%89%8D%E7%BC%80"><span class="nav-number">1.3.</span> <span class="nav-text"> 利用重分发注入前缀</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#nlri-%E4%B8%8E-ibgp"><span class="nav-number">2.</span> <span class="nav-text"> NLRI 与 IBGP</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%A8-ibgp-%E6%8B%93%E6%89%91%E7%BB%93%E6%9E%84%E4%B8%AD%E7%AE%A1%E7%90%86%E5%89%8D%E7%BC%80"><span class="nav-number">2.1.</span> <span class="nav-text"> 在 IBGP 拓扑结构中管理前缀</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ibgp-%E4%B8%8E-igp-%E5%90%8C%E6%AD%A5"><span class="nav-number">2.2.</span> <span class="nav-text"> IBGP 与 IGP 同步</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%86-bgp-nlri-%E5%AE%A3%E5%91%8A%E5%88%B0%E6%9C%AC%E5%9C%B0-as-%E4%B8%AD"><span class="nav-number">3.</span> <span class="nav-text"> 将 BGP NLRI 宣告到本地 AS 中</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B0%86-bgp-nlri-%E9%87%8D%E5%88%86%E5%8F%91%E5%88%B0-igp-%E4%B8%AD"><span class="nav-number">3.1.</span> <span class="nav-text"> 将 BGP NLRI 重分发到 IGP 中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%E5%88%A9%E7%94%A8-ibgp-%E5%B0%86-nlri-%E9%87%8D%E5%88%86%E5%8F%91%E5%88%B0%E6%9C%AB%E6%A2%A2-as-%E4%B8%AD"><span class="nav-number">3.2.</span> <span class="nav-text"> 案例研究：利用 IBGP 将 NLRI 重分发到末梢 AS 中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8%E9%9D%99%E6%80%81%E8%B7%AF%E7%94%B1%E5%B0%86-nlri-%E5%AE%A3%E5%91%8A%E5%88%B0%E6%9C%AB%E6%A2%A2-as-%E4%B8%AD"><span class="nav-number">3.3.</span> <span class="nav-text"> 利用静态路由将 NLRI 宣告到末梢 AS 中</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B0%86%E9%BB%98%E8%AE%A4%E8%B7%AF%E7%94%B1%E5%AE%A3%E5%91%8A%E7%BB%99%E9%82%BB%E6%8E%A5-as"><span class="nav-number">3.4.</span> <span class="nav-text"> 将默认路由宣告给邻接 AS</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-bgp-%E5%AE%A3%E5%91%8A%E8%81%9A%E5%90%88%E8%B7%AF%E7%94%B1"><span class="nav-number">4.</span> <span class="nav-text"> 利用 BGP 宣告聚合路由</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%88%E4%BE%8B%E7%A0%94%E7%A9%B6%E5%88%A9%E7%94%A8%E9%9D%99%E6%80%81%E8%B7%AF%E7%94%B1%E8%BF%9B%E8%A1%8C%E8%81%9A%E5%90%88"><span class="nav-number">4.1.</span> <span class="nav-text"> 案例研究：利用静态路由进行聚合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A9%E7%94%A8-aggregate-address-%E8%AF%AD%E5%8F%A5%E8%BF%9B%E8%A1%8C%E8%81%9A%E5%90%88"><span class="nav-number">4.2.</span> <span class="nav-text"> 利用 aggregate-address 语句进行聚合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#atomic_aggregate-%E4%B8%8E-aggregator-%E5%B1%9E%E6%80%A7"><span class="nav-number">4.3.</span> <span class="nav-text"> ATOMIC_AGGREGATE 与 AGGREGATOR 属性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%81%9A%E5%90%88%E6%97%B6%E4%BD%BF%E7%94%A8-as_set"><span class="nav-number">4.4.</span> <span class="nav-text"> 聚合时使用 AS_SET</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B1%95%E6%9C%9B"><span class="nav-number">5.</span> <span class="nav-text"> 展望</span></a></li></ol></div>
       </div>
       <!--/noindex-->
 
@@ -452,20 +460,20 @@
       <div class="site-state-item site-state-posts">
           <a href="/fuchencong.github.io/archives/">
         
-          <span class="site-state-item-count">197</span>
+          <span class="site-state-item-count">198</span>
           <span class="site-state-item-name">日志</span>
         </a>
       </div>
       <div class="site-state-item site-state-categories">
             <a href="/fuchencong.github.io/categories/">
           
-        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-count">17</span>
         <span class="site-state-item-name">分类</span></a>
       </div>
       <div class="site-state-item site-state-tags">
             <a href="/fuchencong.github.io/tags/">
           
-        <span class="site-state-item-count">33</span>
+        <span class="site-state-item-count">34</span>
         <span class="site-state-item-name">标签</span></a>
       </div>
   </nav>
@@ -557,6 +565,11 @@
 
 
   
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
 
   
 
