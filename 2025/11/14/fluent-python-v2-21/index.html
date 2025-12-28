@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章将介绍 Python 中的异步编程，这些内容建立在之介绍的可迭代对象和生成器、上下文管理器、以及并发编程一般概念等基础之上。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="流畅的 Python 第 2 版（21）：异步编程">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2025/11/14/fluent-python-v2-21/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章将介绍 Python 中的异步编程，这些内容建立在之介绍的可迭代对象和生成器、上下文管理器、以及并发编程一般概念等基础之上。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-11-14T14:16:20.000Z">
+<meta property="article:modified_time" content="2025-12-28T11:24:15.557Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2025/11/14/fluent-python-v2-21/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>流畅的 Python 第 2 版（21）：异步编程 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2025/11/14/fluent-python-v2-21/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          流畅的 Python 第 2 版（21）：异步编程
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-11-14 22:16:20" itemprop="dateCreated datePublished" datetime="2025-11-14T22:16:20+08:00">2025-11-14</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章将介绍 Python 中的异步编程，这些内容建立在之介绍的可迭代对象和生成器、上下文管理器、以及并发编程一般概念等基础之上。</p>
+<span id="more"></span>
+<h2 id="一些定义"><a class="markdownIt-Anchor" href="#一些定义"></a> 一些定义</h2>
+<ul>
+<li>
+<p>原生协程：使用 <code>async def</code> 定义的协程函数。在原生协程内可以使用 await 关键字委托另一个原生协程，这类似于在经典协程中使用 <code>yield from</code>。<strong><code>async def</code> 语句定义的始终是原生协程，即使主体中没有使用 await 关键字。await 关键字不能在原生协程外部使用</strong></p>
+</li>
+<li>
+<p>经典协程：一种生成器函数，在表达式中使用 yield 读取 <code>my_coro.send(data)</code> 调用发送的数据。经典协程可以使用 <code>yield from</code> 委托其他经典协程。经典协程不能由 await 驱动，而且 asyncio 库不再支持</p>
+</li>
+<li>
+<p>基于生成器的协程：基于生成器的协程一种使用 <code>@types.coroutine</code>（Python3.5 引入）装饰的生成器函数。使用这个装饰器的生成器与新增的 await 关键字兼容</p>
+</li>
+</ul>
+<p><strong>供经典协程和基于生成器的协程使用的 <code>@asyncio.coroutine</code> 装饰器在 Python3.8 中已被弃用</strong>。</p>
+<h2 id="探测域名"><a class="markdownIt-Anchor" href="#探测域名"></a> 探测域名</h2>
+<p>如下脚本通过原生协程对象探测 DNS。由于异步操作是交叉执行的，因此检查多个域名所需的时间比依序检查少很多。其实，总用时基本与最慢的 DNS 响应时长相当，而不是所有响应时间之和：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> socket</span><br><span class="line"><span class="keyword">from</span> keyword <span class="keyword">import</span> kwlist</span><br><span class="line"></span><br><span class="line">MAX_KEYWORD_LEN = <span class="number">4</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">probe</span>(<span class="params">domain: <span class="built_in">str</span></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">bool</span>]:</span><br><span class="line">    loop = asyncio.get_running_loop()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">await</span> loop.getaddrinfo(domain, <span class="literal">None</span>)</span><br><span class="line">    <span class="keyword">except</span> socket.gaierror:</span><br><span class="line">        <span class="keyword">return</span> (domain, <span class="literal">False</span>)</span><br><span class="line">    <span class="keyword">return</span> (domain, <span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    names = (kw <span class="keyword">for</span> kw <span class="keyword">in</span> kwlist <span class="keyword">if</span> <span class="built_in">len</span>(kw) &lt;= MAX_KEYWORD_LEN)</span><br><span class="line">    domains = (<span class="string">f&#x27;<span class="subst">&#123;name&#125;</span>.dev&#x27;</span>.lower() <span class="keyword">for</span> name <span class="keyword">in</span> names)</span><br><span class="line">    coros = [probe(domain) <span class="keyword">for</span> domain <span class="keyword">in</span> domains]</span><br><span class="line">    <span class="keyword">for</span> coro <span class="keyword">in</span> asyncio.as_completed(coros):</span><br><span class="line">        domain, found = <span class="keyword">await</span> coro</span><br><span class="line">        mark = <span class="string">&#x27;+&#x27;</span> <span class="keyword">if</span> found <span class="keyword">else</span> <span class="string">&#x27; &#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;mark&#125;</span> <span class="subst">&#123;domain&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<ul>
+<li>通过 <code>asyncio.get_running_loop()</code> 获取当前事件循环的引用，供后面使用</li>
+<li>协程方法 <code>loop.getaddrinfo(...)</code> 返回一个五元组，使用套接字连接指定的地址</li>
+<li><code>[probe(domain) for domain in domains]</code> 通过调用 probe 协程函数，并用列表推导构建一个协程对象的列表</li>
+<li><code>asyncio.as_completed</code> 是一个生成器，产出协程，<strong>按照传入协程的完成的顺序（不是协程的提交顺序）返回结果</strong>（类似于之前看到过的 <code>futures.as_completed</code>）</li>
+<li>由于 <code>as_completed</code> 产出的协程对象已经完成，因此直接 await 这个协程并不会阻塞</li>
+<li>通过 <code>await coro</code> 获取协程的运行结果，若 coro 抛出的异常未被处理，会在这里重新抛出</li>
+<li><code>asyncio.run</code> 启动事件循环，仅当事件循环退出后返回。将 <code>main</code> 作为协程并通过 <code>asyncio.run</code> 运行，是启动异步程序的常用方式</li>
+</ul>
+<p>需要注意，<code>asyncio.get_running_loop</code> 函数在 Python3.7 中新增，供协程内部使用：</p>
+<ul>
+<li><strong>如果没有运行中的循环，那么 <code>asyncio.get_running_loop</code> 抛出 RuntimeError</strong></li>
+<li><code>asyncio.get_running_loop</code> 的实现比 <code>asyncio.get_event_loop</code> 更简单，速度也更快</li>
+<li><strong><code>asyncio.get_event_loop</code> 在必要时会启动事件循环。从 Python3.10 开始， <code>asyncio.get_event_loop</code> 已被弃用，最终将变成 <code>asyncio.get_running_loop</code> 的别名</strong></li>
+</ul>
+<p><code>await loop.getaddrinfo(...)</code> 句法能避免阻塞，因为 await 中止当前协程对象。<code>loop.getaddrinfo(...)</code> 创建一个新的协程对象，等待该协程对象启动底层 addrinfo 查询，<strong>控制权交还事件循环，而不是被中止的 <code>probe</code> 协程，这样事件循环就可以驱动其他待完成的协程对象</strong>。</p>
+<p>阅读异步代码一个技巧是，对 await 关键字视而不见，假装它不存在。如此一来，协程就像是依序运行的常规函数。</p>
+<h2 id="可异步调用对象"><a class="markdownIt-Anchor" href="#可异步调用对象"></a> 可异步调用对象</h2>
+<p>for 关键字处理可迭代对象，<strong>await 关键字处理可异步调用对象</strong>。作为 asyncio 库的终端用户，日常可见到以下两种可异步调用对象：</p>
+<ul>
+<li>原生协程对象：通过调用原生协程函数得到</li>
+<li><code>asyncio.Task</code>：通常由把协程对象传给 <code>asyncio.create_task()</code> 得到</li>
+</ul>
+<p>终端用户编写的代码不一定要使用 await 处理 Task，还可以使用 <code>asyncio.create_task(one_coro())</code> 调度 <code>one_coro</code> 自动执行，不等待它返回。如果不打算取消或等待任务，则无须保存 create_task 返回的 Task 对象。<strong>仅仅创建任务后，事件循环就能在合适的时机自动调度协程运行</strong>。相比之下，使用 <code>await other_coro()</code> 立即运行 <code>other_coro</code>，<strong>等待协程运行完毕，因为继续向下执行之前需要协程返回的结果</strong>。</p>
+<p>总结一下：</p>
+<ul>
+<li><code>asyncio.create_task(one_coro())</code> 创建得到一个 Task 对象，事件循环会自动在合适的时机调度协程执行</li>
+<li><code>await other_coro()</code> 立即运行协程，并等待它返回结果才会继续向下执行</li>
+<li>也能对 task 对象进行 await，以等待 task 对象完成</li>
+</ul>
+<p>如下展示了两个例子：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">from</span> time <span class="keyword">import</span> time</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">one_coro</span>():</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;coro started&quot;</span>, time())</span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">2</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;coro ended&quot;</span>, time())</span><br><span class="line">    <span class="keyword">return</span> <span class="number">10</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    task = asyncio.create_task(one_coro())</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;task created&quot;</span>, time())</span><br><span class="line">    <span class="comment"># 事件循环会自动调度 one_coro 协程执行</span></span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">5</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;main ended&quot;</span>, time())</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">task created 1765594501.602654</span><br><span class="line">coro started 1765594501.602734</span><br><span class="line">coro ended 1765594503.603949</span><br><span class="line">main ended 1765594506.604118</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">one_coro</span>():</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;coro started&quot;</span>)</span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">2</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;coro ended&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">10</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    task = asyncio.create_task(one_coro())</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;await task started&quot;</span>)</span><br><span class="line">    <span class="comment"># 手动 await task 对象，等待它完成</span></span><br><span class="line">    t = <span class="keyword">await</span> task</span><br><span class="line">    <span class="built_in">print</span>(t)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;await task ended&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">await task started</span><br><span class="line">coro started</span><br><span class="line">coro ended</span><br><span class="line">10</span><br><span class="line">await task ended</span><br></pre></td></tr></table></figure>
+<p>实现异步库，或者为 asyncio 库做贡献时，可能还要处理以下底层的可异步调用对象：</p>
+<ul>
+<li>提供 <code>__await__</code> 方法、返回一个迭代器的对象；例如，<code>asyncio.Future</code> 实例（<code>asyncio.Task</code> 是 <code>asyncio.Future</code> 的子类</li>
+<li>以其他语言编写的对象，使用 <code>Python/C API</code>，提供 <code>tp_as_async.am_await</code> 函数（类似于 <code>__await__</code> 方法）​，返回一个迭代器</li>
+</ul>
+<p>现有代码库里可能还有一种可异步调用对象：基于生成器的协程对象，但是正在走弃用流程。</p>
+<p>PEP 492 指出，await 表达式 <code>使用 yield from 实现，外加验证参数步骤</code>​，而且 await 只接受一个可异步调用对象。</p>
+<h2 id="使用-asyncio-和-httpx-下载"><a class="markdownIt-Anchor" href="#使用-asyncio-和-httpx-下载"></a> 使用 asyncio 和 HTTPX 下载</h2>
+<p>自 Python3.10 起，asyncio 库仅直接支持 TCP 和 UDP，而且标准库中没有异步 HTTP 客户端和服务器包。在所有 HTTP 客户端示例中，将使用 HTTPX。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> httpx <span class="keyword">import</span> AsyncClient</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> flags <span class="keyword">import</span> BASE_URL, save_flag, main</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">download_one</span>(<span class="params">client: AsyncClient, cc: <span class="built_in">str</span></span>):</span><br><span class="line">    image = <span class="keyword">await</span> get_flag(client, cc)</span><br><span class="line">    save_flag(image, <span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>)</span><br><span class="line">    <span class="built_in">print</span>(cc, end=<span class="string">&#x27; &#x27;</span>, flush=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">return</span> cc</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_flag</span>(<span class="params">client: AsyncClient, cc: <span class="built_in">str</span></span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    url = <span class="string">f&#x27;<span class="subst">&#123;BASE_URL&#125;</span>/<span class="subst">&#123;cc&#125;</span>/<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>.lower()</span><br><span class="line">    resp = <span class="keyword">await</span> client.get(url, timeout=<span class="number">6.1</span>,</span><br><span class="line">                                  follow_redirects=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">return</span> resp.read()</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    <span class="keyword">return</span> asyncio.run(supervisor(cc_list))</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">supervisor</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> AsyncClient() <span class="keyword">as</span> client:</span><br><span class="line">        to_do = [download_one(client, cc)</span><br><span class="line">                 <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list)]</span><br><span class="line">        res = <span class="keyword">await</span> asyncio.gather(*to_do)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(res)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>httpx 中的异步 HTTP 客户端是 AsyncClient。<strong>AsyncClient 还是异步上下文管理器，即提供了异步设置和清理方法的上下文管理器</strong></li>
+<li><code>asyncio.gather</code> 接受的参数是一个或多个可异步调用对象，等待全部执行完毕，以可异步调用对象的提交顺序返回结果列表</li>
+<li>为了提升性能，<code>download_one</code> 中的 <code>save_flag</code> 调用应该异步执行，以免阻塞事件循环。但是，目前 <code>asyncio</code> 没有提供（类似 Node.js 那种）异步文件系统 API</li>
+</ul>
+<h3 id="原生协程的秘密默默无闻的生成器"><a class="markdownIt-Anchor" href="#原生协程的秘密默默无闻的生成器"></a> 原生协程的秘密：默默无闻的生成器</h3>
+<p>经典协程示例和原生协程的关键区别在于，后者没有一目了然的 <code>.send()</code> 调用或 yield 表达式。你的代码位于 asyncio 库和你使用的异步库（例如 HTTPX）之间。<strong>asyncio 事件循环在背后调用 <code>.send</code> 驱动你的协程，而你的协程使用 await 等待其他协程，包括库提供的协程</strong>。await 的实现大量借鉴 <code>yield from</code>，也调用 <code>.send</code> 驱动协程。</p>
+<p>await 链最终到达一个底层可异步调用对象，返回一个生成器，由事件循环驱动，对计时器或网络 I/O 等事件做出响应。位于 await 链末端的底层可异步调用对象深埋在库的实现中，不作为 API 开放，有可能是 Python/C 扩展。</p>
+<p>使用 <code>asyncio.gather</code> 和 <code>asyncio.create_task</code> 等函数可以启动多个并发 await 通道，在单个线程内由单个事件循环驱动多个 I/O 操作并发执行。</p>
+<h3 id="不成功便成仁-问题"><a class="markdownIt-Anchor" href="#不成功便成仁-问题"></a> <code>不成功便成仁</code> 问题</h3>
+<p>为了使用 HTTPX 提供的异步 API，必须将其重写为协程，因此 <code>get_flag</code> 函数不能重用其同步版本。为了充分发挥 asyncio 的性能，必须把执行 I/ O操作的每个函数替换为异步版本，使用 <code>await</code> 或 <code>asyncio.create_task</code> 激活，这样在函数等待 I/O 期间才能把控制权交还给事件循环。<strong>如果无法把导致阻塞的函数重写为协程，那就应该在单独的线程或进程中运行那个函数</strong>。</p>
+<p>这就异步编程所说的 <code>你孤注一掷重写代码，要么彻底避免阻塞，要么纯属浪费时间</code>。</p>
+<h2 id="异步上下文管理器"><a class="markdownIt-Anchor" href="#异步上下文管理器"></a> 异步上下文管理器</h2>
+<p>之前介绍过，在 <code>with</code> 块主体的前后可以使用一个对象运行代码，前提是那个对象所属的类提供了 <code>__enter__</code> 和 <code>__exit__</code> 方法。</p>
+<p>看如下 asyncpg 代码，数据库事务特别适合使用上下文管理器协议：事务务必启动，数据由 <code>connection.execute</code> 改动，然后根据改动的结果，必须回滚或提交：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tr = connection.transaction()</span><br><span class="line"><span class="keyword">await</span> tr.start()</span><br><span class="line"><span class="keyword">try</span>:</span><br><span class="line">    <span class="keyword">await</span> connection.execute(<span class="string">&quot;INSERT INTO mytable VALUES (1, 2, 3)&quot;</span>)</span><br><span class="line"><span class="keyword">except</span>:</span><br><span class="line">    <span class="keyword">await</span> tr.rollback()</span><br><span class="line">    <span class="keyword">raise</span></span><br><span class="line"><span class="keyword">else</span>:</span><br><span class="line">    <span class="keyword">await</span> tr.commit()</span><br></pre></td></tr></table></figure>
+<p>这种异步驱动中，设置和清理需要由协程执行，好让其他操作有机会并发执行然而，传统的 with 语句采用的实现方式不支持协程使用 <code>__enter__</code> 或 <code>__exit__</code> 执行相关操作。<code>PEP 492—Coroutines with async and await syntax</code> 引入了 <code>async with</code> 语句，<strong>用于实现异步上下文管理器，即一种以协程实现 <code>__aenter__</code> 和 <code>__aexit__</code> 方法的对象</strong>。</p>
+<p>使用 <code>async with</code>，如下代码简化为：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">with</span> connection.transaction():</span><br><span class="line">    <span class="keyword">await</span> connection.execute(<span class="string">&quot;INSERT INTO mytable VALUES (1, 2, 3)&quot;</span>)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>在 <code>asyncpg.Transaction</code> 类中，协程方法 <code>__aenter__</code> 使用 <code>await self.start()</code></li>
+<li>协程方法 <code>__aexit__</code> 根据有没有异常发生，异步 await 私有协程方法 <code>__rollback</code> 或 <code>__commit</code></li>
+<li>使用协程把 Transaction 实现为异步上下文管理器，asyncpg 就能并发处理多个事务</li>
+</ul>
+<p>注意，<strong>只要 <code>async with</code> 要求，<code>__aenter__</code> 和 <code>__aexit__</code> 是协程，但 with 主体的代码是否使用协程则无关紧要</strong>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MyAsyncContextManager</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, name: <span class="built_in">str</span></span>):</span><br><span class="line">        self.name = name</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__aenter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[ASYNC] Entering context: <span class="subst">&#123;self.name&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">0.1</span>)</span><br><span class="line">        <span class="keyword">return</span> self</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__aexit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[ASYNC] Exiting context: <span class="subst">&#123;self.name&#125;</span>&quot;</span>)</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">0.05</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> MyAsyncContextManager(<span class="string">&quot;MyResource&quot;</span>) <span class="keyword">as</span> ctx:</span><br><span class="line">        x = <span class="number">42</span></span><br><span class="line">        message = <span class="string">f&quot;Hello from <span class="subst">&#123;ctx.name&#125;</span>&quot;</span></span><br><span class="line">        result = x * <span class="number">2</span></span><br><span class="line">        <span class="built_in">print</span>(message)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;Result: <span class="subst">&#123;result&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<p><strong>或者 with 块内使用了协程，但是上下文管理器器对象不是异步上下文管理器</strong>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MyAsyncContextManager</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, name: <span class="built_in">str</span></span>):</span><br><span class="line">        self.name = name</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__enter__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[SYNC] Entering context: <span class="subst">&#123;self.name&#125;</span>&quot;</span>)</span><br><span class="line">        time.sleep(<span class="number">1</span>)</span><br><span class="line">        <span class="keyword">return</span> self</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__exit__</span>(<span class="params">self, exc_type, exc_val, exc_tb</span>):</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[SYNC] Exiting context: <span class="subst">&#123;self.name&#125;</span>&quot;</span>)</span><br><span class="line">        time.sleep(<span class="number">1</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    <span class="keyword">with</span> MyAsyncContextManager(<span class="string">&quot;MyResource&quot;</span>) <span class="keyword">as</span> ctx:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;in with block&quot;</span>)</span><br><span class="line">        x = <span class="number">42</span></span><br><span class="line">        message = <span class="string">f&quot;Hello from <span class="subst">&#123;ctx.name&#125;</span>&quot;</span></span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">1</span>)</span><br><span class="line">        <span class="built_in">print</span>(message)</span><br><span class="line"></span><br><span class="line">asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<h2 id="增强-asyncio-版下载脚本的功能"><a class="markdownIt-Anchor" href="#增强-asyncio-版下载脚本的功能"></a> 增强 asyncio 版下载脚本的功能</h2>
+<p>在之前的下载代码中，我们把几个协程传给 <code>asyncio.gather</code>，按照协程的提交顺序返回协程的结果构成的列表。这意味着，只有所有可异步调用对象都执行完毕后，<code>asyncio.gather</code> 才返回。我们可以使用 <code>as_compeleted</code> 替代 <code>gather</code>，以便在某个协程完成时立即得到结果。</p>
+<p>如下增强 asyncio 版下载脚本的功能（不分代码省略）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> Counter</span><br><span class="line"><span class="keyword">from</span> http <span class="keyword">import</span> HTTPStatus</span><br><span class="line"><span class="keyword">from</span> pathlib <span class="keyword">import</span> Path</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> httpx</span><br><span class="line"><span class="keyword">import</span> tqdm  <span class="comment"># type: ignore</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> flags2_common <span class="keyword">import</span> main, DownloadStatus, save_flag</span><br><span class="line"></span><br><span class="line">DEFAULT_CONCUR_REQ = <span class="number">5</span></span><br><span class="line">MAX_CONCUR_REQ = <span class="number">1000</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_flag</span>(<span class="params">client: httpx.AsyncClient,</span></span><br><span class="line"><span class="params">                   base_url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                   cc: <span class="built_in">str</span></span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    url = <span class="string">f&#x27;<span class="subst">&#123;base_url&#125;</span>/<span class="subst">&#123;cc&#125;</span>/<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>.lower()</span><br><span class="line">    resp = <span class="keyword">await</span> client.get(url, timeout=<span class="number">3.1</span>, follow_redirects=<span class="literal">True</span>)</span><br><span class="line">    resp.raise_for_status()</span><br><span class="line">    <span class="keyword">return</span> resp.content</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">download_one</span>(<span class="params">client: httpx.AsyncClient,</span></span><br><span class="line"><span class="params">                       cc: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                       base_url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                       semaphore: asyncio.Semaphore,</span></span><br><span class="line"><span class="params">                       verbose: <span class="built_in">bool</span></span>) -&gt; DownloadStatus:</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">with</span> semaphore:</span><br><span class="line">            image = <span class="keyword">await</span> get_flag(client, base_url, cc)</span><br><span class="line">    <span class="keyword">except</span> httpx.HTTPStatusError <span class="keyword">as</span> exc:</span><br><span class="line">        res = exc.response</span><br><span class="line">        <span class="keyword">if</span> res.status_code == HTTPStatus.NOT_FOUND:</span><br><span class="line">            status = DownloadStatus.NOT_FOUND</span><br><span class="line">            msg = <span class="string">f&#x27;not found: <span class="subst">&#123;res.url&#125;</span>&#x27;</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            <span class="keyword">raise</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="keyword">await</span> asyncio.to_thread(save_flag, image, <span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>)</span><br><span class="line">        status = DownloadStatus.OK</span><br><span class="line">        msg = <span class="string">&#x27;OK&#x27;</span></span><br><span class="line">    <span class="keyword">if</span> verbose <span class="keyword">and</span> msg:</span><br><span class="line">        <span class="built_in">print</span>(cc, msg)</span><br><span class="line">    <span class="keyword">return</span> status</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">supervisor</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">                     base_url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                     verbose: <span class="built_in">bool</span>,</span></span><br><span class="line"><span class="params">                     concur_req: <span class="built_in">int</span></span>) -&gt; Counter[DownloadStatus]:</span><br><span class="line">    counter: Counter[DownloadStatus] = Counter()</span><br><span class="line">    semaphore = asyncio.Semaphore(concur_req)</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> httpx.AsyncClient() <span class="keyword">as</span> client:</span><br><span class="line">        to_do = [download_one(client, cc, base_url, semaphore, verbose)</span><br><span class="line">                 <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list)]</span><br><span class="line">        to_do_iter = asyncio.as_completed(to_do)</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> verbose:</span><br><span class="line">            to_do_iter = tqdm.tqdm(to_do_iter, total=<span class="built_in">len</span>(cc_list))</span><br><span class="line">        error: httpx.HTTPError | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">        <span class="keyword">for</span> coro <span class="keyword">in</span> to_do_iter:</span><br><span class="line">            <span class="keyword">try</span>:</span><br><span class="line">                status = <span class="keyword">await</span> coro</span><br><span class="line">            <span class="keyword">except</span> httpx.HTTPStatusError <span class="keyword">as</span> exc:</span><br><span class="line">                error_msg = <span class="string">&#x27;HTTP error &#123;resp.status_code&#125; - &#123;resp.reason_phrase&#125;&#x27;</span></span><br><span class="line">                error_msg = error_msg.<span class="built_in">format</span>(resp=exc.response)</span><br><span class="line">                error = exc</span><br><span class="line">            <span class="keyword">except</span> httpx.RequestError <span class="keyword">as</span> exc:</span><br><span class="line">                error_msg = <span class="string">f&#x27;<span class="subst">&#123;exc&#125;</span> <span class="subst">&#123;<span class="built_in">type</span>(exc)&#125;</span>&#x27;</span>.strip()</span><br><span class="line">                error = exc</span><br><span class="line">            <span class="keyword">except</span> KeyboardInterrupt:</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> error:</span><br><span class="line">                status = DownloadStatus.ERROR</span><br><span class="line">                <span class="keyword">if</span> verbose:</span><br><span class="line">                    url = <span class="built_in">str</span>(error.request.url)</span><br><span class="line">                    cc = Path(url).stem.upper()</span><br><span class="line">                    <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span> error: <span class="subst">&#123;error_msg&#125;</span>&#x27;</span>)</span><br><span class="line">            counter[status] += <span class="number">1</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> counter</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params">                  base_url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                  verbose: <span class="built_in">bool</span>,</span></span><br><span class="line"><span class="params">                  concur_req: <span class="built_in">int</span></span>) -&gt; Counter[DownloadStatus]:</span><br><span class="line">    coro = supervisor(cc_list, base_url, verbose, concur_req)</span><br><span class="line">    counts = asyncio.run(coro)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> counts</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many, DEFAULT_CONCUR_REQ, MAX_CONCUR_REQ)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>文件 I/O 也是阻塞操作，但是没有对应的异步处理版本。从 Python3.9 开始，<code>asyncio.to_thread</code> 协程可以轻松地把文件 I/O 委托给 asyncio 提供的一个线程池</li>
+<li>通过使用信号量，可以对网络客户端发起的请求进行限流。<strong>信号量可以配置最大数量，而且一个信号量可由多个协程持有，因此特别适合用于限制活动的并发协程数量</strong></li>
+<li>在这个代码中，将信号量当做异步上下文管理器使用。<code>asyncio.Semaphore</code> 有一个内部计数器：
+<ul>
+<li>每次使用 <code>await</code> 处理协程方法 <code>.acquire()</code> 时，计数器递减</li>
+<li>每次调用 <code>.release()</code> 方法（不是协程，因为永不阻塞）​，计数器递增</li>
+<li>计数器的初始值在实例化 Semaphore 时设定</li>
+<li>若计数器大于零，则使用 <code>await</code> 处理 <code>.acquire()</code> 方法没有延迟</li>
+<li>若计时器为零，则 <code>.acquire()</code> 中止待处理的协程，直到其他协程在同一个 Semaphore 实例上调用 <code>.release()</code>，递增计数器</li>
+<li><strong>一般不直接调用这些方法，把 semaphore 当作异步上下文管理器使用更安全</strong></li>
+<li>协程方法 <code>Semaphore.__aenter__</code> 异步等待 <code>.acquire()</code>，协程方法 <code>__aexit__</code> 调用 <code>.release()</code></li>
+<li>标准库中的各个 Semaphore 类均有一个 BoundedSemaphore 子类，额外施加一个约束：如果 <code>.release()</code> 操作数超过 <code>.acquire()</code> 操作数，那么内部计时器的值不能比初始值大</li>
+</ul>
+</li>
+<li>调用 <code>as_completed</code> 获取一个迭代器，返回处理完毕的协程对象</li>
+<li><code>download_many</code> 实例化 <code>supervisor</code> 协程对象，通过 <code>asyncio.run</code> 传给事件循环</li>
+<li><strong>Python 语言不使用块级作用域，循环和 try/except 等语句不在它们管理的块中创建局部作用域。但是，如果 except 子句把异常绑定到变量上（例如 exc 变量）​，绑定的变量只存在于 except 子句所在的块内</strong>。因此使用 error 变量记录异常</li>
+</ul>
+<h3 id="每次下载发起多个请求"><a class="markdownIt-Anchor" href="#每次下载发起多个请求"></a> 每次下载发起多个请求</h3>
+<p>在线程版脚本中很容易让同一个任务发起多个请求：先发起一个请求，再发起另一个请求，阻塞线程两次，把两部分数据（国家代码和名称）存储在局部变量中。如果在异步脚本中使用回调实现同样的操作，那就需要嵌套函数，在闭包内存储国家代码和名称变量，因为各个回调在不同的局部作用域内运行。<strong>await关键字的出现拯救了我们：一个异步请求结束后驱动另一个请求，共用驱动协程的局部作用域</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_country</span>(<span class="params">client: httpx.AsyncClient,</span></span><br><span class="line"><span class="params">                      base_url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                      cc: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    url = <span class="string">f&#x27;<span class="subst">&#123;base_url&#125;</span>/<span class="subst">&#123;cc&#125;</span>/metadata.json&#x27;</span>.lower()</span><br><span class="line">    resp = <span class="keyword">await</span> client.get(url, timeout=<span class="number">3.1</span>, follow_redirects=<span class="literal">True</span>)</span><br><span class="line">    resp.raise_for_status()</span><br><span class="line">    metadata = resp.json()</span><br><span class="line">    <span class="keyword">return</span> metadata[<span class="string">&#x27;country&#x27;</span>]</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">download_one</span>(<span class="params">client: httpx.AsyncClient,</span></span><br><span class="line"><span class="params">                       cc: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                       base_url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                       semaphore: asyncio.Semaphore,</span></span><br><span class="line"><span class="params">                       verbose: <span class="built_in">bool</span></span>) -&gt; DownloadStatus:</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">with</span> semaphore:</span><br><span class="line">            image = <span class="keyword">await</span> get_flag(client, base_url, cc)</span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">with</span> semaphore:</span><br><span class="line">            country = <span class="keyword">await</span> get_country(client, base_url, cc)</span><br><span class="line">    <span class="keyword">except</span> httpx.HTTPStatusError <span class="keyword">as</span> exc:</span><br><span class="line">        res = exc.response</span><br><span class="line">        <span class="keyword">if</span> res.status_code == HTTPStatus.NOT_FOUND:</span><br><span class="line">            status = DownloadStatus.NOT_FOUND</span><br><span class="line">            msg = <span class="string">f&#x27;not found: <span class="subst">&#123;res.url&#125;</span>&#x27;</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            <span class="keyword">raise</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        filename = country.replace(<span class="string">&#x27; &#x27;</span>, <span class="string">&#x27;_&#x27;</span>)</span><br><span class="line">        <span class="keyword">await</span> asyncio.to_thread(save_flag, image, <span class="string">f&#x27;<span class="subst">&#123;filename&#125;</span>.gif&#x27;</span>)</span><br><span class="line">        status = DownloadStatus.OK</span><br><span class="line">        msg = <span class="string">&#x27;OK&#x27;</span></span><br><span class="line">    <span class="keyword">if</span> verbose <span class="keyword">and</span> msg:</span><br><span class="line">        <span class="built_in">print</span>(cc, msg)</span><br><span class="line">    <span class="keyword">return</span> status</span><br></pre></td></tr></table></figure>
+<p><code>get_flag</code> 和 <code>get_country</code> 也可以使用 <code>asyncio.gather</code> 并行调度，但若 get_flag 抛出异常，则没有图像需要保存，此时运行 <code>get_country</code> 没有意义。不过，有些时候应该使用 <code>asyncio.gather</code> 同时请求多个 API，而不是等一个请求得到响应之后再发起下一个请求。</p>
+<p>使用现代 Python 做异步应用程序编程，如果大量使用回调，那就说明你使用的可能是旧的编程模式，已不适应现代 Python 环境。</p>
+<h2 id="把任务委托给执行器"><a class="markdownIt-Anchor" href="#把任务委托给执行器"></a> 把任务委托给执行器</h2>
+<p>与 Python 相比，Node.js 在异步编程上的显著优势体现在 Node.js 标准库上：为所有 I/O 提供了异步 API，而不仅限于网络 I/O。<strong>在 Python 中，如果你不够小心，那么文件 I/O 可以明显降低异步应用程序的性能水平，因为在主线程中读写存储器会阻塞事件循环</strong>。</p>
+<p>之前介绍过 <code>asyncio.to_thread</code>，<code>asyncio.to_thread</code> 可以将阻塞操作提交到线程池执行，从而避免阻塞事件循环，它返回一个协程对象：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> asyncio.to_thread(func, /, *args, **kwargs)</span><br></pre></td></tr></table></figure>
+<p>之前已经用过了 <code>asyncio.to_thread</code> 来执行保存操作：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">await</span> asyncio.to_thread(save_flag, image, <span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>)</span><br></pre></td></tr></table></figure>
+<p><code>asyncio.to_thread</code> 在 Python 3.9 中增加。如果想支持 Python 3.7 或 3.8，则需要把那一行替换成如下代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">loop = asyncio.get_running_loop()</span><br><span class="line"><span class="keyword">await</span> loop.run_in_executor(<span class="literal">None</span>, save_flag, image, <span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>首先获取事件循环的引用</li>
+<li>loop.run_in_executor` 第一个参数是要使用的执行器。这里传入 None，使用在 asyncio事件循环中始终可用的默认执行器ThreadPoolExecutor。</li>
+<li>可以通过位置参数将参数传入要运行的函数，但是如果传入关键字参数，则需要利用 <code>functool.partial</code>，详见 <code>run_in_executor</code> 文档</li>
+</ul>
+<p>新增的 <code>asyncio.to_thread</code> 函数用起来更简单，也更灵活，因为它也接受关键字参数。asyncio 自身的实现在背后多次使用 <code>run_in_executor</code>，例如 <code>loop.getaddrinfo(...)</code> 协程通过调用 socket 模块中的 getaddrinfo 函数实现，而这个函数要阻塞几秒钟才返回。</p>
+<p><strong>异步 API 经常在内部使用 <code>run_in_executor</code> 把实现细节中的阻塞调用包装成协程。如此一来，协程的接口保持了一致，都使用 await 驱动，而且用到的线程被隐藏起来了，简单纯粹</strong>。</p>
+<p>把一个特定的执行器显式传给 <code>loop.run_in_executor</code>，<strong>主要是为了使用 <code>ProcessPoolExecutor</code> 在不同的 Python 进程中运行 CPU 密集型函数，以避免争用 GIL</strong>。由于启动进程的开销较大，因此最好在 supervisor 中启动 ProcessPoolExecutor，再把它传给需要用到的协程。</p>
+<h2 id="使用-asyncio-编写服务器"><a class="markdownIt-Anchor" href="#使用-asyncio-编写服务器"></a> 使用 asyncio 编写服务器</h2>
+<p>FastAPI 是一个 Python ASGI Web 框架。<strong>FastAPI 旨在为单页应用程序和移动应用程序实现后端，基本上都是返回 JSON 响应的 <code>Web API</code> 端点，不在服务器端渲染 HTML</strong>。借助装饰器、类型提示和代码内省，FastAPI 可以削减 Web API 的大量样板代码。另外，FastAPI 还能为我们创建的 API 自动发布交互式 <code>OpenAPI</code>（即 Swagger）文档。</p>
+<p>使用 uvicorn 在开发模式下运行代码的例子如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ uvicorn web_mojifinder:app --reload</span><br></pre></td></tr></table></figure>
+<ul>
+<li>web_mojifinder:app：包名、一个冒号和包内定义的 ASGI 应用程序的名称</li>
+<li><code>--reload</code> 让 uvicorn 监控应用程序源文件的变化，自动重新加载。只在开发过程中有用</li>
+</ul>
+<p>如下是示例代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> pathlib <span class="keyword">import</span> Path</span><br><span class="line"><span class="keyword">from</span> unicodedata <span class="keyword">import</span> name</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI</span><br><span class="line"><span class="keyword">from</span> fastapi.responses <span class="keyword">import</span> HTMLResponse</span><br><span class="line"><span class="keyword">from</span> pydantic <span class="keyword">import</span> BaseModel</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> charindex <span class="keyword">import</span> InvertedIndex</span><br><span class="line"></span><br><span class="line">STATIC_PATH = Path(__file__).parent.absolute() / <span class="string">&#x27;static&#x27;</span></span><br><span class="line"></span><br><span class="line">app = FastAPI(</span><br><span class="line">    title=<span class="string">&#x27;Mojifinder Web&#x27;</span>,</span><br><span class="line">    description=<span class="string">&#x27;Search for Unicode characters by name.&#x27;</span>,</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">CharName</span>(<span class="title class_ inherited__">BaseModel</span>):</span><br><span class="line">    char: <span class="built_in">str</span></span><br><span class="line">    name: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">init</span>(<span class="params">app</span>):</span><br><span class="line">    app.state.index = InvertedIndex()</span><br><span class="line">    app.state.form = (STATIC_PATH / <span class="string">&#x27;form.html&#x27;</span>).read_text()</span><br><span class="line"></span><br><span class="line">init(app)</span><br><span class="line"></span><br><span class="line"><span class="meta">@app.get(<span class="params"><span class="string">&#x27;/search&#x27;</span>, response_model=<span class="built_in">list</span>[CharName]</span>)</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">search</span>(<span class="params">q: <span class="built_in">str</span></span>):</span><br><span class="line">    chars = <span class="built_in">sorted</span>(app.state.index.search(q))</span><br><span class="line">    <span class="keyword">return</span> (&#123;<span class="string">&#x27;char&#x27;</span>: c, <span class="string">&#x27;name&#x27;</span>: name(c)&#125; <span class="keyword">for</span> c <span class="keyword">in</span> chars)</span><br><span class="line"></span><br><span class="line"><span class="meta">@app.get(<span class="params"><span class="string">&#x27;/&#x27;</span>, response_class=HTMLResponse, include_in_schema=<span class="literal">False</span></span>)</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">form</span>():</span><br><span class="line">    <span class="keyword">return</span> app.state.form</span><br><span class="line"></span><br><span class="line"><span class="comment"># 没有主函数</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>app = FastAPI()</code> 定义 ASGI 应用程序，提供的参数是自动生成的文档的元数据</li>
+<li>定义 <code>/search</code> 端点的路由。response_model 使用前面定义的 pydantic 模型 CharName 描述响应格式</li>
+<li>FastAPI 假定函数或协程签名中不在路由路径内的参数都是 HTTP 查询字符串</li>
+<li><code>search()</code> 返回由字典构成的可迭代对象，与 response_model 模式兼容，因此 FastAPI 根据 <code>@app.get</code> 装饰器中的 <code>response_model</code> 构建 JSON 响应</li>
+<li>响应模型在 <code>response_model</code> 这个参数中声明，而不通过函数的返回值类型注解，因为处理路径的函数可能根本不返回响应模型，而是返回一个字典、数据库对象或其他模型，然后使用 response_model 限定字段和序列化</li>
+<li>在search中，返回一个生成器，产出的项是字典，而不是 CharName 对象构成的列表，但是 FastAPI 和 pydantic 能正确验证数据，构建与 <code>response_model=list[CharName]</code> 相容的 JSON 响应</li>
+<li>常规函数（即非异步运行）<code>form</code> 也可用于生成响应</li>
+<li><strong>这个模块没有主函数，由 ASGI 服务器（本例中是 uvicorn）加载和驱动</strong></li>
+</ul>
+<p>这个例子没有直接调用 asyncio。FastAPI 构建在 ASGI 工具包 Starlette 之上，后者使用了 asyncio。另外要注意，search 的主体中没有 await、async with 或 async for，因此也可以定义为普通函数。在真实的应用中，多数端点要查询数据库或请求远程服务器，因此 FastAPI（以及其他 ASGI 框架）务必支持协程，以便利用异步库处理网络 I/O。</p>
+<p>接下来再来看一个 TCP 服务器示例，无须借助外部依赖，使用 asyncio 就能写出来：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">supervisor</span>(<span class="params">index: InvertedIndex, host: <span class="built_in">str</span>, port: <span class="built_in">int</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    server = <span class="keyword">await</span> asyncio.start_server(</span><br><span class="line">        functools.partial(finder, index),</span><br><span class="line">        host, port)</span><br><span class="line"></span><br><span class="line">    socket_list = cast(<span class="built_in">tuple</span>[TransportSocket, ...], server.sockets)</span><br><span class="line">    addr = socket_list[<span class="number">0</span>].getsockname()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Serving on <span class="subst">&#123;addr&#125;</span>. Hit CTRL-C to stop.&#x27;</span>)</span><br><span class="line">    <span class="keyword">await</span> server.serve_forever()</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>(<span class="params">host: <span class="built_in">str</span> = <span class="string">&#x27;127.0.0.1&#x27;</span>, port_arg: <span class="built_in">str</span> = <span class="string">&#x27;2323&#x27;</span></span>):</span><br><span class="line">    port = <span class="built_in">int</span>(port_arg)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;Building index.&#x27;</span>)</span><br><span class="line">    index = InvertedIndex()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        asyncio.run(supervisor(index, host, port))</span><br><span class="line">    <span class="keyword">except</span> KeyboardInterrupt:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&#x27;\nServer shut down.&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(*sys.argv[<span class="number">1</span>:])</span><br></pre></td></tr></table></figure>
+<ul>
+<li>start_server 的第一个参数 client_connected_cb 是一个回调，在客户端发起新连接时运行，这个回调可以是普通函数，也可以是协程。这个回调函数必须接受两个参数，一个是 <code>asyncio.StreamReader</code> 对象，另一个是 <code>asyncio.StreamWriter</code> 对象</li>
+<li>这里实现的 finder 协程还需要获取 index，因此使用 <code>functools.partial</code> 绑定该参数，得到一个接受 <code>asyncio.StreamReader</code> 和 <code>asyncio.StreamWriter</code> 对象的回调</li>
+<li>在事件循环存续期间，针对连接服务器的每一个客户端启动一个 finder 协程实例，从而让这个简单的服务器可以并发处理多个客户端，这个过程一直持续，直到服务器抛出 KeyboardInterrupt，或者服务器进程被操作系统终止</li>
+<li>虽然 start_server 是以并发任务启动服务器的，但这里还是要使用 await 处理 <code>server_forever</code> 方法，目的是让实现的 supervisor 协程在这里中止。<strong>倘若没有这一行，supervisor 将立即返回，终止 <code>asyncio.run(supervisor(...))</code> 启动的循环，导致程序退出</strong></li>
+</ul>
+<p>接下来再看其中 <code>finder</code> 协程的实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> functools</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">from</span> asyncio.trsock <span class="keyword">import</span> TransportSocket</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> cast</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> charindex <span class="keyword">import</span> InvertedIndex, format_results  ➊</span><br><span class="line"></span><br><span class="line">CRLF = <span class="string">b&#x27;\r\n&#x27;</span></span><br><span class="line">PROMPT = <span class="string">b&#x27;?&gt; &#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">finder</span>(<span class="params">index: InvertedIndex,</span></span><br><span class="line"><span class="params">                 reader: asyncio.StreamReader,</span></span><br><span class="line"><span class="params">                 writer: asyncio.StreamWriter</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    client = writer.get_extra_info(<span class="string">&#x27;peername&#x27;</span>)</span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        writer.write(PROMPT)  <span class="comment"># 不能使用await</span></span><br><span class="line">        <span class="keyword">await</span> writer.drain()  <span class="comment"># 必须使用await</span></span><br><span class="line">        data = <span class="keyword">await</span> reader.readline()</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> data:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            query = data.decode().strip()</span><br><span class="line">        <span class="keyword">except</span> UnicodeDecodeError:</span><br><span class="line">            query = <span class="string">&#x27;\x00&#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&#x27; From <span class="subst">&#123;client&#125;</span>: <span class="subst">&#123;query!r&#125;</span>&#x27;</span>)</span><br><span class="line">        <span class="keyword">if</span> query:</span><br><span class="line">            <span class="keyword">if</span> <span class="built_in">ord</span>(query[:<span class="number">1</span>]) &lt; <span class="number">32</span>:</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line">            results = <span class="keyword">await</span> search(query, index, writer)</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;   To <span class="subst">&#123;client&#125;</span>: <span class="subst">&#123;results&#125;</span> results.&#x27;</span>)</span><br><span class="line"></span><br><span class="line">    writer.close()</span><br><span class="line">    <span class="keyword">await</span> writer.wait_closed()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Close <span class="subst">&#123;client&#125;</span>.&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">search</span>(<span class="params">query: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">                 index: InvertedIndex,</span></span><br><span class="line"><span class="params">                 writer: asyncio.StreamWriter</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    chars = index.search(query)</span><br><span class="line">    lines = (line.encode() + CRLF <span class="keyword">for</span> line</span><br><span class="line">                <span class="keyword">in</span> format_results(chars))</span><br><span class="line">    writer.writelines(lines)</span><br><span class="line">    <span class="keyword">await</span> writer.drain()</span><br><span class="line">    status_line = <span class="string">f&#x27;<span class="subst">&#123;<span class="string">&quot;─&quot;</span> * <span class="number">66</span>&#125;</span> <span class="subst">&#123;<span class="built_in">len</span>(chars)&#125;</span> found&#x27;</span></span><br><span class="line">    writer.write(status_line.encode() + CRLF)</span><br><span class="line">    <span class="keyword">await</span> writer.drain()</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(chars)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>这个循环处理一个对话，直到从客户端收到一个控制字符</li>
+<li><code>StreamWriter.write</code> 不是协程方法，只是普通函数</li>
+<li><code>StreamWriter.drain</code> 刷新 writer 缓冲。这是一个协程，必须由 await 驱动</li>
+<li><code>StreamWriter.readline</code> 是一个协程，返回 bytes</li>
+<li>search 也是一个协程，因为需要写入 StreamWriter，而且必须使用 StreamWriter 的协程方法 <code>.drain()</code></li>
+</ul>
+<p>从这里例子中，可以看到，有些 I/O 方法是协程，必须使用 await 驱动，而另一些是普通函数。利用 <code>asyncio</code> 提供的高层 <code>Streams API</code>，我们只需实现一个处理函数（可以是普通回调或协程）就能得到一个可用的服务器。</p>
+<h2 id="异步迭代和异步可迭代对象"><a class="markdownIt-Anchor" href="#异步迭代和异步可迭代对象"></a> 异步迭代和异步可迭代对象</h2>
+<p>之前介绍过，<code>async with</code> 可以处理实现了 <code>__aenter__</code> 和 <code>__aexit__</code> 方法的对象，二者返回可异步调用对象，通常是协程对象。类似地，<code>async for</code> 处理异步可迭代对象，即实现了 <code>__aiter__</code> 的对象。然而，<code>__aiter__</code> 必须是常规方法（不是协程方法）​，而且必须返回一个异步迭代器。异步迭代器提供 <code>__anext__</code> 协程方法，返回一个可异步调用对象，通常是一个协程对象。异步迭代器也应实现 <code>__aiter__</code>，往往返回 self。</p>
+<p>PostgreSQL 异步驱动 aiopg 的文档中有一个示例，演示了如何使用 <code>async for</code> 迭代一个数据库游标的各行：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">go</span>():</span><br><span class="line">    pool = <span class="keyword">await</span> aiopg.create_pool(dsn)</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> pool.acquire() <span class="keyword">as</span> conn:</span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">with</span> conn.cursor() <span class="keyword">as</span> cur:</span><br><span class="line">            <span class="keyword">await</span> cur.execute(<span class="string">&quot;SELECT 1&quot;</span>)</span><br><span class="line">            ret = []</span><br><span class="line">            <span class="keyword">async</span> <span class="keyword">for</span> row <span class="keyword">in</span> cur:</span><br><span class="line">                ret.append(row)</span><br><span class="line">            <span class="keyword">assert</span> ret == [(<span class="number">1</span>,)]</span><br></pre></td></tr></table></figure>
+<h3 id="异步生成器函数"><a class="markdownIt-Anchor" href="#异步生成器函数"></a> 异步生成器函数</h3>
+<p>若想实现异步迭代器，可以编写一个类，实现 <code>__anext__</code> 和 <code>__aiter__</code>。不过，还有更简单的方法：以 <code>async def</code> 声明一个函数，在主体中使用 yield。这与利用经典迭代器模式的生成器函数是一样的。</p>
+<p>从 Python3.8 开始，使用命令行选项 <code>-m asyncio</code> 运行解释器可以得到一个 <code>异步 REPL</code>​，这个 Python 控制台导入 asyncio，提供一个运行中的事件循环，支持在顶层提示符下使用 <code>await</code>、<code>async for</code> 和 <code>async with</code>（这些在原生协程外部使用原本会导致句法错误）。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ python3 -m asyncio</span><br><span class="line">asyncio REPL <span class="number">3.13</span><span class="number">.3</span> (main, Apr  <span class="number">8</span> <span class="number">2025</span>, <span class="number">13</span>:<span class="number">54</span>:08) [Clang <span class="number">16.0</span><span class="number">.0</span> (clang-<span class="number">1600.0</span><span class="number">.26</span><span class="number">.6</span>)] on darwin</span><br><span class="line">Use <span class="string">&quot;await&quot;</span> directly instead of <span class="string">&quot;asyncio.run()&quot;</span>.</span><br><span class="line"><span class="type">Type</span> <span class="string">&quot;help&quot;</span>, <span class="string">&quot;copyright&quot;</span>, <span class="string">&quot;credits&quot;</span> <span class="keyword">or</span> <span class="string">&quot;license&quot;</span> <span class="keyword">for</span> more information.</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">import</span> asyncio</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">await</span> asyncio.sleep(<span class="number">2</span>, <span class="string">&quot;rise and shine&quot;</span>)</span><br><span class="line"><span class="string">&#x27;rise and shine&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>异步生成器由 <code>async for</code> 驱动，可能导致阻塞​。另外，异步推导式也使用 <code>async for</code>。如下实现了一个异步生成器：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> socket</span><br><span class="line"><span class="keyword">from</span> collections.abc <span class="keyword">import</span> Iterable, AsyncIterator</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> NamedTuple, <span class="type">Optional</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Result</span>(<span class="title class_ inherited__">NamedTuple</span>):</span><br><span class="line">    domain: <span class="built_in">str</span></span><br><span class="line">    found: <span class="built_in">bool</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">OptionalLoop = <span class="type">Optional</span>[asyncio.AbstractEventLoop]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">probe</span>(<span class="params">domain: <span class="built_in">str</span>, loop: OptionalLoop = <span class="literal">None</span></span>) -&gt; Result:</span><br><span class="line">    <span class="keyword">if</span> loop <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        loop = asyncio.get_running_loop()</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        <span class="keyword">await</span> loop.getaddrinfo(domain, <span class="literal">None</span>)</span><br><span class="line">    <span class="keyword">except</span> socket.gaierror:</span><br><span class="line">        <span class="keyword">return</span> Result(domain, <span class="literal">False</span>)</span><br><span class="line">    <span class="keyword">return</span> Result(domain, <span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">multi_probe</span>(<span class="params">domains: Iterable[<span class="built_in">str</span>]</span>) -&gt; AsyncIterator[Result]:</span><br><span class="line">    loop = asyncio.get_running_loop()</span><br><span class="line">    coros = [probe(domain, loop) <span class="keyword">for</span> domain <span class="keyword">in</span> domains]</span><br><span class="line">    <span class="keyword">for</span> coro <span class="keyword">in</span> asyncio.as_completed(coros):</span><br><span class="line">        result = <span class="keyword">await</span> coro</span><br><span class="line">        <span class="keyword">yield</span> result</span><br></pre></td></tr></table></figure>
+<ul>
+<li>异步生成器函数产生一个异步生成器对象，可以注解为 <code>AsyncIterator[SomeType]​</code></li>
+<li><code>multi_probe</code> yield result，有这一行的存在，multi_probe 才是异步生成器</li>
+</ul>
+<p>更简化的写法可以为：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> coro <span class="keyword">in</span> asyncio.as_completed(coros):</span><br><span class="line">    <span class="keyword">yield</span> <span class="keyword">await</span> coro</span><br></pre></td></tr></table></figure>
+<p>而使用这个异步生成器的代码也很简单：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">for</span> domain, found <span class="keyword">in</span> multi_probe(domains):</span><br><span class="line">    indent = <span class="string">&#x27;&#x27;</span> <span class="keyword">if</span> found <span class="keyword">else</span> <span class="string">&#x27;\t\t&#x27;</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;indent&#125;</span><span class="subst">&#123;domain&#125;</span>&#x27;</span>)</span><br></pre></td></tr></table></figure>
+<p>之前介绍过，生成器还有一个与迭代无关的用途：上下文管理器。对于异步上下文也是如此。自己编写异步上下文管理器并不常见，万一需要，可以考虑使用 Python3.7 在 contextlib 模块中增加的 <code>@asynccontextmanager</code> 装饰器。这与之前介绍的 <code>@contextmanager</code> 装饰器非常相似：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> contextlib <span class="keyword">import</span> asynccontextmanager</span><br><span class="line"></span><br><span class="line"><span class="meta">@asynccontextmanager</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">web_page</span>(<span class="params">url</span>):</span><br><span class="line">    loop = asyncio.get_running_loop()</span><br><span class="line">    data = <span class="keyword">await</span> loop.run_in_executor(</span><br><span class="line">        <span class="literal">None</span>, download_webpage, url)</span><br><span class="line">    <span class="keyword">yield</span> data</span><br><span class="line">    <span class="keyword">await</span> loop.run_in_executor(<span class="literal">None</span>, update_stats, url)</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">with</span> web_page(<span class="string">&#x27;google.com&#x27;</span>) <span class="keyword">as</span> data:</span><br><span class="line">    process(data)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>被装饰的函数必须是异步生成器</li>
+<li>这个 yield 表达式前面的所有行将变成装饰器构建的异步上下文管理器的 <code>__aenter__</code> 协程方法</li>
+<li>yield 表达式后面的行将变成 <code>__aexit__</code> 协程方法。这里，我们把另一个阻塞调用委托给线程执行器</li>
+<li>使用 <code>async with</code> 结构调用 web_page</li>
+</ul>
+<p>最后，对比一下异步生成器函数与原生协程，异步生成器与原生协程异步生成器函数与原生协程之间的主要同异点如下：</p>
+<ul>
+<li>都使用 <code>async def</code> 声明</li>
+<li>异步生成器的主体中肯定有一个 yield 表达式，这才是生成器，原生协程绝对不含 yield</li>
+<li>原生协程可能返回 None 之外的值，异步生成器只能使用空 return 语句</li>
+<li><strong>原生协程是可异步调用对象</strong>，可由 await 表达式驱动，也可以传给 asyncio 库中众多接受可异步调用对象的函数，例如 create_task。<strong>异步生成器不是可异步调用对象，而是异步可迭代对象，由 <code>async for</code> 或 <code>异步推导式</code> 驱动</strong></li>
+</ul>
+<h3 id="异步生成器表达式和异步推导式"><a class="markdownIt-Anchor" href="#异步生成器表达式和异步推导式"></a> 异步生成器表达式和异步推导式</h3>
+<p><code>PEP 530—Asynchronous Comprehensions</code> 为推导式和生成器表达式引入 <code>async for</code> 和 <code>await</code> 句法。如下针对异步生成器 <code>multi_probe</code>，我们可以再编写一个异步生成器，只返回找到的域名：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> domainlib <span class="keyword">import</span> multi_probe</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>names = <span class="string">&#x27;python.org rust-lang.org golang.org no-lang.invalid&#x27;</span>.split()</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>gen_found = (name <span class="keyword">async</span> <span class="keyword">for</span> name, found <span class="keyword">in</span> multi_probe(names) <span class="keyword">if</span> found)</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>gen_found</span><br><span class="line">&lt;async_generator <span class="built_in">object</span> &lt;genexpr&gt; at <span class="number">0x10a8f9700</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">async</span> <span class="keyword">for</span> name <span class="keyword">in</span> gen_found:</span><br><span class="line"><span class="meta">... </span>    <span class="built_in">print</span>(name)</span><br><span class="line">...</span><br><span class="line">golang.org</span><br><span class="line">python.org</span><br><span class="line">rust-lang.org</span><br></pre></td></tr></table></figure>
+<ul>
+<li>使用 <code>async for</code>，表明这是一个异步生成器表达式</li>
+<li>异步生成器表达式构建一个 <code>async_generator</code> 对象，与异步生成器函数（例如 <code>multi_probe</code>）返回的对象是一种类型</li>
+<li>异步生成器对象由 <code>async for</code> 语句驱动，而该语句只能出现在 <code>async def</code> 主体内，或者在异步控制台中使用</li>
+</ul>
+<p>异步生成器表达式可在程序的任何位置定义，但是只能在原生协程或异步生成器函数内使用</p>
+<p>对于如下代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">result = []</span><br><span class="line"><span class="keyword">async</span> <span class="keyword">for</span> i <span class="keyword">in</span> aiter():</span><br><span class="line">    <span class="keyword">if</span> i % <span class="number">2</span>:</span><br><span class="line">        result.append(i)</span><br></pre></td></tr></table></figure>
+<p>可以使用异步推导式进行改写：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">result = [i <span class="keyword">async</span> <span class="keyword">for</span> i <span class="keyword">in</span> aiter() <span class="keyword">if</span> i % <span class="number">2</span>]</span><br></pre></td></tr></table></figure>
+<p>另外，对于原生协程 fun，我们可以这样编写代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">result = [<span class="keyword">await</span> fun() <span class="keyword">for</span> fun <span class="keyword">in</span> funcs]</span><br></pre></td></tr></table></figure>
+<p>在列表推导式中使用 await，作用类似于 <code>asyncio.gather</code>。不过，gather 接受一个可选的 <code>return_exceptions</code> 参数，可以进一步处理异常。建议始终设置<code>return_exceptions=True</code>（默认值为False）​。</p>
+<p>PEP 530 允许在列表推导式中使用 <code>async for</code> 和 <code>await</code>，在词典和集合推导式中也可以：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>&#123;name: found <span class="keyword">async</span> <span class="keyword">for</span> name, found <span class="keyword">in</span> multi_probe(names)&#125;</span><br><span class="line">&#123;<span class="string">&#x27;golang.org&#x27;</span>: <span class="literal">True</span>, <span class="string">&#x27;python.org&#x27;</span>: <span class="literal">True</span>, <span class="string">&#x27;no-lang.invalid&#x27;</span>: <span class="literal">False</span>,</span><br><span class="line"><span class="string">&#x27;rust-lang.org&#x27;</span>: <span class="literal">True</span>&#125;</span><br></pre></td></tr></table></figure>
+<p>在 <code>for</code> 或 <code>async for</code> 子句前面，以及 if 子句后面，可以使用 <code>await</code> 关键字。下面在异步控制台中使用集合推导式收集找到的域名。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>&#123;name <span class="keyword">for</span> name <span class="keyword">in</span> names <span class="keyword">if</span> (<span class="keyword">await</span> probe(name)).found&#125;</span><br><span class="line">&#123;<span class="string">&#x27;rust-lang.org&#x27;</span>, <span class="string">&#x27;python.org&#x27;</span>, <span class="string">&#x27;golang.org&#x27;</span>&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>再次强调，这些推导式只能出现在 <code>async def</code> 主体内，或者在施了魔法的异步控制台中使用</strong>。</p>
+<h2 id="asyncio-之外的异步世界curio"><a class="markdownIt-Anchor" href="#asyncio-之外的异步世界curio"></a> asyncio 之外的异步世界：Curio</h2>
+<p>Python 语言的 <code>async/await</code> 结构不限于特定的事件循环或库。特殊方法提供的 API 具有扩展性，<strong>任何有足够动机的人都可以自己编写异步运行时环境和框架，驱动原生协程、异步生成器等</strong>。David Beazley 开发的 Curio 项目就是这样做的。</p>
+<h2 id="异步对象的类型提示"><a class="markdownIt-Anchor" href="#异步对象的类型提示"></a> 异步对象的类型提示</h2>
+<p><strong>原生协程返回的类型是原生协程函数主体内出现在 return 语句中的对象类型，指明使用 await 处理协程时得到的是什么</strong>。</p>
+<p>注解接受一个协程对象的参数，使用以下泛型：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">typing</span>.<span class="type">Coroutine</span>(Awaitable[V_co], <span class="type">Generic</span>[T_co, T_contra, V_co]):</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+<p>如下类型用于注解注解异步对象：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">typing</span>.AsyncContextManager(<span class="type">Generic</span>[T_co]):</span><br><span class="line">    ...</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">typing</span>.AsyncIterable(<span class="type">Generic</span>[T_co]):</span><br><span class="line">    ...</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">typing</span>.AsyncIterator(AsyncIterable[T_co]):</span><br><span class="line">    ...</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">typing</span>.AsyncGenerator(AsyncIterator[T_co], <span class="type">Generic</span>[T_co, T_contra]):</span><br><span class="line">    ...</span><br><span class="line"><span class="keyword">class</span> <span class="title class_">typing</span>.Awaitable(<span class="type">Generic</span>[T_co]):</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+<p>关于其中的泛型：</p>
+<ul>
+<li>第一个类型参数，即异步对象产出的项的类型，均是协变的：之前说过的，如果一个形式类型参数定义的是从对象中获取的数据类型，该形式类型参数可能是协变的</li>
+<li><code>AsyncGenerator</code> 和 <code>Coroutine</code> 的第二个到最后一个参数是逆变的。这些是底层 <code>.send()</code> 方法的参数类型，事件循环调用该方法驱动异步生成器和协程。因此，属于 <code>输入</code> 类型。所以，根据 <code>型变经验法则</code> 第二条，可以是逆变的</li>
+<li>最后，与 <code>typing.Generator</code> 不同​，AsyncGenerator 没有返回值类型：
+<ul>
+<li>通过抛出 <code>StopIteration(value)</code> 返回一个值是一种特殊处理方式，为的是把生成器用作协程，以及支持 <code>yield from</code></li>
+<li>异步对象之间没有这种重叠：AsyncGenerator 对象不返回值，与原生协程对象（使用 <code>typing.Coroutine</code> 注解）完全不沾边</li>
+</ul>
+</li>
+</ul>
+<h2 id="异步原理与陷阱"><a class="markdownIt-Anchor" href="#异步原理与陷阱"></a> 异步原理与陷阱</h2>
+<p>接下来我们将抛开所用的语言和库，讨论一下异步编程相关的总体思想。规范的异步编程方法可以提升服务器的性能。而我们面对的挑战是如何实现规范方法。第一步是认清一个事实，即 <code>I/O密集型系统</code> 只是一个幻觉。</p>
+<ul>
+<li>你遇到的可能是 <code>I/O 密集型函数</code>。系统中的函数，大多数算是 I/O 密集型的：与处理数据相比，用在等待 <code>I/O</code> 上的时间更多。在等待的过程中，函数把控制权交给事件循环，驱动其他挂起的任务</li>
+<li>任何非平凡系统都有一些部分是 CPU 密集型的，这是不可避免的</li>
+</ul>
+<p>大规模使用 Python，应该备有自动化测试，专门检测性能衰退，尽早发现性能问题。这对异步代码至关重要，而且因为有 GIL，这对 Python 多线程代码也不可或缺。发现 CPU 占用出现瓶颈后，可以采取以下措施：</p>
+<ul>
+<li>把任务委托给 Python 进程池</li>
+<li>把任务委托给外部任务队列</li>
+<li>使用 Cython、C、Rust，或者可编译成机器码、能与 Python/C API 交互的其他语言（最好能释放GIL）重写相关代码</li>
+<li>项目启动伊始就应该选定并集成外部任务队列，需要时拿来即用，不给团队成员添麻烦</li>
+</ul>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>准备开发一个异步编程项目时，首要任务之一是决定使用哪些工具来完成 CPU 密集型任务。<strong>不要阻塞事件循环，速度慢的任务应委托其他处理单元</strong>。一旦编写第一个 <code>async def</code>，毫无疑问，程序中将有越来越多的 <code>async def</code>、<code>await</code>、<code>async with</code> 和 <code>async for</code>，再想使用非异步库，难度可想而知。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/11/15/fluent-python-v2-22/" rel="prev" title="流畅的 Python 第 2 版（22）：动态属性和特性">
+      <i class="fa fa-chevron-left"></i> 流畅的 Python 第 2 版（22）：动态属性和特性
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/11/12/fluent-python-v2-20/" rel="next" title="流畅的 Python 第 2 版（20）：并发执行器">
+      流畅的 Python 第 2 版（20）：并发执行器 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%BA%9B%E5%AE%9A%E4%B9%89"><span class="nav-number">1.</span> <span class="nav-text"> 一些定义</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A2%E6%B5%8B%E5%9F%9F%E5%90%8D"><span class="nav-number">2.</span> <span class="nav-text"> 探测域名</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%AF%E5%BC%82%E6%AD%A5%E8%B0%83%E7%94%A8%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.</span> <span class="nav-text"> 可异步调用对象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-asyncio-%E5%92%8C-httpx-%E4%B8%8B%E8%BD%BD"><span class="nav-number">4.</span> <span class="nav-text"> 使用 asyncio 和 HTTPX 下载</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%9F%E7%94%9F%E5%8D%8F%E7%A8%8B%E7%9A%84%E7%A7%98%E5%AF%86%E9%BB%98%E9%BB%98%E6%97%A0%E9%97%BB%E7%9A%84%E7%94%9F%E6%88%90%E5%99%A8"><span class="nav-number">4.1.</span> <span class="nav-text"> 原生协程的秘密：默默无闻的生成器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E6%88%90%E5%8A%9F%E4%BE%BF%E6%88%90%E4%BB%81-%E9%97%AE%E9%A2%98"><span class="nav-number">4.2.</span> <span class="nav-text"> 不成功便成仁 问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5%E4%B8%8A%E4%B8%8B%E6%96%87%E7%AE%A1%E7%90%86%E5%99%A8"><span class="nav-number">5.</span> <span class="nav-text"> 异步上下文管理器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A2%9E%E5%BC%BA-asyncio-%E7%89%88%E4%B8%8B%E8%BD%BD%E8%84%9A%E6%9C%AC%E7%9A%84%E5%8A%9F%E8%83%BD"><span class="nav-number">6.</span> <span class="nav-text"> 增强 asyncio 版下载脚本的功能</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%AF%8F%E6%AC%A1%E4%B8%8B%E8%BD%BD%E5%8F%91%E8%B5%B7%E5%A4%9A%E4%B8%AA%E8%AF%B7%E6%B1%82"><span class="nav-number">6.1.</span> <span class="nav-text"> 每次下载发起多个请求</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8A%8A%E4%BB%BB%E5%8A%A1%E5%A7%94%E6%89%98%E7%BB%99%E6%89%A7%E8%A1%8C%E5%99%A8"><span class="nav-number">7.</span> <span class="nav-text"> 把任务委托给执行器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-asyncio-%E7%BC%96%E5%86%99%E6%9C%8D%E5%8A%A1%E5%99%A8"><span class="nav-number">8.</span> <span class="nav-text"> 使用 asyncio 编写服务器</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5%E8%BF%AD%E4%BB%A3%E5%92%8C%E5%BC%82%E6%AD%A5%E5%8F%AF%E8%BF%AD%E4%BB%A3%E5%AF%B9%E8%B1%A1"><span class="nav-number">9.</span> <span class="nav-text"> 异步迭代和异步可迭代对象</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5%E7%94%9F%E6%88%90%E5%99%A8%E5%87%BD%E6%95%B0"><span class="nav-number">9.1.</span> <span class="nav-text"> 异步生成器函数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5%E7%94%9F%E6%88%90%E5%99%A8%E8%A1%A8%E8%BE%BE%E5%BC%8F%E5%92%8C%E5%BC%82%E6%AD%A5%E6%8E%A8%E5%AF%BC%E5%BC%8F"><span class="nav-number">9.2.</span> <span class="nav-text"> 异步生成器表达式和异步推导式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#asyncio-%E4%B9%8B%E5%A4%96%E7%9A%84%E5%BC%82%E6%AD%A5%E4%B8%96%E7%95%8Ccurio"><span class="nav-number">10.</span> <span class="nav-text"> asyncio 之外的异步世界：Curio</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5%E5%AF%B9%E8%B1%A1%E7%9A%84%E7%B1%BB%E5%9E%8B%E6%8F%90%E7%A4%BA"><span class="nav-number">11.</span> <span class="nav-text"> 异步对象的类型提示</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5%E5%8E%9F%E7%90%86%E4%B8%8E%E9%99%B7%E9%98%B1"><span class="nav-number">12.</span> <span class="nav-text"> 异步原理与陷阱</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">13.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">223</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

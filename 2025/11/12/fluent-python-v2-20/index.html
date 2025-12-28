@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="对于线程，应用程序开发者遇到的使用场景，99% 的情况下只需知道如何派生一堆独立的线程，然后用队列收集结果。这篇文章讨论实现了 concurrent.futures.Executor 接口的类，这些类对上面这种使用场景进行了封装，使用起来特别容易，不仅能用于线程，而且还能用于进程处理计算密集型任务。同时还会介绍 future，这种对象表示异步执行的操作，类似于 JavaScript 中的 prom">
+<meta property="og:type" content="article">
+<meta property="og:title" content="流畅的 Python 第 2 版（20）：并发执行器">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2025/11/12/fluent-python-v2-20/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="对于线程，应用程序开发者遇到的使用场景，99% 的情况下只需知道如何派生一堆独立的线程，然后用队列收集结果。这篇文章讨论实现了 concurrent.futures.Executor 接口的类，这些类对上面这种使用场景进行了封装，使用起来特别容易，不仅能用于线程，而且还能用于进程处理计算密集型任务。同时还会介绍 future，这种对象表示异步执行的操作，类似于 JavaScript 中的 prom">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2025-11-12T12:20:24.000Z">
+<meta property="article:modified_time" content="2025-12-28T11:23:27.463Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2025/11/12/fluent-python-v2-20/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>流畅的 Python 第 2 版（20）：并发执行器 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2025/11/12/fluent-python-v2-20/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          流畅的 Python 第 2 版（20）：并发执行器
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-11-12 20:20:24" itemprop="dateCreated datePublished" datetime="2025-11-12T20:20:24+08:00">2025-11-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>对于线程，应用程序开发者遇到的使用场景，99% 的情况下只需知道如何派生一堆独立的线程，然后用队列收集结果。这篇文章讨论实现了 <code>concurrent.futures.Executor</code> 接口的类，这些类对上面这种使用场景进行了封装，使用起来特别容易，不仅能用于线程，而且还能用于进程处理计算密集型任务。同时还会介绍 <code>future</code>，这种对象表示异步执行的操作，类似于 JavaScript 中的 promise。</p>
+<span id="more"></span>
+<h2 id="并发网络下载"><a class="markdownIt-Anchor" href="#并发网络下载"></a> 并发网络下载</h2>
+<p><strong>为了高效处理网络 I/O，势必需要并发，我们不应漫无目的地等下去，在远程设备发回响应期间，可以让应用程序做些其他的事情</strong>。</p>
+<ul>
+<li>对于网络 I/O 操作，不管使用哪种并发结构——线程或协程——只要代码写得没有问题，吞吐量都比依序执行的代码高很多</li>
+<li>对于可以控制发起多少请求的 HTTP 客户端，线程与协程之间的性能差异不明显</li>
+</ul>
+<p>如下是一个顺序下载的示例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">from</span> pathlib <span class="keyword">import</span> Path</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Callable</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> httpx</span><br><span class="line">POP20_CC = (<span class="string">&#x27;CH IN US ID BR PK NG BD RU JP &#x27;</span></span><br><span class="line">            <span class="string">&#x27;MX PH VN ET EG DE IR TR CD FR&#x27;</span>).split()</span><br><span class="line"></span><br><span class="line">BASE_URL = <span class="string">&#x27;http://mp.ituring.com.cn/files&#x27;</span></span><br><span class="line">DEST_DIR = Path(<span class="string">&#x27;downloaded&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">save_flag</span>(<span class="params">img: <span class="built_in">bytes</span>, filename: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    (DEST_DIR / filename).write_bytes(img)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">get_flag</span>(<span class="params">cc: <span class="built_in">str</span></span>) -&gt; <span class="built_in">bytes</span>:</span><br><span class="line">    url = <span class="string">f&#x27;<span class="subst">&#123;BASE_URL&#125;</span>/<span class="subst">&#123;cc&#125;</span>/<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>.lower()</span><br><span class="line">    resp = httpx.get(url, timeout=<span class="number">6.1</span>,</span><br><span class="line">                     follow_redirects=<span class="literal">True</span>)</span><br><span class="line">    resp.raise_for_status()</span><br><span class="line">    <span class="keyword">return</span> resp.content</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list):</span><br><span class="line">        image = get_flag(cc)</span><br><span class="line">        save_flag(image, <span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>)</span><br><span class="line">        <span class="built_in">print</span>(cc, end=<span class="string">&#x27; &#x27;</span>, flush=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(cc_list)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>(<span class="params">downloader: <span class="type">Callable</span>[[<span class="built_in">list</span>[<span class="built_in">str</span>]], <span class="built_in">int</span>]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    DEST_DIR.mkdir(exist_ok=<span class="literal">True</span>)</span><br><span class="line">    t0 = time.perf_counter()</span><br><span class="line">    count = downloader(POP20_CC)</span><br><span class="line">    elapsed = time.perf_counter() - t0</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;\n<span class="subst">&#123;count&#125;</span> downloads in <span class="subst">&#123;elapsed:<span class="number">.2</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>这里使用了 httpx 库来发送 HTTP 请求，HTTPX 库受符合 Python 习惯用法的 requests 包启发，不过底层建构更符合现代化思想。更重要的是，HTTPX 同时提供了同步和异步 API，Python 标准库中的<code>urllib.request</code> 模块只有同步 API，而且对用户不友好</li>
+</ul>
+<h3 id="使用-concurrentfutures-模块下载"><a class="markdownIt-Anchor" href="#使用-concurrentfutures-模块下载"></a> 使用 <code>concurrent.futures</code> 模块下载</h3>
+<p><code>concurrent.futures</code> 模块的功能主要由 ThreadPoolExecutor 和 ProcessPoolExecutor 类提供。这两个类实现的 API 能分别在不同的线程和进程中执行可调用对象。<strong>这两个类在内部维护着一个工作线程或进程池，以及分配任务和收集结果的队列</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> concurrent <span class="keyword">import</span> futures</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> flags <span class="keyword">import</span> save_flag, get_flag, main</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_one</span>(<span class="params">cc: <span class="built_in">str</span></span>):</span><br><span class="line">    image = get_flag(cc)</span><br><span class="line">    save_flag(image, <span class="string">f&#x27;<span class="subst">&#123;cc&#125;</span>.gif&#x27;</span>)</span><br><span class="line">    <span class="built_in">print</span>(cc, end=<span class="string">&#x27; &#x27;</span>, flush=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">return</span> cc</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    <span class="keyword">with</span> futures.ThreadPoolExecutor() <span class="keyword">as</span> executor:</span><br><span class="line">        res = executor.<span class="built_in">map</span>(download_one, <span class="built_in">sorted</span>(cc_list))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(<span class="built_in">list</span>(res))</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main(download_many)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>实例化 <code>ThreadPoolExecutor</code>，作为上下文管理器。<code>executor.__exit__</code> 方法将调用 <code>executor.shutdown(wait=True)</code>，在所有线程都执行完毕前阻塞线程</li>
+<li>map 方法的作用与内置函数 map 类似，不过 download_one 函数会在多个线程中并发调用。<strong>map 方法返回一个生成器，通过迭代可以获取各个函数调用返回的值</strong></li>
+<li>如果有线程抛出异常，那么异常在 list 构造方法尝试从 <code>executor.map</code> 返回的迭代器中获取相应的返回值时抛出</li>
+</ul>
+<p>ThreadPoolExecutor 构造函数接受多个参数:</p>
+<ul>
+<li>其中，第一个参数最为重要，即 max_workers。该参数设置最多执行多少个工作线程</li>
+<li>max_workers 的值为 None 时（默认值）​，会自动决定合适的线程数量，而且 ThreadPoolExecutor 不轻易启动新 worker</li>
+</ul>
+<h3 id="future-对象在哪里"><a class="markdownIt-Anchor" href="#future-对象在哪里"></a> future 对象在哪里</h3>
+<p>future 对象是 <code>concurrent.futures</code> 模块和 asyncio 包的核心组件，可是，作为这两个库的用户，我们有时却见不到 future 对象。</p>
+<p>从 Python 3.4 起，标准库中有两个名为 Future 的类：<code>concurrent.futures.Future</code> 和<code>asyncio.Future</code>。二者的作用相同：<strong>两个 Future 类的实例都表示可能已经完成或者尚未完成的延迟计算</strong>，这与现代 JavaScript 中的 Promise 类似。</p>
+<p>future 对象封装待完成的操作，可以放入队列，完成的状态可以查询，得到结果（或异常）后可以获取。但是要记住一点，future 对象不应自己动手创建，只能由并发框架（<code>concurrent.futures</code> 或 <code>asyncio</code>）实例化。原因很简单：<strong>future 对象表示终将运行的操作，必须排期运行，而这是框架的工作</strong>。具体而言：</p>
+<ul>
+<li>
+<p>只有把可调用对象提交给某个 <code>concurrent.futures.Executor</code> 子类执行时才创建 <code>concurrent.futures.Future</code> 实例。例如，<code>Executor.submit()</code> 方法接受一个可调用对象，排期执行，返回一个 Future 实例</p>
+</li>
+<li>
+<p>应用程序代码不应改变 future 对象的状态，并发框架在 future 对象表示的延迟计算结束后改变 future 对象的状态，而我们无法掌控计算何时结束</p>
+</li>
+<li>
+<p>两种 future 对象都有 <code>.done()</code> 方法。该方法不阻塞，返回一个布尔值，指明 future 对象包装的可调用对象是否已经执行</p>
+</li>
+<li>
+<p>客户代码通常不询问 future 对象是否运行结束，而是等待通知。因此，两个 Future 类都有 <code>.add_done_callback()</code> 方法：提供一个可调用对象，在 future 对象执行完毕后调用。注意，回调的这个可调用对象与 future 对象包装的函数在同一个工作线程或进程中运行</p>
+</li>
+<li>
+<p>此外，还有 <code>.result()</code> 方法。该方法在两个 Future 类中的作用相同，当 future 对象运行结束后，返回可调用对象的结果，或者重新抛出执行可调用对象时抛出的异常，如果 future 对象没有运行结束：</p>
+<ul>
+<li>对于 <code>concurrency.futures.Future</code> 实例，调用 <code>f.result()</code> 方法将阻塞调用方所在的线程，直到有结果返回。此时，result 方法可以接受可选的 timeout 参数</li>
+<li><code>asyncio.Future.result()</code> 则会抛出 <code>InvalidStateError</code> 异常。对于 asyncio 包，获取 future 对象的结果首选 await</li>
+</ul>
+</li>
+</ul>
+<p>这两个库中有几个函数返回 future 对象，其他函数则使用 future 对象，以用户易于理解的方式实现自身。<code>Executor.map</code> 方法属于后者，它返回一个迭代器，迭代器的 <code>__next__</code> 方法调用各个 future 对象的 result 方法，因此我们得到的是各个 future 对象的结果，而非 future 对象本身</p>
+<p><code>concurrent.futures.as_completed</code> 函数的参数是一个 future 对象构成的可迭代对象，返回值是一个迭代器，在 future 对象运行结束后产出 future 对象。如下使用了 <code>as_completed</code> 函数重写这个例子：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    cc_list = cc_list[:<span class="number">5</span>]</span><br><span class="line">    <span class="keyword">with</span> futures.ThreadPoolExecutor(max_workers=<span class="number">3</span>) <span class="keyword">as</span> executor:</span><br><span class="line">        to_do: <span class="built_in">list</span>[futures.Future] = []</span><br><span class="line">        <span class="keyword">for</span> cc <span class="keyword">in</span> <span class="built_in">sorted</span>(cc_list):</span><br><span class="line">            future = executor.submit(download_one, cc)</span><br><span class="line">            to_do.append(future)</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;Scheduled for <span class="subst">&#123;cc&#125;</span>: <span class="subst">&#123;future&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> count, future <span class="keyword">in</span> <span class="built_in">enumerate</span>(futures.as_completed(to_do), <span class="number">1</span>):</span><br><span class="line">            res: <span class="built_in">str</span> = future.result()</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;future&#125;</span> result: <span class="subst">&#123;res!r&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> count</span><br></pre></td></tr></table></figure>
+<p>这里又两个循环，一个用于创建并排定 future 对象，另一个用于获取 future 对象的结果。</p>
+<ul>
+<li><code>executor.submit</code> 方法排定可调用对象的执行时间，返回一个 future 对象，表示待执行的操作</li>
+<li>存储各个 future 对象，后面传给 as_completed 函数</li>
+<li>as_completed 函数在 future 对象运行结束后产出对应的 future 对象，从而获取 future 对象的结果</li>
+<li>在这个例子中，调用 <code>future.result()</code> 方法绝不会阻塞，因为 future 由 as_completed 函数产出</li>
+</ul>
+<h2 id="使用-concurrentfutures-启动进程"><a class="markdownIt-Anchor" href="#使用-concurrentfutures-启动进程"></a> 使用 concurrent.futures 启动进程</h2>
+<p><code>ProcessPoolExecutor</code> 和 <code>ThreadPoolExecutor</code> 类都实现了 Executor 接口，因此使用<code>concurrent.futures</code> 模块能特别轻松地把基于线程的方案转成基于进程的方案：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">download_many</span>(<span class="params">cc_list: <span class="built_in">list</span>[<span class="built_in">str</span>]</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    <span class="keyword">with</span> futures.ProcessPoolExecutor() <span class="keyword">as</span> executor:</span><br></pre></td></tr></table></figure>
+<p>这样在 CPU 密集型作业中使用 <code>concurrent.futures</code> 轻松绕开 GIL。相较线程，进程使用的内存更多，启动时间更长，因此 ProcessPoolExecutor 的价值在 CPU 密集型作业中才能体现出来。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">from</span> concurrent <span class="keyword">import</span> futures</span><br><span class="line"><span class="keyword">from</span> time <span class="keyword">import</span> perf_counter</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> NamedTuple</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> primes <span class="keyword">import</span> is_prime, NUMBERS</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PrimeResult</span>(<span class="title class_ inherited__">NamedTuple</span>):</span><br><span class="line">    n: <span class="built_in">int</span></span><br><span class="line">    flag: <span class="built_in">bool</span></span><br><span class="line">    elapsed: <span class="built_in">float</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">check</span>(<span class="params">n: <span class="built_in">int</span></span>) -&gt; PrimeResult:</span><br><span class="line">    t0 = perf_counter()</span><br><span class="line">    res = is_prime(n)</span><br><span class="line">    <span class="keyword">return</span> PrimeResult(n, res, perf_counter() - t0)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(sys.argv) &lt; <span class="number">2</span>:</span><br><span class="line">        workers = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        workers = <span class="built_in">int</span>(sys.argv[<span class="number">1</span>])</span><br><span class="line"></span><br><span class="line">    executor = futures.ProcessPoolExecutor(workers)</span><br><span class="line">    actual_workers = executor._max_workers  <span class="comment"># type: ignore</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Checking <span class="subst">&#123;<span class="built_in">len</span>(NUMBERS)&#125;</span> numbers with <span class="subst">&#123;actual_workers&#125;</span> processes:&#x27;</span>)</span><br><span class="line"></span><br><span class="line">    t0 = perf_counter()</span><br><span class="line"></span><br><span class="line">    numbers = <span class="built_in">sorted</span>(NUMBERS, reverse=<span class="literal">True</span>)</span><br><span class="line">    <span class="keyword">with</span> executor:</span><br><span class="line">        <span class="keyword">for</span> n, prime, elapsed <span class="keyword">in</span> executor.<span class="built_in">map</span>(check, numbers):</span><br><span class="line">            label = <span class="string">&#x27;P&#x27;</span> <span class="keyword">if</span> prime <span class="keyword">else</span> <span class="string">&#x27; &#x27;</span></span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;n:<span class="number">16</span>&#125;</span>  <span class="subst">&#123;label&#125;</span> <span class="subst">&#123;elapsed:<span class="number">9.6</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line"></span><br><span class="line">    time = perf_counter() - t0</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Total time: <span class="subst">&#123;time:<span class="number">.2</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>executor.map(check, numbers)</code> 返回结果的顺序与 numbers 中数的顺序一致</li>
+<li>这就可能导致虽然某些进程已经运行结束了，但是仍然要按照 numbers 所对应的 Future 对象的顺序产出结果</li>
+</ul>
+<h2 id="实验-executormap-方法"><a class="markdownIt-Anchor" href="#实验-executormap-方法"></a> 实验 Executor.map 方法</h2>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> time <span class="keyword">import</span> sleep, strftime</span><br><span class="line"><span class="keyword">from</span> concurrent <span class="keyword">import</span> futures</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">display</span>(<span class="params">*args</span>):</span><br><span class="line">    <span class="built_in">print</span>(strftime(<span class="string">&#x27;[%H:%M:%S]&#x27;</span>), end=<span class="string">&#x27; &#x27;</span>)</span><br><span class="line">    <span class="built_in">print</span>(*args)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">loiter</span>(<span class="params">n</span>):</span><br><span class="line">    msg = <span class="string">&#x27;&#123;&#125;loiter(&#123;&#125;): doing nothing for &#123;&#125;s...&#x27;</span></span><br><span class="line">    display(msg.<span class="built_in">format</span>(<span class="string">&#x27;\t&#x27;</span>*n, n, n))</span><br><span class="line">    sleep(n)</span><br><span class="line">    msg = <span class="string">&#x27;&#123;&#125;loiter(&#123;&#125;): done.&#x27;</span></span><br><span class="line">    display(msg.<span class="built_in">format</span>(<span class="string">&#x27;\t&#x27;</span>*n, n))</span><br><span class="line">    <span class="keyword">return</span> n * <span class="number">10</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    display(<span class="string">&#x27;Script starting.&#x27;</span>)</span><br><span class="line">    executor = futures.ThreadPoolExecutor(max_workers=<span class="number">3</span>)</span><br><span class="line">    results = executor.<span class="built_in">map</span>(loiter, <span class="built_in">range</span>(<span class="number">5</span>))</span><br><span class="line">    display(<span class="string">&#x27;results:&#x27;</span>, results)</span><br><span class="line">    display(<span class="string">&#x27;Waiting for individual results:&#x27;</span>)</span><br><span class="line">    <span class="keyword">for</span> i, result <span class="keyword">in</span> <span class="built_in">enumerate</span>(results):</span><br><span class="line">        display(<span class="string">f&#x27;result <span class="subst">&#123;i&#125;</span>: <span class="subst">&#123;result&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">[21:50:48] Script starting.</span><br><span class="line">[21:50:48] loiter(0): doing nothing <span class="keyword">for</span> 0s...</span><br><span class="line">[21:50:48] loiter(0): <span class="keyword">done</span>.</span><br><span class="line">[21:50:48] 	loiter(1): doing nothing <span class="keyword">for</span> 1s...</span><br><span class="line">[21:50:48] 			loiter(3): doing nothing <span class="keyword">for</span> 3s...</span><br><span class="line">[21:50:48] 		loiter(2): doing nothing <span class="keyword">for</span> 2s...</span><br><span class="line">[21:50:48] results: &lt;generator object Executor.map.&lt;locals&gt;.result_iterator at 0x1025457b0&gt;</span><br><span class="line">[21:50:48] Waiting <span class="keyword">for</span> individual results:</span><br><span class="line">[21:50:48] result 0: 0</span><br><span class="line">[21:50:49] 	loiter(1): <span class="keyword">done</span>.</span><br><span class="line">[21:50:49] 				loiter(4): doing nothing <span class="keyword">for</span> 4s...</span><br><span class="line">[21:50:49] result 1: 10</span><br><span class="line">[21:50:50] 		loiter(2): <span class="keyword">done</span>.</span><br><span class="line">[21:50:50] result 2: 20</span><br><span class="line">[21:50:51] 			loiter(3): <span class="keyword">done</span>.</span><br><span class="line">[21:50:51] result 3: 30</span><br><span class="line">[21:50:53] 				loiter(4): <span class="keyword">done</span>.</span><br><span class="line">[21:50:53] result 4: 40</span><br></pre></td></tr></table></figure>
+<ul>
+<li>把 5 个任务提交给 executor。因为只有 3 个线程，所以只有 3 个任务立即开始：<code>loiter(0)</code>、<code>loiter(1)</code> 和 <code>loiter(2)</code>，这些是非阻塞调用</li>
+<li><code>executor.map</code> 方法返回的结果（results）是一个生成器。不管有多少任务，也不管 max_workers 的值是多少，目前都不会阻塞</li>
+<li>for 循环中的 enumerate 函数隐式调用 <code>next(results)</code>，这个函数又在（内部）表示第一个任务(loiter(0)) 的 future 对象 <code>_f</code> 上调用 <code>_f.result()</code>。result 方法会阻塞，直到 future 对象运行结束，因此这个循环每次迭代都要等待下一个结果做好准备</li>
+</ul>
+<p><code>Executor.map</code> 函数易于使用，不过通常最好等结果准备好之后再获取，不要考虑提交的顺序。为此，要把 <code>Executor.submit</code> 方法和 <code>futures.as_completed</code> 函数结合起来使用：</p>
+<ul>
+<li><code>executor.submit</code> 和 <code>futures.as_completed</code> 这个组合比 <code>executor.map</code> 更灵活，因为<code>submit</code> 方法能处理不同的可调用对象和参数，而 <code>executor.map</code> 只适用于使用不同参数调用同一个可调用对象</li>
+<li>传给 <code>futures.as_completed</code> 函数的一系列 future 对象可以来自多个执行器，例如一些由 <code>ThreadPoolExecutor</code> 实例创建，另一些由 <code>ProcessPoolExecutor</code> 实例创建</li>
+</ul>
+<p>在使用 <code>futures.as_completed</code> 函数时，有一个惯用法：构建一个字典，把各个 <code>future</code> 对象映射到 <code>future</code> 对象运行结束后可能有用的其他数据上。这样，尽管 future 对象生成的结果顺序已经乱了，依然便于使用结果做后续处理。</p>
+<p>Python 线程特别适合 I/O 密集型应用程序，<code>concurrent.futures</code> 包大大简化了某些使用场景下 Python 线程的用法。另外，使用 ProcessPoolExecutor 还可以利用多核解决 CPU 密集型问题（如果是高度并行计算的话）。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/11/14/fluent-python-v2-21/" rel="prev" title="流畅的 Python 第 2 版（21）：异步编程">
+      <i class="fa fa-chevron-left"></i> 流畅的 Python 第 2 版（21）：异步编程
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/11/10/fluent-python-v2-19/" rel="next" title="流畅的 Python 第 2 版（19）：Python 并发模型">
+      流畅的 Python 第 2 版（19）：Python 并发模型 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B9%B6%E5%8F%91%E7%BD%91%E7%BB%9C%E4%B8%8B%E8%BD%BD"><span class="nav-number">1.</span> <span class="nav-text"> 并发网络下载</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-concurrentfutures-%E6%A8%A1%E5%9D%97%E4%B8%8B%E8%BD%BD"><span class="nav-number">1.1.</span> <span class="nav-text"> 使用 concurrent.futures 模块下载</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#future-%E5%AF%B9%E8%B1%A1%E5%9C%A8%E5%93%AA%E9%87%8C"><span class="nav-number">1.2.</span> <span class="nav-text"> future 对象在哪里</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-concurrentfutures-%E5%90%AF%E5%8A%A8%E8%BF%9B%E7%A8%8B"><span class="nav-number">2.</span> <span class="nav-text"> 使用 concurrent.futures 启动进程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9E%E9%AA%8C-executormap-%E6%96%B9%E6%B3%95"><span class="nav-number">3.</span> <span class="nav-text"> 实验 Executor.map 方法</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">223</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

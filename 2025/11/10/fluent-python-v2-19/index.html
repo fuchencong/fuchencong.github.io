@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="并发指同时处理多件事，并行指同时做多件事。二者不同，但有联系。一个关于结构，一个关于执行。并发用于制定方案，用来解决可能（但未必）并行的问题。并行是并发的一种特殊情况。所有并行系统都是并发的，但不是所有并发系统都是并行的。 这篇文章将展示 Python 的 3 种并发方式：线程、进程和原生协程。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="流畅的 Python 第 2 版（19）：Python 并发模型">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2025/11/10/fluent-python-v2-19/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="并发指同时处理多件事，并行指同时做多件事。二者不同，但有联系。一个关于结构，一个关于执行。并发用于制定方案，用来解决可能（但未必）并行的问题。并行是并发的一种特殊情况。所有并行系统都是并发的，但不是所有并发系统都是并行的。 这篇文章将展示 Python 的 3 种并发方式：线程、进程和原生协程。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2025/11/10/fluent-python-v2-19/images/01.jpg">
+<meta property="article:published_time" content="2025-11-10T11:20:24.000Z">
+<meta property="article:modified_time" content="2025-12-28T11:49:31.993Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2025/11/10/fluent-python-v2-19/images/01.jpg">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2025/11/10/fluent-python-v2-19/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>流畅的 Python 第 2 版（19）：Python 并发模型 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2025/11/10/fluent-python-v2-19/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          流畅的 Python 第 2 版（19）：Python 并发模型
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2025-11-10 19:20:24" itemprop="dateCreated datePublished" datetime="2025-11-10T19:20:24+08:00">2025-11-10</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>并发指同时处理多件事，并行指同时做多件事。二者不同，但有联系。一个关于结构，一个关于执行。并发用于制定方案，用来解决可能（但未必）并行的问题。并行是并发的一种特殊情况。所有并行系统都是并发的，但不是所有并发系统都是并行的。</p>
+<p>这篇文章将展示 Python 的 3 种并发方式：线程、进程和原生协程。</p>
+<span id="more"></span>
+<h2 id="全景概览"><a class="markdownIt-Anchor" href="#全景概览"></a> 全景概览</h2>
+<p>启动线程或进程十分容易，关键是如何跟踪线程或进程。</p>
+<ul>
+<li>相比于普通函数：调用一个函数，发出调用的代码开始阻塞，直到函数返回。因此，你知道函数什么时候执行完毕，而且能轻松地得到函数的返回值。如果函数可能抛出异常，则把函数调用放在 <code>try/except</code> 块中，捕获错误</li>
+</ul>
+<p>这些熟悉的概念在你启动线程或进程后都不可用了：你无法轻松地得知操作何时结束，若想获取结果或捕获错误，则需要设置某种通信信道，例如消息队列。<strong>此外，启动线程或进程有一定消耗，仅仅为了计算一个结果就退出，肯定得不偿失</strong>。</p>
+<p>通常，更好的选择是让各个线程或进程进入一个 <code>职程</code>（worker），循环等待要处理的输入，以此分摊启动成本。但也有新的问题，如果不需要 worker 了，如何退出？怎样退出才能做到不中断作业，避免留下未处理完毕的数据和未释放的资源？</p>
+<p>协程的启动成本很低。使用 await 关键字启动的协程，返回值容易获取，可以安全取消，捕获异常的位置也明确。但是，协程通常由异步框架启动，因此监控难度与线程或进程相当。</p>
+<p>鉴于此，并发编程需要学习新的概念和编程模式。首先，我们要对核心概念确立统一认识。</p>
+<h2 id="术语定义"><a class="markdownIt-Anchor" href="#术语定义"></a> 术语定义</h2>
+<ul>
+<li>
+<p>并发：处理多个待定任务，一次处理一个或并行处理多个（如果条件允许）​，直到所有任务最终都成功或失败。对于单核 CPU，如果操作系统的调度程序支持交叉执行待定任务，也能实现并发。并发也叫多任务处理(multitasking)</p>
+</li>
+<li>
+<p>并行：同时执行多个计算任务的能力。需要一个多核 CPU、多个 CPU、一个 GPU 或一个集群中的多台计算机</p>
+</li>
+<li>
+<p>执行单元：并发执行代码的对象的统称，每个对象的状态和调用栈是独立的。Python 原生支持 3 种执行单元：进程、线程和协程</p>
+</li>
+<li>
+<p>进程：计算机程序运行时的一个实例，消耗内存和部分 CPU 时间。每个进程都隔离在自己的私有内存空间中。进程通过管道、套接字或内存映射文件进行通信。进程可以派生子进程，子进程彼此之间以及与父进程之间是隔离的。进程支持抢占式多任务处理机制：操作系统调度程序定期抢占（挂起）运行中的进程，让其他进程运行</p>
+</li>
+<li>
+<p>线程：单个进程中的执行单元。一个进程启动后，只使用一个线程，即主线程。通过调用操作系统 API，进程可以创建更多线程，执行并发操作。一个进程内的线程共享相同的内存空间。因此，线程之间可以轻松地共享数据，但是如果多个线程同时更新同一个对象，则可能导致数据损坏，与进程一样，线程在操作系统调度程序的监督下也可以实现抢占式多任务处理。对于同一份作业，线程消耗的资源比进程少</p>
+</li>
+<li>
+<p>协程：可以挂起自身并在以后恢复的函数。在 Python 中，经典协程由生成器函数构建，原生协程使用 <code>async def</code> 定义。<strong>Python 协程通常在事件循环（也在同一个线程中）的监督下在单个线程中运行</strong>。asyncio、Curio 或 Trio 等异步编程框架为基于协程的非阻塞 I/ O提供了事件循环和支持库。协程支持协作式多任务处理：一个协程必须使用 yield 或 await 关键字显式放弃控制权，另一个协程才可以并发（而非并行）开展工作。这意味着，<strong>协程中只要有导致阻塞的代码，事件循环和其他所有协程的执行就都会受到阻塞——这一点与进程和线程的抢占式多任务处理形成鲜明对比</strong>。另外，对于同一份作业，协程消耗的资源比线程或进程少</p>
+</li>
+<li>
+<p>队列：一种数据结构，可以放入和取出项，顺序通常是先入先出（FIFO）。独立的执行单元可以通过队列交换应用数据和控制消息。队列的实现因底层并发模型而异：Python 标准库中的 queue 包提供的队列类支持线程，multiprocessing 和 asyncio 包则实现了其他队列类</p>
+</li>
+<li>
+<p>锁：一种供执行单元用来同步操作和避免数据损坏的对象。更新共享数据结构时，当前代码应持有相关的锁，并告诉程序的其他部分等到锁被释放后再访问这个数据结构</p>
+</li>
+<li>
+<p>争用：对有限资源的争夺。当多个执行单元尝试访问共享资源（例如锁或存储器）时，就会发生资源争用。当计算密集型进程或线程必须等待操作系统调度程序为其分配 CPU 时间时，还会发生 CPU 争用</p>
+</li>
+</ul>
+<p>接下来使用这些术语分析 Python 对并发的支持。</p>
+<h3 id="进程-线程和声名狼藉的-python-gil"><a class="markdownIt-Anchor" href="#进程-线程和声名狼藉的-python-gil"></a> 进程、线程和声名狼藉的 Python GIL</h3>
+<ul>
+<li>
+<p>Python 解释器的每个实例是一个进程：</p>
+<ul>
+<li>使用 <code>multiprocessing</code> 或 <code>concurrent.futures</code> 库可以启动额外的 Python 进程</li>
+<li>Python 的 subprocess 库用于启动运行外部程序（不管使用何种语言编写）的进程</li>
+</ul>
+</li>
+<li>
+<p>Python 解释器仅使用一个线程运行用户的程序和内存垃圾回收程序。使用 <code>threading</code> 或<code>concurrent.futures</code> 库可以启动额外的 Python 线程</p>
+</li>
+<li>
+<p><strong>对对象引用计数和解释器其他内部状态的访问受一个锁的控制</strong>，这个锁是 <code>全局解释器锁</code>（Global Interpreter Lock，GIL）。<strong>任意时间点上只有一个 Python 线程可以持有 GIL。这意味着，任意时间点上只有一个线程能执行 Python 代码，与 CPU 核数量无关</strong></p>
+</li>
+<li>
+<p>为了防止一个 Python 线程无限期持有 GIL，Python 的字节码解释器默认每 5 毫秒暂停当前 Python 线程，释放 GIL。被暂停的线程可以再次尝试获得 GIL，但是如果有其他线程等待，那么操作系统调度程序可能会从中挑选一个线程开展工作</p>
+</li>
+<li>
+<p>我们编写的 Python 代码无法控制 GIL。但是，耗时的任务可由内置函数或 C 语言（以及其他能在 <code>Python/C</code> API 层级接合的语言）扩展释放 GIL</p>
+</li>
+<li>
+<p>Python标准库中发起系统调用的函数均可释放 GIL，这包括所有执行磁盘 I/O、网络 I/O 的函数，以及<code>time.sleep()</code></p>
+</li>
+<li>
+<p>在 Python/C API 层级集成的扩展也可以启动不受 GIL 影响的非 Python 线程。这些不受 GIL 影响的线程无法更改 Python 对象，但是可以读取或写入内存中支持缓冲协议的底层对象，例如 bytearray、array.array 和 NumPy 数组</p>
+</li>
+<li>
+<p>GIL 对使用 Python 线程进行网络编程的影响相对较小，因为 <code>I/O</code> 函数释放 GIL，而且与内存读写相比，网络读写的延迟始终很高。各个单独的线程无论如何都要花费大量时间等待，所以线程可以交错执行，对整体吞吐量不会产生重大影响</p>
+</li>
+<li>
+<p>对 GIL 的争用会降低计算密集型 Python 线程的速度。<strong>对于这类任务，在单线程中依序执行的代码更简单，速度也更快</strong></p>
+</li>
+<li>
+<p><strong>若想在多核上运行 CPU 密集型Python代码，必须使用多个 Python 进程</strong></p>
+</li>
+</ul>
+<p>threading 模块的文档对此做了很好的概括：由于 CPython 有 GIL，因此同一时间只有一个线程能执行 Python 代码（尽管有些旨在提升性能的库可以克服这个限制）​：</p>
+<ul>
+<li><strong>如果你希望应用程序充分地利用多核设备的计算资源，那么建议使用<code>multiprocessing</code> 或 <code>concurrent.futures.ProcessPoolExecutor</code></strong></li>
+<li><strong>然而，如果你想同时运行多个 I/ O密集型任务，那么线程仍是最合适的模型</strong></li>
+</ul>
+<p>GIL 是 CPython 实现细节​，因为 GIL 不是 Python 语言规定的机制。Jython 和 IronPython 就没有GIL。</p>
+<p>这里没有提到协程，<strong>因为默认情况下，协程共用同一个 Python 线程，而且受异步框架提供的事件循环监管，所以不受 GIL 影响</strong>。在异步程序中也可以使用多个线程，但是最佳实践是在同一个线程中运行事件循环和所有协程，其他线程负责执行特定的任务。</p>
+<h2 id="一个演示并发的-hello-world-示例"><a class="markdownIt-Anchor" href="#一个演示并发的-hello-world-示例"></a> 一个演示并发的 <code>Hello World</code> 示例</h2>
+<p>接下来几个示例的想法很简单：启动一个函数，阻塞3秒，期间在终端展示字符动画，让用户知道程序正在运转，没有停滞。</p>
+<h3 id="使用线程实现旋转指针"><a class="markdownIt-Anchor" href="#使用线程实现旋转指针"></a> 使用线程实现旋转指针</h3>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> itertools</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">from</span> threading <span class="keyword">import</span> Thread, Event</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">spin</span>(<span class="params">msg: <span class="built_in">str</span>, done: Event</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">for</span> char <span class="keyword">in</span> itertools.cycle(<span class="string">r&#x27;\|/-&#x27;</span>):</span><br><span class="line">        status = <span class="string">f&#x27;\r<span class="subst">&#123;char&#125;</span> <span class="subst">&#123;msg&#125;</span>&#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(status, end=<span class="string">&#x27;&#x27;</span>, flush=<span class="literal">True</span>)</span><br><span class="line">        <span class="keyword">if</span> done.wait(<span class="number">.1</span>):</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">    blanks = <span class="string">&#x27; &#x27;</span> * <span class="built_in">len</span>(status)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;\r<span class="subst">&#123;blanks&#125;</span>\r&#x27;</span>, end=<span class="string">&#x27;&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">slow</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    time.sleep(<span class="number">3</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">42</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>done 参数的值是一个 <code>threading.Event</code> 实例，一个用于同步线程的简单对象</li>
+<li>这里展现了用文本实现动画的技巧：使用 ASCII 回车符（‘\r’）把光标移到行头</li>
+<li>如果其他线程设置了这个事件，则 <code>Event.wait(timeout=None)</code> 方法返回 True；经过 timeout 指定的时间后，返回 False</li>
+<li><code>slow()</code> 由主线程调用。假设有一个 API 调用通过网络发送，速度很慢。调用 sleep 阻塞主线程，但是 GIL 已被释放，因此指针还能继续旋转</li>
+<li>调用 <code>time.sleep()</code> 虽然阻塞所在的线程，但是释放 GIL，其他 Python 线程可以继续运行</li>
+</ul>
+<p>Python 故意没有提供终止线程的 API，如果想终止线程，则必须向线程发送相应的消息。在 Python 中，协调线程的信号机制，使用 threading.Event 类最简单：</p>
+<ul>
+<li>Event 实例有一个内部布尔标志，开始时为 False。调用 <code>Event.set()</code> 可把这个标志设为 True</li>
+<li>这个标志为 False 时，在一个线程中调用 <code>Event.wait()</code>，该线程将被阻塞，直到另一个线程调用 <code>Event.set()</code>，致使 <code>Event.wait()</code> 返回 True</li>
+<li>使用 <code>Event.wait(s)</code> 设置一个暂停时间（单位为秒）​，经过这段时间后，<code>Event.wait(s)</code> 调用返回 False，如果另一个线程调用 <code>Event.set()</code>，则立即返回 True</li>
+</ul>
+<p>如下则是主程序逻辑：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">supervisor</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    done = Event()</span><br><span class="line">    spinner = Thread(target=spin, args=(<span class="string">&#x27;thinking!&#x27;</span>, done))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;spinner object: <span class="subst">&#123;spinner&#125;</span>&#x27;</span>)</span><br><span class="line">    spinner.start()</span><br><span class="line">    result = slow()</span><br><span class="line">    done.<span class="built_in">set</span>()</span><br><span class="line">    spinner.join()</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    result = supervisor()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Answer: <span class="subst">&#123;result&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python thread_spin.py</span></span><br><span class="line"><span class="comment"># initial 状态表明 spinner 线程尚未启动</span></span><br><span class="line">spinner object: &lt;Thread(Thread-1 (spin), initial)&gt;</span><br><span class="line">- thinking!</span><br><span class="line"></span><br><span class="line"><span class="comment"># python thread_spin.py</span></span><br><span class="line">spinner object: &lt;Thread(Thread-1 (spin), initial)&gt;</span><br><span class="line">Answer: 42</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>threading.Event</code> 实例是协调 main 线程和 spinner 线程活动的关键</li>
+<li>创建一个 Thread 实例，target 关键字参数的值是一个函数，args 参数的值是一个元组，即传给 target 函数的位置参数</li>
+<li>调用 <code>spinner.start()</code> 启动线程，之后 <code>slow()</code> 则会阻塞主线程，但 spinner 线程可以继续运行</li>
+<li><code>slow()</code> 调用结束后，把 Event 标志设为 True，终止 spin 函数中的 for 循环，spinner 线程退出</li>
+</ul>
+<h3 id="使用进程实现旋转指针"><a class="markdownIt-Anchor" href="#使用进程实现旋转指针"></a> 使用进程实现旋转指针</h3>
+<p>multiprocessing 包支持在单独的 Python 进程而非线程中运行并发任务。创建 <code>multiprocessing.Process</code> 实例后，一个全新的 Python 解释器以子进程的形式在后台启动。<strong>由于每个 Python 进程都有自己的 GIL，因此程序可以使用所有可用的 CPU 核</strong>——但是，最终还是取决于操作系统的调度程序。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> itertools</span><br><span class="line"><span class="keyword">import</span> time</span><br><span class="line"><span class="keyword">from</span> multiprocessing <span class="keyword">import</span> Process, Event</span><br><span class="line"><span class="keyword">from</span> multiprocessing <span class="keyword">import</span> synchronize</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">spin</span>(<span class="params">msg: <span class="built_in">str</span>, done: synchronize.Event</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">for</span> char <span class="keyword">in</span> itertools.cycle(<span class="string">r&#x27;\|/-&#x27;</span>):</span><br><span class="line">        status = <span class="string">f&#x27;\r<span class="subst">&#123;char&#125;</span> <span class="subst">&#123;msg&#125;</span>&#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(status, end=<span class="string">&#x27;&#x27;</span>, flush=<span class="literal">True</span>)</span><br><span class="line">        <span class="keyword">if</span> done.wait(<span class="number">.1</span>):</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line"></span><br><span class="line">    blanks = <span class="string">&#x27; &#x27;</span> * <span class="built_in">len</span>(status)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;\r<span class="subst">&#123;blanks&#125;</span>\r&#x27;</span>, end=<span class="string">&#x27;&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">slow</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    time.sleep(<span class="number">3</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">42</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">supervisor</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    done = Event()</span><br><span class="line">    spinner = Process(target=spin,</span><br><span class="line">                      args=(<span class="string">&#x27;thinking!&#x27;</span>, done))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;spinner object: <span class="subst">&#123;spinner&#125;</span>&#x27;</span>)</span><br><span class="line">    spinner.start()</span><br><span class="line">    result = slow()</span><br><span class="line">    done.<span class="built_in">set</span>()</span><br><span class="line">    spinner.join()</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    result = supervisor()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Answer: <span class="subst">&#123;result&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python process_spin.py</span></span><br><span class="line">spinner object: &lt;Process name=<span class="string">&#x27;Process-1&#x27;</span> parent=3065876 initial&gt;</span><br><span class="line">Answer: 42</span><br></pre></td></tr></table></figure>
+<ul>
+<li>multiprocessing API 基本模仿 threading API，不过类型提示和 Mypy 还是揭示了一处区别：<code>multiprocessing.Event</code> 是函数，返回 <code>synchronize.Event</code> 实例</li>
+</ul>
+<p>threading 和 multiprocessing 的 API 基本相同，但是实现方式差别很大，而且为了处理多进程编程增加的复杂度，multiprocessing 的 API 更多。例如，把线程换成进程后，<strong>一个难点是如何在被操作系统隔离且无法共享 Python 对象的进程之间通信</strong>。为此，跨进程传递的对象需要序列化和反序列化，这样一来开销就增加了。</p>
+<ul>
+<li>这个例子中，跨进程传递的数据只有 Event 状态。在 <code>multiprocessing</code> 模块底层的 C 代码中，Event 状态通过操作系统底层信号量实现</li>
+<li>从 Python 3.8 开始，标准库提供了 <code>multiprocessing.shared_memory</code> 包，但是不支持用户定义类的实例</li>
+</ul>
+<h3 id="使用协程实现旋转指针"><a class="markdownIt-Anchor" href="#使用协程实现旋转指针"></a> 使用协程实现旋转指针</h3>
+<p>线程和进程由操作系统调度程序分配 CPU 时间驱动。相比之下，协程由应用级事件循环驱动：<strong>事件循环管理待定协程队列，逐个驱动，监视由协程发起的 I/O 操作触发的事件，在各个事件发生时把控制权传回相应的协程</strong>。事件循环、库协程以及用户协程都在同一个线程中执行。因此，在协程中花费的任何时间都会减慢事件循环，以及所有其他协程。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> itertools</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">spin</span>(<span class="params">msg: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">for</span> char <span class="keyword">in</span> itertools.cycle(<span class="string">r&#x27;\|/-&#x27;</span>):</span><br><span class="line">        status = <span class="string">f&#x27;\r<span class="subst">&#123;char&#125;</span> <span class="subst">&#123;msg&#125;</span>&#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(status, flush=<span class="literal">True</span>, end=<span class="string">&#x27;&#x27;</span>)</span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            <span class="keyword">await</span> asyncio.sleep(<span class="number">.1</span>)</span><br><span class="line">        <span class="keyword">except</span> asyncio.CancelledError:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">    blanks = <span class="string">&#x27; &#x27;</span> * <span class="built_in">len</span>(status)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;\r<span class="subst">&#123;blanks&#125;</span>\r&#x27;</span>, end=<span class="string">&#x27;&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">slow</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">3</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="number">42</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    result = asyncio.run(supervisor())</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Answer: <span class="subst">&#123;result&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">supervisor</span>() -&gt; <span class="built_in">int</span>:</span><br><span class="line">    spinner = asyncio.create_task(spin(<span class="string">&#x27;thinking!&#x27;</span>))</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;spinner object: <span class="subst">&#123;spinner&#125;</span>&#x27;</span>)</span><br><span class="line">    result = <span class="keyword">await</span> slow()</span><br><span class="line">    spinner.cancel()</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python async_spin.py</span></span><br><span class="line">spinner object: &lt;Task pending name=<span class="string">&#x27;Task-2&#x27;</span> coro=&lt;spin() running at /root/code/private/python/learn/fluent_python_v2/19/async_spin.py:4&gt;&gt;</span><br><span class="line">Answer: 42</span><br></pre></td></tr></table></figure>
+<ul>
+<li>在这个程序中，main 是唯一的常规函数，其他的都是协程</li>
+<li><code>asyncio.run</code> 函数启动事件循环，驱动 <code>supervisor</code> 这个协程，最终也将启动其他协程</li>
+<li>原生协程使用 <code>async def</code> 定义</li>
+<li><code>asyncio.create_task</code> 调度 <code>spin</code> 最终执行，现在则立即返回一个 <code>asyncio.Task</code> 实例</li>
+<li>await 关键字调用 slow，阻塞 supervisor，直到 slow 返回。slow 的返回值将赋予 result</li>
+<li><code>Task.cancel</code> 方法在 <code>spin</code> 协程中抛出 CancelledError 异常</li>
+<li>使用 <code>await asyncio.sleep(.1)</code> 代替 <code>time.sleep(.1)</code>，暂停时不阻塞其他协程</li>
+<li>由于在控制这个协程的 Task 实例上调用 cancel 方法会抛出 <code>asyncio.CancelledError</code>。捕获到这个异常就退出循环</li>
+<li>slow 协程也使用 <code>await asyncio.sleep</code> 代替 <code>time.sleep</code></li>
+</ul>
+<p>这个例子也展示了运行协程的 3 种主要方式：</p>
+<ul>
+<li><code>asyncio.run(coro())</code>：<strong>在常规函数中调用，驱动一个协程对象，通常作为程序中所有异步代码的入口</strong>。这个调用保持阻塞，一直到 coro 的主体返回。<code>run()</code> 调用的返回值是 coro 主体的返回值。但是需要注意，<strong>不能在已经运行的事件循环中继续调用 <code>asyncio.run()</code></strong>，例如如下就是错误例子</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">sub_co</span>():</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;subco running&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">co</span>():</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;co running&quot;</span>)</span><br><span class="line">    <span class="comment"># RuntimeError: asyncio.run() cannot be called from a running event loop</span></span><br><span class="line">    asyncio.run(sub_co())</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    asyncio.run(co())</span><br><span class="line"></span><br><span class="line">main()</span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p><code>asyncio.create_task(coro())</code>：在协程中调用，<strong>调度另一个协程最终执行（自动被随机调度执行），这个调用不中止当前协程</strong>。它返回一个 Task 实例，包装协程对象，提供控制和查询协程状态的方法。</p>
+</li>
+<li>
+<p><code>await coro()</code>：在协程中调用，<strong>把控制权转给 <code>coro()</code> 返回的协程对象，中止当前协程，直到 coro 的主体返回</strong>。这个异步等待表达式的值是 coro 主体的返回值</p>
+</li>
+</ul>
+<p><strong>通过 <code>coro()</code> 调用协程立即返回一个协程对象，但是不运行 coro 函数的主体。协程的主体由事件循环驱动</strong>。</p>
+<p>使用 <code>asyncio</code> 的 Python 代码只有一个执行流，除非显式启动额外的线程或进程。这意味着，任何时间点上都只有一个协程在执行。若想实现并发，则要把控制权由一个协程传给另一个协程。所以如果 <code>slow()</code> 协程里不是调用 <code>asyncio.sleep()</code> 而是调用 <code>time.sleep()</code>，则当前唯一主线程的事件循环会被阻塞，程序什么也干不了，等 sleep 结束后，<code>spinner</code> 任务直接被取消，因此控制流始终没有触及 spin 协程的主体。使用 <code>await asyncio.sleep(DELAY)</code> 则把控制权交还 asyncio 事件循环，驱动其他待定协程。</p>
+<p>讲到协程并发，就不得不提 <code>greenlet</code> 包。这个包已经存在很多年，使用广泛，通过轻量级协程（叫作greenlets）支持协作式多任务处理，而不使用 yield 或 await 等特殊句法，因此更易于集成到现有的顺序执行基准代码中。</p>
+<p>网络库 gevent 对 Python 标准库中的 socket 模块打了猴子补丁，把部分代码换成了 greenlets，以防止阻塞。在很大程度上，gevent 对周围的代码是透明的，因此顺序执行的应用程序和库（例如数据库驱动）无须大改就能执行并发网络 I/O。使用 gevent 的开源项目很多，包括大量部署的 Gunicorn。</p>
+<p>而使用协程时，我们编写的代码默认防止中断，因为必须显式使用 await 关键字，程序的其余部分才能运行。<strong>按照定义，协程本身即可 <code>同步</code>​，不用通过锁同步多个线程的操作，因为任何时刻都只能运行一个协程</strong>。想放弃控制权时，我们使用 await 把控制权交还调度程序。这也是可以安全取消协程的原因：按照定义，<strong>协程只能在中止它的 await 表达式处被取消</strong>，所以可以通过处理 CancelledError 异常执行清理工作。</p>
+<h2 id="gil-真正的影响"><a class="markdownIt-Anchor" href="#gil-真正的影响"></a> GIL 真正的影响</h2>
+<p>对于上面的线程版例子，把 slow 函数中的 <code>time.sleep(3)</code> 调用换成使用某个库发起的 HTTP 客户端请求之后，旋转指针仍然运转。<strong>这是因为一个设计精良的网络库在等待网络响应的过程中会释放 GIL</strong>。同样对于协程版本也是类似的，<strong>因为一个设计精良的异步网络库在等待响应期间会把控制权交还事件循环</strong>，让指针保持旋转。</p>
+<p>对于 CPU 密集型代码，情况就不同了。假设把 <code>time.sleep(3)</code> 换成一个计算密集型函数（例如素数判断），此时各个版本会有什么影响呢？</p>
+<ul>
+<li>multiprocessing 版本：旋转指针受一个子进程控制，因此在父进程进行素数检测的过程中，指针持续旋转</li>
+<li>threading 版本：旋转指针由一个子线程控制，因此在主线程做素数检测期间指针持续旋转。<strong>这里我们不要高估了 GIL 的影响</strong>。对这个示例来说，指针得以保持旋转的原因是 <strong>Python 每隔 5 毫秒（默认值）中止运行线程，其他待定线程可以获得 GIL</strong>。</li>
+<li>asyncio 版本：指针根本不旋转，因为 <code>slow()</code> 一直在执行，占据着事件循环，<code>slow()</code> 结束后 <code>spiner()</code> 任务马上又被取消，使其根本来不及执行。程序看上去冻结大约一段时间，然后显示结果</li>
+</ul>
+<p>对于线程版本，这个实验很简单，只涉及两个线程，因此我们才能使用线程处理计算密集型任务。在用到的两个线程中，一个独占 CPU，另一个 1 秒只复苏 10 次（占用 GIL 的时间很短），更新旋转指针。<strong>但是，如果有两个或以上线程都想占用大量 CPU 时间，那么程序运行速度要比顺序执行的代码更慢，因此这些线程之间总是在争用 GIL</strong>。</p>
+<p>对于协程版本，为了保持指针旋转，一种办法是把 <code>is_prime</code> 定义为协程，在 await 表达式中定期调用 <code>asyncio.sleep(0)</code>，把控制权交还事件循环：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">is_prime</span>(<span class="params">n</span>):</span><br><span class="line">    <span class="keyword">if</span> n &lt; <span class="number">2</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line">    <span class="keyword">if</span> n == <span class="number">2</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">True</span></span><br><span class="line">    <span class="keyword">if</span> n % <span class="number">2</span> == <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line"></span><br><span class="line">    root = math.isqrt(n)</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">3</span>, root + <span class="number">1</span>, <span class="number">2</span>):</span><br><span class="line">        <span class="keyword">if</span> n % i == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line">        <span class="keyword">if</span> i % <span class="number">100_000</span> == <span class="number">1</span>:</span><br><span class="line">            <span class="keyword">await</span> asyncio.sleep(<span class="number">0</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">True</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>这里每 50000 次迭代（因为 range 的步幅是2）休眠一次</li>
+</ul>
+<p>然而，需要注意的是，这将拖慢 <code>is_prime</code>，以及事件循环和整个程序的速度（因为中途进行了协程的切换），后二者才是重点。使用 <code>await asyncio.sleep(0)</code> 只是权宜之计，<strong>更稳妥的办法是重构异步代码，把 CPU 密集型计算委托给另一个进程</strong>。后面也将给出一个使用 <code>asyncio.loop.run_in_executor</code> 的方案。另外，还可以使用任务队列。<strong>这也可以看出 asyncio 不善于处理 CPU 密集型函数，因为它们会阻塞事件循环</strong>。</p>
+<h2 id="自建进程池"><a class="markdownIt-Anchor" href="#自建进程池"></a> 自建进程池</h2>
+<p>接下来将展示如何使用多个进程处理 CPU 密集型任务，以及使用队列分配任务和收集结果的常见模式。如下是一个素数运算的顺序版本：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"></span><br><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">sequential.py：CPU密集型工作的顺序执行版、多进程版</span></span><br><span class="line"><span class="string">和多线程版的比较基准。</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> time <span class="keyword">import</span> perf_counter</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> NamedTuple</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> primes <span class="keyword">import</span> is_prime, NUMBERS</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Result</span>(<span class="title class_ inherited__">NamedTuple</span>):</span><br><span class="line">    prime: <span class="built_in">bool</span></span><br><span class="line">    elapsed: <span class="built_in">float</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">check</span>(<span class="params">n: <span class="built_in">int</span></span>) -&gt; Result:</span><br><span class="line">    t0 = perf_counter()</span><br><span class="line">    prime = is_prime(n)</span><br><span class="line">    <span class="keyword">return</span> Result(prime, perf_counter() - t0)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Checking <span class="subst">&#123;<span class="built_in">len</span>(NUMBERS)&#125;</span> numbers sequentially:&#x27;</span>)</span><br><span class="line">    t0 = perf_counter()</span><br><span class="line">    <span class="keyword">for</span> n <span class="keyword">in</span> NUMBERS:</span><br><span class="line">        prime, elapsed = check(n)</span><br><span class="line">        label = <span class="string">&#x27;P&#x27;</span> <span class="keyword">if</span> prime <span class="keyword">else</span> <span class="string">&#x27; &#x27;</span></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;n:<span class="number">16</span>&#125;</span>  <span class="subst">&#123;label&#125;</span> <span class="subst">&#123;elapsed:<span class="number">9.6</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line"></span><br><span class="line">    elapsed = perf_counter() - t0</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Total time: <span class="subst">&#123;elapsed:<span class="number">.2</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<p>如下则是对应的多进程版本：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"><span class="keyword">from</span> time <span class="keyword">import</span> perf_counter</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> NamedTuple</span><br><span class="line"><span class="keyword">from</span> multiprocessing <span class="keyword">import</span> Process, SimpleQueue, cpu_count</span><br><span class="line"><span class="keyword">from</span> multiprocessing <span class="keyword">import</span> queues</span><br><span class="line"></span><br><span class="line"><span class="keyword">from</span> primes <span class="keyword">import</span> is_prime, NUMBERS</span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PrimeResult</span>(<span class="title class_ inherited__">NamedTuple</span>):</span><br><span class="line">    n: <span class="built_in">int</span></span><br><span class="line">    prime: <span class="built_in">bool</span></span><br><span class="line">    elapsed: <span class="built_in">float</span></span><br><span class="line"></span><br><span class="line">JobQueue = queues.SimpleQueue[<span class="built_in">int</span>]</span><br><span class="line">ResultQueue = queues.SimpleQueue[PrimeResult]</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">check</span>(<span class="params">n: <span class="built_in">int</span></span>) -&gt; PrimeResult:</span><br><span class="line">    t0 = perf_counter()</span><br><span class="line">    res = is_prime(n)</span><br><span class="line">    <span class="keyword">return</span> PrimeResult(n, res, perf_counter() - t0)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">worker</span>(<span class="params">jobs: JobQueue, results: ResultQueue</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">while</span> n := jobs.get():</span><br><span class="line">        results.put(check(n))</span><br><span class="line">    results.put(PrimeResult(<span class="number">0</span>, <span class="literal">False</span>, <span class="number">0.0</span>))</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">start_jobs</span>(<span class="params"></span></span><br><span class="line"><span class="params">    procs: <span class="built_in">int</span>, jobs: JobQueue, results: ResultQueue</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">for</span> n <span class="keyword">in</span> NUMBERS:</span><br><span class="line">        jobs.put(n)</span><br><span class="line">    <span class="keyword">for</span> _ <span class="keyword">in</span> <span class="built_in">range</span>(procs):</span><br><span class="line">        proc = Process(target=worker, args=(jobs, results))</span><br><span class="line">        proc.start()</span><br><span class="line">        jobs.put(<span class="number">0</span>)</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>multiprocessing.SimpleQueue</code> 方法用于构建队列，而类型提示所需的 <code>SimpleQueue</code> 类在 <code>multiprocessing.queues</code> 中</li>
+<li>使用 <code>0</code> 值作为 worker 结束的信号，如果不是 0，则继续循环</li>
+<li>worker 结束时，发回一个 <code>PrimeResult(0, False, 0.0)</code>，让主循环知道这个职程结束了</li>
+</ul>
+<p>worker 函数遵循了并发编程中的一个常见模式：通过无限循环获取队列中的项，把各个项交给一个函数处理，执行真正的工作。当队列产生一个哨符时，循环结束。在这个模式中，停止 worker 的哨符通常叫作 <code>毒药丸</code>：</p>
+<ul>
+<li>None 经常用作哨符，但是如果数据流中有 None，那就不合适了</li>
+<li>为了获取一个唯一值用作哨符，经常会调用 <code>object()</code>。但是，一旦跨进程就不能这么做，因为在进程间通信的 Python 对象必须序列化，经过 <code>pickle.dump</code> 和 <code>pickle.load</code> 处理之后，反序列化得到的 object 实例就与原实例不同了</li>
+<li>None 有一个很好的替代品，即内置对象 <code>Ellipsis</code>（我们熟悉的 <code>...</code>）​，因为它经过序列化之后也不失同一性</li>
+</ul>
+<p>接下来再来看对应的 main 函数实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>() -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(sys.argv) &lt; <span class="number">2</span>:</span><br><span class="line">        procs = cpu_count()</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        procs = <span class="built_in">int</span>(sys.argv[<span class="number">1</span>])</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;Checking <span class="subst">&#123;<span class="built_in">len</span>(NUMBERS)&#125;</span> numbers with <span class="subst">&#123;procs&#125;</span> processes:&#x27;</span>)</span><br><span class="line">    t0 = perf_counter()</span><br><span class="line">    jobs: JobQueue = SimpleQueue()</span><br><span class="line">    results: ResultQueue = SimpleQueue()</span><br><span class="line">    start_jobs(procs, jobs, results)</span><br><span class="line">    checked = report(procs, results)</span><br><span class="line">    elapsed = perf_counter() - t0</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;checked&#125;</span> checks in <span class="subst">&#123;elapsed:<span class="number">.2</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">report</span>(<span class="params">procs: <span class="built_in">int</span>, results: ResultQueue</span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">    checked = <span class="number">0</span></span><br><span class="line">    procs_done = <span class="number">0</span></span><br><span class="line">    <span class="keyword">while</span> procs_done &lt; procs:</span><br><span class="line">        n, prime, elapsed = results.get()</span><br><span class="line">        <span class="keyword">if</span> n == <span class="number">0</span>:</span><br><span class="line">            procs_done += <span class="number">1</span></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            checked += <span class="number">1</span></span><br><span class="line">            label = <span class="string">&#x27;P&#x27;</span> <span class="keyword">if</span> prime <span class="keyword">else</span> <span class="string">&#x27; &#x27;</span></span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;n:<span class="number">16</span>&#125;</span>  <span class="subst">&#123;label&#125;</span> <span class="subst">&#123;elapsed:<span class="number">9.6</span>f&#125;</span>s&#x27;</span>)</span><br><span class="line">    <span class="keyword">return</span> checked</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<p>对于繁重的计算，受 Python 的 GIL 限制，线程版比顺序执行版的表现还要糟糕。而只有多进程才能让 Python 从多核 CPU 中受益。</p>
+<h2 id="多核世界中的-python"><a class="markdownIt-Anchor" href="#多核世界中的-python"></a> 多核世界中的 Python</h2>
+<p>考虑到目前讨论的这么多局限，Python 为何还能在多核世界蓬勃发展？如今 CPU 时钟速度和执行优化进入平台期，任何显著的性能提升都只能凭借多核或超线程技术，而且只有并发执行的代码能从中受益。</p>
+<p>尽管存在 GIL，但是 Python 在需要并发或并行执行的应用领域依然能够蓬勃发展，这要归功于努力解决 CPython 局限性的库和软件架构。接下来，将探讨在当今这个多核 CPU 与分布式计算的年代，Python 在系统管理、数据科学和服务器端应用程序开发等领域仍然发挥作用。</p>
+<p>Python 可以很好地服务于数据科学（包括人工智能）和科学计算。这些领域中的应用程序属于计算密集型，但是Python 用户受益于用 C、C++、Fortran、Cython 等语言编写的众多数值计算库，其中许多能够利用多核设备、GPU 和（或）异构集群中的分布式并行计算。</p>
+<p>Python 广泛用于 Web 应用程序开发和为移动应用程序提供支持的后端 API 开发。Web-Scale（通过应用新进程、新架构和新实践所实现的灵活性和扩展性）的关键是一个支持横向伸缩的架构。在这样的架构中，所有系统都是分布式系统，没有任何一门语言能够包揽全部解决方案。分布式系统是当前学术研究的一个领域，《数据密集型应用系统设计》是一本值得推荐的相关书籍。</p>
+<p>WSGI（Web Server Gateway Interface，Web服务器网关接口）是 Python 框架或应用程序接收 HTTP 服务器请求并向其发送响应的标准 API。WSGI 应用程序服务器管理一个或多个进程，运行你的应用程序，借此最大限度地利用 CPU。</p>
+<img src="/fuchencong.github.io/2025/11/10/fluent-python-v2-19/images/01.jpg" class="">
+<ul>
+<li>客户端连接 HTTP 服务器，后者负责分发静态文件，并把其他请求转发给应用服务器</li>
+<li>应用程序服务器派生子进程，利用多个 CPU 核运行应用程序代码</li>
+<li><strong>WSGI API 是应用服务器与 Python 应用程序代码之间的黏合剂</strong></li>
+</ul>
+<p>mod_wsgi、Gunicorn 等应用程序服务器全都可以派生多个 Python 进程，运行使用 Django、Flask、Pyramid 等框架编写的传统 Web 应用程序，充分利用服务器的所有 CPU 核。这也解释了为什么 Python Web 开发人员无须学习 threading、multiprocessing 或 asyncio 模块就能找到工作：<strong>应用程序服务器在无形中已经处理好了并发</strong>。</p>
+<p>WSGI API 是同步的，不支持使用 async/await 创建协程，而在 Python 中，协程是实现 WebSocket 或 HTTP 长轮询最有效的方式。对此，<strong>接任 WSGI 的 ASGI(Asynchronous Server Gateway Interface) 规范应运而生。ASGI 为 aiohttp、Sanic、FastAPI 等 Python 异步 Web 框架而设计，Django 和 Flask 等传统框架也可以借此逐步增加异步功能</strong>。</p>
+<p>应用程序服务器把请求分发给运行应用程序代码的某个 Python 进程之后，应用需要快速响应，因为你希望进程能尽快完成工作，开始处理下一个请求。然而，有些请求发起的操作要用较长的时间才能处理完毕，这就是分布式任务队列所要解决的问题。在提供 Python API 的开源任务队列中，Celery 和 RQ 最出名。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/11/12/fluent-python-v2-20/" rel="prev" title="流畅的 Python 第 2 版（20）：并发执行器">
+      <i class="fa fa-chevron-left"></i> 流畅的 Python 第 2 版（20）：并发执行器
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/11/08/fluent-python-v2-18/" rel="next" title="流畅的 Python 第 2 版（18）：with、match 和 else 块">
+      流畅的 Python 第 2 版（18）：with、match 和 else 块 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%A8%E6%99%AF%E6%A6%82%E8%A7%88"><span class="nav-number">1.</span> <span class="nav-text"> 全景概览</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%AF%E8%AF%AD%E5%AE%9A%E4%B9%89"><span class="nav-number">2.</span> <span class="nav-text"> 术语定义</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9B%E7%A8%8B-%E7%BA%BF%E7%A8%8B%E5%92%8C%E5%A3%B0%E5%90%8D%E7%8B%BC%E8%97%89%E7%9A%84-python-gil"><span class="nav-number">2.1.</span> <span class="nav-text"> 进程、线程和声名狼藉的 Python GIL</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E6%BC%94%E7%A4%BA%E5%B9%B6%E5%8F%91%E7%9A%84-hello-world-%E7%A4%BA%E4%BE%8B"><span class="nav-number">3.</span> <span class="nav-text"> 一个演示并发的 Hello World 示例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E7%BA%BF%E7%A8%8B%E5%AE%9E%E7%8E%B0%E6%97%8B%E8%BD%AC%E6%8C%87%E9%92%88"><span class="nav-number">3.1.</span> <span class="nav-text"> 使用线程实现旋转指针</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E8%BF%9B%E7%A8%8B%E5%AE%9E%E7%8E%B0%E6%97%8B%E8%BD%AC%E6%8C%87%E9%92%88"><span class="nav-number">3.2.</span> <span class="nav-text"> 使用进程实现旋转指针</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E5%8D%8F%E7%A8%8B%E5%AE%9E%E7%8E%B0%E6%97%8B%E8%BD%AC%E6%8C%87%E9%92%88"><span class="nav-number">3.3.</span> <span class="nav-text"> 使用协程实现旋转指针</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#gil-%E7%9C%9F%E6%AD%A3%E7%9A%84%E5%BD%B1%E5%93%8D"><span class="nav-number">4.</span> <span class="nav-text"> GIL 真正的影响</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%87%AA%E5%BB%BA%E8%BF%9B%E7%A8%8B%E6%B1%A0"><span class="nav-number">5.</span> <span class="nav-text"> 自建进程池</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A4%9A%E6%A0%B8%E4%B8%96%E7%95%8C%E4%B8%AD%E7%9A%84-python"><span class="nav-number">6.</span> <span class="nav-text"> 多核世界中的 Python</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">223</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
