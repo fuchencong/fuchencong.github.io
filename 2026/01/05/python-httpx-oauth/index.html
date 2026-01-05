@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="一直想学习下 OAuth2（Open Authorization） 协议，最近看 fastapi-users 的源代码，发现它们使用 HTTPX OAuth 来提供 OAuth2 授权支持，于是就顺便研究了下 httpx-oauth 的源码。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="python httpx-oauth 源码分析">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/01/05/python-httpx-oauth/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="一直想学习下 OAuth2（Open Authorization） 协议，最近看 fastapi-users 的源代码，发现它们使用 HTTPX OAuth 来提供 OAuth2 授权支持，于是就顺便研究了下 httpx-oauth 的源码。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/01/05/python-httpx-oauth/images/01.png">
+<meta property="article:published_time" content="2026-01-05T08:03:28.000Z">
+<meta property="article:modified_time" content="2026-01-05T08:15:26.211Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/01/05/python-httpx-oauth/images/01.png">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/01/05/python-httpx-oauth/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>python httpx-oauth 源码分析 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/01/05/python-httpx-oauth/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          python httpx-oauth 源码分析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-01-05 16:03:28" itemprop="dateCreated datePublished" datetime="2026-01-05T16:03:28+08:00">2026-01-05</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>一直想学习下 OAuth2（Open Authorization） 协议，最近看 <a target="_blank" rel="noopener" href="https://fastapi-users.github.io/fastapi-users/latest/configuration/oauth/">fastapi-users</a> 的源代码，发现它们使用 <a target="_blank" rel="noopener" href="https://frankie567.github.io/httpx-oauth/">HTTPX OAuth</a> 来提供 OAuth2 授权支持，于是就顺便研究了下 <a target="_blank" rel="noopener" href="https://github.com/frankie567/httpx-oauth">httpx-oauth</a> 的源码。</p>
+<span id="more"></span>
+<h2 id="oauth2-协议简介"><a class="markdownIt-Anchor" href="#oauth2-协议简介"></a> OAuth2 协议简介</h2>
+<p>OAuth 2.0 是一个授权框架 (Authorization Framework)，它的核心目标是让用户（资源所有者）授权第三方应用程序（客户端）访问其在服务提供商（授权服务器/资源服务器）上存储的受保护资源，而无需将用户的凭证（如密码）提供给第三方应用程序。也就是说，它解决的一个本质问题是：<strong>让第三方应用，在不拿到你密码的情况下，安全地访问你的资源</strong>。</p>
+<h3 id="核心概念"><a class="markdownIt-Anchor" href="#核心概念"></a> 核心概念</h3>
+<p>OAuth 2.0 协议定义了四个核心角色，它们协同工作完成授权流程：</p>
+<table>
+<thead>
+<tr>
+<th>角色名称</th>
+<th>职责描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>资源所有者用户本人（Resource Owner）</td>
+<td>用户本人，拥有受保护资源和授权访问的权利</td>
+</tr>
+<tr>
+<td>客户端（Client）</td>
+<td>第三方应用程序，该应用程序代表资源所有者，请求访问受保护资源（例如：一个第三方 web 应用，请求使用 google 账户登录）</td>
+</tr>
+<tr>
+<td>授权服务器（Authorization Server）</td>
+<td>颁发令牌的服务器，负责验证资源所有者的身份，并在授权通过后，向客户端颁发访问令牌 (Access Token)</td>
+</tr>
+<tr>
+<td>资源服务器（Resource Server）</td>
+<td>存储受保护数据的服务器，负责托管受保护资源，并接收和验证客户端携带的 Access Token，决定是否给予访问</td>
+</tr>
+</tbody>
+</table>
+<h3 id="核心流程"><a class="markdownIt-Anchor" href="#核心流程"></a> 核心流程</h3>
+<p>OAuth 2.0 定义了多种授权模式，以适应不同的客户端类型和安全需求。接下来以最常用的授权码模式为例，介绍 OAuth 2.0 的核心流程，为了讲解方便，这个流程以 <a target="_blank" rel="noopener" href="https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app">Github 授权服务</a> 为例。为了让你的 Web 应用能够使用 GitHub 登录，你需要先在 <a target="_blank" rel="noopener" href="https://github.com/settings/applications/new">GitHub 应用注册页面</a> 上为你的 Web 应用创建一个 OAuth App：</p>
+<img src="/fuchencong.github.io/2026/01/05/python-httpx-oauth/images/01.png" class="">
+<ul>
+<li>
+<p>步骤 1: 客户端应用请求授权</p>
+<ul>
+<li>用户在客户端应用（即第三方应用）上开始请求 <code>Github 授权服务器</code> 授权，例如点击 <code>使用 GitHub 登录</code> 按钮</li>
+<li>此时客户端应用将用户重定向到 Github 授权服务器的 <code>授权 URL</code></li>
+<li>该重定向请求中会包含以下重要参数：
+<ul>
+<li>client_id：客户端应用在授权服务器注册时获得的唯一标识符</li>
+<li>redirect_uri：授权成功或失败后，授权服务器将用户重定向回来的 URL（必须与注册时填写的 URL 匹配）</li>
+<li>scope：客户端应用希望获得的权限范围（例如，读取用户基本信息 <code>read:user</code>）</li>
+<li>state：一个随机字符串，用于防止跨站请求伪造 (CSRF) 攻击</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p>步骤 2: 资源所有者授予权限</p>
+<ul>
+<li>授权服务器（GitHub）验证用户的身份（要求用户输入 GitHub 账号和密码）</li>
+<li>GitHub 向用户展示一个授权页面，说明客户端应用请求访问哪些权限（即 scope）</li>
+<li>资源所有者（用户）点击 <code>授权</code> 按钮，同意授予权限</li>
+</ul>
+</li>
+<li>
+<p>步骤 3：授权服务器返回授权码</p>
+<ul>
+<li>授权服务器（GitHub）将用户重定向回客户端应用注册时填充的 <code>redirect_uri</code></li>
+<li>重定向 URL 中包含一个一次性、短暂有效的授权码 (<code>Authorization Code</code>) 和原先的 state 参数（客户端应用需要检查返回的 state 值是否与请求时所传递的值一致，以防止 CSRF 攻击）</li>
+</ul>
+</li>
+<li>
+<p>步骤 4: 客户端应用获取访问令牌（Access Token）</p>
+<ul>
+<li>客户端应用接收到授权码后，立即使用该码授权向 Github 授权服务器的 <code>令牌交换 endpoint</code> 发送 POST 请求，这个请求包含如下重要参数：
+<ul>
+<li>client_id：客户端应用 ID</li>
+<li>client_secret：客户端应用在 GitHub 注册时获得的密钥（这是确保请求真实性的关键，必须保存在后端，绝不能泄露给前端）</li>
+<li>code：上一步所获得的授权码</li>
+<li>redirect_uri：必须与发送授权请求时所使用的 redirect_uri 参数保持一致。授权服务器用它来验证这个请求的合法性，这确保了只有最开始请求授权码的那个 URI 才有资格在第二步进行令牌交换，这极大地限制了攻击者窃取授权码并成功换取访问令牌的可能性</li>
+</ul>
+</li>
+<li>这个请求发生在客户端应用的服务器端，而不是前端。这是因为 <code>client_secret</code> 必须保密，绝不能泄露给前端用户或第三方应用</li>
+</ul>
+</li>
+<li>
+<p>步骤 5: 授权服务器颁发访问令牌</p>
+<ul>
+<li>GitHub 授权服务器验证 client_id、client_secret、code 等参数的有效性</li>
+<li>验证成功后，GitHub 向客户端应用返回一个 JSON 响应，其中包含：
+<ul>
+<li>访问令牌 (Access Token)：一个用于访问资源服务器（GitHub API）的凭证</li>
+<li>token_type：令牌类型（通常是 Bearer）</li>
+<li>expires_in (可选)：令牌的有效期</li>
+</ul>
+</li>
+<li>标准 OAuth 2.0 规范还允许同时返回一个 <code>Refresh Token</code>。如果授权服务器颁发了 <code>Refresh Token</code>，客户端可以利用它在 <code>Access Token</code> 过期后获取新的 <code>Access Token</code>，而无需用户重新授权</li>
+</ul>
+</li>
+<li>
+<p>步骤 6：客户端应用访问受保护资源</p>
+<ul>
+<li>客户端应用使用获得的访问令牌，向资源服务器（GitHub API）发送请求，例如获取用户用户名、头像等基本信息</li>
+<li>请求时，访问令牌通常放在 HTTP 请求头的 Authorization 字段中，格式为：<code>Authorization: Bearer [Access Token]</code></li>
+</ul>
+</li>
+<li>
+<p>步骤 7：资源服务器返回资源</p>
+<ul>
+<li>资源服务器（GitHub API）验证访问令牌的有效性</li>
+<li>如果令牌有效且拥有足够的权限（在 scope 定义范围内），API 将返回用户请求的资源，例如用户的 Github 基本用户信息</li>
+<li>客户端应用通常会使用这些数据在自己的系统中创建或登录一个用户账户，完成授权登录流程</li>
+</ul>
+</li>
+</ul>
+<h3 id="oauth2-中的-csrf-攻击"><a class="markdownIt-Anchor" href="#oauth2-中的-csrf-攻击"></a> OAuth2 中的 CSRF 攻击</h3>
+<p>上述流程中，说到 OAuth2 中的 state 参数是用于预防 CSRF 攻击的。那 OAuth2 中的 CSRF 攻击是怎样的呢:</p>
+<ul>
+<li>攻击者在自己的浏览器上开始 OAuth 流程（比如点击 <code>使用 Github 登录</code>）</li>
+<li>当 Github 返回重定向请求（包含返回给攻击者的授权 Code）时，攻击者拦截这个请求，不让自己的浏览器发给应用服务器</li>
+<li>攻击者拿到了一个有效的 URL，类似于：<code>https://app.com/callback?code=attacker_code</code></li>
+<li>攻击者通过邮件、恶意链接或隐藏的 <code>&lt;img&gt;</code> 标签，诱骗受害者点击这个链接（或者让受害者的浏览器自动加载这个 URL）</li>
+<li>受害者的浏览器向应用服务器发起了请求：<code>GET /callback?code=attacker_code</code>，但当前身份 cookie 等信息是受害者的</li>
+<li>应用服务器认为这是一个合法的请求（因为它确实有有效的 Code），应用服务器用 attacker_code 去 Github 换取 Token，Github 返回应用服务器 <code>攻击者（Attacker）的 Token</code></li>
+<li>应用服务器为受害者建立 Session，但是，这个 Session 对应的是攻击者的 Github 账号</li>
+</ul>
+<p>而通过 state 参数，应用服务器通过检查 <code>回调 URL 中的 state</code> 参数与 <code>发起请求时的 state 参数</code> 是否一致，可以有效地防止这种攻击。</p>
+<h2 id="httpx-oauth-源码分析"><a class="markdownIt-Anchor" href="#httpx-oauth-源码分析"></a> httpx-oauth 源码分析</h2>
+<p>在学习了 OAuth2 协议之后，我们再来分析下 <a target="_blank" rel="noopener" href="https://github.com/frankie567/httpx-oauth">httpx-oauth</a> 的源码。<code>httpx-oauth</code> 是基于 httpx 的异步 OAuth2 客户端实现。</p>
+<p><code>httpx-oauth </code>的设计思路非常清晰：<code>一个基类</code> + <code>多个预定义子类</code>：</p>
+<ul>
+<li><code>BaseOAuth2</code>（基类）：可以认为是 <code>httpx-oauth</code> 库的核心数据结构，定义了实现 OAuth2 Client 的通用逻辑，包括 <code>生成授权 URL</code>、<code>获取 Access Token</code> 等流程</li>
+<li>具体 Provider（预定义子类）：<code>GitHubOAuth2</code>、<code>GoogleOAuth2</code> 等具体的 OAuth2 Client 实现类，提供了针对不同 OAuth2 服务商（例如 Github、Google）的特定 Client 实现。库的使用者可以直接使用这些预定义的 OAuth client 来进行 OAuth2 认证授权</li>
+</ul>
+<p>下图则展示了 http-oauth 的源码文件结构：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># tree --dirsfirst -L 1 .</span></span><br><span class="line">.</span><br><span class="line">├── clients</span><br><span class="line">├── integrations</span><br><span class="line">├── branding.py</span><br><span class="line">├── exceptions.py</span><br><span class="line">├── __init__.py</span><br><span class="line">├── oauth2.py</span><br><span class="line">└── py.typed</span><br></pre></td></tr></table></figure>
+<ul>
+<li>clients 目录：存放具体的 OAuth2 Client 实现类</li>
+<li>integrations 目录：提供了与 FastAPI 集成时的一些 helper 功能</li>
+<li><a target="_blank" rel="noopener" href="http://branding.py">branding.py</a>：定义了一个 BrandingProtocol Protocol 类，用于表示所有具有的 OAuth2 Client 都需要遵守的协议</li>
+<li><a target="_blank" rel="noopener" href="http://exceptions.py">exceptions.py</a>：定义 http-oauth 库抛出的异常</li>
+<li><a target="_blank" rel="noopener" href="http://oauth2.py">oauth2.py</a>：定义了 BaseOAuth2 这个核心基类</li>
+<li><code>__init__.py</code>：<code>http-oauth</code> 包的 <code>__init__</code> 文件</li>
+<li>py.typed：告诉类型检查器，这个 Python 包是 <code>带完整类型信息的</code></li>
+</ul>
+<h3 id="baseoauth2"><a class="markdownIt-Anchor" href="#baseoauth2"></a> <code>BaseOAuth2</code></h3>
+<p><code>BaseOAuth2</code> 类是 httpx-oauth 库的核心，它定义了实现 OAuth2 Client 的通用逻辑。它的定义如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">BaseOAuth2</span>(<span class="type">Generic</span>[T]):</span><br><span class="line">    name: <span class="built_in">str</span></span><br><span class="line">    client_id: <span class="built_in">str</span></span><br><span class="line">    client_secret: <span class="built_in">str</span></span><br><span class="line">    authorize_endpoint: <span class="built_in">str</span></span><br><span class="line">    access_token_endpoint: <span class="built_in">str</span></span><br><span class="line">    refresh_token_endpoint: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    revoke_token_endpoint: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    base_scopes: <span class="type">Optional</span>[<span class="built_in">list</span>[<span class="built_in">str</span>]]</span><br><span class="line">    token_endpoint_auth_method: OAuth2ClientAuthMethod</span><br><span class="line">    revocation_endpoint_auth_method: <span class="type">Optional</span>[OAuth2ClientAuthMethod]</span><br><span class="line">    request_headers: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">str</span>]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        client_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        client_secret: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        authorize_endpoint: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        access_token_endpoint: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        refresh_token_endpoint: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        revoke_token_endpoint: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        *,</span></span><br><span class="line"><span class="params">        name: <span class="built_in">str</span> = <span class="string">&quot;oauth2&quot;</span>,</span></span><br><span class="line"><span class="params">        base_scopes: <span class="type">Optional</span>[<span class="built_in">list</span>[<span class="built_in">str</span>]] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        token_endpoint_auth_method: OAuth2ClientAuthMethod = <span class="string">&quot;client_secret_post&quot;</span>,</span></span><br><span class="line"><span class="params">        revocation_endpoint_auth_method: <span class="type">Optional</span>[OAuth2ClientAuthMethod] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>):</span><br><span class="line">        <span class="comment"># 参数的校验</span></span><br><span class="line">        _check_valid_auth_method(token_endpoint_auth_method)</span><br><span class="line">        <span class="keyword">if</span> revocation_endpoint_auth_method <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">            _check_valid_auth_method(revocation_endpoint_auth_method)</span><br><span class="line">        <span class="keyword">if</span> (</span><br><span class="line">            revoke_token_endpoint <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">            <span class="keyword">and</span> revocation_endpoint_auth_method <span class="keyword">is</span> <span class="literal">None</span></span><br><span class="line">        ):</span><br><span class="line">            <span class="keyword">raise</span> MissingRevokeTokenAuthMethodError()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 设置 client 的各个属性</span></span><br><span class="line">        self.client_id = client_id</span><br><span class="line">        self.client_secret = client_secret</span><br><span class="line">        self.authorize_endpoint = authorize_endpoint</span><br><span class="line">        self.access_token_endpoint = access_token_endpoint</span><br><span class="line">        self.refresh_token_endpoint = refresh_token_endpoint</span><br><span class="line">        self.revoke_token_endpoint = revoke_token_endpoint</span><br><span class="line">        self.name = name</span><br><span class="line">        self.base_scopes = base_scopes</span><br><span class="line">        self.token_endpoint_auth_method = token_endpoint_auth_method</span><br><span class="line">        self.revocation_endpoint_auth_method = revocation_endpoint_auth_method</span><br><span class="line"></span><br><span class="line">        self.request_headers = &#123;</span><br><span class="line">            <span class="string">&quot;Accept&quot;</span>: <span class="string">&quot;application/json&quot;</span>,</span><br><span class="line">        &#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>BaseOAuth2 是一个泛型类，用 T 类型变量来表示构建授权 URL 时的额外参数的类型（下文可以看到）</li>
+<li>在构造函数中，完成了对部分参数的校验</li>
+<li>之后设置了 BaseOAuth2 类的各个属性，这些属性都是 OAuth2 协议中的关键参数
+<ul>
+<li>client_id、client_secret 是注册应用时由 OAuth2 服务商提供的标识符和密钥</li>
+<li>authorize_endpoint、access_token_endpoint 等是 OAuth2 服务商所对应的 <code>授权 endpoint</code> 和 <code>Access Token endpoint</code></li>
+</ul>
+</li>
+</ul>
+<p>虽然 <code>token_endpoint_auth_method</code> 等参数使用了类型注解 <code>OAuth2ClientAuthMethod</code>，但是类型注解只在代码静态分析时有用，运行时并不会做任何校验。<code>_check_valid_auth_method</code> 函数用于传入的认证方法参数是否合法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">OAuth2ClientAuthMethod = <span class="type">Literal</span>[<span class="string">&quot;client_secret_basic&quot;</span>, <span class="string">&quot;client_secret_post&quot;</span>]</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">_check_valid_auth_method</span>(<span class="params">auth_method: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> auth_method <span class="keyword">not</span> <span class="keyword">in</span> get_args(OAuth2ClientAuthMethod):</span><br><span class="line">        <span class="keyword">raise</span> NotSupportedAuthMethodError(auth_method)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>auth_method 必须是 <code>client_secret_basic</code> 或 <code>client_secret_post</code> 字符串字面量之一</li>
+<li>这里使用了 python typing 库的 <code>get_args</code> 函数，用于获取 Literal 的所有可能的值。
+<ul>
+<li>get_args() 是 Python 标准库 typing 模块中的一个运行时函数，用于提取泛型类型（Generic Types）或特殊类型（如 Literal, Union 等）的内部参数</li>
+<li>与之对应的，还有一个 <code>get_origin</code> 函数用于获取 <code>外层类型</code></li>
+</ul>
+</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>AuthMethod = <span class="type">Literal</span>[<span class="string">&quot;basic&quot;</span>, <span class="string">&quot;post&quot;</span>, <span class="string">&quot;none&quot;</span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">print</span>(get_args(AuthMethod))</span><br><span class="line">(<span class="string">&#x27;basic&#x27;</span>, <span class="string">&#x27;post&#x27;</span>, <span class="string">&#x27;none&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>U = <span class="built_in">int</span> | <span class="built_in">str</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">print</span>(get_args(U))</span><br><span class="line">(&lt;<span class="keyword">class</span> <span class="string">&#x27;int&#x27;</span>&gt;, &lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt;)</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">print</span>(get_args(<span class="built_in">list</span>[<span class="built_in">str</span>]))</span><br><span class="line">(&lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt;,)</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>get_origin(<span class="built_in">list</span>[<span class="built_in">str</span>, <span class="built_in">int</span>])</span><br><span class="line">&lt;<span class="keyword">class</span> <span class="string">&#x27;list&#x27;</span>&gt;</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>get_args(<span class="built_in">list</span>[<span class="built_in">str</span>, <span class="built_in">int</span>])</span><br><span class="line">(&lt;<span class="keyword">class</span> <span class="string">&#x27;str&#x27;</span>&gt;, &lt;<span class="keyword">class</span> <span class="string">&#x27;int&#x27;</span>&gt;)</span><br></pre></td></tr></table></figure>
+<p><code>BaseOAuth2</code> 中的 <code>get_authorization_url</code> 方法用于构建授权 URL，用户需要被重定向到这个函数所返回的 URL 上开始 OAuth2 授权流程，即引导用户跳转到第三方平台（如 GitHub、Google）进行登录授权。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_authorization_url</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    redirect_uri: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    state: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    scope: <span class="type">Optional</span>[<span class="built_in">list</span>[<span class="built_in">str</span>]] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    code_challenge: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    code_challenge_method: <span class="type">Optional</span>[<span class="type">Literal</span>[<span class="string">&quot;plain&quot;</span>, <span class="string">&quot;S256&quot;</span>]] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    extras_params: <span class="type">Optional</span>[T] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    params = &#123;</span><br><span class="line">        <span class="string">&quot;response_type&quot;</span>: <span class="string">&quot;code&quot;</span>,</span><br><span class="line">        <span class="string">&quot;client_id&quot;</span>: self.client_id,</span><br><span class="line">        <span class="string">&quot;redirect_uri&quot;</span>: redirect_uri,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> state <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        params[<span class="string">&quot;state&quot;</span>] = state</span><br><span class="line"></span><br><span class="line">    <span class="comment"># Provide compatibility with current scope from the endpoint</span></span><br><span class="line">    _scope = scope <span class="keyword">or</span> self.base_scopes</span><br><span class="line">    <span class="keyword">if</span> _scope <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        params[<span class="string">&quot;scope&quot;</span>] = <span class="string">&quot; &quot;</span>.join(_scope)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> code_challenge <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        params[<span class="string">&quot;code_challenge&quot;</span>] = code_challenge</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> code_challenge_method <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        params[<span class="string">&quot;code_challenge_method&quot;</span>] = code_challenge_method</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> extras_params <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        params = &#123;**params, **extras_params&#125;  <span class="comment"># type: ignore</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;<span class="subst">&#123;self.authorize_endpoint&#125;</span>?<span class="subst">&#123;urlencode(params)&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>响应类型为 <code>code</code>，表示获取 <code>授权码</code></li>
+<li>redirect_uri 参数表示：用户授权完成后，第三方平台应该把用户重定向到哪个页面</li>
+<li><code>code_challenge</code> 和 <code>code_challenge_method</code> 参数用于 PKCE（Proof Key for Code Exchange）扩展，目的是防止授权码被拦截夺取</li>
+<li><code>extras_params</code> 参数用来提供额外的参数，这些参数针对不同的第三方平台可能会有所不同</li>
+<li>最终这些参数都会作为授权 URL 中的查询参数，并根据 <code>authorize_endpoint</code> 拼接成最终的授权 URL</li>
+</ul>
+<p><code>BaseOAuth2</code> 中的 <code>get_access_token</code> 方法则根据授权码（authorization code）获取 Access Token：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_access_token</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self, code: <span class="built_in">str</span>, redirect_uri: <span class="built_in">str</span>, code_verifier: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span></span></span><br><span class="line"><span class="params"></span>) -&gt; OAuth2Token:</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> self.get_httpx_client() <span class="keyword">as</span> client:</span><br><span class="line">        data = &#123;</span><br><span class="line">            <span class="string">&quot;grant_type&quot;</span>: <span class="string">&quot;authorization_code&quot;</span>,</span><br><span class="line">            <span class="string">&quot;code&quot;</span>: code,</span><br><span class="line">            <span class="string">&quot;redirect_uri&quot;</span>: redirect_uri,</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> code_verifier:</span><br><span class="line">            data[<span class="string">&quot;code_verifier&quot;</span>] = code_verifier</span><br><span class="line"></span><br><span class="line">        request, auth = self.build_request(</span><br><span class="line">            client,</span><br><span class="line">            <span class="string">&quot;POST&quot;</span>,</span><br><span class="line">            self.access_token_endpoint,</span><br><span class="line">            auth_method=self.token_endpoint_auth_method,</span><br><span class="line">            data=data,</span><br><span class="line">        )</span><br><span class="line">        response = <span class="keyword">await</span> self.send_request(</span><br><span class="line">            client, request, auth, exc_class=GetAccessTokenError</span><br><span class="line">        )</span><br><span class="line">        data = self.get_json(response, exc_class=GetAccessTokenError)</span><br><span class="line">        <span class="keyword">return</span> OAuth2Token(data)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">build_request</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    client: httpx.AsyncClient,</span></span><br><span class="line"><span class="params">    method: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    url: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    auth_method: <span class="type">Union</span>[OAuth2ClientAuthMethod, <span class="literal">None</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    data: <span class="type">Union</span>[Mapping[<span class="built_in">str</span>, <span class="type">Any</span>], <span class="literal">None</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">tuple</span>[httpx.Request, <span class="type">Union</span>[httpx.Auth, <span class="literal">None</span>]]:</span><br><span class="line">    <span class="keyword">if</span> data <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        data = &#123;</span><br><span class="line">            **data,</span><br><span class="line">            **(</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="string">&quot;client_id&quot;</span>: self.client_id,</span><br><span class="line">                    <span class="string">&quot;client_secret&quot;</span>: self.client_secret,</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">if</span> auth_method == <span class="string">&quot;client_secret_post&quot;</span></span><br><span class="line">                <span class="keyword">else</span> &#123;&#125;</span><br><span class="line">            ),</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">    request = client.build_request(</span><br><span class="line">        method,</span><br><span class="line">        url,</span><br><span class="line">        data=data,</span><br><span class="line">        headers=self.request_headers,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    auth = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> auth_method == <span class="string">&quot;client_secret_basic&quot;</span>:</span><br><span class="line">        auth = httpx.BasicAuth(self.client_id, self.client_secret)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> request, auth</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">send_request</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    client: httpx.AsyncClient,</span></span><br><span class="line"><span class="params">    request: httpx.Request,</span></span><br><span class="line"><span class="params">    auth: <span class="type">Union</span>[httpx.Auth, <span class="literal">None</span>],</span></span><br><span class="line"><span class="params">    *,</span></span><br><span class="line"><span class="params">    exc_class: <span class="built_in">type</span>[OAuth2RequestError],</span></span><br><span class="line"><span class="params"></span>) -&gt; httpx.Response:</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        response = <span class="keyword">await</span> client.send(request, auth=auth)</span><br><span class="line">        response.raise_for_status()</span><br><span class="line">    <span class="keyword">except</span> httpx.HTTPStatusError <span class="keyword">as</span> e:</span><br><span class="line">        <span class="keyword">raise</span> exc_class(<span class="built_in">str</span>(e), e.response) <span class="keyword">from</span> e</span><br><span class="line">    <span class="comment"># 表示 任何与 HTTP 请求/响应相关的错误，包括网络问题、超时、无效 URL、SSL 错误等。</span></span><br><span class="line">    <span class="keyword">except</span> httpx.HTTPError <span class="keyword">as</span> e:</span><br><span class="line">        <span class="keyword">raise</span> exc_class(<span class="built_in">str</span>(e)) <span class="keyword">from</span> e</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> response</span><br></pre></td></tr></table></figure>
+<ul>
+<li>构造的请求中，包含 <code>grant_type</code> 为 <code>authorization_code</code>，表示是使用授权码来获取 Access Token。同时传入 code 和 redirect_uri 参数</li>
+<li><code>build_request</code> 根据 <code>auth_method</code> 的不同，实现不同的认证流程：
+<ul>
+<li><code>client_secret_post</code>：直接把 <code>client_id</code> 和 <code>client_secret</code> 塞进 POST 的 Body 里（编码为表单数据格式）</li>
+<li><code>client_secret_basic</code>：基于 HTTP Basic Auth 认证方法，将 <code>client_id</code>、<code>client_secret</code> 构造成 <code>Authorization: Basic &lt;base64&gt;</code> 形式的认证 Header</li>
+</ul>
+</li>
+<li>通过传入 exc_class，它实现了异常的精准定位。如果这一步出错了，抛出的一定是 GetAccessTokenError</li>
+<li><code>send_request</code> 负责发送请求，并处理可能的异常流畅。它使用 <code>raise_for_status</code> 来检查响应状态码，如果表示错误（4xx 或 5xx），它会抛出一个异常。
+<ul>
+<li>对于 <code>httpx.HTTPStatusError</code>，此时表示应用层的错误，此时是可以获取响应信息的</li>
+<li>对于 <code>httpx.HTTPError</code>，表示任何与 HTTP 请求/响应相关的错误，包括网络问题、超时等，此时可能无法获取到响应信息</li>
+</ul>
+</li>
+<li>将获取到的 json 格式的响应转换为 <code>OAuth2Token</code> 对象，其实它就是一个字典，只不过包含了 <code>过期时间</code> 的处理：</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OAuth2Token</span>(<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, token_dict: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]</span>):</span><br><span class="line">        <span class="comment"># 设置过期时间</span></span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;expires_at&quot;</span> <span class="keyword">in</span> token_dict:</span><br><span class="line">            token_dict[<span class="string">&quot;expires_at&quot;</span>] = <span class="built_in">int</span>(token_dict[<span class="string">&quot;expires_at&quot;</span>])</span><br><span class="line">        <span class="keyword">elif</span> <span class="string">&quot;expires_in&quot;</span> <span class="keyword">in</span> token_dict:</span><br><span class="line">            token_dict[<span class="string">&quot;expires_at&quot;</span>] = <span class="built_in">int</span>(time.time()) + <span class="built_in">int</span>(token_dict[<span class="string">&quot;expires_in&quot;</span>])</span><br><span class="line">        <span class="built_in">super</span>().__init__(token_dict)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">is_expired</span>(<span class="params">self</span>) -&gt; <span class="built_in">bool</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;expires_at&quot;</span> <span class="keyword">not</span> <span class="keyword">in</span> self:</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">False</span></span><br><span class="line">        <span class="keyword">return</span> time.time() &gt; self[<span class="string">&quot;expires_at&quot;</span>]</span><br></pre></td></tr></table></figure>
+<p>OAuth2 支持 <code>Refresh Token</code> 机制，应用可以在不需要用户重新授权的情况下获取新的 Access Token，此时是通过 <code>Refresh Token</code> 来获取新的 Access Token：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">refresh_token</span>(<span class="params">self, refresh_token: <span class="built_in">str</span></span>) -&gt; OAuth2Token:</span><br><span class="line">    <span class="keyword">if</span> self.refresh_token_endpoint <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">raise</span> RefreshTokenNotSupportedError()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> self.get_httpx_client() <span class="keyword">as</span> client:</span><br><span class="line">        request, auth = self.build_request(</span><br><span class="line">            client,</span><br><span class="line">            <span class="string">&quot;POST&quot;</span>,</span><br><span class="line">            self.refresh_token_endpoint,</span><br><span class="line">            auth_method=self.token_endpoint_auth_method,</span><br><span class="line">            data=&#123;</span><br><span class="line">                <span class="string">&quot;grant_type&quot;</span>: <span class="string">&quot;refresh_token&quot;</span>,</span><br><span class="line">                <span class="string">&quot;refresh_token&quot;</span>: refresh_token,</span><br><span class="line">            &#125;,</span><br><span class="line">        )</span><br><span class="line">        response = <span class="keyword">await</span> self.send_request(</span><br><span class="line">            client, request, auth, exc_class=RefreshTokenError</span><br><span class="line">        )</span><br><span class="line">        data = self.get_json(response, exc_class=RefreshTokenError)</span><br><span class="line">        <span class="keyword">return</span> OAuth2Token(data)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>刷新令牌的请求必须包含 <code>grant_type=&quot;refresh_token&quot;</code>，表示是使用刷新令牌来获取新的 Access Token</li>
+</ul>
+<p><code>BaseOAuth2</code> 类还提供了 <code>revoke_token()</code> 来撤销 Access Token 或 Refresh Token：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">revoke_token</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self, token: <span class="built_in">str</span>, token_type_hint: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span></span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> self.revoke_token_endpoint <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">raise</span> RevokeTokenNotSupportedError()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">with</span> self.get_httpx_client() <span class="keyword">as</span> client:</span><br><span class="line">        data = &#123;<span class="string">&quot;token&quot;</span>: token&#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> token_type_hint <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">            data[<span class="string">&quot;token_type_hint&quot;</span>] = token_type_hint</span><br><span class="line"></span><br><span class="line">        request, auth = self.build_request(</span><br><span class="line">            client,</span><br><span class="line">            <span class="string">&quot;POST&quot;</span>,</span><br><span class="line">            self.revoke_token_endpoint,</span><br><span class="line">            auth_method=self.token_endpoint_auth_method,</span><br><span class="line">            data=data,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">await</span> self.send_request(client, request, auth, exc_class=RevokeTokenError)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+<p>最后，<code>BaseOAuth2</code> 类还定义了两个接口，用于根据 <code>Access Token</code> 获取用户信息，但这两个接口的实现需要由子类来完成：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_profile</span>(<span class="params">self, token: <span class="built_in">str</span></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">    <span class="keyword">raise</span> NotImplementedError()</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_id_email</span>(<span class="params">self, token: <span class="built_in">str</span></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="type">Optional</span>[<span class="built_in">str</span>]]:</span><br><span class="line">    <span class="keyword">raise</span> NotImplementedError()</span><br></pre></td></tr></table></figure>
+<p><code>BaseOAuth2</code> 类是一个泛型类，通过类型变量 <code>T</code> 来表示构建授权 URL 时额外的参数类型，一般该类型就是一个 <code>dict</code>，因此为了便于使用，库代码直接定义了一个具体的 <code>OAuth2</code> 类型，库的用户直接使用该类即可：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">OAuth2 = BaseOAuth2[dict[str, Any]]</span><br></pre></td></tr></table></figure>
+<p>以上就分析了 <code>httpx-oauth</code> 库的核心类 <code>BaseOAuth2</code> 的实现细节。可以看到，它的主要功能就是通过 httpx 这个 HTTP 客户端库来封装出 OAuth 认证流程的核心步骤，例如 <code>构造授权 URL</code>、<code>获取 Token</code>、<code>刷新 Token</code>、<code>撤销 Token</code> 等。</p>
+<h3 id="googleoauth2"><a class="markdownIt-Anchor" href="#googleoauth2"></a> GoogleOAuth2</h3>
+<p>上文说过，<code>httpx-oauth</code> 库针对不同的 OAuth 2.0 服务提供商预定义了一些具体的 OAuth2 Client 实现，这些 client 实现都保存在 <code>clients</code> 子目录中：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">.</span><br><span class="line">├── discord.py</span><br><span class="line">├── facebook.py</span><br><span class="line">├── franceconnect.py</span><br><span class="line">├── github.py</span><br><span class="line">├── google.py</span><br><span class="line">├── __init__.py</span><br><span class="line">├── kakao.py</span><br><span class="line">├── linkedin.py</span><br><span class="line">├── microsoft.py</span><br><span class="line">├── naver.py</span><br><span class="line">├── okta.py</span><br><span class="line">├── openid.py</span><br><span class="line">├── reddit.py</span><br><span class="line">└── shopify.py</span><br></pre></td></tr></table></figure>
+<p>我们以 <code>GoogleOAuth2</code> 的实现为例，分析如何基于 <code>BaseOAuth2</code> 基类定义一个具体的 OAuth2 Client 实现类：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">GoogleOAuth2AuthorizeParams</span>(TypedDict, total=<span class="literal">False</span>):</span><br><span class="line">    access_type: <span class="type">Literal</span>[<span class="string">&quot;online&quot;</span>, <span class="string">&quot;offline&quot;</span>]</span><br><span class="line">    include_granted_scopes: <span class="built_in">bool</span></span><br><span class="line">    login_hint: <span class="built_in">str</span></span><br><span class="line">    prompt: <span class="type">Literal</span>[<span class="string">&quot;none&quot;</span>, <span class="string">&quot;consent&quot;</span>, <span class="string">&quot;select_account&quot;</span>]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">GoogleOAuth2</span>(BaseOAuth2[GoogleOAuth2AuthorizeParams]):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;OAuth2 client for Google.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    display_name = <span class="string">&quot;Google&quot;</span></span><br><span class="line">    logo_svg = LOGO_SVG</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        client_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        client_secret: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        scopes: <span class="type">Optional</span>[<span class="built_in">list</span>[<span class="built_in">str</span>]] = BASE_SCOPES,</span></span><br><span class="line"><span class="params">        name: <span class="built_in">str</span> = <span class="string">&quot;google&quot;</span>,</span></span><br><span class="line"><span class="params">    </span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__(</span><br><span class="line">            client_id,</span><br><span class="line">            client_secret,</span><br><span class="line">            AUTHORIZE_ENDPOINT,</span><br><span class="line">            ACCESS_TOKEN_ENDPOINT,</span><br><span class="line">            ACCESS_TOKEN_ENDPOINT,</span><br><span class="line">            REVOKE_TOKEN_ENDPOINT,</span><br><span class="line">            name=name,</span><br><span class="line">            base_scopes=scopes,</span><br><span class="line">            token_endpoint_auth_method=<span class="string">&quot;client_secret_post&quot;</span>,</span><br><span class="line">            revocation_endpoint_auth_method=<span class="string">&quot;client_secret_post&quot;</span>,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_profile</span>(<span class="params">self, token: <span class="built_in">str</span></span>) -&gt; <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]:</span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">with</span> self.get_httpx_client() <span class="keyword">as</span> client:</span><br><span class="line">            response = <span class="keyword">await</span> client.get(</span><br><span class="line">                PROFILE_ENDPOINT,</span><br><span class="line">                params=&#123;<span class="string">&quot;personFields&quot;</span>: <span class="string">&quot;emailAddresses&quot;</span>&#125;,</span><br><span class="line">                headers=&#123;**self.request_headers, <span class="string">&quot;Authorization&quot;</span>: <span class="string">f&quot;Bearer <span class="subst">&#123;token&#125;</span>&quot;</span>&#125;,</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> response.status_code &gt;= <span class="number">400</span>:</span><br><span class="line">                <span class="keyword">raise</span> GetProfileError(response=response)</span><br><span class="line"></span><br><span class="line">            <span class="keyword">return</span> cast(<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>], response.json())</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_id_email</span>(<span class="params">self, token: <span class="built_in">str</span></span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="type">Optional</span>[<span class="built_in">str</span>]]:</span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            profile = <span class="keyword">await</span> self.get_profile(token)</span><br><span class="line">        <span class="keyword">except</span> GetProfileError <span class="keyword">as</span> e:</span><br><span class="line">            <span class="keyword">raise</span> GetIdEmailError(response=e.response) <span class="keyword">from</span> e</span><br><span class="line"></span><br><span class="line">        user_id = profile[<span class="string">&quot;resourceName&quot;</span>]</span><br><span class="line">        user_email = <span class="built_in">next</span>(</span><br><span class="line">            email[<span class="string">&quot;value&quot;</span>]</span><br><span class="line">            <span class="keyword">for</span> email <span class="keyword">in</span> profile[<span class="string">&quot;emailAddresses&quot;</span>]</span><br><span class="line">            <span class="keyword">if</span> email[<span class="string">&quot;metadata&quot;</span>][<span class="string">&quot;primary&quot;</span>]</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> user_id, user_email</span><br></pre></td></tr></table></figure>
+<ul>
+<li>GoogleOAuth2AuthorizeParams 是一个 TypedDict，用于定义使用 Google OAuth 服务时构造授权 URL 所需要的额外参数</li>
+<li>Google OAuth 服务的各个 Endpoint 都是固定的，因此 <code>GoogleOAuth2.__init__()</code> 方法中不在需要传入这些参数</li>
+<li><code>get_profile</code> 方法使用获取到的 Token 来请求 Google 的 <code>profile endpoint</code>，用于获取用户信息</li>
+<li><code>get_id_email</code> 方法则进一步从获取到的用户 profile 信息中提取到 <code>user_id</code> 和 <code>user_email</code></li>
+</ul>
+<h3 id="oauth2authorizecallback"><a class="markdownIt-Anchor" href="#oauth2authorizecallback"></a> <code>OAuth2AuthorizeCallback</code></h3>
+<p><code>httpx_oauth/integrations/fastapi.py</code> 中还定义了一个 <code>OAuth2AuthorizeCallback</code> 类，用于在 FastAPI 框架中处理 OAuth 授权回调流程。</p>
+<p>上文说过，在构造 <code>授权 URL</code> 时，需要传入一个 <code>redirect_uri</code> 参数，这个参数用于在授权结束后将用户重定向到这个 URL。也就是说，用户授权结束后会跳转回你的应用，你需要处理这个请求：从这个请求中提取 Code，然后使用这个 Code 来获取 Access Token。而 <code>OAuth2AuthorizeCallback</code> 类则用于协助你的 FastAPI 应用处理这个回调请求。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OAuth2AuthorizeCallback</span>:</span><br><span class="line">    client: BaseOAuth2</span><br><span class="line">    route_name: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    redirect_url: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        client: BaseOAuth2,</span></span><br><span class="line"><span class="params">        route_name: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        redirect_url: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>):</span><br><span class="line">        <span class="keyword">assert</span> (route_name <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span> <span class="keyword">and</span> redirect_url <span class="keyword">is</span> <span class="literal">None</span>) <span class="keyword">or</span> (</span><br><span class="line">            route_name <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">and</span> redirect_url <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span></span><br><span class="line">        ), <span class="string">&quot;You should either set route_name or redirect_url&quot;</span></span><br><span class="line">        self.client = client</span><br><span class="line">        self.route_name = route_name</span><br><span class="line">        self.redirect_url = redirect_url</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        request: Request,</span></span><br><span class="line"><span class="params">        code: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        code_verifier: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        state: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        error: <span class="type">Optional</span>[<span class="built_in">str</span>] = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">tuple</span>[OAuth2Token, <span class="type">Optional</span>[<span class="built_in">str</span>]]:</span><br><span class="line">        <span class="keyword">if</span> code <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> error <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="keyword">raise</span> OAuth2AuthorizeCallbackError(</span><br><span class="line">                status_code=status.HTTP_400_BAD_REQUEST,</span><br><span class="line">                detail=error <span class="keyword">if</span> error <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span> <span class="keyword">else</span> <span class="literal">None</span>,</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> self.route_name:</span><br><span class="line">            redirect_url = <span class="built_in">str</span>(request.url_for(self.route_name))</span><br><span class="line">        <span class="keyword">elif</span> self.redirect_url:</span><br><span class="line">            redirect_url = self.redirect_url</span><br><span class="line"></span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            access_token = <span class="keyword">await</span> self.client.get_access_token(</span><br><span class="line">                code, redirect_url, code_verifier</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">except</span> GetAccessTokenError <span class="keyword">as</span> e:</span><br><span class="line">            <span class="keyword">raise</span> OAuth2AuthorizeCallbackError(</span><br><span class="line">                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,</span><br><span class="line">                detail=e.message,</span><br><span class="line">                response=e.response,</span><br><span class="line">            ) <span class="keyword">from</span> e</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> access_token, state</span><br></pre></td></tr></table></figure>
+<ul>
+<li>该类实现了 <code>__call__</code> 方法，在 FastAPI 中，这允许你像使用函数一样使用这个类的实例作为依赖项：Depends(oauth2_authorize_callback)。</li>
+<li>当这个类被 Depends 调用时，FastAPI 会自动审视 <code>__call__</code> 的签名。它发现有 code、state、error 这些参数，就会自动从当前请求 URL 的查询参数中提取它们</li>
+<li>为了获取 <code>redirect_url</code>，需要提供一个 <code>route_name</code> 或者直接传入 <code>redirect_url</code> 参数。如果传递的是 <code>route_name</code>，会通过 <code>request.url_for(route_name)</code> 自动获取完整的 URL</li>
+<li>之后通过 <code>BaseOAuth2.get_access_token</code> 方法来使用 code 获取 <code>Access Token</code>，并返回对应的 <code>token</code> 和 <code>state</code></li>
+</ul>
+<p>借助这个类，你可以在 FastAPI 应用中非常方便地处理 OAuth 授权后的回调流程：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI, Depends</span><br><span class="line"><span class="keyword">from</span> httpx_oauth.integrations.fastapi <span class="keyword">import</span> OAuth2AuthorizeCallback</span><br><span class="line"><span class="keyword">from</span> httpx_oauth.oauth2 <span class="keyword">import</span> OAuth2</span><br><span class="line"></span><br><span class="line">client = OAuth2(<span class="string">&quot;CLIENT_ID&quot;</span>, <span class="string">&quot;CLIENT_SECRET&quot;</span>, <span class="string">&quot;AUTHORIZE_ENDPOINT&quot;</span>, <span class="string">&quot;ACCESS_TOKEN_ENDPOINT&quot;</span>)</span><br><span class="line">oauth2_authorize_callback = OAuth2AuthorizeCallback(client, <span class="string">&quot;oauth-callback&quot;</span>)</span><br><span class="line">app = FastAPI()</span><br><span class="line"></span><br><span class="line"><span class="meta">@app.get(<span class="params"><span class="string">&quot;/oauth-callback&quot;</span>, name=<span class="string">&quot;oauth-callback&quot;</span></span>)</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">oauth_callback</span>(<span class="params">access_token_state=Depends(<span class="params">oauth2_authorize_callback</span>)</span>):</span><br><span class="line">    token, state = access_token_state</span><br><span class="line">    <span class="comment"># Do something useful</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>由于 oauth2_authorize_callback 是个可调用对象（<code>OAuth2AuthorizeCallback</code> 实现了 <code>__call__</code> 方法），所以可以直接作为 Depends 依赖项</li>
+<li>FastAPI 会自动从当前请求的 URL 查询参数（Query Parameters）中获取 <code>code</code>、<code>state</code> 参数，并开始执行 <code>OAuth2AuthorizeCallback.__call__</code> 中的逻辑：根据授权码申请 <code>Access Token</code>，并返回 <code>token</code> 和 <code>state</code></li>
+<li>因此 <code>oauth_callback</code> 的函数体开始执行时，就可以直接使用 <code>token</code> 和 <code>state</code> 来进行后续操作了</li>
+</ul>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>以上就基本分析完了 <code>httpx-oauth</code> 库的核心代码逻辑，主要是通过学习该库的代码，来对 <code>OAuth2</code> 授权认证流程有个直观的认识。</p>
+<h2 id="reference"><a class="markdownIt-Anchor" href="#reference"></a> Reference</h2>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://www.ruanyifeng.com/blog/2014/05/oauth_2_0.html">理解OAuth 2.0</a></li>
+<li><a target="_blank" rel="noopener" href="https://leeyuxun.github.io/OAuth-CSRF%E5%AE%9E%E9%AA%8C.html">OAuth-CSRF实验</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2025/12/30/2025-summary/" rel="next" title="2025 年度总结：AI 时代">
+      2025 年度总结：AI 时代 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#oauth2-%E5%8D%8F%E8%AE%AE%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> OAuth2 协议简介</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5"><span class="nav-number">1.1.</span> <span class="nav-text"> 核心概念</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%B5%81%E7%A8%8B"><span class="nav-number">1.2.</span> <span class="nav-text"> 核心流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#oauth2-%E4%B8%AD%E7%9A%84-csrf-%E6%94%BB%E5%87%BB"><span class="nav-number">1.3.</span> <span class="nav-text"> OAuth2 中的 CSRF 攻击</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#httpx-oauth-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text"> httpx-oauth 源码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#baseoauth2"><span class="nav-number">2.1.</span> <span class="nav-text"> BaseOAuth2</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#googleoauth2"><span class="nav-number">2.2.</span> <span class="nav-text"> GoogleOAuth2</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#oauth2authorizecallback"><span class="nav-number">2.3.</span> <span class="nav-text"> OAuth2AuthorizeCallback</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">3.</span> <span class="nav-text"> 小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">4.</span> <span class="nav-text"> Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">225</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">16</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
