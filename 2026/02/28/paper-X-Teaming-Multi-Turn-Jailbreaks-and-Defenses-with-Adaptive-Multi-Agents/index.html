@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="之前的论文精读：OpenRT：面向多模态大语言模型的开源红队测试框架 中提到了 X-Teaming 这种多智能体协作的攻击手法，本篇我们将将深入学习其核心机制。本文是 X-Teaming: Multi-Turn Jailbreaks and Defenses with Adaptive Multi-Agents 的精读笔记，该文献详细介绍了 X-Teaming 这种自适应多智能体的多轮越狱攻击框架">
+<meta property="og:type" content="article">
+<meta property="og:title" content="论文精读：X-Teaming：基于自适应多智能体的多轮越狱攻击与防御">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="之前的论文精读：OpenRT：面向多模态大语言模型的开源红队测试框架 中提到了 X-Teaming 这种多智能体协作的攻击手法，本篇我们将将深入学习其核心机制。本文是 X-Teaming: Multi-Turn Jailbreaks and Defenses with Adaptive Multi-Agents 的精读笔记，该文献详细介绍了 X-Teaming 这种自适应多智能体的多轮越狱攻击框架">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/01.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/02.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/03.png">
+<meta property="article:published_time" content="2026-02-28T10:50:00.000Z">
+<meta property="article:modified_time" content="2026-03-03T14:13:48.478Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/01.png">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>论文精读：X-Teaming：基于自适应多智能体的多轮越狱攻击与防御 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          论文精读：X-Teaming：基于自适应多智能体的多轮越狱攻击与防御
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-02-28 18:50:00" itemprop="dateCreated datePublished" datetime="2026-02-28T18:50:00+08:00">2026-02-28</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E8%AE%BA%E6%96%87%E7%B2%BE%E8%AF%BB/" itemprop="url" rel="index"><span itemprop="name">论文精读</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>之前的<a target="_blank" rel="noopener" href="https://fuchencong.com/2026/02/27/paper-OpenRT-An-Open-Source-Red-Teaming-Framework-for-Multimodal-LLMs/">论文精读：OpenRT：面向多模态大语言模型的开源红队测试框架</a> 中提到了 X-Teaming 这种多智能体协作的攻击手法，本篇我们将将深入学习其核心机制。本文是 <a target="_blank" rel="noopener" href="https://arxiv.org/abs/2504.13203">X-Teaming: Multi-Turn Jailbreaks and Defenses with Adaptive Multi-Agents</a> 的精读笔记，该文献详细介绍了 X-Teaming 这种自适应多智能体的多轮越狱攻击框架，同时介绍了 XGuard-Train 这个开源的多轮安全训练数据集，旨在为大语言模型提供鲁棒的多轮安全对齐能力。</p>
+<span id="more"></span>
+<h2 id="核心整理"><a class="markdownIt-Anchor" href="#核心整理"></a> 核心整理</h2>
+<img src="/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/01.png" class="">
+<h2 id="摘要"><a class="markdownIt-Anchor" href="#摘要"></a> 摘要</h2>
+<p><strong>注：本文包含可能令人不安的内容示例</strong>。</p>
+<p>与语言模型（LMs）的多轮交互存在重大安全风险，恶意意图可能被策略性地分散在多轮对话中。然而，绝大多数现有研究仍聚焦于单轮安全问题，而适应性与多样性仍是多轮红队（multi-turn red-teaming）测试面临的核心挑战。为应对这些挑战，<strong>本文提出 X-Teaming 框架：一种可扩展的多轮红队测试框架，能够系统探索看似无害的交互如何逐步升级为有害结果，并生成相应的攻击场景</strong>。</p>
+<p>X-Teaming 采用协作式智能体负责规划、攻击优化与验证，在主流开源模型和闭源模型上实现了最先进的多轮越狱攻击效果与多样性，攻击成功率（ASR）最高可达 98.1%。值得注意的是，<strong>该框架对最新的 Claude 3.7 Sonnet 模型的攻击成功率达到 96.2%，而该模型此前被认为几乎对单轮攻击免疫</strong>。</p>
+<p>基于 X-Teaming，本文进一步提出 XGuard-Train：一个开源的多轮安全训练数据集，其规模是现有最优资源的 20 倍，包含 30,000 条交互式越狱攻击样本，旨在为大语言模型提供鲁棒的多轮安全对齐能力。<strong>本文的研究成果为缓解复杂对话式攻击提供了关键工具与见解，推动了语言模型多轮安全性能的提升</strong>。</p>
+<h2 id="引言"><a class="markdownIt-Anchor" href="#引言"></a> 引言</h2>
+<p>尽管对话式人工智能系统的普及程度前所未有），但多轮对话中的内容安全风险仍未得到充分研究。现有大量研究聚焦于单轮内容安全，涵盖攻击方法、防御机制、与内容审核等方向。这些完善的单轮安全措施已被证明能有效缓解（在部分情况下甚至能预防）单条提示词中包含恶意意图的攻击。</p>
+<p>相比之下，多轮攻击仍是一项紧迫且尚未解决的安全挑战。将恶意意图分散在多轮对话中会产生隐蔽性威胁，现有系统难以检测和防范。<strong>对此类分布式风险进行红队测试，需要在多轮对话过程中进行整体规划、动态监控与策略调整</strong>。为填补这一研究空白，本文提出 X-Teaming：一种可扩展的红队测试框架，通过模拟人类攻击策略的协作式智能体，系统探索多样化的多轮越狱攻击。</p>
+<p>如图所示，X-Teaming 包含四个专用智能体：</p>
+<img src="/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/02.png" class="">
+<ul>
+<li>负责设计和修订多样化攻击方案的规划智能体（Planner）</li>
+<li>执行动态多轮越狱攻击的攻击智能体（Attacker）</li>
+<li>评估攻击效果的验证智能体（Verifier）</li>
+<li>在遭遇拒绝时优化提示词的提示词优化智能体（Prompt Optimizer）</li>
+</ul>
+<p>这些组件有效提升了攻击成功率与覆盖范围，能够精准识别人工智能系统的漏洞。在 HarmBench 基准测试中，X-Teaming 在 GPT-4o、DeepSeek-V3 等代表性闭源和开源大语言模型上实现了最高 98.1% 的攻击成功率，显著优于现有单轮攻击方法和其他多轮攻击方法（FITD、ActorAttack、RACE、Crescendo）。</p>
+<p>现有多轮攻击方法虽在特定领域有效，但均依赖单一攻击策略：FITD 利用心理顺从原理，RACE 基于推理任务，Crescendo 遵循模板模式，ActorAttack 借助智能体关系网络，其他方法则采用关键词操纵（CFA）、查询分解（PANDORA）或语义链（Chain of Attack）。<strong>相比之下，X-Teaming 的多智能体架构结合基于 TextGrad 的优化技术，能够生成涵盖多种策略、角色设定和场景的多样化攻击方案</strong>。此外，通过采用更宽松的方法配置 —— 如增加攻击轮数、扩大规划空间、允许更多优化重试 ——X-Teaming 在 GPT-4o、Llama-3-8B/70B-Instruct、DeepSeek V3 等多个测试模型上实现了 100% 的攻击成功率。</p>
+<p>此外，X-Teaming 在攻击多样性方面也实现了显著提升。此前基于语义驱动和模板化的多轮越狱攻击方法缺乏人类红队测试人员的策略多样性，限制了其探索多样化、大规模攻击轨迹的可扩展性。相比之下，通过成对嵌入相似度衡量，X-Teaming 的攻击方案多样性较当前最优开源多轮攻击基准 ActorAttack 提升 153%，攻击执行多样性提升 62%。</p>
+<p>X-Teaming 的攻击有效性与多样性支持大规模合成多轮攻击数据，为大语言模型的鲁棒性、数据驱动安全对齐提供支撑。基于该框架，本文提出 XGuard-Train：一个大规模安全训练数据集，包含源于 WildJailbreak 基准中 13 个风险类别的 10,000 种有害行为，以及由此生成的 30,000 条多轮对话，规模是现有最优资源 SafeMTData 的 20 倍。在 XGuard-Train 上微调的模型，其多轮攻击抵抗能力较 SafeMTData 训练模型平均提升 34.2%，且在多种攻击方法下表现出较强的跨框架泛化能力。这种鲁棒的防御性能在单轮安全测试和通用能力测试中均得以保持。</p>
+<p>除静态数据集外，X-Teaming 还可按需生成全新多轮越狱攻击样本，支持大规模动态自适应安全数据构建。为促进对话式人工智能多轮防御技术的开放发展，本文开源了完整框架、数据集及训练模型，为构建更鲁棒、可信、可靠的人机交互系统奠定基础。</p>
+<h2 id="x-teaming多轮红队测试的自适应框架"><a class="markdownIt-Anchor" href="#x-teaming多轮红队测试的自适应框架"></a> X-Teaming：多轮红队测试的自适应框架</h2>
+<p>X-Teaming 通过四个核心组件系统模拟人类红队测试策略：生成并适配多样化攻击方案的规划智能体（Planner）、执行动态对话的攻击智能体（Attacker）、评估攻击效果的验证智能体（Verifier），以及对攻击失败进行提示词优化的智能体（Prompt Optimizer）。针对目标模型 M 和特定有害行为 h，这些组件通过两个阶段协同工作：<code>攻击策略规划阶段</code>（Strategic Attack Planning）与 <code>自适应攻击执行与优化阶段</code>（Adaptive Attack Execution and Optimization）。该协作框架实现了对话式人工智能系统漏洞的自动化发现。</p>
+<h3 id="框架组件"><a class="markdownIt-Anchor" href="#框架组件"></a> 框架组件</h3>
+<p>针对每个有害行为 h，规划智能体 P 生成一组模拟不同人类红队测试方法的多样化攻击方案。每个方案包含：</p>
+<ul>
+<li>角色设定定义</li>
+<li>场景描述</li>
+<li>整体攻击策略</li>
+<li>从中性话题逐步过渡到目标有害行为的轮次级推进计划</li>
+</ul>
+<p><strong>规划智能体通过为每个有害行为设计多样化的角色设定、场景和对话轨迹，确保攻击方案的多样性</strong>。当某一方案的对话轨迹执行完毕但未达成攻击目标时，规划智能体基于对话历史和验证智能体的反馈，对原始方案进行扩展和修改，使攻击能在最大轮数限制内自适应地继续执行。</p>
+<p>攻击智能体基于 <code>规划智能体</code> 提供的方案，生成与目标模型进行多轮会话的查询语句（提示词）。查询语句的生成需结合对话历史、<code>验证智能体</code> 的评分结果和当前方案阶段，在保持对话连贯性的同时，逐步推进至目标有害行为。</p>
+<p><code>验证智能体</code> 对每轮对话进行实时评估，为目标模型的响应分配 <code>1-5</code> 分的评分。评分 1 表示完全拒绝或无关响应，评分 5 表示完全符合目标有害行为。这种持续监控机制支持对有效攻击模式的系统评估。</p>
+<p><code>提示词优化智能体</code> 采用基于 TextGrad 的文本优化技术在验证评分下降时优化攻击智能体的查询语句。<code>TextGrad</code> 是一种通过 <code>反向传播文本反馈（backpropagating textual feedback)</code> 实现自然语言提示词梯度式优化的方法，该智能体通过将 <code>验证智能体</code> 的评分融入 <code>损失函数</code> 提示词，采用文本梯度下降法，迭代优化查询语句，以最大化触发目标有害行为的可能性。</p>
+<h3 id="攻击执行流程"><a class="markdownIt-Anchor" href="#攻击执行流程"></a> 攻击执行流程</h3>
+<p>整合所有组件后，攻击执行遵循两阶段迭代流程：</p>
+<p><strong>阶段 1：攻击策略规划</strong>。规划智能体为目标有害行为生成 N 个策略集合，每个集合包含 N 个方案，并以先前生成的方案为上下文确保新颖性和多样性。最终生成的方案具有较高多样性，涵盖多种角色设定、场景和对话轨迹。如下是一个例子</p>
+<img src="/fuchencong.github.io/2026/02/28/paper-X-Teaming-Multi-Turn-Jailbreaks-and-Defenses-with-Adaptive-Multi-Agents/images/03.png" class="">
+<p><strong>阶段 2：自适应攻击执行与优化</strong>。针对每个方案，攻击智能体启动与目标模型 M 的多轮对话。轮数限制为 T，避免无限循环。每轮 t 的执行流程包括：</p>
+<ul>
+<li>处理对话历史</li>
+<li>基于当前方案阶段和历史生成查询</li>
+<li>接收目标模型响应</li>
+<li>获取验证智能体的评分</li>
+</ul>
+<p>当评分保持或提升时，对话推进至下一阶段，提示词优化智能体将进行迭代（同样有次数限制），寻找能提升评分的优化查询。若方案的对话轨迹执行完毕但未达成评分 5，且当前轮数未超过 T，规划智能体将基于对话历史和验证反馈扩展原始对话轨迹，同时保留已建立的角色设定和场景。<strong>这种自适应机制确保攻击持续执行直至达成目标或达到最大轮数限制</strong>。当任何响应获得满分 5 时，攻击成功。</p>
+<h2 id="x-teaming-有效探索语言模型的多样化多轮攻击"><a class="markdownIt-Anchor" href="#x-teaming-有效探索语言模型的多样化多轮攻击"></a> X-Teaming 有效探索语言模型的多样化多轮攻击</h2>
+<h3 id="实验设置"><a class="markdownIt-Anchor" href="#实验设置"></a> 实验设置</h3>
+<p>评估基准与指标：本文在 HarmBench 基准上评估 X-Teaming 的性能，该基准是标准化的自动化红队测试框架，包含多个类别的 510 种多样化有害行为。HarmBench 以攻击成功率（ASR）为核心指标，即成功触发模型生成目标有害行为的测试用例占比。为与 RACE、CoA、Crescendo、Foot-In-The-Door、ActorAttack 等现有多轮攻击方法直接对比，本文在 HarmBench 测试集上执行 X-Teaming 攻击。</p>
+<p>与现有研究一致，本文采用 GPT-4o 作为主要验证智能体来对模型响应进行危害性评分，并与 HarmBench 测试分类器和 LlamaGuard 3 的结果进行对比验证，与 HarmBench 测试分类器的一致性达 84.50%。</p>
+<p>规划智能体采用 GPT-4o（温度参数 0.5），生成 5 组策略集合，每组包含 10 个方案，最终产出 50 个候选方案。主攻击智能体选用 Qwen-2.5-32B-IT（温度参数 0.3），该模型兼具有效性、计算效率和低成本优势。多轮越狱攻击的最大轮数设为 7。</p>
+<p>测试对象涵盖闭源模型和开源模型，所有目标模型的温度参数均设为 0。当攻击过程中验证评分下降时，采用 Qwen-2.5-32B-IT 进行最多 4 次 TextGrad 优化迭代。</p>
+<p>我们的超参数（7轮对话、每种有害行为对应10种攻击策略、4次TextGrad优化尝试）是通过对 HarmBench 验证集开展系统性消融实验所确定的，所用模型为在 SafeMTData 数据集上训练的 <code>Llama-3-8B-Instruct</code>，旨在平衡攻击效果与计算开销。</p>
+<h3 id="基准方法"><a class="markdownIt-Anchor" href="#基准方法"></a> 基准方法</h3>
+<p>本文将 X-Teaming 与多种最先进的单轮和多轮越狱攻击方法对比。单轮基准方法包括 GCG、PAIR、CodeAttack 等。多轮基准方法包括：RACE、CoA、Crescendo、ActorAttack 等等。</p>
+<h3 id="实验结果"><a class="markdownIt-Anchor" href="#实验结果"></a> 实验结果</h3>
+<p>X-Teaming 在几乎所有测试模型上均实现了最先进的攻击成功率（state-of-the-art，SOTA），显著优于现有单轮和多轮越狱攻击方法。该框架对针对多轮安全优化的模型也具有高有效性：在基于 SafeMTData 训练的 Llama-3-8B-Instruct 上的攻击成功率达 91.8%。</p>
+<p>成功攻击的平均长度远低于所有测试目标模型的上下文窗口。类别级分析显示，网络犯罪（Cybercrime）是最脆弱的类别，除一个模型外其余均达到 100% 攻击成功率。而有害内容（Harmful content）和虚假信息（Misinformation）类别表现出更强的抵抗性。</p>
+<p>在 HarmBench 验证集上，采用扩展超参数配置（10 轮对话、50 种策略、5 次 TextGrad 尝试）时，X-Teaming 在 GPT-4o、Gemini 2.0-Flash、Llama-3-8B-Instruct、Llama-3-70B-Instruct、基于 SafeMTData 的 Llama-3-8B-Instruct 和 DeepSeek V3 上均实现接近 100% 的攻击成功率。</p>
+<p>这些结果表明，<strong>所提出的多智能体框架在闭源和开源模型上均持续优于现有方法</strong>，包括专门针对多轮安全、基于 SafeMTData 微调的 Llama-3-8B-Instruct。</p>
+<p>除成功率外，本文还通过成功越狱所需的资源消耗分析 X-Teaming 的效率。尽管设置了 50 个方案、4 次 TextGrad 迭代和 7 轮对话的上限，但分析显示，成功攻击平均仅需约 3.5 个方案、0.6 次 TextGrad 迭代和 4.3 轮对话。所有 X-Teaming 攻击仅占用模型上下文窗口的一小部分，表明该框架在攻击成功率与资源效率间实现了有效平衡。<strong>这些指标表明，X-Teaming 在保持合理计算成本的同时，实现了高于现有方法的攻击成功率，是一种实用的框架</strong>。</p>
+<p>另外，通过计算嵌入相似度，X-Teaming 的方案平均多样性评分也优于现有方案，表明其攻击方案具有更强的多样性。这种高多样性使 X-Teaming 能够探索更多攻击场景。除方案多样性外，X-Teaming 在攻击级多样性上同样表现更优，表明即使针对同一有害行为，X-Teaming 也能执行更多样化的攻击查询。</p>
+<p>验证智能体一致性分析：<strong>为解决采用 GPT-4o 作为主要验证智能体的潜在争议，本文进行了多评估者一致性分析</strong>。选择 GPT-4o 是为了与现有多轮攻击研究保持评估一致性，尽管近期研究表明基于大语言模型的验证智能体可能存在结果偏差。分析结果显示，<strong>该验证智能体与 HarmBench 分类器的整体一致性较高</strong>，而 HarmBench 分类器与人类评估的一致性达 93.2%。LlamaGuard 3 的一致性略低（平均 69.09%），与现有在 HarmBench 测试集上的发现一致。<strong>与 HarmBench 测试分类器的高一致性支持本文在该基准中采用 GPT-4o 作为验证智能体</strong>。</p>
+<h3 id="消融实验攻击方案数-对话轮数与-textgrad-优化"><a class="markdownIt-Anchor" href="#消融实验攻击方案数-对话轮数与-textgrad-优化"></a> 消融实验：攻击方案数、对话轮数与 TextGrad 优化</h3>
+<p>本文通过消融实验分析攻击方案数、对话轮数和 TextGrad 优化尝试次数对 X-Teaming 在基于 SafeMTData 监督微调的 Llama-3-8B-Instruct 模型上性能的影响。</p>
+<ul>
+<li>攻击方案数的影响：表明最优性能需要足够的策略多样性，但超过一定数量后额外方案无法带来更多增益</li>
+<li>对话轮数的影响：多轮攻击对突破安全防御至关重要，但过长对话可能因攻击智能体和目标模型需处理日益复杂的交互历史而导致上下文稀释，对话记录分析显示，8 轮后攻击智能体常偏离原始方案，无法维持既定角色设定和场景，导致查询语句有效性下降</li>
+<li>TextGrad 优化尝试次数的影响：TextGrad 提示词优化对攻击效果具有显著影响</li>
+</ul>
+<h2 id="基于-xguard-train-增强大语言模型的交互鲁棒性"><a class="markdownIt-Anchor" href="#基于-xguard-train-增强大语言模型的交互鲁棒性"></a> 基于 XGuard-Train 增强大语言模型的交互鲁棒性</h2>
+<p>尽管单轮安全资源已较为完善，但多轮对话仍易受分布式攻击影响。本文利用 X-Teaming 生成 XGuard-Train 数据集，解决多样化多轮安全训练数据严重短缺的问题。</p>
+<h3 id="xguard-train大语言模型多轮安全的大规模数据集"><a class="markdownIt-Anchor" href="#xguard-train大语言模型多轮安全的大规模数据集"></a> XGuard-Train：大语言模型多轮安全的大规模数据集</h3>
+<p>XGuard-Train 是一个全面的多轮安全数据集，旨在提升对话式人工智能对复杂越狱攻击的防御能力。该数据集从 WildJailbreak 的基础有害行为集合中抽取 13 个不同风险类别的 10,000 种有害行为。通过 X-Teaming 框架，生成包含多种角色设定、场景和方法的 30,000 条多样化攻击轨迹。对于成功的越狱攻击，本文将有害模型响应替换为精心设计的拒绝响应。最终数据集在规模和攻击多样性上显著优于 SafeMTData 等现有资源，对话长度相当。</p>
+<p><a target="_blank" rel="noopener" href="https://huggingface.co/datasets/marslabucla/XGuard-Train">XGuard-Train</a> 已开源，且该框架可轻松扩展以生成更大规模数据集。</p>
+<h3 id="xguard-train-赋能大语言模型更鲁棒的多轮交互"><a class="markdownIt-Anchor" href="#xguard-train-赋能大语言模型更鲁棒的多轮交互"></a> XGuard-Train 赋能大语言模型更鲁棒的多轮交互</h3>
+<p>本文利用包含 30,000 条对话的 XGuard-Train 数据集，在 Llama-3.1-8B 模型上执行对抗性安全对齐，构建增强多轮攻击抵抗能力的模型。训练了三个模型变体</p>
+<ul>
+<li>仅基于 Tulu-Mix 数据的基准模型</li>
+<li>Tulu-Mix 与 SafeMTData 按 1:2 比例混合训练的模型</li>
+<li>Tulu-Mix 与 XGuard-Train 按 1:2 比例混合训练的模型</li>
+</ul>
+<p>所有模型均采用 LoRA（秩 8）微调 3 个 epoch，学习率 1.0e−4，超参数保持一致以确保公平对比。本文还在 Qwen-2.5-7B 模型上进行了相同的安全微调实验，配置完全一致。实验结果表明：</p>
+<ul>
+<li>基于 XGuard-Train 微调的 Llama-3.1-8B 模型表现出更强的多轮攻击抵抗能力</li>
+<li>在单轮安全基准测试中，XGuard-Train 训练模型在 WildGuard 基准的对抗性危害防护中表现优异，同时在 <code>Do Anything Now</code>（DAN）和 XSTest 等其他单轮基准中保持较低的攻击成功率</li>
+<li>该模型在所有通用能力基准（MMLU、GSM8K、MATH、GPQA）中均保持性能</li>
+<li>Qwen-2.5-7B 模型的评估呈现类似趋势</li>
+</ul>
+<p>这种跨框架评估证实，XGuard-Train 的有效性超出生成它所采用的特定框架，具有良好的泛化能力。</p>
+<h2 id="相关工作"><a class="markdownIt-Anchor" href="#相关工作"></a> 相关工作</h2>
+<h3 id="大语言模型攻击的演进从单轮越狱到多轮操纵"><a class="markdownIt-Anchor" href="#大语言模型攻击的演进从单轮越狱到多轮操纵"></a> 大语言模型攻击的演进：从单轮越狱到多轮操纵</h3>
+<p>早期越狱尝试通常采用单轮提示词：一次性输入直接嵌入绕过规则的指令。随着模型对齐技术的进步，许多单轮攻击方法失效，研究重心逐渐转向多轮越狱攻击，这些策略通过逐步引导良性对话走向非法目标。然而，现有方法通常依赖固定种子，或受限的交互模式。<strong>本文的多智能体策略结合 TextGrad 优化，实现了涵盖多种策略、角色设定和场景的多样化自适应轨迹</strong>。</p>
+<h3 id="用于大语言模型越狱与安全的智能体框架和提示词优化"><a class="markdownIt-Anchor" href="#用于大语言模型越狱与安全的智能体框架和提示词优化"></a> 用于大语言模型越狱与安全的智能体框架和提示词优化</h3>
+<p>现有研究多将智能体用于防御，而本文创新性地将智能体大语言模型用于攻击场景。提示词优化方法已提升越狱攻击效果和大语言模型整体性能。与自对话方法不同，本文采用 TextGrad 基于模型实际响应优化提示词，支持自适应搜索。</p>
+<h3 id="交互式人工智能的安全训练与资源"><a class="markdownIt-Anchor" href="#交互式人工智能的安全训练与资源"></a> 交互式人工智能的安全训练与资源</h3>
+<p>现有安全资源（包括数据集、基准和安全分类器）主要聚焦于单轮交互，缺乏针对多轮对话安全评估和训练的高质量资源。少数多轮安全数据集规模小、攻击多样性有限，且通常仅对特定攻击方法过拟合。这一缺口日益突出，因为多轮策略使攻击者能够动态调整方法：初始尝试受阻时重新调整请求或引入新角度。<strong>这些局限性凸显了 XGuard-Train 等综合解决方案的迫切需求，该数据集基于 X-Teaming 框架生成，提供大规模、多样化的多轮安全数据，有效应对多轮对话式人工智能安全场景的复杂性</strong>。</p>
+<h2 id="结论"><a class="markdownIt-Anchor" href="#结论"></a> 结论</h2>
+<p>本文提出 X-Teaming—— 一种用于多轮攻击的自适应红队测试框架，系统模拟真实对抗策略，在多轮越狱场景中展现出强大的有效性和多样性。X-Teaming 在主流大语言模型上实现最高 98.1% 的攻击成功率，同时在攻击规划和执行中均具备高多样性。针对现有研究多局限于单轮评估的现状，X-Teaming 推动了对话式人工智能安全领域的发展。此外，本文开源了目前规模最大的多轮安全数据集 XGuard-Train，为缓解多轮攻击提供了重要资源。</p>
+<p>未来将进一步发布经过严格安全训练的模 checkpoints 和可复现的训练方案，以支持多轮安全训练研究。总体而言，本文的研究为开发和部署更安全、更具韧性的对话式人工智能系统奠定了关键基础。</p>
+<h2 id="伦理声明"><a class="markdownIt-Anchor" href="#伦理声明"></a> 伦理声明</h2>
+<p>本文承认 X-Teaming 和 XGuard-Train 研究的双重用途属性：通过多轮攻击方法揭示当前大语言模型的重大漏洞。尽管这些发现可能被滥用，但我们认为开源研究对推进人工智能安全至关重要。多轮安全资源的巨大缺口是当前对齐工作的关键盲点，而本文的数据集（规模为现有资源的 10 倍）有助于普及高质量安全训练数据的获取。本文构建了更平衡的生态系统，使防御能力与威胁认知同步提升**。</p>
+<p>为降低风险，本文实施负责任的访问控制，要求用户同意将使用限制于研究和防御目的。我们认为，<strong>加速多轮安全对齐进展的益处显著超过公开发布的边际风险</strong>：尤其是这些漏洞可能被动机明确的攻击者独立发现。<strong>本文的研究致力于确保安全研究与快速发展的大语言模型能力保持同步，最终推动更鲁棒、更可信的人工智能系统发展</strong>。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/03/claude-code-doc-01/" rel="prev" title="claude code 官方文档学习（1）：基础知识">
+      <i class="fa fa-chevron-left"></i> claude code 官方文档学习（1）：基础知识
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/02/27/paper-OpenRT-An-Open-Source-Red-Teaming-Framework-for-Multimodal-LLMs/" rel="next" title="论文精读：OpenRT：面向多模态大语言模型的开源红队测试框架">
+      论文精读：OpenRT：面向多模态大语言模型的开源红队测试框架 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%95%B4%E7%90%86"><span class="nav-number">1.</span> <span class="nav-text"> 核心整理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%91%98%E8%A6%81"><span class="nav-number">2.</span> <span class="nav-text"> 摘要</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%95%E8%A8%80"><span class="nav-number">3.</span> <span class="nav-text"> 引言</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#x-teaming%E5%A4%9A%E8%BD%AE%E7%BA%A2%E9%98%9F%E6%B5%8B%E8%AF%95%E7%9A%84%E8%87%AA%E9%80%82%E5%BA%94%E6%A1%86%E6%9E%B6"><span class="nav-number">4.</span> <span class="nav-text"> X-Teaming：多轮红队测试的自适应框架</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%86%E6%9E%B6%E7%BB%84%E4%BB%B6"><span class="nav-number">4.1.</span> <span class="nav-text"> 框架组件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%94%BB%E5%87%BB%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B"><span class="nav-number">4.2.</span> <span class="nav-text"> 攻击执行流程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#x-teaming-%E6%9C%89%E6%95%88%E6%8E%A2%E7%B4%A2%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E7%9A%84%E5%A4%9A%E6%A0%B7%E5%8C%96%E5%A4%9A%E8%BD%AE%E6%94%BB%E5%87%BB"><span class="nav-number">5.</span> <span class="nav-text"> X-Teaming 有效探索语言模型的多样化多轮攻击</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E9%AA%8C%E8%AE%BE%E7%BD%AE"><span class="nav-number">5.1.</span> <span class="nav-text"> 实验设置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E5%87%86%E6%96%B9%E6%B3%95"><span class="nav-number">5.2.</span> <span class="nav-text"> 基准方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E9%AA%8C%E7%BB%93%E6%9E%9C"><span class="nav-number">5.3.</span> <span class="nav-text"> 实验结果</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B6%88%E8%9E%8D%E5%AE%9E%E9%AA%8C%E6%94%BB%E5%87%BB%E6%96%B9%E6%A1%88%E6%95%B0-%E5%AF%B9%E8%AF%9D%E8%BD%AE%E6%95%B0%E4%B8%8E-textgrad-%E4%BC%98%E5%8C%96"><span class="nav-number">5.4.</span> <span class="nav-text"> 消融实验：攻击方案数、对话轮数与 TextGrad 优化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9F%BA%E4%BA%8E-xguard-train-%E5%A2%9E%E5%BC%BA%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E7%9A%84%E4%BA%A4%E4%BA%92%E9%B2%81%E6%A3%92%E6%80%A7"><span class="nav-number">6.</span> <span class="nav-text"> 基于 XGuard-Train 增强大语言模型的交互鲁棒性</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#xguard-train%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E5%A4%9A%E8%BD%AE%E5%AE%89%E5%85%A8%E7%9A%84%E5%A4%A7%E8%A7%84%E6%A8%A1%E6%95%B0%E6%8D%AE%E9%9B%86"><span class="nav-number">6.1.</span> <span class="nav-text"> XGuard-Train：大语言模型多轮安全的大规模数据集</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#xguard-train-%E8%B5%8B%E8%83%BD%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E6%9B%B4%E9%B2%81%E6%A3%92%E7%9A%84%E5%A4%9A%E8%BD%AE%E4%BA%A4%E4%BA%92"><span class="nav-number">6.2.</span> <span class="nav-text"> XGuard-Train 赋能大语言模型更鲁棒的多轮交互</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%9B%B8%E5%85%B3%E5%B7%A5%E4%BD%9C"><span class="nav-number">7.</span> <span class="nav-text"> 相关工作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E6%94%BB%E5%87%BB%E7%9A%84%E6%BC%94%E8%BF%9B%E4%BB%8E%E5%8D%95%E8%BD%AE%E8%B6%8A%E7%8B%B1%E5%88%B0%E5%A4%9A%E8%BD%AE%E6%93%8D%E7%BA%B5"><span class="nav-number">7.1.</span> <span class="nav-text"> 大语言模型攻击的演进：从单轮越狱到多轮操纵</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E4%BA%8E%E5%A4%A7%E8%AF%AD%E8%A8%80%E6%A8%A1%E5%9E%8B%E8%B6%8A%E7%8B%B1%E4%B8%8E%E5%AE%89%E5%85%A8%E7%9A%84%E6%99%BA%E8%83%BD%E4%BD%93%E6%A1%86%E6%9E%B6%E5%92%8C%E6%8F%90%E7%A4%BA%E8%AF%8D%E4%BC%98%E5%8C%96"><span class="nav-number">7.2.</span> <span class="nav-text"> 用于大语言模型越狱与安全的智能体框架和提示词优化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%A4%E4%BA%92%E5%BC%8F%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD%E7%9A%84%E5%AE%89%E5%85%A8%E8%AE%AD%E7%BB%83%E4%B8%8E%E8%B5%84%E6%BA%90"><span class="nav-number">7.3.</span> <span class="nav-text"> 交互式人工智能的安全训练与资源</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E8%AE%BA"><span class="nav-number">8.</span> <span class="nav-text"> 结论</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BC%A6%E7%90%86%E5%A3%B0%E6%98%8E"><span class="nav-number">9.</span> <span class="nav-text"> 伦理声明</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">231</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
