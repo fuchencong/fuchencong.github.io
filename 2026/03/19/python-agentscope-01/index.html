@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="AgentScope 是一个面向生产环境、易于使用的智能体框架，提供灵活的核心抽象以适配日益增强的大模型能力，并内置微调支持。其专为日益具备自主行为能力的大语言模型（agentic LLM）而设计，充分利用模型自身的推理与工具调用能力，而非通过僵化的提示词和预设流程对其加以限制。 本系列文章将会详细分析 AgentScope 的源码实现，这篇文章将先从其 工具调用 功能的实现开始。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="agentscope 源码分析（1）：Toolkit 类实现">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/03/19/python-agentscope-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="AgentScope 是一个面向生产环境、易于使用的智能体框架，提供灵活的核心抽象以适配日益增强的大模型能力，并内置微调支持。其专为日益具备自主行为能力的大语言模型（agentic LLM）而设计，充分利用模型自身的推理与工具调用能力，而非通过僵化的提示词和预设流程对其加以限制。 本系列文章将会详细分析 AgentScope 的源码实现，这篇文章将先从其 工具调用 功能的实现开始。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-19T15:36:17.000Z">
+<meta property="article:modified_time" content="2026-03-19T15:46:41.786Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/19/python-agentscope-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>agentscope 源码分析（1）：Toolkit 类实现 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/19/python-agentscope-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          agentscope 源码分析（1）：Toolkit 类实现
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-03-19 23:36:17" itemprop="dateCreated datePublished" datetime="2026-03-19T23:36:17+08:00">2026-03-19</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://github.com/agentscope-ai/agentscope">AgentScope</a> 是一个面向生产环境、易于使用的智能体框架，提供灵活的核心抽象以适配日益增强的大模型能力，并内置微调支持。<strong>其专为日益具备自主行为能力的大语言模型（agentic LLM）而设计，充分利用模型自身的推理与工具调用能力，而非通过僵化的提示词和预设流程对其加以限制</strong>。</p>
+<p>本系列文章将会详细分析 AgentScope 的源码实现，这篇文章将先从其 <code>工具调用</code> 功能的实现开始。</p>
+<span id="more"></span>
+<h2 id="工具调用的基础知识"><a class="markdownIt-Anchor" href="#工具调用的基础知识"></a> 工具调用的基础知识</h2>
+<p>如果说大模型（LLM）是负责思考和决策的 <code>大脑</code>，那么工具就是 Agent 的 <code>五官</code> 与 <code>肢体</code>。正是因为有了 <code>工具调用</code>，AI 才完成了从 <code>聊天机器人</code> 到 <code>智能体</code> 的本质蜕变。在 AI Agent 框架中，如何高效、精准地实现 <code>工具调用</code>（Tool/Function Calling）是构建智能体的工程核心。</p>
+<p><code>工具调用</code> 的实现本质上是一个 <code>模型</code> 与 <code>系统</code> 之间的多轮会话协议，通常遵循以下四个步骤：</p>
+<ul>
+<li>
+<p>注册与定义 (Registration)：开发者预先定义好工具的 <code>说明书</code>。这通常是一个 JSON Schema，包含：</p>
+<ul>
+<li>函数名：如 get_weather。</li>
+<li>描述：解释这个函数能做什么（LLM 靠这个理解何时调用）。</li>
+<li>参数结构：定义参数类型、名称及是否必填</li>
+</ul>
+</li>
+<li>
+<p>模型决策 (Decision)：当用户输入请求时，LLM 会同时接收 <code>用户问题</code> 和 <code>工具定义</code></p>
+<ul>
+<li>语义匹配：LLM 发现用户问题（<code>北京天气怎么样</code>）与某个工具的描述匹配</li>
+<li>输出格式化：LLM 停止生成自然语言，转而输出一段符合 JSON 格式的文本，其中包含它认为需要的参数</li>
+</ul>
+</li>
+<li>
+<p>外部执行 (Execution)：这是关键点，LLM 本身不运行代码</p>
+<ul>
+<li>Agent 应用程序解析 LLM 输出的 JSON</li>
+<li>程序代码根据解析出的函数名和参数，真实地调用外部 API 或数据库</li>
+<li>获取返回结果</li>
+</ul>
+</li>
+<li>
+<p>结果注入：程序将外部工具的返回结果拼接回对话历史中，再次发送给 LLM</p>
+<ul>
+<li>LLM 看到：<code>用户问了天气</code> -&gt; <code>我要求调用函数</code> -&gt; <code>函数返回了 15°C</code></li>
+<li>LLM 最终生成人类可读的回复：<code>上海现在的天气晴朗，气温 15°C</code></li>
+</ul>
+</li>
+</ul>
+<h3 id="一个简单示例"><a class="markdownIt-Anchor" href="#一个简单示例"></a> 一个简单示例</h3>
+<p>下面通过一个极简的例子，展示了 LLM 工具调用的核心原理。各个 Agent 框架在实现工具调用时，<strong>本质上就是通过各种工程技巧，简化工具的定义、注册与执行过程</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">from</span> typing <span class="keyword">import</span> <span class="type">Any</span></span><br><span class="line"><span class="keyword">from</span> openai <span class="keyword">import</span> OpenAI</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="comment"># 1. 定义工具函数</span></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">get_weather</span>(<span class="params">city: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;获取指定城市的天气信息</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">    Args:</span></span><br><span class="line"><span class="string">        city: 城市名称，如 &quot;beijing&quot; 或 &quot;shanghai&quot;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">    Returns:</span></span><br><span class="line"><span class="string">        天气信息字符串</span></span><br><span class="line"><span class="string">    &quot;&quot;&quot;</span></span><br><span class="line">    weather_data = &#123;</span><br><span class="line">        <span class="string">&quot;beijing&quot;</span>: <span class="string">&quot;北京：晴天，气温 18°C，空气质量良好，东风 3 级&quot;</span>,</span><br><span class="line">        <span class="string">&quot;shanghai&quot;</span>: <span class="string">&quot;上海：多云，气温 22°C，湿度 65%，南风 2 级&quot;</span>,</span><br><span class="line">    &#125;</span><br><span class="line">    city_lower = city.lower()</span><br><span class="line">    <span class="keyword">if</span> city_lower <span class="keyword">in</span> weather_data:</span><br><span class="line">        <span class="keyword">return</span> weather_data[city_lower]</span><br><span class="line">    <span class="keyword">return</span> <span class="string">f&quot;抱歉，没有 <span class="subst">&#123;city&#125;</span> 的天气数据&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="comment"># 2. 定义工具的 JSON Schema (告诉 LLM 有哪些工具可用)</span></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line">tools_schema: <span class="built_in">list</span>[<span class="type">Any</span>] = [</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;function&quot;</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;name&quot;</span>: <span class="string">&quot;get_weather&quot;</span>,</span><br><span class="line">            <span class="string">&quot;description&quot;</span>: <span class="string">&quot;获取指定城市的天气信息&quot;</span>,</span><br><span class="line">            <span class="string">&quot;parameters&quot;</span>: &#123;</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;object&quot;</span>,</span><br><span class="line">                <span class="string">&quot;properties&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;city&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;description&quot;</span>: <span class="string">&quot;城市名称，如 beijing 或 shanghai&quot;</span>,</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;,</span><br><span class="line">                <span class="string">&quot;required&quot;</span>: [<span class="string">&quot;city&quot;</span>],</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">    &#125;</span><br><span class="line">]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="comment"># 3. 工具执行器</span></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">execute_tool</span>(<span class="params">tool_name: <span class="built_in">str</span>, arguments: <span class="built_in">dict</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;执行工具函数&quot;&quot;&quot;</span></span><br><span class="line">    available_tools = &#123;</span><br><span class="line">        <span class="string">&quot;get_weather&quot;</span>: get_weather,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> tool_name <span class="keyword">not</span> <span class="keyword">in</span> available_tools:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">f&quot;错误：未知的工具 <span class="subst">&#123;tool_name&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line">    tool_func = available_tools[tool_name]</span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        result = tool_func(**arguments)</span><br><span class="line">        <span class="keyword">return</span> result</span><br><span class="line">    <span class="keyword">except</span> Exception <span class="keyword">as</span> e:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">f&quot;工具执行错误: <span class="subst">&#123;<span class="built_in">str</span>(e)&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="comment"># 4. 主流程</span></span><br><span class="line"><span class="comment"># =============================================================================</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot; LLM 工具调用基础示例&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line">    client = OpenAI(</span><br><span class="line">        api_key=os.environ.get(<span class="string">&quot;OPENAI_API_KEY&quot;</span>, <span class="string">&quot;sk-xxx&quot;</span>),</span><br><span class="line">        base_url=os.environ.get(<span class="string">&quot;OPENAI_BASE_URL&quot;</span>, <span class="string">&quot;https://api.openai.com/v1&quot;</span>),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    model = os.environ.get(<span class="string">&quot;OPENAI_MODEL&quot;</span>, <span class="string">&quot;gpt-5.1&quot;</span>)</span><br><span class="line"></span><br><span class="line">    user_question = <span class="string">&quot;北京和上海今天的天气怎么样？&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;\n[用户问题] <span class="subst">&#123;user_question&#125;</span>\n&quot;</span>)</span><br><span class="line"></span><br><span class="line">    messages: <span class="built_in">list</span>[<span class="type">Any</span>] = [</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="string">&quot;role&quot;</span>: <span class="string">&quot;system&quot;</span>,</span><br><span class="line">            <span class="string">&quot;content&quot;</span>: <span class="string">&quot;你是一个有用的助手。当用户询问天气时，使用 get_weather 工具获取信息。&quot;</span>,</span><br><span class="line">        &#125;,</span><br><span class="line">        &#123;</span><br><span class="line">            <span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">            <span class="string">&quot;content&quot;</span>: user_question,</span><br><span class="line">        &#125;,</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;-&quot;</span> * <span class="number">60</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;Step 1: 发送请求给 LLM (带工具定义)&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;-&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line">    response = client.chat.completions.create(</span><br><span class="line">        model=model,</span><br><span class="line">        messages=messages,</span><br><span class="line">        tools=tools_schema,</span><br><span class="line">        tool_choice=<span class="string">&quot;auto&quot;</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    assistant_message = response.choices[<span class="number">0</span>].message</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;\n[LLM 响应]&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  content: <span class="subst">&#123;assistant_message.content&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  tool_calls: <span class="subst">&#123;assistant_message.tool_calls&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> assistant_message.tool_calls:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;\n[LLM 决定调用工具]&quot;</span>)</span><br><span class="line">        <span class="keyword">for</span> tool_call <span class="keyword">in</span> assistant_message.tool_calls:</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&quot;  - 工具名: <span class="subst">&#123;tool_call.function.name&#125;</span>&quot;</span>)  <span class="comment"># type: ignore</span></span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&quot;    参数: <span class="subst">&#123;tool_call.function.arguments&#125;</span>&quot;</span>)  <span class="comment"># type: ignore</span></span><br><span class="line"></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;\n&quot;</span> + <span class="string">&quot;-&quot;</span> * <span class="number">60</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;Step 2: 执行工具调用&quot;</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;-&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line">        messages.append(assistant_message)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> tool_call <span class="keyword">in</span> assistant_message.tool_calls:</span><br><span class="line">            tool_name = tool_call.function.name  <span class="comment"># type: ignore</span></span><br><span class="line">            arguments = json.loads(tool_call.function.arguments)  <span class="comment"># type: ignore</span></span><br><span class="line"></span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&quot;\n[执行工具] <span class="subst">&#123;tool_name&#125;</span>(<span class="subst">&#123;arguments&#125;</span>)&quot;</span>)</span><br><span class="line">            tool_result = execute_tool(tool_name, arguments)</span><br><span class="line">            <span class="built_in">print</span>(<span class="string">f&quot;[工具返回] <span class="subst">&#123;tool_result&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">            messages.append(</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="string">&quot;role&quot;</span>: <span class="string">&quot;tool&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;tool_call_id&quot;</span>: tool_call.<span class="built_in">id</span>,</span><br><span class="line">                    <span class="string">&quot;content&quot;</span>: tool_result,</span><br><span class="line">                &#125;</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;\n&quot;</span> + <span class="string">&quot;-&quot;</span> * <span class="number">60</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;Step 3: 将工具结果发回 LLM，生成最终回答&quot;</span>)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;-&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line">        final_response = client.chat.completions.create(</span><br><span class="line">            model=model,</span><br><span class="line">            messages=messages,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        final_answer = final_response.choices[<span class="number">0</span>].message.content</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;\n[最终回答]\n<span class="subst">&#123;final_answer&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;\n[LLM 没有调用工具，直接回答]&quot;</span>)</span><br><span class="line">        <span class="built_in">print</span>(assistant_message.content)</span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;\n&quot;</span> + <span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot; 完成!&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    main()</span><br></pre></td></tr></table></figure>
+<p>如下是运行该示例的输出结果：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python tool_calling_basic.py</span></span><br><span class="line">============================================================</span><br><span class="line"> LLM 工具调用基础示例</span><br><span class="line">============================================================</span><br><span class="line"></span><br><span class="line">[用户问题] 北京和上海今天的天气怎么样？</span><br><span class="line"></span><br><span class="line">------------------------------------------------------------</span><br><span class="line">Step 1: 发送请求给 LLM (带工具定义)</span><br><span class="line">------------------------------------------------------------</span><br><span class="line"></span><br><span class="line">[LLM 响应]</span><br><span class="line">  content: None</span><br><span class="line">  tool_calls: [ChatCompletionMessageFunctionToolCall(<span class="built_in">id</span>=<span class="string">&#x27;call_Jo93z53TOVRNLY6iKazndI9y&#x27;</span>, <span class="keyword">function</span>=Function(arguments=<span class="string">&#x27;&#123;&quot;city&quot;: &quot;beijing&quot;&#125;&#x27;</span>, name=<span class="string">&#x27;get_weather&#x27;</span>), <span class="built_in">type</span>=<span class="string">&#x27;function&#x27;</span>), ChatCompletionMessageFunctionToolCall(<span class="built_in">id</span>=<span class="string">&#x27;call_RO2ceN41clKgEstb2pWBHSBs&#x27;</span>, <span class="keyword">function</span>=Function(arguments=<span class="string">&#x27;&#123;&quot;city&quot;: &quot;shanghai&quot;&#125;&#x27;</span>, name=<span class="string">&#x27;get_weather&#x27;</span>), <span class="built_in">type</span>=<span class="string">&#x27;function&#x27;</span>)]</span><br><span class="line"></span><br><span class="line">[LLM 决定调用工具]</span><br><span class="line">  - 工具名: get_weather</span><br><span class="line">    参数: &#123;<span class="string">&quot;city&quot;</span>: <span class="string">&quot;beijing&quot;</span>&#125;</span><br><span class="line">  - 工具名: get_weather</span><br><span class="line">    参数: &#123;<span class="string">&quot;city&quot;</span>: <span class="string">&quot;shanghai&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">------------------------------------------------------------</span><br><span class="line">Step 2: 执行工具调用</span><br><span class="line">------------------------------------------------------------</span><br><span class="line"></span><br><span class="line">[执行工具] get_weather(&#123;<span class="string">&#x27;city&#x27;</span>: <span class="string">&#x27;beijing&#x27;</span>&#125;)</span><br><span class="line">[工具返回] 北京：晴天，气温 18°C，空气质量良好，东风 3 级</span><br><span class="line"></span><br><span class="line">[执行工具] get_weather(&#123;<span class="string">&#x27;city&#x27;</span>: <span class="string">&#x27;shanghai&#x27;</span>&#125;)</span><br><span class="line">[工具返回] 上海：多云，气温 22°C，湿度 65%，南风 2 级</span><br><span class="line"></span><br><span class="line">------------------------------------------------------------</span><br><span class="line">Step 3: 将工具结果发回 LLM，生成最终回答</span><br><span class="line">------------------------------------------------------------</span><br><span class="line"></span><br><span class="line">[最终回答]</span><br><span class="line">北京：晴天，气温 18°C，空气质量良好，东风 3 级。</span><br><span class="line">上海：多云，气温 22°C，湿度 65%，南风 2 级。</span><br><span class="line"></span><br><span class="line">============================================================</span><br><span class="line"> 完成!</span><br><span class="line">============================================================</span><br></pre></td></tr></table></figure>
+<p>以上例子只是简单地将一个 Python 函数封装成可供 LLM 调用的工具，而随着 Agent 技术发展到现在，<code>工具调用</code> 的形态也得到了极大扩展，例如：</p>
+<ul>
+<li>通过 MCP 协议可以调用外部工具</li>
+<li>通过 <code>Skill</code> 系统，Agent 能够实现复杂业务逻辑的自我沉淀与复用</li>
+</ul>
+<p>尽管 <code>工具调用</code> 在工程实现上不断扩展， 但其本质仍然是依靠 LLM 的 <code>function calling</code> 能力来实现的。</p>
+<h2 id="toolkit-工具类"><a class="markdownIt-Anchor" href="#toolkit-工具类"></a> Toolkit 工具类</h2>
+<p>AgentScope 通过 <code>Toolkit</code> 类来统一管理 <code>工具调用</code>。如下是一个极简的例子，展示了如何将一个自定义 Python 函数添加到 <code>Toolkit</code> 中：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">from</span> agentscope.tool <span class="keyword">import</span> Toolkit</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">basic_types</span>(<span class="params"></span></span><br><span class="line"><span class="params">    name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    age: <span class="built_in">int</span>,</span></span><br><span class="line"><span class="params">    score: <span class="built_in">float</span>,</span></span><br><span class="line"><span class="params">    is_active: <span class="built_in">bool</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">toolkit = Toolkit()</span><br><span class="line">toolkit.register_tool_function(basic_types)</span><br><span class="line"></span><br><span class="line">schema = toolkit.get_json_schemas()[<span class="number">0</span>]</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(json.dumps(schema, indent=<span class="number">2</span>, ensure_ascii=<span class="literal">False</span>))</span><br></pre></td></tr></table></figure>
+<p>生成的 json schema 如下所示：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;function&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;function&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;basic_types&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;parameters&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">        <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;string&quot;</span></span><br><span class="line">        <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;age&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;integer&quot;</span></span><br><span class="line">        <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;score&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;number&quot;</span></span><br><span class="line">        <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="attr">&quot;is_active&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">          <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;boolean&quot;</span></span><br><span class="line">        <span class="punctuation">&#125;</span></span><br><span class="line">      <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;required&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">        <span class="string">&quot;name&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;age&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;score&quot;</span><span class="punctuation">,</span></span><br><span class="line">        <span class="string">&quot;is_active&quot;</span></span><br><span class="line">      <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;object&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>可以看到，通过 <code>Toolkit</code> 的封装，我们可以直接将一个 Python 函数转换成 LLM 可以调用的工具，而无需手动编写繁琐的 JSON Schema，<code>Toolkit</code> 内部会自动根据函数签名/文档信息生成 LLM 所需的 JSON Schema。</p>
+<p>通过 <code>Toolkit</code> 将普通的 Python 函数注册为 LLM 可调用的工具只是 <code>Toolkit</code> 功能的一部分，Toolkit 类是 AgentScope 中工具生态的 <code>总管家</code>，核心目标是统一化、标准化、可扩展地管理所有工具相关能力：</p>
+<ul>
+<li>统一化：将普通函数、MCP 客户端工具、Agent Skill 等不同类型的工具纳入同一管理体系</li>
+<li>标准化：为工具调用提供统一的流式响应接口、参数校验、异常处理机制</li>
+<li>可扩展：支持中间件、扩展模型（extended model）、工具组（Tool Group）等功能</li>
+</ul>
+<p>如下是 Toolkit 类的 <code>__init__</code> 方法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Toolkit</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        agent_skill_instruction: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        agent_skill_template: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 定义所有的 tools, groups, skills, middlewares</span></span><br><span class="line">        self.tools: <span class="built_in">dict</span>[<span class="built_in">str</span>, RegisteredToolFunction] = &#123;&#125;</span><br><span class="line">        self.groups: <span class="built_in">dict</span>[<span class="built_in">str</span>, ToolGroup] = &#123;&#125;</span><br><span class="line">        self.skills: <span class="built_in">dict</span>[<span class="built_in">str</span>, AgentSkill] = &#123;&#125;</span><br><span class="line">        self._middlewares: <span class="built_in">list</span> = []  <span class="comment"># Store registered middlewares</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 设置 AGENT SKILL 相关的提示词</span></span><br><span class="line">        <span class="comment"># 使得 Agent 背后的 LLM 能够理解 SKILL 的概念，并动态调用某个 SKILL</span></span><br><span class="line">        self._agent_skill_instruction = (</span><br><span class="line">            agent_skill_instruction <span class="keyword">or</span> self._DEFAULT_AGENT_SKILL_INSTRUCTION</span><br><span class="line">        )</span><br><span class="line">        <span class="comment"># 每个具体的 skill 定义所遵守的模版</span></span><br><span class="line">        self._agent_skill_template = (</span><br><span class="line">            agent_skill_template <span class="keyword">or</span> self._DEFAULT_AGENT_SKILL_TEMPLATE</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<p>接下来将详细介绍 Toolkit 的核心实现原理。</p>
+<h3 id="工具注册机制"><a class="markdownIt-Anchor" href="#工具注册机制"></a> 工具注册机制</h3>
+<p>工具注册是 Toolkit 最基础的能力，核心函数是 <code>register_tool_function()</code> 方法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">register_tool_function</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        tool_func: ToolFunction,</span></span><br><span class="line"><span class="params">        group_name: <span class="built_in">str</span> | <span class="type">Literal</span>[<span class="string">&quot;basic&quot;</span>] = <span class="string">&quot;basic&quot;</span>,</span></span><br><span class="line"><span class="params">        preset_kwargs: <span class="built_in">dict</span>[<span class="built_in">str</span>, JSONSerializableObject] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        func_name: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        func_description: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        json_schema: <span class="built_in">dict</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        include_long_description: <span class="built_in">bool</span> = <span class="literal">True</span>,</span></span><br><span class="line"><span class="params">        include_var_positional: <span class="built_in">bool</span> = <span class="literal">False</span>,</span></span><br><span class="line"><span class="params">        include_var_keyword: <span class="built_in">bool</span> = <span class="literal">False</span>,</span></span><br><span class="line"><span class="params">        postprocess_func: (<span class="params"></span></span></span><br><span class="line"><span class="params"><span class="params">            <span class="type">Callable</span>[</span></span></span><br><span class="line"><span class="params"><span class="params">                [ToolUseBlock, ToolResponse],</span></span></span><br><span class="line"><span class="params"><span class="params">                ToolResponse | <span class="literal">None</span>,</span></span></span><br><span class="line"><span class="params"><span class="params">            ]</span></span></span><br><span class="line"><span class="params"><span class="params">            | <span class="type">Callable</span>[</span></span></span><br><span class="line"><span class="params"><span class="params">                [ToolUseBlock, ToolResponse],</span></span></span><br><span class="line"><span class="params"><span class="params">                Awaitable[ToolResponse | <span class="literal">None</span>],</span></span></span><br><span class="line"><span class="params"><span class="params">            ]</span></span></span><br><span class="line"><span class="params"><span class="params">        </span>)</span></span><br><span class="line"><span class="params">        | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        namesake_strategy: <span class="type">Literal</span>[</span></span><br><span class="line"><span class="params">            <span class="string">&quot;override&quot;</span>,</span></span><br><span class="line"><span class="params">            <span class="string">&quot;skip&quot;</span>,</span></span><br><span class="line"><span class="params">            <span class="string">&quot;raise&quot;</span>,</span></span><br><span class="line"><span class="params">            <span class="string">&quot;rename&quot;</span>,</span></span><br><span class="line"><span class="params">        ] = <span class="string">&quot;raise&quot;</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br></pre></td></tr></table></figure>
+<p>这个方法的唯一必选参数是 <code>tool_func</code>，即要注册的 Python 函数，这个 Python 函数可以是 <code>同步函数</code>、<code>异步函数</code>、<code>生成器函数</code>、<code>异步生成器函数</code>、<code>协程</code> 等多种类型。而其他可选参数都是用于定义注册时的行为的，具体来说：</p>
+<ul>
+<li><code>group_name</code>：工具所属的组名，默认是 <code>basic</code>，basic 组中的工具总是会被注册到 LLM 调用的 tools 列表中，而其他组的工具只有在激活时才会被注册</li>
+<li><code>preset_kwargs</code>：预设的关键字参数，这些参数不会包含在 JSON schema 中，因此 LLM 看不到这些参数。相反这些参数会在调用函数时自动设置</li>
+<li><code>func_name</code>：手动提供的函数名称，没有提供时将自动从函数签名/文档中提取</li>
+<li><code>func_description</code>：手动提供的函数描述，没有提供时将自动从函数签名/文档中提取</li>
+<li><code>json_schema</code>：手动提供的 JSON schema，如果没有提供将自动从函数签名/文档中提取</li>
+<li><code>include_var_positional</code>：是否包含可变的位置参数，即通常的 <code>*args</code>，默认 False</li>
+<li><code>include_var_keyword</code>：是否包含可变的关键词参数，即通常的 <code>**kwargs</code>，默认 False</li>
+<li><code>postprocess_func</code>：工具调用结束后的 hook 函数</li>
+<li><code>namesake_strategy</code>：同名工具函数的处理策略，默认是 <code>raise</code> 即抛出异常，其他值包括：<code>override</code>（覆盖）、<code>skip</code>（忽略）和 <code>rename</code>（重命名，即在函数名后添加一个随机字符串作为后缀）</li>
+</ul>
+<p><code>register_tool_function</code> 会处理不同类型的函数，包括普通函数、partial（partial 函数绑定的参数等同于 <code>preset_kwargs</code>）、<code>MCPToolFunction</code>（MCP 工具函数，也是可调用对象），核心目标是获取这些函数的 JSON schema，并将注册的函数用 <code>RegisteredToolFunction</code> 对象表示，保存到 <code>self.tools</code> 这个 map 中</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">func_obj = RegisteredToolFunction(</span><br><span class="line">    name=func_name,</span><br><span class="line">    group=group_name,</span><br><span class="line">    source=<span class="string">&quot;function&quot;</span>,</span><br><span class="line">    original_func=original_func,</span><br><span class="line">    json_schema=json_schema, <span class="comment"># 原始函数</span></span><br><span class="line">    preset_kwargs=preset_kwargs <span class="keyword">or</span> &#123;&#125;,</span><br><span class="line">    original_name=original_name,</span><br><span class="line">    extended_model=<span class="literal">None</span>,</span><br><span class="line">    mcp_name=mcp_name,</span><br><span class="line">    postprocess_func=postprocess_func,  <span class="comment"># 后置 hook 处理函数</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">self.tools[func_name] = func_obj</span><br></pre></td></tr></table></figure>
+<p><code>_parse_tool_function()</code> 负责提取工具函数的 <code>JSON schema</code>，它的核心原理是根据函数参数的类型注解、<code>docstring</code> 等信息生成工具函数的 JSON schema，包含函数功能的描述、参数描述等信息。</p>
+<h3 id="toolfunction-类型说明"><a class="markdownIt-Anchor" href="#toolfunction-类型说明"></a> ToolFunction 类型说明</h3>
+<p>框架代码使用 ToolFunction 类型来表示可被注册的工具函数的类型，因为这里涉及一些 Python 基础知识，花点时间解释一下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">ToolFunction = <span class="type">Callable</span>[</span><br><span class="line">    ...,</span><br><span class="line">    <span class="type">Union</span>[</span><br><span class="line">        <span class="comment"># sync function</span></span><br><span class="line">        ToolResponse,</span><br><span class="line">        <span class="comment"># async function</span></span><br><span class="line">        Awaitable[ToolResponse],</span><br><span class="line">        <span class="comment"># sync generator function</span></span><br><span class="line">        Generator[ToolResponse, <span class="literal">None</span>, <span class="literal">None</span>],</span><br><span class="line">        <span class="comment"># async generator function</span></span><br><span class="line">        AsyncGenerator[ToolResponse, <span class="literal">None</span>],</span><br><span class="line">        <span class="comment"># async function that returns async generator</span></span><br><span class="line">        <span class="type">Coroutine</span>[<span class="type">Any</span>, <span class="type">Any</span>, AsyncGenerator[ToolResponse, <span class="literal">None</span>]],</span><br><span class="line">        <span class="comment"># async function that returns sync generator</span></span><br><span class="line">        <span class="type">Coroutine</span>[<span class="type">Any</span>, <span class="type">Any</span>, Generator[ToolResponse, <span class="literal">None</span>, <span class="literal">None</span>]],</span><br><span class="line">    ],</span><br><span class="line">]</span><br></pre></td></tr></table></figure>
+<p>ToolFunction 定义表示 <code>参数可以是任意类型，返回值可以是多种类型的可调用对象</code>。具体来说，返回值可以是以下情况：</p>
+<ul>
+<li>ToolResponse：普通的同步函数，直接返回 <code>ToolResponse</code></li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">sync_tool</span>() -&gt; ToolResponse:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;普通同步函数&quot;&quot;&quot;</span></span><br><span class="line">    <span class="comment"># 模拟快速处理</span></span><br><span class="line">    result = <span class="string">&quot;计算完成：1 + 1 = 2&quot;</span></span><br><span class="line">    <span class="keyword">return</span> ToolResponse(result)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>Awaitable[ToolResponse]：使用 <code>async def</code> 定义的异步函数，调用它会返回一个协程（Coroutine），可以用 await 来获取最终的 ToolResponse。因此这种函数类型里，返回值类型应该写成 <code>Awaitable[ToolResponse]</code>（Coroutine 是一种具体的 Awaitable 实现）。这里有一点需要注意，由于 Python 类型提示的语法糖，在实际定义时，可以简单写为该协程运行的结果类型，即这里的 <code>ToolResponse</code></li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 这在逻辑上等同于如下定义，但比较啰嗦</span></span><br><span class="line"><span class="comment"># def async_tool_raw() -&gt; Coroutine[Any, Any, ToolResponse]:</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">async_tool</span>() -&gt; ToolResponse:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;异步函数&quot;&quot;&quot;</span></span><br><span class="line">    <span class="comment"># 模拟网络请求或数据库查询 (非阻塞)</span></span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">1</span>)</span><br><span class="line">    result = <span class="string">&quot;API数据拉取成功&quot;</span></span><br><span class="line">    <span class="keyword">return</span> ToolResponse(result)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>Generator[ToolResponse, None, None] ：同步生成器函数，使用 def 定义，内部包含 yield 关键字。它能多次产出（yield）结果，形成数据流</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">sync_generator_tool</span>() -&gt; Generator[ToolResponse, <span class="literal">None</span>, <span class="literal">None</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;同步生成器函数&quot;&quot;&quot;</span></span><br><span class="line">    chunks = [<span class="string">&quot;第一段内容&quot;</span>, <span class="string">&quot;第二段内容&quot;</span>, <span class="string">&quot;第三段内容&quot;</span>]</span><br><span class="line">    <span class="keyword">for</span> chunk <span class="keyword">in</span> chunks:</span><br><span class="line">        <span class="comment"># 逐步产出数据</span></span><br><span class="line">        <span class="keyword">yield</span> ToolResponse(chunk)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 调用方式：</span></span><br><span class="line"><span class="comment"># for response in sync_generator_tool():</span></span><br><span class="line"><span class="comment">#     print(response)</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>AsyncGenerator[ToolResponse, None]</code>：使用 async def 定义，且内部包含 yield。允许你在生成数据的流式过程中使用 await。这里需要注意，虽然说使用 <code>async def</code> 定义的函数会返回一个协程，但是如果函数实现中包含 <code>yield</code> 关键字，这个函数就不再是普通的异步函数，而是一个 <code>异步生成器函数</code>，此时返回的是一个 <code>异步生成器</code> (AsyncGenerator)，因此要用 <code>AsyncGenerator[ToolResponse, None]</code> 来标注其返回类型。</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">async_generator_tool</span>() -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;异步生成器函数&quot;&quot;&quot;</span></span><br><span class="line">    chunks = [<span class="string">&quot;第一段流式数据&quot;</span>, <span class="string">&quot;第二段流式数据&quot;</span>, <span class="string">&quot;第三段流式数据&quot;</span>]</span><br><span class="line">    <span class="keyword">for</span> chunk <span class="keyword">in</span> chunks:</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">0.5</span>) <span class="comment"># 模拟异步延迟（如等待网络包）</span></span><br><span class="line">        <span class="keyword">yield</span> ToolResponse(chunk)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 调用方式：</span></span><br><span class="line"><span class="comment"># async for response in async_generator_tool():</span></span><br><span class="line"><span class="comment">#     print(response)</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>Coroutine[Any, Any, AsyncGenerator[ToolResponse, None]]</code>：返回异步生成器的异步函数，首先是一个异步函数，该异步函数返回一个异步生成器。同样由于类型提示的语法糖，函数定义时结果类型标注为 <code>AsyncGenerator[ToolResponse, None]</code> 即可</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">async_func_returning_async_gen</span>() -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;异步函数返回异步生成器&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 1. 前置的异步操作（例如：异步登录、握手获取 Token）</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;正在建立异步连接...&quot;</span>)</span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. 定义内部的异步生成器</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">inner_stream</span>() -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br><span class="line">        <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">3</span>):</span><br><span class="line">            <span class="keyword">await</span> asyncio.sleep(<span class="number">0.1</span>)</span><br><span class="line">            <span class="keyword">yield</span> ToolResponse(<span class="string">f&quot;流式数据包 <span class="subst">&#123;i&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 3. 返回这个生成器对象 (注意这里是 return，不是 yield)</span></span><br><span class="line">    <span class="keyword">return</span> inner_stream()</span><br><span class="line"></span><br><span class="line"><span class="comment"># 调用方式：</span></span><br><span class="line"><span class="comment"># gen = await async_func_returning_async_gen() # 先 await 拿到生成器</span></span><br><span class="line"><span class="comment"># async for response in gen:                   # 再 async for 读取流</span></span><br><span class="line"><span class="comment">#     print(response)</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>Coroutine[Any, Any, Generator[ToolResponse, None, None]]</code>：返回同步生成器的异步函数。同样由于类型提示的语法糖，函数定义时结果类型标注为 <code>Generator[ToolResponse, None]</code> 即可</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">async_func_returning_sync_gen</span>() -&gt; Generator[ToolResponse, <span class="literal">None</span>, <span class="literal">None</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;异步函数返回同步生成器&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 1. 异步前置操作 (例如从 S3 下载了一个文件到本地)</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;正在异步下载文件...&quot;</span>)</span><br><span class="line">    <span class="keyword">await</span> asyncio.sleep(<span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. 定义内部的同步生成器 (读取本地文件不需要 async)</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">inner_stream</span>() -&gt; Generator[ToolResponse, <span class="literal">None</span>, <span class="literal">None</span>]:</span><br><span class="line">        local_data = [<span class="string">&quot;本地数据块A&quot;</span>, <span class="string">&quot;本地数据块B&quot;</span>]</span><br><span class="line">        <span class="keyword">for</span> data <span class="keyword">in</span> local_data:</span><br><span class="line">            <span class="keyword">yield</span> ToolResponse(data)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 3. 返回同步生成器</span></span><br><span class="line">    <span class="keyword">return</span> inner_stream()</span><br><span class="line"></span><br><span class="line"><span class="comment"># 调用方式：</span></span><br><span class="line"><span class="comment"># gen = await async_func_returning_sync_gen() # 先 await 拿到同步生成器</span></span><br><span class="line"><span class="comment"># for response in gen:                        # 注意这里是普通的 for 循环</span></span><br><span class="line"><span class="comment">#     print(response)</span></span><br></pre></td></tr></table></figure>
+<p>这些函数类型覆盖了同步/异步、流式/非流式的所有场景，使得各种函数都可以被注册为 AgentScope 框架的工具。</p>
+<h3 id="工具组"><a class="markdownIt-Anchor" href="#工具组"></a> 工具组</h3>
+<p>Toolkit 还引入了工具组的概念，可以将相关的工具进行批量管理，而且支持 Agent 动态调整激活的工具组，<strong>这种特性使得 Agent 可以根据需求动态开启/关闭某些工具，减少工具描述对 Context 的占用</strong>。</p>
+<ul>
+<li>Toolkit 默认提供一个 <code>basic</code> 工具组，该工具组始终处于激状状态，而且无法删除</li>
+<li>注册工具时，如果没有指定 group，则默认在 “basic” 工具组中</li>
+</ul>
+<p><code>create_tool_group()</code> 方法负责创建工具组，它其实就是在 <code>self.groups</code> 中添加一个 <code>ToolGroup</code> 对象：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">self.groups[group_name] = ToolGroup(</span><br><span class="line">    name=group_name,</span><br><span class="line">    description=description,</span><br><span class="line">    notes=notes,</span><br><span class="line">    active=active,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>update_tool_groups()</code> 可以更新工具组的 active 状态，<code>remove_tool_groups</code> 则用于删除工具组，此时 <code>self.tools</code> 中所有属于该 group 的工具都会被移除。</p>
+<p>那到底如何实现工具组的动态管理功能呢，创建 ReActAgent 时提供了 <code>enable_meta_tool</code> 配置参数，如果设置为 True，则该 Agent 会注册一个 <code>reset_equipped_tools</code> 工具，通过该工具允许 Agent 动态调整装备的工具组。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> enable_meta_tool:</span><br><span class="line">    self.toolkit.register_tool_function(</span><br><span class="line">        self.toolkit.reset_equipped_tools,</span><br><span class="line">    )</span><br></pre></td></tr></table></figure>
+<p><code>Toolkit.reset_equipped_tools</code> 方法的实现如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 每次都全量重新设置要开启的 Group</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">reset_equipped_tools</span>(<span class="params">self, **kwargs: <span class="type">Any</span></span>) -&gt; ToolResponse:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;This function allows you to activate or deactivate tool groups</span></span><br><span class="line"><span class="string">    dynamically based on your current task requirements.</span></span><br><span class="line"><span class="string">    ......&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 先将所有 tool_group 都设置为 active False</span></span><br><span class="line">    self.update_tool_groups(<span class="built_in">list</span>(self.groups.keys()), active=<span class="literal">False</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 激活</span></span><br><span class="line">    to_activate = []</span><br><span class="line">    <span class="keyword">for</span> key, value <span class="keyword">in</span> kwargs.items():</span><br><span class="line">        <span class="keyword">if</span> value:</span><br><span class="line">            to_activate.append(key)</span><br><span class="line">    self.update_tool_groups(to_activate, active=<span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 添加各个 active group 的 note</span></span><br><span class="line">    notes = self.get_activated_notes()</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 构造工具响应</span></span><br><span class="line">    text_response = <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> to_activate:</span><br><span class="line">        text_response += (</span><br><span class="line">            <span class="string">&quot;Now tool groups &quot;</span></span><br><span class="line">            + <span class="string">&quot;, &quot;</span>.join([<span class="string">f&quot;&#x27;<span class="subst">&#123;_&#125;</span>&#x27;&quot;</span> <span class="keyword">for</span> _ <span class="keyword">in</span> to_activate])</span><br><span class="line">            + <span class="string">&quot; are activated.&quot;</span></span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 设置 note</span></span><br><span class="line">    <span class="keyword">if</span> notes:</span><br><span class="line">        text_response += (</span><br><span class="line">            <span class="string">f&quot; You MUST follow these notes to use these tools:\n&quot;</span></span><br><span class="line">            <span class="string">f&quot;&lt;notes&gt;<span class="subst">&#123;notes&#125;</span>&lt;/notes&gt;&quot;</span></span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> text_response:</span><br><span class="line">        text_response = <span class="string">&quot;All tool groups are now deactivated currently.&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 返回响应</span></span><br><span class="line">    <span class="keyword">return</span> ToolResponse(</span><br><span class="line">        content=[</span><br><span class="line">            TextBlock(</span><br><span class="line">                <span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>,</span><br><span class="line">                text=text_response,</span><br><span class="line">            ),</span><br><span class="line">        ],</span><br><span class="line">    )</span><br></pre></td></tr></table></figure>
+<p>这就是 AgentScope 支持动态调整工具组的实现原理。Toolkit 的工具组设计，让 Agent 从 <code>一次性携带所有工具</code> 的笨重模式，变成了 <code>按需装备、动态切换</code> 的轻量化模式。既降低了上下文负担，又提升了工具调用准确率。</p>
+<h3 id="extended_model"><a class="markdownIt-Anchor" href="#extended_model"></a> extended_model</h3>
+<p>不知道大家有没有发现，动态重置工具组的实现有一个问题：<code>reset_equipped_tools</code> 的参数是一个 <code>**kwargs</code>，这意味着注册 <code>reset_equipped_tools</code> 工具时，其实是无法函数参数的形式来告诉 LLM 当前有哪些 Group，LLM 也就无法构造出准确的调用参数。那 AgentScope 如何解决这个问题呢？</p>
+<p>每个 RegisteredToolFunction 都会有一个 <code>extended_model</code> 字段：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">RegisteredToolFunction</span>:</span><br><span class="line">    extended_model: <span class="type">Type</span>[BaseModel] | <span class="literal">None</span> = <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+<p>当获取工具的 <code>extended_json_schema</code> 特性时，就会将 <code>RegisteredToolFunction</code> 本身解析到的 json schema 与 <code>extended_model</code> 进行进行合并，最后得到该工具的完整 json schema。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@property</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">extended_json_schema</span>(<span class="params">self</span>) -&gt; <span class="built_in">dict</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Get the JSON schema of the tool function, if an extended model is</span></span><br><span class="line"><span class="string">    set, the merged JSON schema will be returned.&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p>而 <code>reset_equipped_tools</code> 工具就是依靠 <code>extended_model</code> 来动态提供当前的 <code>group</code> 信息的。当调用 <code>Toolkit.get_json_schemas()</code> 时，其会根据当前 active 的 Group，动态生成一个 <code>extended_model</code>，并设置到 <code>reset_equipped_tools</code> 工具中：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">get_json_schemas</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>]:</span><br><span class="line">    <span class="keyword">if</span> <span class="string">&quot;reset_equipped_tools&quot;</span> <span class="keyword">in</span> self.tools:</span><br><span class="line">        fields = &#123;&#125;</span><br><span class="line">        <span class="keyword">for</span> group_name, group <span class="keyword">in</span> self.groups.items():</span><br><span class="line">            <span class="keyword">if</span> group_name == <span class="string">&quot;basic&quot;</span>:</span><br><span class="line">                <span class="keyword">continue</span></span><br><span class="line">            fields[group_name] = (</span><br><span class="line">                <span class="built_in">bool</span>,</span><br><span class="line">                Field(</span><br><span class="line">                    default=<span class="literal">False</span>,</span><br><span class="line">                    description=group.description,</span><br><span class="line">                ),</span><br><span class="line">            )</span><br><span class="line">        <span class="comment"># 对 reset_equipped_tools 工具函数设置 extended model</span></span><br><span class="line">        <span class="comment"># extend model 为包含所有 group 的描述信息</span></span><br><span class="line">        extended_model = create_model(<span class="string">&quot;_DynamicModel&quot;</span>, **fields)</span><br><span class="line">        self.set_extended_model(</span><br><span class="line">            <span class="string">&quot;reset_equipped_tools&quot;</span>,</span><br><span class="line">            extended_model,</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<p>这样最终 <code>reset_equipped_tools</code> 工具的 <code>extended_json_schema</code> 就包含了所有 Group 的信息，LLM 在调用时就可以正确设置各个 group 的 active 状态了。</p>
+<p>extended_model 是 Toolkit 中用于动态扩展/覆盖工具函数 JSON Schema 的核心机制，本质是通过 <code>自定义 Pydantic BaseModel</code> 来补充/替换工具函数自动生成的 Schema 规则，解决 <code>自动生成的 Schema 无法满足复杂场景需求</code> 的问题。</p>
+<h3 id="工具调用"><a class="markdownIt-Anchor" href="#工具调用"></a> 工具调用</h3>
+<p>接下来我们再来看下 Toolkit 是怎么调用工具的。当 LLM 生成工具调用指令时，AgentScope 框架会生成一个 <code>ToolUseBlock</code> 对象，用来表示 <code>工具调用请求</code>，ReActAgent 在其 <code>_acting()</code> 方法中调用 <code>Toolkit.call_tool_function</code> 执行该工具调用。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@trace_toolkit</span></span><br><span class="line"><span class="meta">@_apply_middlewares</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">call_tool_function</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    tool_call: ToolUseBlock,</span></span><br><span class="line"><span class="params"></span>) -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Execute the tool function by the `ToolUseBlock` and return the</span></span><br><span class="line"><span class="string">    tool response chunk in unified streaming mode, i.e. an async</span></span><br><span class="line"><span class="string">    generator of `ToolResponse` objects.</span></span><br><span class="line"><span class="string">    ......</span></span><br></pre></td></tr></table></figure>
+<p><code>call_tool_function</code> 的核心逻辑就是根据工具名称，找到对应的 <code>RegisteredToolFunction</code> 对象，之后填充参数（LLM 提供的参数 + 预设参数），并调用真正的 Python 函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">tool_func = self.tools[tool_call[<span class="string">&quot;name&quot;</span>]]</span><br><span class="line"></span><br><span class="line"><span class="comment"># LLM 提供的参数 + 预设参数</span></span><br><span class="line">kwargs = &#123;</span><br><span class="line">    **tool_func.preset_kwargs,</span><br><span class="line">    **(tool_call.get(<span class="string">&quot;input&quot;</span>, &#123;&#125;) <span class="keyword">or</span> &#123;&#125;),</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">res = tool_func.original_func(**kwargs)</span><br></pre></td></tr></table></figure>
+<p>注意到，<code>call_tool_function</code> 函数的返回值总是一个 <code>AsyncGenerator[ToolResponse, None]</code>，即总是以异步流式的方式返回工具调用结果。而我们之前说过，真正的工具函数可以是各种形式（同步/异步、流式/非流式），所以需要对工具函数的返回值进行包装，统一转化为 <code>AsyncGenerator[ToolResponse, None]</code>，这样在调用处就可以统一异步流式来处理工具调用结果：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">tool_res = <span class="keyword">await</span> self.toolkit.call_tool_function(tool_call)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Async generator handling</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">for</span> chunk <span class="keyword">in</span> tool_res:</span><br><span class="line">    ......</span><br></pre></td></tr></table></figure>
+<p>为了实现这一转换，实现了如下几个 wrapper 函数，返回值类型都是 <code>AsyncGenerator[ToolResponse, None]</code></p>
+<ul>
+<li>_object_wrapper()</li>
+<li>_sync_generator_wrapper()</li>
+<li>_async_generator_wrapper()</li>
+</ul>
+<p>工具调用还有一点需要注意，每个 <code>RegisteredToolFunction</code> 都会有可选的 <code>postprocess_func</code>，用来对工具调用的结果进行后处理，因此 <code>call_tool_function()</code> 中还有这部分相关逻辑，用来对工具函数返回的每一个 <code>ToolResponse</code> 进行自定义操作。如下以 <code>_sync_generator_wrapper</code> 的实现为例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_sync_generator_wrapper</span>(<span class="params"></span></span><br><span class="line"><span class="params">    sync_generator: Generator[ToolResponse, <span class="literal">None</span>, <span class="literal">None</span>],</span></span><br><span class="line"><span class="params">    postprocess_func: (<span class="params"></span></span></span><br><span class="line"><span class="params"><span class="params">        <span class="type">Callable</span>[[ToolResponse], ToolResponse | <span class="literal">None</span>]</span></span></span><br><span class="line"><span class="params"><span class="params">        | <span class="type">Callable</span>[[ToolResponse], Awaitable[ToolResponse | <span class="literal">None</span>]]</span></span></span><br><span class="line"><span class="params"><span class="params">    </span>)</span></span><br><span class="line"><span class="params">    | <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Wrap a sync generator to an async generator.&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">for</span> chunk <span class="keyword">in</span> sync_generator:</span><br><span class="line">        <span class="keyword">yield</span> <span class="keyword">await</span> _postprocess_tool_response(chunk, postprocess_func)</span><br></pre></td></tr></table></figure>
+<h3 id="工具调用中间件"><a class="markdownIt-Anchor" href="#工具调用中间件"></a> 工具调用中间件</h3>
+<p>AgentScope 的工具调用还实现了中间件（middleware）机制，允许开发者对工具调用的执行过程进行拦截和修改。中间件系统遵循 <code>洋葱模型</code>，每个中间件包裹在前一个中间件之外，形成层次结构。这使得开发者可以可以在工具调用前后都插入自定义处理逻辑。</p>
+<p>当注册顺序为 <code>M1 → M2 → ... → Mn</code> 时，执行顺序为：</p>
+<ul>
+<li><strong>预处理</strong>（调用工具函数前的处理）: M1 → M2 → … → Mn → 实际函数</li>
+<li><strong>后处理</strong>（得到工具函数结果后的处理）: 实际函数 → Mn → … → M2 → M1</li>
+</ul>
+<p>例如对于如下代码：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">toolkit.register_middleware(middleware_1)  <span class="comment"># 先注册</span></span><br><span class="line">toolkit.register_middleware(middleware_2)  <span class="comment"># 后注册</span></span><br></pre></td></tr></table></figure>
+<p>执行顺序为：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                                                                 │</span><br><span class="line">│  middleware_1 预处理                                             │</span><br><span class="line">│      ↓                                                          │</span><br><span class="line">│  middleware_2 预处理                                             │</span><br><span class="line">│      ↓                                                          │</span><br><span class="line">│  call_tool_function 核心逻辑                                      │</span><br><span class="line">│      ↓                                                          │</span><br><span class="line">│  middleware_2 后处理                                             │</span><br><span class="line">│      ↓                                                          │</span><br><span class="line">│  middleware_1 后处理                                             │</span><br><span class="line">│                                                                 │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<p>工具调用的中间件机制就是靠 <code>@_apply_middlewares</code> 这个装饰器来实现的：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@trace_toolkit</span></span><br><span class="line"><span class="meta">@_apply_middlewares</span></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">call_tool_function</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    tool_call: ToolUseBlock,</span></span><br><span class="line"><span class="params"></span>) -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_apply_middlewares</span>(<span class="params">func</span>):</span><br><span class="line"><span class="meta">    @wraps(<span class="params">func</span>)</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">wrapper</span>(<span class="params">self: <span class="string">&quot;Toolkit&quot;</span>, tool_call: ToolUseBlock</span>):</span><br><span class="line">        <span class="comment"># 1. 获取中间件列表</span></span><br><span class="line">        middlewares = <span class="built_in">getattr</span>(self, <span class="string">&quot;_middlewares&quot;</span>, [])</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 2. 无中间件时直接执行原函数</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> middlewares:</span><br><span class="line">            <span class="keyword">async</span> <span class="keyword">for</span> chunk <span class="keyword">in</span> <span class="keyword">await</span> func(self, tool_call):</span><br><span class="line">                <span class="keyword">yield</span> chunk</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 3. 构建基础 handler (最内层)</span></span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">base_handler</span>(<span class="params">**kwargs</span>):</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">await</span> func(self, **kwargs)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 4. 反向构建中间件链</span></span><br><span class="line">        current_handler = base_handler</span><br><span class="line">        <span class="keyword">for</span> middleware <span class="keyword">in</span> <span class="built_in">reversed</span>(middlewares):</span><br><span class="line">            <span class="keyword">def</span> <span class="title function_">make_handler</span>(<span class="params">mw, handler</span>):</span><br><span class="line">                <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">wrapped</span>(<span class="params">**kwargs</span>):</span><br><span class="line">                    <span class="keyword">return</span> mw(kwargs, handler)  <span class="comment"># 中间件签名: (kwargs, next_handler)</span></span><br><span class="line">                <span class="keyword">return</span> wrapped</span><br><span class="line">            current_handler = make_handler(middleware, current_handler)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 5. 执行中间件链</span></span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">for</span> chunk <span class="keyword">in</span> <span class="keyword">await</span> current_handler(tool_call=tool_call):</span><br><span class="line">            <span class="keyword">yield</span> chunk</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> wrapper</span><br></pre></td></tr></table></figure>
+<p>而 <code>Toolkit</code> 提供了 <code>register_middleware</code> 方法来注册中间件：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Toolkit</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        self._middlewares: <span class="built_in">list</span> = []  <span class="comment"># 存储中间件</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">register_middleware</span>(<span class="params">self, middleware: <span class="type">Callable</span></span>):</span><br><span class="line">        <span class="string">&quot;&quot;&quot;注册洋葱式中间件&quot;&quot;&quot;</span></span><br><span class="line">        self._middlewares.append(middleware)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>中间件应该有如下签名：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">middleware</span>(<span class="params"></span></span><br><span class="line"><span class="params">    kwargs: <span class="built_in">dict</span>,</span></span><br><span class="line"><span class="params">    next_handler: <span class="type">Callable</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; AsyncGenerator[ToolResponse, <span class="literal">None</span>]:</span><br><span class="line">    <span class="comment"># 从 kwargs 访问参数</span></span><br><span class="line">    tool_call = kwargs[<span class="string">&quot;tool_call&quot;</span>]</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 预处理</span></span><br><span class="line">    <span class="comment"># ...</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 调用下一个中间件或工具函数</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">for</span> response <span class="keyword">in</span> <span class="keyword">await</span> next_handler(**kwargs):</span><br><span class="line">        <span class="comment"># 后处理</span></span><br><span class="line">        <span class="keyword">yield</span> response</span><br></pre></td></tr></table></figure>
+<ul>
+<li>kwargs：上下文参数。当前仅包含 tool_call (ToolUseBlock)</li>
+<li>next_handler：下一个中间件或工具函数的引用</li>
+<li>返回值：<code>AsyncGenerator[ToolResponse, None]</code>，和工具函数返回值类型一致</li>
+</ul>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们重点分析了 AgentScope 框架实现 Agent 工具调用的核心类 <code>Toolkit</code>，包括其工具注册、动态工具组、工具调用、中间件等关键功能。下一篇文章我们将继续分析 AgentScope 如何实现 MCP、Agent Skill 等功能，这些功能也可以认为是 Agent 工具能力的一部分。</p>
+<h2 id="reference"><a class="markdownIt-Anchor" href="#reference"></a> Reference</h2>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://doc.agentscope.io/zh_CN/tutorial/task_tool.html">AgentScope 工具</a></li>
+<li><a target="_blank" rel="noopener" href="https://doc.agentscope.io/zh_CN/tutorial/task_middleware.html">AgentScope 中间件</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/16/python-full-stack-fastapi-template/" rel="next" title="full-stack-fastapi-template 源码分析">
+      full-stack-fastapi-template 源码分析 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E7%9A%84%E5%9F%BA%E7%A1%80%E7%9F%A5%E8%AF%86"><span class="nav-number">1.</span> <span class="nav-text"> 工具调用的基础知识</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E7%AE%80%E5%8D%95%E7%A4%BA%E4%BE%8B"><span class="nav-number">1.1.</span> <span class="nav-text"> 一个简单示例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#toolkit-%E5%B7%A5%E5%85%B7%E7%B1%BB"><span class="nav-number">2.</span> <span class="nav-text"> Toolkit 工具类</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E6%B3%A8%E5%86%8C%E6%9C%BA%E5%88%B6"><span class="nav-number">2.1.</span> <span class="nav-text"> 工具注册机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#toolfunction-%E7%B1%BB%E5%9E%8B%E8%AF%B4%E6%98%8E"><span class="nav-number">2.2.</span> <span class="nav-text"> ToolFunction 类型说明</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E7%BB%84"><span class="nav-number">2.3.</span> <span class="nav-text"> 工具组</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#extended_model"><span class="nav-number">2.4.</span> <span class="nav-text"> extended_model</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8"><span class="nav-number">2.5.</span> <span class="nav-text"> 工具调用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E8%B0%83%E7%94%A8%E4%B8%AD%E9%97%B4%E4%BB%B6"><span class="nav-number">2.6.</span> <span class="nav-text"> 工具调用中间件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">3.</span> <span class="nav-text"> 小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">4.</span> <span class="nav-text"> Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">237</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
