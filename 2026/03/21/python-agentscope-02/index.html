@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇文章对 AgentScope 工具调用功能的核心类 Toolkit 类做了较为深入的分析，这篇文章我们继续分析 AgentScope 工具能力的另外几个特性，包括 MCP 工具、Agent Skills。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="agentscope 源码分析（2）：MCP &amp; Agent Skills">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/03/21/python-agentscope-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇文章对 AgentScope 工具调用功能的核心类 Toolkit 类做了较为深入的分析，这篇文章我们继续分析 AgentScope 工具能力的另外几个特性，包括 MCP 工具、Agent Skills。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-21T14:16:45.000Z">
+<meta property="article:modified_time" content="2026-03-21T14:22:02.094Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/21/python-agentscope-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>agentscope 源码分析（2）：MCP & Agent Skills | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/21/python-agentscope-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          agentscope 源码分析（2）：MCP & Agent Skills
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-03-21 22:16:45" itemprop="dateCreated datePublished" datetime="2026-03-21T22:16:45+08:00">2026-03-21</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://fuchencong.com/2026/03/19/python-agentscope-01/">上一篇</a>文章对 AgentScope 工具调用功能的核心类 <code>Toolkit</code> 类做了较为深入的分析，这篇文章我们继续分析 AgentScope 工具能力的另外几个特性，包括 MCP 工具、Agent Skills。</p>
+<span id="more"></span>
+<h2 id="mcp-简介"><a class="markdownIt-Anchor" href="#mcp-简介"></a> MCP 简介</h2>
+<p>MCP（Model Context Protocol，模型上下文协议）是一个旨在标准化 AI 模型与外部数据源和工具之间交互的开放协议。在上篇文章中，我们都是将自己代码中的 Python 函数注册为可被 LLM 调用的工具，<strong>而 MCP 协议则提供了一种通用、标准的方式，让AI模型能够连接和调用各种工具与数据，无论这些工具是如何实现的、部署在哪里。</strong></p>
+<p>在 MCP 出现之前，如果你想让 AI 访问你的 Google Drive、GitHub 或者本地数据库，每个开发者都要为不同的 AI 模型写一套不同的 <code>连接器</code>。而 MCP 则像是 AI 界的 USB 接口标准。只要数据源支持 MCP，任何支持 MCP 的 AI 客户端（如 Claude Desktop, Cursor）都能直接插上使用。</p>
+<p>MCP 采用了典型的 <code>客户端-服务器</code>（Client-Server）架构：</p>
+<ul>
+<li>
+<p>MCP Host (主机)：这是用户直接交互的 AI 应用程序，例如 Claude Desktop、Cursor 或者 自定义的 AI Agent。这个 AI 应用会与 LLM 通信，并发起可能的工具调用请求</p>
+</li>
+<li>
+<p>MCP Client (客户端)：Client 是 Host 内部的轻量级组件，负责与一个特定的 MCP Server 建立和维护一对一的连接，充当 Host 与 Server 之间的 <code>翻译官</code>，将 Host 的请求转发给 Server，并将 Server 的响应返回给Host</p>
+</li>
+<li>
+<p>MCP Server (服务端)：Server是MCP架构中的核心，它通过标准化接口，向客户端暴露三种主要能力</p>
+<ul>
+<li>资源 (Resources)：任何可供模型读取的数据，例如文件内容、数据库记录或API响应。每个资源由唯一的 URI 标识</li>
+<li>工具 (Tools)：模型可以执行的函数，工具通常可以改变状态或与外部系统交互</li>
+<li>提示 (Prompts)：预定义的提示词模板，可以接受动态参数，帮助用户更高效地完成特定任务</li>
+</ul>
+</li>
+</ul>
+<p>MCP 协议定义了标准化的传输方式，以确保不同组件间的可靠通信：</p>
+<ul>
+<li>STDIO：主要用于本地通信，此时 <code>MCP Client</code> 会将 <code>MCP Server</code> 作为子进程启动，然后通过标准输入（stdin）和标准输出（stdout）进行 <code>JSON-RPC</code> 消息的交换</li>
+<li>Streamable HTTP：用于远程通信（早期版本使用 SSE，现已演进），这使得 MCP Server 可以作为独立的网络服务运行，供远程客户端连接。客户端通过 HTTP POST 发送请求，并通过 <code>Server-Sent Events (SSE)</code> 接收服务端推送的消息</li>
+</ul>
+<p>所有 MCP 消息都必须遵循 JSON-RPC 2.0 规范，定义了请求、响应和通知三种基本消息类型，确保了交互的结构化与一致性。</p>
+<p>MCP 的一个核心优势是：开发者无需为每个模型单独编写工具调用代码，只需将工具实现为一次 <code>MCP Server</code>，任何支持 MCP 的 Agent 都能直接使用。这样工具的开发与 LLM/Agent 之间的集成就被解耦了。</p>
+<p>有一点需要注意，MCP 并不是要取代 LLM 的 <code>Function Call</code>（<code>Tool Call</code>，工具调用），<strong><code>Function Call</code> 定义了模型如何输出 JSON 来表达 <code>我想调用这个函数</code>，而 MCP 协议则定义了如何发现发现、连接、运行各种工具</strong>，因此 Agent 仍然还是要依赖 LLM 的 <code>Function Call</code> 能力来触发工具的调用，而 MCP 协议则标准化了工具的发现、调用过程。<strong>实际运行中，两者之间是协同工作的</strong>:</p>
+<ul>
+<li>连接：你的 AI Agent 应用（Host）连接到一个 MCP Server（比如一个 GitHub 统计工具）。</li>
+<li>发现：MCP Server 告诉客户端： <code>我有 get_repo_stars 这个工具</code></li>
+<li>注入：客户端把这个工具的定义，通过 <code>Function Call</code> 的格式告诉 LLM</li>
+<li>决策（Function Call 发生）：LLM 决定调用它，输出：<code>&#123;&quot;name&quot;: &quot;get_repo_stars&quot;, &quot;args&quot;: &#123;...&#125;&#125;</code></li>
+<li>执行（MCP 工具调用发生）：客户端收到这个 JSON，通过 MCP 协议转发给对应的 Server 去执行</li>
+<li>返回：Server 把结果传回 MCP 客户端，AI Agent 应用再通过 <code>Tool Result</code> 的形式喂给 LLM</li>
+</ul>
+<p>所以要注意 LLM 的 <code>Function Call</code> 与 MCP 协议之间的联系与区别：</p>
+<ul>
+<li>Function Call 解决了 <code>模型想干什么</code> 的问题</li>
+<li>MCP 解决了 <code>工具在哪、怎么连、怎么传数据</code> 的问题</li>
+</ul>
+<h2 id="agentscope-的-mcp-模块"><a class="markdownIt-Anchor" href="#agentscope-的-mcp-模块"></a> AgentScope 的 MCP 模块</h2>
+<p><code>src/agentscope/mcp</code> 目录是 AgentScope 实现 MCP 工具调用功能的核心代码，每个文件的主要作用：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>类/功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_client_base.py</code></td>
+<td><code>MCPClientBase</code> - 客户端抽象基类</td>
+</tr>
+<tr>
+<td><code>_stateful_client_base.py</code></td>
+<td><code>StatefulClientBase</code> - 有状态客户端基类</td>
+</tr>
+<tr>
+<td><code>_http_stateful_client.py</code></td>
+<td><code>HttpStatefulClient</code> - HTTP 有状态客户端</td>
+</tr>
+<tr>
+<td><code>_http_stateless_client.py</code></td>
+<td><code>HttpStatelessClient</code> - HTTP 无状态客户端</td>
+</tr>
+<tr>
+<td><code>_stdio_stateful_client.py</code></td>
+<td><code>StdIOStatefulClient</code> - StdIO 有状态客户端</td>
+</tr>
+<tr>
+<td><code>_mcp_function.py</code></td>
+<td><code>MCPToolFunction</code> - 工具函数封装</td>
+</tr>
+</tbody>
+</table>
+<p>当然 <code>AgentScope</code> 的 MCP 模块并没有从头开始实现 MCP 协议，而是对现有的 <a target="_blank" rel="noopener" href="https://github.com/modelcontextprotocol/python-sdk">MCP Python SDK</a> 进行封装和适配。总体来说，提供了以下几个接口：</p>
+<table>
+<thead>
+<tr>
+<th>功能</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>连接管理</strong></td>
+<td>建立和维护与 MCP 服务器的连接</td>
+</tr>
+<tr>
+<td><strong>工具发现</strong></td>
+<td>列出服务器提供的可用工具</td>
+</tr>
+<tr>
+<td><strong>工具调用</strong></td>
+<td>将 MCP 工具封装为可直接调用的函数</td>
+</tr>
+<tr>
+<td><strong>结果转换</strong></td>
+<td>将 MCP 格式结果转为 AgentScope 格式</td>
+</tr>
+<tr>
+<td><strong>生命周期管理</strong></td>
+<td>管理有状态/无状态客户端的会话</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mcpclientbase-客户端基类"><a class="markdownIt-Anchor" href="#mcpclientbase-客户端基类"></a> MCPClientBase (客户端基类)</h3>
+<p>MCPClientBase 定义了 MCP Client 的抽象基类，其中：</p>
+<ul>
+<li><code>get_callable_function</code> 是一个抽象方法，具体的 Client 实现类需要实现这个方法，用于根据工具名称获取一个可调用对象</li>
+<li><code>_convert_mcp_content_to_as_blocks</code> 方法用于将 MCP 返回的结果类型转换为 AgentScope 自己定义的内容格式，例如 <code>TextBlock</code>、<code>ImageBlock</code> 等</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MCPClientBase</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, name: <span class="built_in">str</span></span>):</span><br><span class="line">        self.name = name  <span class="comment"># MCP 服务器唯一标识符</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_callable_function</span>(<span class="params">self, func_name: <span class="built_in">str</span></span>) -&gt; <span class="type">Callable</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;获取可调用的工具函数&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_convert_mcp_content_to_as_blocks</span>(<span class="params">mcp_content_blocks</span>) -&gt; <span class="built_in">list</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;将 MCP 内容块转换为 AgentScope Block&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<h3 id="statefulclientbase有状态客户端基类"><a class="markdownIt-Anchor" href="#statefulclientbase有状态客户端基类"></a> StatefulClientBase（有状态客户端基类）</h3>
+<p><code>AgentScope</code> 将 MCP client 分为 <code>有状态</code> 与 <code>无状态</code> 两种，他们的区别在于客户端是否会维持与 MCP 服务器的会话（session）：</p>
+<ul>
+<li>有状态客户端：其生命周期内始终维持与 MCP 服务器的持久会话，需要开发者显式调用 <code>connect()</code> 和 <code>close()</code> 方法来管理会话的生命周期</li>
+<li>无状态客户端只会在调用工具发生时建立会话，并在工具调用结束后立即销毁会话，是一种轻量化的使用方式</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>有状态客户端</th>
+<th>无状态客户端</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>会话管理</td>
+<td>手动 <code>connect()</code>/<code>close()</code></td>
+<td>自动管理</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>多次调用共享会话</td>
+<td>每次调用新建会话</td>
+</tr>
+<tr>
+<td>适用场景</td>
+<td>需要状态保持（如浏览器）</td>
+<td>简单工具调用</td>
+</tr>
+<tr>
+<td>资源开销</td>
+<td>低（连接复用）</td>
+<td>高（每次新建连接）</td>
+</tr>
+</tbody>
+</table>
+<p>StatefulClientBase 是有状态客户端的基类，管理持久会话，适用于需要维护状态的 MCP 服务器（如浏览器自动化）。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">is_connected: <span class="built_in">bool</span>      <span class="comment"># 连接状态</span></span><br><span class="line">client: <span class="type">Any</span>             <span class="comment"># MCP 客户端实例</span></span><br><span class="line">session: ClientSession  <span class="comment"># MCP 会话</span></span><br><span class="line">stack: AsyncExitStack   <span class="comment"># 资源管理栈</span></span><br><span class="line">self._cached_tools = <span class="literal">None</span> <span class="comment"># 缓存的已工具函数</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">connect</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;建立连接，初始化会话&quot;&quot;&quot;</span></span><br><span class="line">    context = <span class="keyword">await</span> self.stack.enter_async_context(self.client)</span><br><span class="line">    read_stream, write_stream = context, context</span><br><span class="line">    self.session = ClientSession(read_stream, write_stream)</span><br><span class="line">    <span class="keyword">await</span> self.stack.enter_async_context(self.session)</span><br><span class="line">    <span class="keyword">await</span> self.session.initialize()</span><br><span class="line">    self.is_connected = <span class="literal">True</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">close</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;关闭连接，释放资源&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">await</span> self.stack.aclose()</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">list_tools</span>(<span class="params">self</span>) -&gt; <span class="type">List</span>[mcp.types.Tool]:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;列出服务器提供的所有工具&quot;&quot;&quot;</span></span><br><span class="line">    res = <span class="keyword">await</span> self.session.list_tools()</span><br><span class="line">    self._cached_tools = res.tools</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_callable_function</span>(<span class="params">self, func_name: <span class="built_in">str</span></span>) -&gt; MCPToolFunction:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;获取指定名称的工具函数&quot;&quot;&quot;</span></span><br><span class="line">    <span class="comment"># 返回 MCPToolFunction 所表示的可调用对象，转换了 `mcp.types.Tool`</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>StatefulClientBase 使用 Python contextlib 的 AsyncExitStack 来管理异步资源的生命周期，包括与 MCP 服务器的 HTTP 连接和逻辑回话两种资源。</p>
+<h3 id="httpstatefulclienthttp-有状态客户端"><a class="markdownIt-Anchor" href="#httpstatefulclienthttp-有状态客户端"></a> HttpStatefulClient（HTTP 有状态客户端）</h3>
+<p><code>HttpStatefulClient</code> 继承自 <code>StatefulClientBase</code>，实现了基于 HTTP 协议的有状态 MCP 客户端。transport 可以是 <code>streamable_http</code> 或者 <code>sse</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">HttpStatefulClient</span>(<span class="title class_ inherited__">StatefulClientBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        transport: <span class="type">Literal</span>[<span class="string">&quot;streamable_http&quot;</span>, <span class="string">&quot;sse&quot;</span>],  <span class="comment"># 传输类型</span></span></span><br><span class="line"><span class="params">        url: <span class="built_in">str</span>,                                       <span class="comment"># 服务器 URL</span></span></span><br><span class="line"><span class="params">        headers: <span class="built_in">dict</span> | <span class="literal">None</span> = <span class="literal">None</span>,                    <span class="comment"># HTTP 头</span></span></span><br><span class="line"><span class="params">        timeout: <span class="built_in">float</span> = <span class="number">30</span>,                            <span class="comment"># 请求超时</span></span></span><br><span class="line"><span class="params">        sse_read_timeout: <span class="built_in">float</span> = <span class="number">300</span>,                  <span class="comment"># SSE 读取超时</span></span></span><br><span class="line"><span class="params">    </span>):</span><br><span class="line">        <span class="keyword">if</span> transport == <span class="string">&quot;streamable_http&quot;</span>:</span><br><span class="line">            self.client = streamablehttp_client(url=url, ...)</span><br><span class="line">        <span class="keyword">else</span>:  <span class="comment"># sse</span></span><br><span class="line">            self.client = sse_client(url=url, ...)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p><code>streamable HTTP</code> 是原生 HTTP 流传输机制，可以将任意数据（二进制、纯文本、JSON块）以 chunk 方式传输。服务器在 Header 中声明 <code>Transfer-Encoding: chunked</code> 开启流传输模式。</p>
+</li>
+<li>
+<p>SSE（Server-Sent Events）则是 HTTP 之上的构造出的特定传输格式，专门为 <code>服务器推向客户端</code> 设计的。通过 <code>event</code>、<code>data</code> 等固定格式的文本消息来传递数据</p>
+</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Content-Type: text/event-stream</span><br><span class="line"></span><br><span class="line">event: user_message</span><br><span class="line">data: &#123;<span class="string">&quot;text&quot;</span>: <span class="string">&quot;Hello&quot;</span>&#125;</span><br><span class="line"></span><br><span class="line">event: system_update</span><br><span class="line">data: &#123;<span class="string">&quot;status&quot;</span>: <span class="string">&quot;processing&quot;</span>&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="httpstatelessclient-http-无状态客户端"><a class="markdownIt-Anchor" href="#httpstatelessclient-http-无状态客户端"></a> HttpStatelessClient (HTTP 无状态客户端)</h3>
+<p>每次工具调用创建新会话，适用于无状态 MCP 服务器：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">HttpStatelessClient</span>(<span class="title class_ inherited__">MCPClientBase</span>):</span><br><span class="line">    stateful: <span class="built_in">bool</span> = <span class="literal">False</span>  <span class="comment"># 标记为无状态</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">get_client</span>(<span class="params">self</span>) -&gt; _AsyncGeneratorContextManager:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;获取一次性客户端实例&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">if</span> self.transport == <span class="string">&quot;sse&quot;</span>:</span><br><span class="line">            <span class="keyword">return</span> sse_client(**self.client_config)</span><br><span class="line">        <span class="keyword">return</span> streamablehttp_client(**self.client_config)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">list_tools</span>(<span class="params">self</span>) -&gt; <span class="type">List</span>[mcp.types.Tool]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;临时连接获取工具列表&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">async</span> <span class="keyword">with</span> self.get_client() <span class="keyword">as</span> cli:</span><br><span class="line">            <span class="keyword">async</span> <span class="keyword">with</span> ClientSession(...) <span class="keyword">as</span> session:</span><br><span class="line">                <span class="keyword">await</span> session.initialize()</span><br><span class="line">                <span class="keyword">return</span> <span class="keyword">await</span> session.list_tools()</span><br></pre></td></tr></table></figure>
+<h3 id="stdiostatefulclient-stdio-有状态客户端"><a class="markdownIt-Anchor" href="#stdiostatefulclient-stdio-有状态客户端"></a> StdIOStatefulClient (StdIO 有状态客户端)</h3>
+<p>基于 STDIO Transport 的 MCP 客户端，它总是有状态的，当调用 <code>connect()</code> 时，它将在本地启动 MCP 服务器然后通过标准输入/输出与 MCP 服务器通信。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">StdIOStatefulClient</span>(<span class="title class_ inherited__">StatefulClientBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">......</span>):</span><br><span class="line">        self.client = stdio_client(</span><br><span class="line">            StdioServerParameters(</span><br><span class="line">                command=command,</span><br><span class="line">                args=args <span class="keyword">or</span> [],</span><br><span class="line">                env=env,</span><br><span class="line">                cwd=cwd,</span><br><span class="line">                encoding=encoding,</span><br><span class="line">                encoding_error_handler=encoding_error_handler,</span><br><span class="line">            ),</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<h3 id="mcptoolfunction-mcp-工具函数封装"><a class="markdownIt-Anchor" href="#mcptoolfunction-mcp-工具函数封装"></a> MCPToolFunction (MCP 工具函数封装)</h3>
+<p>上篇文章中说过，所有的工具函数最终都会通过 <code>register_tool_function</code> 注册到 Toolkit 中，这些工具函数可以是普通的 Python 函数，也可以是 MCP 工具函数。AgentScope 框架将 <code>MCP 工具函数</code> 用 <code>MCPToolFunction</code> 来表示，其核心目的是将 MCP 工具函数直接封装为一个 <code>Callable</code> 对象，之后 Toolkit 就可以不加区别地处理普通函数和 MCP 函数。</p>
+<p><code>MCPToolFunction</code> 实现了 <code>__call__</code> 方法，因此它的对象就是一个可调用对象，而在 <code>__call__</code> 方法中，它会发起 MCP 调用：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MCPToolFunction</span>:</span><br><span class="line">    name: <span class="built_in">str</span>           <span class="comment"># 工具名称</span></span><br><span class="line">    description: <span class="built_in">str</span>    <span class="comment"># 工具描述</span></span><br><span class="line">    json_schema: <span class="built_in">dict</span>   <span class="comment"># 参数 JSON Schema</span></span><br><span class="line"></span><br><span class="line">    ......</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, **kwargs</span>) -&gt; ToolResponse | CallToolResult:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;执行工具调用&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">if</span> self.client_gen:  <span class="comment"># 无状态模式，总是新建连接和会话</span></span><br><span class="line">            <span class="keyword">async</span> <span class="keyword">with</span> self.client_gen() <span class="keyword">as</span> cli:</span><br><span class="line">                <span class="keyword">async</span> <span class="keyword">with</span> ClientSession(...) <span class="keyword">as</span> session:</span><br><span class="line">                    res = <span class="keyword">await</span> session.call_tool(self.name, arguments=kwargs)</span><br><span class="line">        <span class="keyword">else</span>:  <span class="comment"># 有状态模式</span></span><br><span class="line">            res = <span class="keyword">await</span> self.session.call_tool(self.name, arguments=kwargs)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 是否将 MCP 工具调用结果封装为 ToolResponse 对象，取决于 wrap_tool_result 设置</span></span><br><span class="line">        <span class="keyword">if</span> self.wrap_tool_result:</span><br><span class="line">            <span class="keyword">return</span> ToolResponse(</span><br><span class="line">                content=convert_to_as_blocks(res.content),</span><br><span class="line">                metadata=res.meta</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">return</span> res</span><br></pre></td></tr></table></figure>
+<p>而在 <code>register_tool_function()</code> 实现中，对于 <code>MCPToolFunction</code> 类型的可调用对象，直接获取其 json schema 即可：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">register_tool_function</span>():</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">isinstance</span>(tool_func, MCPToolFunction):</span><br><span class="line">        <span class="comment"># 设置工具函数本身的名称</span></span><br><span class="line">        input_func_name = tool_func.name</span><br><span class="line">        <span class="comment"># 将 `__call__` 方法作为最终调用的函数对象</span></span><br><span class="line">        original_func = tool_func.__call__</span><br><span class="line">        <span class="comment"># 直接获取 json schema</span></span><br><span class="line">        json_schema = json_schema <span class="keyword">or</span> tool_func.json_schema</span><br><span class="line">        mcp_name = tool_func.mcp_name</span><br></pre></td></tr></table></figure>
+<h3 id="通过-toolkit-管理-mcp-工具"><a class="markdownIt-Anchor" href="#通过-toolkit-管理-mcp-工具"></a> 通过 Toolkit 管理 MCP 工具</h3>
+<p>之前说过，AgentScope 通过 Tookit 管理所有工具，也包括 MCP 工具，为了将 MCP 工具注册到 Toolkit 中，可以调用其提供的 <code>register_mcp_client</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">register_mcp_client</span>():</span><br><span class="line">    <span class="keyword">for</span> mcp_tool <span class="keyword">in</span> <span class="keyword">await</span> mcp_client.list_tools():</span><br><span class="line">        <span class="comment"># 根据 toolname 获取 MCPToolFunction 对象</span></span><br><span class="line">        func_obj = <span class="keyword">await</span> mcp_client.get_callable_function(</span><br><span class="line">            func_name=mcp_tool.name,</span><br><span class="line">            wrap_tool_result=<span class="literal">True</span>,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        ......</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 将该 MCPToolFunction 注册到 self._tools</span></span><br><span class="line">        self.register_tool_function(</span><br><span class="line">            tool_func=func_obj,</span><br><span class="line">            group_name=group_name,</span><br><span class="line">            preset_kwargs=preset_kwargs,</span><br><span class="line">            postprocess_func=postprocess_func,</span><br><span class="line">            namesake_strategy=namesake_strategy,</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<p>而 <code>remove_mcp_clients</code> 方法则用于移除指定 MCP client 所提供的工具。</p>
+<h3 id="其他说明"><a class="markdownIt-Anchor" href="#其他说明"></a> 其他说明</h3>
+<p>MCP client 提供了 <code>get_callable_function</code> 方法，可以根据工具名称直接获取  <code>MCPToolFunction</code> 对象，这就使得我们可以在 Agent 代码中直接手动调用某个工具，不一定总是依靠 LLM 来触发工具调用：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">func_obj = <span class="keyword">await</span> stateless_client.get_callable_function()</span><br><span class="line">res = <span class="keyword">await</span> func_obj(arg1=value1, arg2=value2)</span><br></pre></td></tr></table></figure>
+<p>另外也可以通过这种方法来单独将某个 <code>MCPToolFunction</code> 对象注册到 Toolkit 中。</p>
+<p>以上我们就整体介绍了 AgentScope 的 MCP 模块实现，以及 Toolkit 是如何管理 MCP 工具的。接下来我们再来学习 Toolkit 是如何实现 Skill 的。</p>
+<h2 id="agent-skill"><a class="markdownIt-Anchor" href="#agent-skill"></a> Agent Skill</h2>
+<p>Skill（技能） 这个是由 Anthropic 公司率先提出并系统化定义的，<strong>目的是为 LLM 提供一种模块化的能力扩展机制</strong>。可以把 Skill 理解为给 AI 准备的 <code>专家级工作交接手册</code> 或 <code>能力扩展包</code>。它不只是简单的提示词，而是将特定领域的专业知识、标准操作流程（SOP）和可执行脚本封装成一个独立的能力单元。当 LLM 需要执行相关任务时，会自动判断并加载合适的 Skill。</p>
+<ul>
+<li>Skill（技能）：是一套流程和规范，像一个 <code>方法论库</code>，教会 AI 如何规划步骤、处理特定任务</li>
+<li>Tool（工具）：则提供原子化的能力/功能接口，可以执行某个具体的动作</li>
+</ul>
+<p>通过 <code>Skill</code>，可以将高频复用的 <code>复杂工作流</code> 固化为一个 <code>一键调用</code> 的能力单元。一个 Skill 本身就是一个文件夹，其核心是 <code>SKILL.md</code> 文件。其中，<code>SKILL.md</code> 顶部的 YAML 元数据（YAML frontmatter）至关重要，它定义了 skill 的名称、描述等基本信息，LLM 最开始只会加载每个 Skill 的元数据内容，并依靠这些元数据内容，来判断是否时候需要使用该 Skill。当 LLM 确定为了完成某个任务，需要用到该 Skill 时，才会完整加载该 Skill 的指令。这样就实现了：</p>
+<ul>
+<li>按需加载（Load on Demand）：不会让 skill 占用过多上下文窗口</li>
+<li>意图驱动检索（Intent-Driven Retrieval）：元数据中的 description 字段承担了 <code>检索索引</code> 的角色，LLM 通过语义匹配快速定位正确的 Skill</li>
+<li>资源分级（Tiered Resources） —— <a target="_blank" rel="noopener" href="http://SKILL.md">SKILL.md</a> 内部还可以进一步引用外部文件，实现更深层的按需加载</li>
+</ul>
+<p>接下来我们再来分析 AgentScope 如何实现对 Skill 的支持。</p>
+<h3 id="toolkit-如何管理-skill"><a class="markdownIt-Anchor" href="#toolkit-如何管理-skill"></a> Toolkit 如何管理 Skill</h3>
+<p>在 <code>Toolkit</code> 中，通过 <code>skill</code> 属性来管理所有的技能，它是一个字典类型，key 是 skill 的名称，value 是一个 <code>AgentSkill</code> 对象。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Toolkit</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="comment"># 存储 AgentSkill 的字典，key 是 name</span></span><br><span class="line">        self.skills: <span class="built_in">dict</span>[<span class="built_in">str</span>, AgentSkill] = &#123;&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 定义 Agent skill 类</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">AgentSkill</span>(<span class="title class_ inherited__">TypedDict</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The agent skill typed dict class&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    name: <span class="built_in">str</span></span><br><span class="line">    <span class="string">&quot;&quot;&quot;The name of the skill.&quot;&quot;&quot;</span></span><br><span class="line">    description: <span class="built_in">str</span></span><br><span class="line">    <span class="string">&quot;&quot;&quot;The description of the skill.&quot;&quot;&quot;</span></span><br><span class="line">    <span class="built_in">dir</span>: <span class="built_in">str</span></span><br><span class="line">    <span class="string">&quot;&quot;&quot;The directory of the agent skill.&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p><code>Toolkit</code> 类提供 <code>register_agent_skill()</code> 方法来注册技能，它只有一个参数，即指定该 skill 所在目录的路径。<code>register_agent_skill()</code> 的核心逻辑就是读取该目录下的 <code>SKILL.md</code> 文件，并从中提取 YAML 前置部分的元数据信息，得到该 skill 的名称和描述，然后将其封装为一个 <code>AgentSkill</code> 对象，并存储到 <code>self.skills</code> 中。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">register_agent_skill</span>(<span class="params">self, skill_dir: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">import</span> frontmatter</span><br><span class="line"></span><br><span class="line">    path_skill_md = os.path.join(skill_dir, <span class="string">&quot;SKILL.md&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 读取 YAML 文件 的 frontmatter 部份</span></span><br><span class="line">    <span class="keyword">with</span> <span class="built_in">open</span>(path_skill_md, <span class="string">&quot;r&quot;</span>, encoding=<span class="string">&quot;utf-8&quot;</span>) <span class="keyword">as</span> f:</span><br><span class="line">        post = frontmatter.load(f)</span><br><span class="line"></span><br><span class="line">    name = post.get(<span class="string">&quot;name&quot;</span>, <span class="literal">None</span>)</span><br><span class="line">    description = post.get(<span class="string">&quot;description&quot;</span>, <span class="literal">None</span>)</span><br><span class="line"></span><br><span class="line">    self.skills[name] = AgentSkill(</span><br><span class="line">        name=name,</span><br><span class="line">        description=description,</span><br><span class="line">        <span class="built_in">dir</span>=skill_dir,</span><br><span class="line">    )</span><br></pre></td></tr></table></figure>
+<p>同样提供了 <code>remove_agent_skill()</code> 方法来移除技能：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">remove_agent_skill</span>(<span class="params">self, name: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;根据名称移除已注册的智能体技能&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> name <span class="keyword">in</span> self.skills:</span><br><span class="line">        self.skills.pop(name)</span><br></pre></td></tr></table></figure>
+<h3 id="llm-如何感知-skill"><a class="markdownIt-Anchor" href="#llm-如何感知-skill"></a> LLM 如何感知 SKILL</h3>
+<p>在向 Agent 注册技能后，LLM 又是如何感知这些技能的存在呢？答案就是 <code>提示词工程</code>。Toolkit 的 <code>system_prompt</code> 属性提供的系统提示词中，包含了 <code>skill</code> 相关的提示词内容。<strong>而通过属性的方式来访问 <code>sys_prompt</code> 属性时，使得系统提示词是动态计算的，技能发生变更后可以立即生效</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">ReActAgent</span>(<span class="title class_ inherited__">ReActAgentBase</span>):</span><br><span class="line"><span class="meta">    @property</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">sys_prompt</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;The dynamic system prompt of the agent.&quot;&quot;&quot;</span></span><br><span class="line">        agent_skill_prompt = self.toolkit.get_agent_skill_prompt()</span><br><span class="line">        <span class="keyword">if</span> agent_skill_prompt:</span><br><span class="line">            <span class="keyword">return</span> self._sys_prompt + <span class="string">&quot;\n\n&quot;</span> + agent_skill_prompt</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            <span class="keyword">return</span> self._sys_prompt</span><br></pre></td></tr></table></figure>
+<p>可以看到，智能体的系统提示词包含两部分构成：</p>
+<ul>
+<li>用户创建 ReActAgent 时所提供的系统提示词 <code>_sys_prompt</code></li>
+<li>Toolkit 中技能相关的提示词</li>
+</ul>
+<p><code>get_agent_skill_prompt</code> 用来获取技能相关的提示词：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">get_agent_skill_prompt</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span> | <span class="literal">None</span>:</span><br><span class="line">    <span class="comment"># 如果没有 skills，直接返回</span></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(self.skills) == <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    skill_descriptions = [</span><br><span class="line">        self._agent_skill_instruction,</span><br><span class="line">    ] + [</span><br><span class="line">        <span class="comment"># 这里列出所有的 skill 的描述</span></span><br><span class="line">        self._agent_skill_template.<span class="built_in">format</span>(</span><br><span class="line">            name=_[<span class="string">&quot;name&quot;</span>],</span><br><span class="line">            description=_[<span class="string">&quot;description&quot;</span>],</span><br><span class="line">            <span class="built_in">dir</span>=_[<span class="string">&quot;dir&quot;</span>],</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">for</span> _ <span class="keyword">in</span> self.skills.values()</span><br><span class="line">    ]</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;\n&quot;</span>.join(skill_descriptions)</span><br></pre></td></tr></table></figure>
+<p>从代码实现可以看出，技能提示词也由两个部分构成：</p>
+<ul>
+<li>技能的整体指令 <code>_agent_skill_instruction</code></li>
+<li>和所有技能的描述信息：每个描述信息都是通过 <code>_agent_skill_template</code> 渲染得到</li>
+</ul>
+<p>这两个属性都可以定制的，创建 Toolkit 对象时可以通过参数设置这两个属性：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Toolkit</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        agent_skill_instruction: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        agent_skill_template: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        ......</span><br><span class="line">        self._agent_skill_instruction = (</span><br><span class="line">            agent_skill_instruction <span class="keyword">or</span> self._DEFAULT_AGENT_SKILL_INSTRUCTION</span><br><span class="line">        )</span><br><span class="line">        self._agent_skill_template = (</span><br><span class="line">            agent_skill_template <span class="keyword">or</span> self._DEFAULT_AGENT_SKILL_TEMPLATE</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<p>如果没有设置的话，<code>技能的整体指令</code> 默认内容是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">&quot;# Agent Skills\n&quot;</span></span><br><span class="line"><span class="string">&quot;The agent skills are a collection of folds of instructions, scripts, &quot;</span></span><br><span class="line"><span class="string">&quot;and resources that you can load dynamically to improve performance &quot;</span></span><br><span class="line"><span class="string">&quot;on specialized tasks. Each agent skill has a `SKILL.md` file in its &quot;</span></span><br><span class="line"><span class="string">&quot;folder that describes how to use the skill. If you want to use a &quot;</span></span><br><span class="line"><span class="string">&quot;skill, you MUST read its `SKILL.md` file carefully.&quot;</span></span><br></pre></td></tr></table></figure>
+<p>而默认的技能描述渲染模版则是，这个模版其实就是包含 Skill 名称、描述和路径信息。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">## &#123;name&#125;</span></span><br><span class="line">&#123;description&#125;</span><br><span class="line">Check <span class="string">&quot;&#123;dir&#125;/SKILL.md&quot;</span> <span class="keyword">for</span> how to use this skill</span><br></pre></td></tr></table></figure>
+<h3 id="实际例子"><a class="markdownIt-Anchor" href="#实际例子"></a> 实际例子</h3>
+<p>我们来通过一个实际例子来看下注册 Skill 之后， ReActAgent 的系统提示词到底是怎么样的：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># -*- coding: utf-8 -*-</span></span><br><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">from</span> agentscope.tool <span class="keyword">import</span> Toolkit</span><br><span class="line"><span class="keyword">from</span> agentscope.agent <span class="keyword">import</span> ReActAgent</span><br><span class="line"><span class="keyword">from</span> agentscope.memory <span class="keyword">import</span> InMemoryMemory</span><br><span class="line"><span class="keyword">from</span> agentscope.formatter <span class="keyword">import</span> DashScopeChatFormatter</span><br><span class="line"><span class="keyword">from</span> agentscope.model <span class="keyword">import</span> DashScopeChatModel</span><br><span class="line"></span><br><span class="line">SKILLS_DIR = os.path.join(os.path.dirname(__file__), <span class="string">&quot;skills&quot;</span>)</span><br><span class="line"></span><br><span class="line">toolkit = Toolkit()</span><br><span class="line">toolkit.register_agent_skill(os.path.join(SKILLS_DIR, <span class="string">&quot;python_helper&quot;</span>))</span><br><span class="line">toolkit.register_agent_skill(os.path.join(SKILLS_DIR, <span class="string">&quot;data_analyzer&quot;</span>))</span><br><span class="line"></span><br><span class="line">agent = ReActAgent(</span><br><span class="line">    name=<span class="string">&quot;Assistant&quot;</span>,</span><br><span class="line">    sys_prompt=<span class="string">&quot;你是一个智能助手。&quot;</span>,</span><br><span class="line">    model=DashScopeChatModel(</span><br><span class="line">        model_name=<span class="string">&quot;qwen-plus&quot;</span>,</span><br><span class="line">        api_key=os.environ.get(<span class="string">&quot;DASHSCOPE_API_KEY&quot;</span>, <span class="string">&quot;mock-key&quot;</span>),</span><br><span class="line">    ),</span><br><span class="line">    formatter=DashScopeChatFormatter(),</span><br><span class="line">    toolkit=toolkit,</span><br><span class="line">    memory=InMemoryMemory(),</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(agent.sys_prompt)</span><br></pre></td></tr></table></figure>
+<p>这里例子中，我们注册了两个技能：<code>python_helper</code> 和 <code>data_analyzer</code>。来看下最后生成的系统提示词：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">你是一个智能助手。</span><br><span class="line"></span><br><span class="line"># Agent Skills</span><br><span class="line">The agent skills are a collection of folds of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill has a `SKILL.md` file in its folder that describes how to use the skill. If you want to use a skill, you MUST read its `SKILL.md` file carefully.</span><br><span class="line">## Python Helper</span><br><span class="line">Python 代码编写助手，帮助编写高质量 Python 代码</span><br><span class="line">Check &quot;/root/code/private/python/open_source/agentscope/ai_demo/skills/python_helper/SKILL.md&quot; for how to use this skill</span><br><span class="line">## Data Analyzer</span><br><span class="line">数据分析助手，支持数据清洗、统计分析和可视化</span><br><span class="line">Check &quot;/root/code/private/python/open_source/agentscope/ai_demo/skills/data_analyzer/SKILL.md&quot; for how to use this skill</span><br></pre></td></tr></table></figure>
+<h3 id="技能小结"><a class="markdownIt-Anchor" href="#技能小结"></a> 技能小结</h3>
+<p>以上就分析了 AgentScope 是如何支持 Skill 机制的，包括如何注册、移除提示词，以及如何通过系统提示词来让 LLM 知道什么是 <code>Agent Skills</code> 以及当前已有 skill 的描述信息。最后需要注意一点，<strong>为了让 ReActAgent 能够在运行过程中顺利加载某个 skill 的具体指令（<code>SKILL.md</code> 文件），需要给 Agent 配置文件读取工具</strong>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">toolkit.register_tool_function(view_text_file)  <span class="comment"># 文件读取工具</span></span><br><span class="line"><span class="comment"># 或者</span></span><br><span class="line">toolkit.register_tool_function(execute_shell_command)  <span class="comment"># shell 命令执行工具</span></span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们分析了 AgentScope 是如何支持 MCP 工具和 Agent Skills 这两种机制的。通过这篇文章以及上一篇文章，我们就整体分析了 AgentScope 的 <code>工具系统</code> 的实现原理。下一篇文章我们将开始介绍 AgentScope 是如何处理支持各种 LLM 的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/19/python-agentscope-01/" rel="next" title="agentscope 源码分析（1）：Toolkit 类实现">
+      agentscope 源码分析（1）：Toolkit 类实现 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#mcp-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> MCP 简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#agentscope-%E7%9A%84-mcp-%E6%A8%A1%E5%9D%97"><span class="nav-number">2.</span> <span class="nav-text"> AgentScope 的 MCP 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#mcpclientbase-%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%9F%BA%E7%B1%BB"><span class="nav-number">2.1.</span> <span class="nav-text"> MCPClientBase (客户端基类)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#statefulclientbase%E6%9C%89%E7%8A%B6%E6%80%81%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%9F%BA%E7%B1%BB"><span class="nav-number">2.2.</span> <span class="nav-text"> StatefulClientBase（有状态客户端基类）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#httpstatefulclienthttp-%E6%9C%89%E7%8A%B6%E6%80%81%E5%AE%A2%E6%88%B7%E7%AB%AF"><span class="nav-number">2.3.</span> <span class="nav-text"> HttpStatefulClient（HTTP 有状态客户端）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#httpstatelessclient-http-%E6%97%A0%E7%8A%B6%E6%80%81%E5%AE%A2%E6%88%B7%E7%AB%AF"><span class="nav-number">2.4.</span> <span class="nav-text"> HttpStatelessClient (HTTP 无状态客户端)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#stdiostatefulclient-stdio-%E6%9C%89%E7%8A%B6%E6%80%81%E5%AE%A2%E6%88%B7%E7%AB%AF"><span class="nav-number">2.5.</span> <span class="nav-text"> StdIOStatefulClient (StdIO 有状态客户端)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#mcptoolfunction-mcp-%E5%B7%A5%E5%85%B7%E5%87%BD%E6%95%B0%E5%B0%81%E8%A3%85"><span class="nav-number">2.6.</span> <span class="nav-text"> MCPToolFunction (MCP 工具函数封装)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%9A%E8%BF%87-toolkit-%E7%AE%A1%E7%90%86-mcp-%E5%B7%A5%E5%85%B7"><span class="nav-number">2.7.</span> <span class="nav-text"> 通过 Toolkit 管理 MCP 工具</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B6%E4%BB%96%E8%AF%B4%E6%98%8E"><span class="nav-number">2.8.</span> <span class="nav-text"> 其他说明</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#agent-skill"><span class="nav-number">3.</span> <span class="nav-text"> Agent Skill</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#toolkit-%E5%A6%82%E4%BD%95%E7%AE%A1%E7%90%86-skill"><span class="nav-number">3.1.</span> <span class="nav-text"> Toolkit 如何管理 Skill</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#llm-%E5%A6%82%E4%BD%95%E6%84%9F%E7%9F%A5-skill"><span class="nav-number">3.2.</span> <span class="nav-text"> LLM 如何感知 SKILL</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E4%BE%8B%E5%AD%90"><span class="nav-number">3.3.</span> <span class="nav-text"> 实际例子</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8A%80%E8%83%BD%E5%B0%8F%E7%BB%93"><span class="nav-number">3.4.</span> <span class="nav-text"> 技能小结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">238</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
