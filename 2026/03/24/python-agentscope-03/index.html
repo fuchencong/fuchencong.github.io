@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在前两篇文章中，我们深入剖析了 AgentScope 的工具系统，这相当于为 Agent 构建了强健的 手脚，使其具备了影响物理世界的能力。然而，要让这些肢体协调运作，还需一个智慧的 大脑 来坐镇指挥。从本篇开始，我们将重点探讨 AgentScope 如何构建一套通用的适配层，以支持来自不同 Provider（供应商）的各类大模型。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="agentscope 源码分析（3）：模型交互">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/03/24/python-agentscope-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在前两篇文章中，我们深入剖析了 AgentScope 的工具系统，这相当于为 Agent 构建了强健的 手脚，使其具备了影响物理世界的能力。然而，要让这些肢体协调运作，还需一个智慧的 大脑 来坐镇指挥。从本篇开始，我们将重点探讨 AgentScope 如何构建一套通用的适配层，以支持来自不同 Provider（供应商）的各类大模型。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-24T06:46:50.000Z">
+<meta property="article:modified_time" content="2026-03-24T06:51:19.625Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/24/python-agentscope-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>agentscope 源码分析（3）：模型交互 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/24/python-agentscope-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          agentscope 源码分析（3）：模型交互
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-03-24 14:46:50" itemprop="dateCreated datePublished" datetime="2026-03-24T14:46:50+08:00">2026-03-24</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在前两篇文章中，我们深入剖析了 AgentScope 的工具系统，这相当于为 Agent 构建了强健的 <code>手脚</code>，使其具备了影响物理世界的能力。然而，要让这些肢体协调运作，还需一个智慧的 <code>大脑</code> 来坐镇指挥。从本篇开始，我们将重点探讨 AgentScope 如何构建一套通用的适配层，以支持来自不同 Provider（供应商）的各类大模型。</p>
+<span id="more"></span>
+<h2 id="总体设计"><a class="markdownIt-Anchor" href="#总体设计"></a> 总体设计</h2>
+<p>AgentScope 支持多 LLM 的核心架构由以下四个模块组成：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                         Agent Layer                             │</span><br><span class="line">│  (ReActAgent, A2AAgent, etc.)                                   │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br><span class="line">                                │</span><br><span class="line">                    ┌───────────┼───────────┐</span><br><span class="line">                    ▼           ▼           ▼</span><br><span class="line">            ┌───────────┐ ┌───────────┐ ┌───────────┐</span><br><span class="line">            │   Model   │ │ Formatter │ │   Token   │</span><br><span class="line">            │  Module   │ │  Module   │ │  Module   │</span><br><span class="line">            └───────────┘ └───────────┘ └───────────┘</span><br><span class="line">                    │           │           │</span><br><span class="line">                    └───────────┼───────────┘</span><br><span class="line">                                ▼</span><br><span class="line">            ┌───────────────────────────────────────┐</span><br><span class="line">            │           Message Module              │</span><br><span class="line">            │   (统一的消息抽象层)                     │</span><br><span class="line">            └───────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>Message 模块</strong>：提供统一的消息抽象</li>
+<li><strong>Model 模块</strong>：专注于 API 调用和响应解析</li>
+<li><strong>Token 模块</strong>：处理令牌计数</li>
+<li><strong>Formatter 模块</strong>：负责消息格式转换，支持按照 Token 限制截断消息的能力</li>
+</ul>
+<p>接下来我们将详细解释每个模块的实现原理，以及这些模块之间如何协同工作。</p>
+<h2 id="message-模块"><a class="markdownIt-Anchor" href="#message-模块"></a> Message 模块</h2>
+<p>Message 模块的代码主要位于 <code>src/agentscope/message/</code> 目录下，它是 AgentScope 框架的核心数据类型之一，它让 AgentScope 能够以统一的方式来处理与不同 LLM 的交互。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/message/</span><br><span class="line">├── __init__.py          <span class="comment"># 模块导出接口</span></span><br><span class="line">├── _message_base.py     <span class="comment"># Msg 消息类定义</span></span><br><span class="line">└── _message_block.py    <span class="comment"># 内容块类型定义</span></span><br></pre></td></tr></table></figure>
+<h3 id="msg-类"><a class="markdownIt-Anchor" href="#msg-类"></a> Msg 类</h3>
+<p><code>Msg</code> 类是 <code>消息</code> 的核心抽象，它主要包含以下属性：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Msg</span>:</span><br><span class="line">    name: <span class="built_in">str</span>                    <span class="comment"># 发送者名称</span></span><br><span class="line">    content: <span class="built_in">str</span> | <span class="type">Sequence</span>[ContentBlock]  <span class="comment"># 消息内容</span></span><br><span class="line">    role: <span class="type">Literal</span>[<span class="string">&quot;user&quot;</span>, <span class="string">&quot;assistant&quot;</span>, <span class="string">&quot;system&quot;</span>]  <span class="comment"># 角色</span></span><br><span class="line">    metadata: <span class="built_in">dict</span>               <span class="comment"># 元数据（如结构化输出）</span></span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span>                      <span class="comment"># 唯一标识（shortuuid）</span></span><br><span class="line">    timestamp: <span class="built_in">str</span>               <span class="comment"># 创建时间戳</span></span><br><span class="line">    invocation_id: <span class="built_in">str</span>           <span class="comment"># API 调用追踪 ID</span></span><br></pre></td></tr></table></figure>
+<p>Msg 类提供了以下方法，用于方便地构建和操作消息：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>to_dict()</code></td>
+<td>序列化为字典</td>
+</tr>
+<tr>
+<td><code>from_dict(json_data)</code></td>
+<td>从字典反序列化</td>
+</tr>
+<tr>
+<td><code>get_content_blocks(block_type)</code></td>
+<td>按类型提取内容块</td>
+</tr>
+<tr>
+<td><code>get_text_content()</code></td>
+<td>提取纯文本内容</td>
+</tr>
+<tr>
+<td><code>has_content_blocks(block_type)</code></td>
+<td>检查是否包含特定类型内容块</td>
+</tr>
+</tbody>
+</table>
+<p><code>Msg</code> 类的实现比较简单，稍微复杂一点的是其 <code>get_content_blocks()</code> 方法，使用 <code>@overload</code> 装饰器为 <code>get_content_blocks()</code> 方法提供了多种类型签名，使其能够灵活地从消息中提取不同种类的内容块。</p>
+<h3 id="contentblock-类"><a class="markdownIt-Anchor" href="#contentblock-类"></a> ContentBlock 类</h3>
+<p><code>Msg</code> 类使用 <code>ContentBlock</code> 类型来表示不同类型的内容块，而 <code>Msg</code> 的 content 则是一个 <code>ContentBlock</code> 列表（对于 str 类型的内容，则会转换为一个 <code>TextBlock</code>）。因此 <code>ContentBlock</code> 才是 Msg 中真正承载不同类型内容的载体。</p>
+<p><code>ContentBlock</code> 类型本身是一个 Union 类型，它是以下几种类型之一：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">ContentBlock = (</span><br><span class="line">    ToolUseBlock</span><br><span class="line">    | ToolResultBlock</span><br><span class="line">    | TextBlock</span><br><span class="line">    | ThinkingBlock</span><br><span class="line">    | ImageBlock</span><br><span class="line">    | AudioBlock</span><br><span class="line">    | VideoBlock</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>每种类型的含义如下所示：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>用途</th>
+<th>关键字段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TextBlock</code></td>
+<td>文本内容</td>
+<td><code>type=&quot;text&quot;</code>, <code>text</code></td>
+</tr>
+<tr>
+<td><code>ThinkingBlock</code></td>
+<td>思考过程</td>
+<td><code>type=&quot;thinking&quot;</code>, <code>thinking</code></td>
+</tr>
+<tr>
+<td><code>ImageBlock</code></td>
+<td>图像内容</td>
+<td><code>type=&quot;image&quot;</code>, <code>source</code></td>
+</tr>
+<tr>
+<td><code>AudioBlock</code></td>
+<td>音频内容</td>
+<td><code>type=&quot;audio&quot;</code>, <code>source</code></td>
+</tr>
+<tr>
+<td><code>VideoBlock</code></td>
+<td>视频内容</td>
+<td><code>type=&quot;video&quot;</code>, <code>source</code></td>
+</tr>
+<tr>
+<td><code>ToolUseBlock</code></td>
+<td>工具调用请求</td>
+<td><code>type=&quot;tool_use&quot;</code>, <code>id</code>, <code>name</code>, <code>input</code></td>
+</tr>
+<tr>
+<td><code>ToolResultBlock</code></td>
+<td>工具调用结果</td>
+<td><code>type=&quot;tool_result&quot;</code>, <code>id</code>, <code>output</code>, <code>name</code></td>
+</tr>
+</tbody>
+</table>
+<p>每种具体的类型都使用 <code>TypedDict</code> 来定义结构化的内容块类型，以 TextBlock 为例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">TextBlock</span>(TypedDict, total=<span class="literal">False</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The text block.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">type</span>: Required[<span class="type">Literal</span>[<span class="string">&quot;text&quot;</span>]]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The type of the block&quot;&quot;&quot;</span></span><br><span class="line">    text: <span class="built_in">str</span></span><br><span class="line">    <span class="string">&quot;&quot;&quot;The text content&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p>对于 <code>ImageBlock</code>、<code>AudioBlock</code>、<code>VideoBlock</code> 类型，其中的多模态数据既可以通过 URL 表示，也可以通过 Base64 字符串表示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">ImageBlock</span>(TypedDict, total=<span class="literal">False</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The image block&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">type</span>: Required[<span class="type">Literal</span>[<span class="string">&quot;image&quot;</span>]]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The type of the block&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    source: Required[Base64Source | URLSource]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The src of the image&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p>因此，<code>_message_block.py</code> 中定义了两种 Source 类型：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Base64Source</span>(TypedDict, total=<span class="literal">False</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The base64 source&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">type</span>: Required[<span class="type">Literal</span>[<span class="string">&quot;base64&quot;</span>]]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The type of the src, must be `base64`&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    media_type: Required[<span class="built_in">str</span>]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The media type of the data, e.g. `image/jpeg` or `audio/mpeg`&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    data: Required[<span class="built_in">str</span>]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The base64 data, in format of RFC 2397&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">URLSource</span>(TypedDict, total=<span class="literal">False</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The URL source&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">type</span>: Required[<span class="type">Literal</span>[<span class="string">&quot;url&quot;</span>]]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The type of the src, must be `url`&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    url: Required[<span class="built_in">str</span>]</span><br><span class="line">    <span class="string">&quot;&quot;&quot;The URL of the image or audio&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p>以上就完成了对 AgentScope 的 Message 模块的剖析，只要理解其两个核心数据结构 <code>Msg</code> 和 <code>ContentBlock</code>，就能够理解 AgentScope 如何表示和操作消息了。</p>
+<h2 id="model-模块"><a class="markdownIt-Anchor" href="#model-模块"></a> Model 模块</h2>
+<p>Model 模块负责与各种 LLM API 交互，并将响应统一为 <code>ChatResponse</code> 格式。 Model 模块的代码位于 <code>src/agentscope/model</code> 目录下，负责：</p>
+<ul>
+<li>封装各 LLM API 的调用逻辑</li>
+<li>统一响应格式为 <code>ChatResponse</code></li>
+<li>支持流式和非流式输出</li>
+<li>处理工具调用（Function Calling）</li>
+<li>支持结构化输出（Structured Output）</li>
+</ul>
+<p>其目录结构如下所示：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/model/</span><br><span class="line">├── __init__.py              <span class="comment"># 模块导出</span></span><br><span class="line">├── _model_base.py           <span class="comment"># 抽象基类 ChatModelBase</span></span><br><span class="line">├── _model_response.py       <span class="comment"># 响应数据类 ChatResponse</span></span><br><span class="line">├── _model_usage.py          <span class="comment"># Token 使用统计 ChatUsage</span></span><br><span class="line">├── _openai_model.py         <span class="comment"># OpenAI/Azure 模型实现</span></span><br><span class="line">├── _anthropic_model.py      <span class="comment"># Anthropic Claude 模型实现</span></span><br><span class="line">├── _dashscope_model.py      <span class="comment"># 阿里云 DashScope 模型实现</span></span><br><span class="line">├── _gemini_model.py         <span class="comment"># Google Gemini 模型实现</span></span><br><span class="line">├── _ollama_model.py         <span class="comment"># Ollama 本地模型实现</span></span><br><span class="line">└── _trinity_model.py        <span class="comment"># Trinity-RFT 训练模型（已弃用）</span></span><br></pre></td></tr></table></figure>
+<h3 id="chatmodelbase-抽象基类"><a class="markdownIt-Anchor" href="#chatmodelbase-抽象基类"></a> ChatModelBase 抽象基类</h3>
+<p>ChatModelBase 是所有 LLM 的抽象基类，定义了与 LLM 交互的基本接口：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">ChatModelBase</span>:</span><br><span class="line">    model_name: <span class="built_in">str</span>      <span class="comment"># 模型名称</span></span><br><span class="line">    stream: <span class="built_in">bool</span>         <span class="comment"># 是否流式输出</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, model_name: <span class="built_in">str</span>, stream: <span class="built_in">bool</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        self.model_name = model_name</span><br><span class="line">        self.stream = stream</span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        messages: <span class="built_in">list</span>[<span class="built_in">dict</span>],</span></span><br><span class="line"><span class="params">        tools: <span class="built_in">list</span>[<span class="built_in">dict</span>] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        tool_choice: <span class="type">Literal</span>[<span class="string">&quot;auto&quot;</span>, <span class="string">&quot;none&quot;</span>, <span class="string">&quot;required&quot;</span>] | <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        structured_model: <span class="type">Type</span>[BaseModel] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; ChatResponse | AsyncGenerator[ChatResponse, <span class="literal">None</span>]:</span><br><span class="line">        <span class="keyword">pass</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_validate_tool_choice</span>(<span class="params">self, tool_choice: <span class="built_in">str</span>, tools: <span class="built_in">list</span>[<span class="built_in">dict</span>] | <span class="literal">None</span></span>):</span><br><span class="line">        <span class="string">&quot;&quot;&quot;验证 tool_choice 参数有效性&quot;&quot;&quot;</span></span><br><span class="line">        ...</span><br></pre></td></tr></table></figure>
+<ul>
+<li>通过实现 <code>__call__</code> 方法，ChatModelBase 的实例是可调用对象</li>
+<li>为所有的模型调用都提供一致的接口，包括：
+<ul>
+<li>参数：<code>messages</code>、<code>tools</code>、<code>tool_choice</code>、<code>structured_model</code>、<code>**kwargs</code>（用于传递额外的参数）</li>
+<li>返回值统一为 <code>ChatResponse</code> 或 <code>ChatResponse</code> 的异步生成器</li>
+</ul>
+</li>
+</ul>
+<p><code>ChatResponse</code> 用来表示 LLM 的响应：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ChatResponse</span>(<span class="title class_ inherited__">DictMixin</span>):</span><br><span class="line">    content: <span class="type">Sequence</span>[TextBlock | ToolUseBlock | ThinkingBlock | AudioBlock]</span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span> = field(default_factory=<span class="keyword">lambda</span>: _get_timestamp(<span class="literal">True</span>))</span><br><span class="line">    created_at: <span class="built_in">str</span> = field(default_factory=_get_timestamp)</span><br><span class="line">    <span class="built_in">type</span>: <span class="type">Literal</span>[<span class="string">&quot;chat&quot;</span>] = field(default_factory=<span class="keyword">lambda</span>: <span class="string">&quot;chat&quot;</span>)</span><br><span class="line">    usage: ChatUsage | <span class="literal">None</span> = field(default_factory=<span class="keyword">lambda</span>: <span class="literal">None</span>)</span><br><span class="line">    metadata: <span class="built_in">dict</span>[<span class="built_in">str</span>, JSONSerializableObject] | <span class="literal">None</span> = field(default_factory=<span class="keyword">lambda</span>: <span class="literal">None</span>)</span><br></pre></td></tr></table></figure>
+<p>其核心字段如下：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>Sequence[ContentBlock]</td>
+<td>内容块序列，支持文本、工具调用、思考过程、音频</td>
+</tr>
+<tr>
+<td><code>usage</code></td>
+<td>ChatUsage | None</td>
+<td>Token 使用统计</td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td>dict | None</td>
+<td>结构化输出结果</td>
+</tr>
+</tbody>
+</table>
+<p><code>content</code> 是 <code>ContentBlock</code> 的序列，用来表示实际的 LLM 输出内容，而 <code>usage</code> 则用来存储 Token 使用信息，其类型为 <code>ChatUsage</code>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">@dataclass</span><br><span class="line">class ChatUsage(DictMixin):</span><br><span class="line">    input_tokens: int     # 输入 Token 数</span><br><span class="line">    output_tokens: int    # 输出 Token 数</span><br><span class="line">    time: float           # 响应耗时（秒）</span><br><span class="line">    type: Literal[&quot;chat&quot;] = &quot;chat&quot;</span><br><span class="line">    metadata: dict[str, Any] | None = None  # 原始 API 返回的信息</span><br></pre></td></tr></table></figure>
+<h3 id="openaichatmodel"><a class="markdownIt-Anchor" href="#openaichatmodel"></a> OpenAIChatModel</h3>
+<p>AgentScope 框架支持了多种 provider 的 LLM，这里我们以 OpenAIChatModel 为例来介绍如何封装 OpenAI 的 API 调用，其他 provider 实现也是类似的，只是少量 API 调用细节有所不同。</p>
+<ul>
+<li>初始化，创建 OpenAI 异步客户端，支持 OpenAI 和 Azure 两种客户端</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAIChatModel</span>(<span class="title class_ inherited__">ChatModelBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        model_name: <span class="built_in">str</span>,  <span class="comment"># 模型名称，比如 &quot;gpt-3.5-turbo&quot;</span></span></span><br><span class="line"><span class="params">        api_key: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># OpenAI API 密钥</span></span></span><br><span class="line"><span class="params">        stream: <span class="built_in">bool</span> = <span class="literal">True</span>,  <span class="comment"># 是否开启流式响应</span></span></span><br><span class="line"><span class="params">        reasoning_effort: <span class="type">Literal</span>[<span class="string">&quot;low&quot;</span>, <span class="string">&quot;medium&quot;</span>, <span class="string">&quot;high&quot;</span>] | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># 推理强度（o3/o4模型用）</span></span></span><br><span class="line"><span class="params">        organization: <span class="built_in">str</span> = <span class="literal">None</span>,  <span class="comment"># OpenAI 组织ID</span></span></span><br><span class="line"><span class="params">        stream_tool_parsing: <span class="built_in">bool</span> = <span class="literal">True</span>,  <span class="comment"># 流式工具调用时是否实时解析JSON</span></span></span><br><span class="line"><span class="params">        client_type: <span class="type">Literal</span>[<span class="string">&quot;openai&quot;</span>, <span class="string">&quot;azure&quot;</span>] = <span class="string">&quot;openai&quot;</span>,  <span class="comment"># 客户端类型（普通OpenAI/微软Azure）</span></span></span><br><span class="line"><span class="params">        client_kwargs: <span class="built_in">dict</span>[<span class="built_in">str</span>, JSONSerializableObject] | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># 客户端额外参数</span></span></span><br><span class="line"><span class="params">        generate_kwargs: <span class="built_in">dict</span>[<span class="built_in">str</span>, JSONSerializableObject] | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># 生成参数（temperature等）</span></span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 导入并创建 OpenAI 异步客户端</span></span><br><span class="line">    <span class="keyword">import</span> openai</span><br><span class="line">    <span class="keyword">if</span> client_type == <span class="string">&quot;azure&quot;</span>:</span><br><span class="line">        self.client = openai.AsyncAzureOpenAI(</span><br><span class="line">            api_key=api_key, organization=organization,** (client_kwargs <span class="keyword">or</span> &#123;&#125;)</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        self.client = openai.AsyncClient(</span><br><span class="line">            api_key=api_key, organization=organization, **(client_kwargs <span class="keyword">or</span> &#123;&#125;)</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>__call__</code> 方法，调用 OpenAI 的 <code>create_chat_completion</code> API</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    messages: <span class="built_in">list</span>[<span class="built_in">dict</span>],  <span class="comment"># 对话消息列表（[&#123;&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;你好&quot;&#125;, ...]）</span></span></span><br><span class="line"><span class="params">    tools: <span class="built_in">list</span>[<span class="built_in">dict</span>] | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># 工具定义（JSON Schema）</span></span></span><br><span class="line"><span class="params">    tool_choice: <span class="type">Literal</span>[<span class="string">&quot;auto&quot;</span>, <span class="string">&quot;none&quot;</span>, <span class="string">&quot;required&quot;</span>] | <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># 工具调用策略</span></span></span><br><span class="line"><span class="params">    structured_model: <span class="type">Type</span>[BaseModel] | <span class="literal">None</span> = <span class="literal">None</span>,  <span class="comment"># 结构化输出的模型</span></span></span><br><span class="line"><span class="params">    **kwargs: <span class="type">Any</span>,  <span class="comment"># 额外生成参数（temperature、max_tokens等）</span></span></span><br><span class="line"><span class="params"></span>) -&gt; ChatResponse | AsyncGenerator[ChatResponse, <span class="literal">None</span>]:</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 1. 校验消息格式：必须是列表，且每个消息有 role 和 content</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(messages, <span class="built_in">list</span>):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;messages 必须是列表&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">all</span>(<span class="string">&quot;role&quot;</span> <span class="keyword">in</span> msg <span class="keyword">and</span> <span class="string">&quot;content&quot;</span> <span class="keyword">in</span> msg <span class="keyword">for</span> msg <span class="keyword">in</span> messages):</span><br><span class="line">        <span class="keyword">raise</span> ValueError(<span class="string">&quot;每个消息必须包含 role 和 content&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. 适配 Qwen-omni 音频格式</span></span><br><span class="line">    <span class="keyword">if</span> <span class="string">&quot;omni&quot;</span> <span class="keyword">in</span> self.model_name.lower():</span><br><span class="line">        _format_audio_data_for_qwen_omni(messages)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 3. 组装 API 调用参数</span></span><br><span class="line">    kwargs = &#123;</span><br><span class="line">        <span class="string">&quot;model&quot;</span>: self.model_name,</span><br><span class="line">        <span class="string">&quot;messages&quot;</span>: messages,</span><br><span class="line">        <span class="string">&quot;stream&quot;</span>: self.stream,</span><br><span class="line">        **self.generate_kwargs,  <span class="comment"># 初始化时的生成参数</span></span><br><span class="line">        **kwargs,  <span class="comment"># 调用时传入的额外参数</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> self.reasoning_effort <span class="keyword">and</span> <span class="string">&quot;reasoning_effort&quot;</span> <span class="keyword">not</span> <span class="keyword">in</span> kwargs:</span><br><span class="line">        kwargs[<span class="string">&quot;reasoning_effort&quot;</span>] = self.reasoning_effort</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 4. 处理工具调用参数</span></span><br><span class="line">    <span class="keyword">if</span> tools:</span><br><span class="line">        kwargs[<span class="string">&quot;tools&quot;</span>] = self._format_tools_json_schemas(tools)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> tool_choice:</span><br><span class="line">        <span class="keyword">if</span> tool_choice == <span class="string">&quot;any&quot;</span>:  <span class="comment"># 兼容旧值</span></span><br><span class="line">            warnings.warn(<span class="string">&quot;any 已废弃，改用 required&quot;</span>)</span><br><span class="line">            tool_choice = <span class="string">&quot;required&quot;</span></span><br><span class="line">        self._validate_tool_choice(tool_choice, tools)  <span class="comment"># 校验工具选择是否合法</span></span><br><span class="line">        kwargs[<span class="string">&quot;tool_choice&quot;</span>] = self._format_tool_choice(tool_choice)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 5. 流式响应额外配置</span></span><br><span class="line">    <span class="keyword">if</span> self.stream:</span><br><span class="line">        kwargs[<span class="string">&quot;stream_options&quot;</span>] = &#123;<span class="string">&quot;include_usage&quot;</span>: <span class="literal">True</span>&#125;</span><br><span class="line"></span><br><span class="line">    start_datetime = datetime.now()  <span class="comment"># 记录开始时间（用于计算耗时）</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 6. 处理结构化输出</span></span><br><span class="line">    <span class="keyword">if</span> structured_model:</span><br><span class="line">        <span class="comment"># 如果指定了结构化模型，忽略 tools/tool_choice，强制结构化输出</span></span><br><span class="line">        <span class="keyword">if</span> tools <span class="keyword">or</span> tool_choice:</span><br><span class="line">            logger.warning(<span class="string">&quot;structured_model 已指定，tools/tool_choice 会被忽略&quot;</span>)</span><br><span class="line">        kwargs.pop(<span class="string">&quot;stream&quot;</span>, <span class="literal">None</span>)</span><br><span class="line">        kwargs.pop(<span class="string">&quot;tools&quot;</span>, <span class="literal">None</span>)</span><br><span class="line">        kwargs.pop(<span class="string">&quot;tool_choice&quot;</span>, <span class="literal">None</span>)</span><br><span class="line">        kwargs[<span class="string">&quot;response_format&quot;</span>] = structured_model  <span class="comment"># 设置响应格式为结构化模型</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 调用 OpenAI API（结构化输出的专属方法）</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> self.stream:</span><br><span class="line">            response = <span class="keyword">await</span> self.client.chat.completions.parse(**kwargs)</span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            response = self.client.chat.completions.stream(**kwargs)</span><br><span class="line">            <span class="keyword">return</span> self._parse_openai_stream_response(start_datetime, response, structured_model)</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="comment"># 普通调用（非结构化输出）</span></span><br><span class="line">        response = <span class="keyword">await</span> self.client.chat.completions.create(**kwargs)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 7. 处理返回结果</span></span><br><span class="line">    <span class="keyword">if</span> self.stream:</span><br><span class="line">        <span class="keyword">return</span> self._parse_openai_stream_response(start_datetime, response, structured_model)</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="comment"># 非流式：解析完整响应</span></span><br><span class="line">        parsed_response = self._parse_openai_completion_response(start_datetime, response, structured_model)</span><br><span class="line">        <span class="keyword">return</span> parsed_response</span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p>需要注意，对于<a target="_blank" rel="noopener" href="https://developers.openai.com/api/docs/guides/structured-outputs">结构化输出</a>，将会忽略工具参数，强制使用指定的 Pydantic 模型格式</p>
+</li>
+<li>
+<p>代码中比较复杂的逻辑就是解析流式响应，即 <code>_parse_openai_stream_response</code>。而对于非流式响应则直接调用 <code>_parse_openai_completion_response</code> 方法进行解析即可</p>
+</li>
+<li>
+<p>为支持解析不完整的 json 输出，使用了 <code>json_repair</code> 库来解析 LLM 的输出</p>
+</li>
+</ul>
+<p>接下来我们稍微解释一下流式解析的核心逻辑，即 <code>_parse_openai_stream_response</code> 的实现原理。首先需要注意，针对是否流式、是否包含 <code>structured_model</code>，<code>OpenAIChatModel</code> 会调用不同的 OpenAI SDK 接口：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 非流式，但指定了 structured_model</span></span><br><span class="line">response = <span class="keyword">await</span> self.client.chat.completions.parse(**kwargs)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 流式，同时指定了 structured_model</span></span><br><span class="line">response = self.client.chat.completions.stream(**kwargs)</span><br><span class="line"></span><br><span class="line"><span class="comment"># 没有指定 structured_model，流式非流式都是调用（通过参数区分是否流式）</span></span><br><span class="line"><span class="keyword">await</span> self.client.chat.completions.create(**kwargs)</span><br></pre></td></tr></table></figure>
+<p>我们首先通过一个例子理解 <code>client.chat.completions.create</code> 返回结果的信息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">from</span> openai <span class="keyword">import</span> AsyncOpenAI</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    client = AsyncOpenAI(api_key=os.environ[<span class="string">&quot;OPENAI_API_KEY&quot;</span>])</span><br><span class="line"></span><br><span class="line">    stream = <span class="keyword">await</span> client.chat.completions.create(</span><br><span class="line">        model=<span class="string">&quot;gpt-5.1&quot;</span>,</span><br><span class="line">        messages=[&#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;说一句话&quot;</span>&#125;],</span><br><span class="line">        stream=<span class="literal">True</span>,</span><br><span class="line">        stream_options=&#123;<span class="string">&quot;include_usage&quot;</span>: <span class="literal">True</span>&#125;,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">for</span> chunk <span class="keyword">in</span> stream:</span><br><span class="line">        <span class="built_in">print</span>(chunk)</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;---&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    asyncio.run(main())</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">ChatCompletionChunk(<span class="built_in">id</span>=<span class="string">&#x27;chatcmpl-DMXjiiMAI6VXGTmTVPmagSTIyV3EZ&#x27;</span>, choices=[Choice(delta=ChoiceDelta(content=<span class="string">&#x27;&#x27;</span>, function_call=<span class="literal">None</span>, refusal=<span class="literal">None</span>, role=<span class="string">&#x27;assistant&#x27;</span>, tool_calls=<span class="literal">None</span>), finish_reason=<span class="literal">None</span>, index=<span class="number">0</span>, logprobs=<span class="literal">None</span>)], created=<span class="number">1774265270</span>, model=<span class="string">&#x27;gpt-5.1-2025-11-13&#x27;</span>, <span class="built_in">object</span>=<span class="string">&#x27;chat.completion.chunk&#x27;</span>, service_tier=<span class="string">&#x27;default&#x27;</span>, system_fingerprint=<span class="literal">None</span>, usage=<span class="literal">None</span>, obfuscation=<span class="string">&#x27;5Dd89wBE&#x27;</span>)</span><br><span class="line">---</span><br><span class="line">ChatCompletionChunk(<span class="built_in">id</span>=<span class="string">&#x27;chatcmpl-DMXjiiMAI6VXGTmTVPmagSTIyV3EZ&#x27;</span>, choices=[Choice(delta=ChoiceDelta(content=<span class="string">&#x27;你好&#x27;</span>, function_call=<span class="literal">None</span>, refusal=<span class="literal">None</span>, role=<span class="literal">None</span>, tool_calls=<span class="literal">None</span>), finish_reason=<span class="literal">None</span>, index=<span class="number">0</span>, logprobs=<span class="literal">None</span>)], created=<span class="number">1774265270</span>, model=<span class="string">&#x27;gpt-5.1-2025-11-13&#x27;</span>, <span class="built_in">object</span>=<span class="string">&#x27;chat.completion.chunk&#x27;</span>, service_tier=<span class="string">&#x27;default&#x27;</span>, system_fingerprint=<span class="literal">None</span>, usage=<span class="literal">None</span>, obfuscation=<span class="string">&#x27;5bRg7noG&#x27;</span>)</span><br><span class="line">---</span><br><span class="line">ChatCompletionChunk(<span class="built_in">id</span>=<span class="string">&#x27;chatcmpl-DMXjiiMAI6VXGTmTVPmagSTIyV3EZ&#x27;</span>, choices=[Choice(delta=ChoiceDelta(content=<span class="string">&#x27;，&#x27;</span>, function_call=<span class="literal">None</span>, refusal=<span class="literal">None</span>, role=<span class="literal">None</span>, tool_calls=<span class="literal">None</span>), finish_reason=<span class="literal">None</span>, index=<span class="number">0</span>, logprobs=<span class="literal">None</span>)], created=<span class="number">1774265270</span>, model=<span class="string">&#x27;gpt-5.1-2025-11-13&#x27;</span>, <span class="built_in">object</span>=<span class="string">&#x27;chat.completion.chunk&#x27;</span>, service_tier=<span class="string">&#x27;default&#x27;</span>, system_fingerprint=<span class="literal">None</span>, usage=<span class="literal">None</span>, obfuscation=<span class="string">&#x27;xv3bnd5jF&#x27;</span>)</span><br><span class="line">---</span><br></pre></td></tr></table></figure>
+<ul>
+<li>返回的是 <code>ChatCompletionChunk</code> 对象，其通过 delta 信息来返回本次新返回的内容，新返回的内容可以是 <code>content</code>、<code>function_call</code> 等信息，而 <code>_parse_openai_stream_response</code> 核心逻辑就是解析这些 delta 信息，附加到直接已累计的 <code>text</code>、<code>thinking</code>、<code>tool_calls</code> 等，从而构成对应的 TextBlock、ThinkingBlock 等对象，并通过 <code>ChatResponse</code> 对象进行返回。因此流式解析，<strong>每次看到的 Block 对象的内容，其实是包含截止目前为止的所有累计内容</strong>。</li>
+</ul>
+<h3 id="一个例子"><a class="markdownIt-Anchor" href="#一个例子"></a> 一个例子</h3>
+<p>接下来通过一个例子来看下应该如何使用 <code>structured_model</code> 来获取结构化输出信息，以及 ChatResponse 到底包含哪些内容：</p>
+<ul>
+<li>非流式调用</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> os</span><br><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">from</span> pydantic <span class="keyword">import</span> BaseModel, Field</span><br><span class="line"><span class="keyword">from</span> agentscope.model <span class="keyword">import</span> OpenAIChatModel</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">PersonInfo</span>(<span class="title class_ inherited__">BaseModel</span>):</span><br><span class="line">    name: <span class="built_in">str</span> = Field(description=<span class="string">&quot;姓名&quot;</span>)</span><br><span class="line">    age: <span class="built_in">int</span> = Field(description=<span class="string">&quot;年龄&quot;</span>)</span><br><span class="line">    occupation: <span class="built_in">str</span> = Field(description=<span class="string">&quot;职业&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    model = OpenAIChatModel(</span><br><span class="line">        model_name=<span class="string">&quot;qwen3-max&quot;</span>,</span><br><span class="line">        api_key=os.environ[<span class="string">&quot;OPENAI_API_KEY&quot;</span>],</span><br><span class="line">        stream=<span class="literal">False</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    response = <span class="keyword">await</span> model(</span><br><span class="line">        messages=[&#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;介绍一下马斯克&quot;</span>&#125;],</span><br><span class="line">        structured_model=PersonInfo,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(response)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python structured_output_demo.py</span></span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;  \n  &quot;age&quot;: 53,  \n  &quot;name&quot;: &quot;埃隆·马斯克&quot;,  \n  &quot;occupation&quot;: &quot;企业家、工程师、 发明家、投资者&quot;  \n&#125;&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 17:55:43.740_cc1aa7&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 17:55:43.740&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=ChatUsage(input_tokens=<span class="number">14</span>, output_tokens=<span class="number">42</span>, time=<span class="number">2.457625</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, metadata=CompletionUsage(completion_tokens=<span class="number">42</span>, prompt_tokens=<span class="number">14</span>, total_tokens=<span class="number">56</span>, completion_tokens_details=<span class="literal">None</span>, prompt_tokens_details=PromptTokensDetails(audio_tokens=<span class="literal">None</span>, cached_tokens=<span class="number">0</span>))), metadata=&#123;<span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;埃隆·马斯克&#x27;</span>, <span class="string">&#x27;age&#x27;</span>: <span class="number">53</span>, <span class="string">&#x27;occupation&#x27;</span>: <span class="string">&#x27;企业家、工程师、发明家、投资者&#x27;</span>&#125;)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>流式调用，可以看到，每次输出的 ChatResponse 对象包含的是截止目前为止所有累计的信息</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    model = OpenAIChatModel(</span><br><span class="line">        model_name=<span class="string">&quot;qwen3-max&quot;</span>,</span><br><span class="line">        api_key=os.environ[<span class="string">&quot;OPENAI_API_KEY&quot;</span>],</span><br><span class="line">        stream=<span class="literal">True</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    response = <span class="keyword">await</span> model(</span><br><span class="line">        messages=[&#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;介绍一下马斯克&quot;</span>&#125;],</span><br><span class="line">        structured_model=PersonInfo,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">for</span> chunk <span class="keyword">in</span> response:</span><br><span class="line">        <span class="built_in">print</span>(chunk)</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python structured_output_stream_demo.py</span></span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 19:41:48.955_a95d91&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 19:41:48.955&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=<span class="literal">None</span>, metadata=&#123;&#125;)</span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;  \n&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 19:41:49.013_57efd1&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 19:41:49.013&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=<span class="literal">None</span>, metadata=&#123;&#125;)</span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;  \n  &quot;a&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 19:41:49.182_a60c08&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 19:41:49.182&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=<span class="literal">None</span>, metadata=&#123;&#125;)</span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;  \n  &quot;age&quot;: 5&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 19:41:49.331_201244&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 19:41:49.331&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=<span class="literal">None</span>, metadata=&#123;<span class="string">&#x27;age&#x27;</span>: <span class="number">5</span>&#125;)</span><br><span class="line">......</span><br><span class="line"></span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;  \n  &quot;age&quot;: 53,  \n  &quot;name&quot;: &quot;埃隆·马斯克&quot;,  \n  &quot;occupation&quot;: &quot;企业家、工程师、 发明家、投资人&quot;  \n&#125;&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 19:41:50.138_9b416d&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 19:41:50.138&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=<span class="literal">None</span>, metadata=&#123;<span class="string">&#x27;age&#x27;</span>: <span class="number">53</span>, <span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;埃隆·马斯克&#x27;</span>, <span class="string">&#x27;occupation&#x27;</span>: <span class="string">&#x27;企业家、工程师、发明家、投资人&#x27;</span>&#125;)</span><br><span class="line"></span><br><span class="line">ChatResponse(content=[&#123;<span class="string">&#x27;type&#x27;</span>: <span class="string">&#x27;text&#x27;</span>, <span class="string">&#x27;text&#x27;</span>: <span class="string">&#x27;&#123;  \n  &quot;age&quot;: 53,  \n  &quot;name&quot;: &quot;埃隆·马斯克&quot;,  \n  &quot;occupation&quot;: &quot;企业家、工程师、 发明家、投资人&quot;  \n&#125;&#x27;</span>&#125;], <span class="built_in">id</span>=<span class="string">&#x27;2026-03-23 19:41:50.141_554521&#x27;</span>, created_at=<span class="string">&#x27;2026-03-23 19:41:50.141&#x27;</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, usage=ChatUsage(input_tokens=<span class="number">14</span>, output_tokens=<span class="number">42</span>, time=<span class="number">2.206184</span>, <span class="built_in">type</span>=<span class="string">&#x27;chat&#x27;</span>, metadata=CompletionUsage(completion_tokens=<span class="number">42</span>, prompt_tokens=<span class="number">14</span>, total_tokens=<span class="number">56</span>, completion_tokens_details=<span class="literal">None</span>, prompt_tokens_details=PromptTokensDetails(audio_tokens=<span class="literal">None</span>, cached_tokens=<span class="number">0</span>))), metadata=&#123;<span class="string">&#x27;age&#x27;</span>: <span class="number">53</span>, <span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;埃隆·马斯克&#x27;</span>, <span class="string">&#x27;occupation&#x27;</span>: <span class="string">&#x27;企业家、工程师、发明家、投资人&#x27;</span>&#125;)</span><br></pre></td></tr></table></figure>
+<p>以上我们就概要介绍了 AgentScope 的 LLM model 模块实现原理，其为各种 provider 的 LLM 提供了统一的抽象接口，即 <code>ChatModelBase</code>、<code>ChatResponse</code> 等。</p>
+<h2 id="token-模块"><a class="markdownIt-Anchor" href="#token-模块"></a> Token 模块</h2>
+<p>Token 模块负责 Token 计数功能，用于支持消息截断，它与 Formatter 模块配合，确保消息在 Token 限制范围内。Token 模块代码位于 <code>src/agentscope/token</code> 目录下，文件列表如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/token/</span><br><span class="line">├── __init__.py                    <span class="comment"># 模块导出</span></span><br><span class="line">├── _token_base.py                 <span class="comment"># 抽象基类 TokenCounterBase</span></span><br><span class="line">├── _openai_token_counter.py       <span class="comment"># OpenAI Token 计数器</span></span><br><span class="line">├── _anthropic_token_counter.py    <span class="comment"># Anthropic Token 计数器</span></span><br><span class="line">├── _gemini_token_counter.py       <span class="comment"># Gemini Token 计数器</span></span><br><span class="line">├── _huggingface_token_counter.py  <span class="comment"># HuggingFace Token 计数器</span></span><br><span class="line">└── _char_token_counter.py         <span class="comment"># 字符计数器（简化实现）</span></span><br></pre></td></tr></table></figure>
+<p><code>_token_base.py</code> 定义了抽象基类 <code>TokenCounterBase</code>，代码如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">TokenCounterBase</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Token 计数基类&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">count</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        messages: <span class="built_in">list</span>[<span class="built_in">dict</span>],</span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">int</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;计算消息的 Token 数量&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p><code>TokenCounterBase</code> 核心就是定义了一个抽象方法 <code>count</code>，用于计算消息的 Token 数量。各个具体的模型 Token 计数器则继承自 <code>TokenCounterBase</code>，按照各自的规则实现自己的 Token 计数。</p>
+<ul>
+<li>CharTokenCounter 实现了简单的基于字符的计数</li>
+<li>HuggingFaceTokenCounter 基于 <code>transformers.AutoTokenizer</code> 实现 Token 计算</li>
+<li>AnthropicTokenCounter、GeminiTokenCounter 都是直接调用各自的 API 来计算 Token 数量</li>
+<li>OpenAITokenCounter 则是通过 <a target="_blank" rel="noopener" href="https://github.com/openai/tiktoken">tiktoken</a> 实现 Token 计算，计算逻辑相对复杂</li>
+</ul>
+<h2 id="formatter-模块"><a class="markdownIt-Anchor" href="#formatter-模块"></a> Formatter 模块</h2>
+<p>AgentScope 内部通过 <code>Msg</code> 类型来统一表述 LLM 消息，而 <code>Model</code> 模块则提供了访问 LLM 的统一接口，而为了将 Msg 类型能够转换为具体 LLM 所要求的格式，AgentScope 又实现了 <code>Formatter</code> 消息转换层，主要负责将 AgentScope 内部统一的 <code>Msg</code> 消息对象转换为各个 LLM API 所需的特定格式，<strong>这样各个 Model 的 <code>__call__</code> 接口在处理 messages 等参数时，就可以认为这些参数已经是自己所需要的格式了，不需要再进行额外的格式转换了</strong>。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># _openai_model.py</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAIChatModel</span>(<span class="title class_ inherited__">ChatModelBase</span>):</span><br><span class="line">    <span class="comment"># messages 等参数已经是 OpenAI API 所需要的格式，不需要再内部转换了</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params"></span></span><br><span class="line"><span class="params">            self,</span></span><br><span class="line"><span class="params">            messages: <span class="built_in">list</span>[<span class="built_in">dict</span>],</span></span><br><span class="line"><span class="params">            tools: <span class="built_in">list</span>[<span class="built_in">dict</span>] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">            tool_choice: <span class="type">Literal</span>[<span class="string">&quot;auto&quot;</span>, <span class="string">&quot;none&quot;</span>, <span class="string">&quot;required&quot;</span>] | <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">            structured_model: <span class="type">Type</span>[BaseModel] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">            **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">        </span>) -&gt; ChatResponse | AsyncGenerator[ChatResponse, <span class="literal">None</span>]:</span><br></pre></td></tr></table></figure>
+<p>因此，<code>Formatter</code> 模块是 AgentScope 支持多种 LLM 的关键组件之一，其代码位于 <code>src/agentscope/formatter</code> 目录下，文件列表如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/formatter/</span><br><span class="line">├── __init__.py                    <span class="comment"># 模块导出</span></span><br><span class="line">├── _formatter_base.py             <span class="comment"># 抽象基类 FormatterBase</span></span><br><span class="line">├── _truncated_formatter_base.py   <span class="comment"># 带 Token 截断的基类</span></span><br><span class="line">├── _openai_formatter.py           <span class="comment"># OpenAI 格式化器</span></span><br><span class="line">├── _anthropic_formatter.py        <span class="comment"># Anthropic 格式化器</span></span><br><span class="line">├── _gemini_formatter.py           <span class="comment"># Gemini 格式化器</span></span><br><span class="line">├── _dashscope_formatter.py        <span class="comment"># DashScope 格式化器</span></span><br><span class="line">├── _ollama_formatter.py           <span class="comment"># Ollama 格式化器</span></span><br><span class="line">├── _deepseek_formatter.py         <span class="comment"># DeepSeek 格式化器</span></span><br><span class="line">└── _a2a_formatter.py              <span class="comment"># A2A 格式化器</span></span><br></pre></td></tr></table></figure>
+<h3 id="formatterbase-抽象基类"><a class="markdownIt-Anchor" href="#formatterbase-抽象基类"></a> FormatterBase 抽象基类</h3>
+<p>FormattterBase 抽象基类定义了所有 Foramtter 的公共接口，其代码如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">FormatterBase</span>:</span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">format</span>(<span class="params">self, *args, **kwargs</span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;将 Msg 对象格式化为 API 所需的字典列表&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">assert_list_of_msgs</span>(<span class="params">msgs: <span class="built_in">list</span>[Msg]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;验证输入是否为 Msg 对象列表&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">convert_tool_result_to_string</span>(<span class="params">output</span>) -&gt; <span class="built_in">tuple</span>[<span class="built_in">str</span>, <span class="built_in">list</span>]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;将工具结果转换为文本（兼容不支持多模态的 API）&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<h3 id="truncatedformatterbase"><a class="markdownIt-Anchor" href="#truncatedformatterbase"></a> TruncatedFormatterBase</h3>
+<p><code>TruncatedFormatterBase</code> 则实现了基于 Token 限制进行消息截断的功能，它需要接受一个 <code>TokenCounterBase</code> 对象来计算当前消息的 Token 数量：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">TruncatedFormatterBase</span>(FormatterBase, ABC):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        token_counter: TokenCounterBase | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        max_tokens: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>):</span><br><span class="line">        self.token_counter = token_counter</span><br><span class="line">        self.max_tokens = max_tokens</span><br><span class="line"></span><br><span class="line"><span class="meta">    @trace_format</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">format</span>(<span class="params">self, msgs: <span class="built_in">list</span>[Msg]</span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]:</span><br><span class="line">        <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">            formatted_msgs = <span class="keyword">await</span> self._<span class="built_in">format</span>(msgs)</span><br><span class="line">            n_tokens = <span class="keyword">await</span> self._count(formatted_msgs)</span><br><span class="line"></span><br><span class="line">            <span class="keyword">if</span> n_tokens <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> self.max_tokens <span class="keyword">is</span> <span class="literal">None</span> <span class="keyword">or</span> n_tokens &lt;= self.max_tokens:</span><br><span class="line">                <span class="keyword">return</span> formatted_msgs</span><br><span class="line"></span><br><span class="line">            <span class="comment"># 超过限制，截断消息</span></span><br><span class="line">            msgs = <span class="keyword">await</span> self._truncate(msgs)</span><br></pre></td></tr></table></figure>
+<p><strong>格式化流程</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────┐</span><br><span class="line">│                     format(msgs)                            │</span><br><span class="line">└─────────────────────────────────────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">                              ▼</span><br><span class="line">              ┌───────────────────────────────┐</span><br><span class="line">              │   1. assert_list_of_msgs      │</span><br><span class="line">              │   2. deepcopy(msgs)           │</span><br><span class="line">              └───────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">                              ▼</span><br><span class="line">              ┌───────────────────────────────┐</span><br><span class="line">              │   3. _format(msgs)            │</span><br><span class="line">              │      - _format_system_message │</span><br><span class="line">              │      - _group_messages        │</span><br><span class="line">              │      - _format_tool_sequence  │</span><br><span class="line">              │      - _format_agent_message  │</span><br><span class="line">              └───────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">                              ▼</span><br><span class="line">              ┌───────────────────────────────┐</span><br><span class="line">              │   4. _count(formatted_msgs)   │</span><br><span class="line">              └───────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">              ┌───────────────┴───────────────┐</span><br><span class="line">              ▼                               ▼</span><br><span class="line">        n_tokens &lt;= max_tokens          n_tokens &gt; max_tokens</span><br><span class="line">              │                               │</span><br><span class="line">              ▼                               ▼</span><br><span class="line">         return                    _truncate(msgs) → 循环</span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p><code>_group_messages</code> 负责将消息分成两种类型：</p>
+<ul>
+<li>tool_sequence：工具调用序列，包含 <code>tool_use</code> 或 <code>tool_result</code> Block</li>
+<li>agent_message：不包含上述 Block，是普通的 Agent 消息</li>
+</ul>
+</li>
+<li>
+<p>之所以要进行分组，是因为多 Agent 场景下，不同类型的消息需要不同的格式化策略：</p>
+<ul>
+<li>tool_sequence：保持工具调用的完整性，按 API 要求格式化</li>
+<li>agent_message：可以合并为历史记录，减少消息数量</li>
+</ul>
+</li>
+<li>
+<p><code>_format_tool_sequence</code> 和 <code>_format_agent_message</code> 都是抽象方法，需要具体的子类实现，以提供实际的消息格式化逻辑</p>
+</li>
+<li>
+<p><code>_truncate()</code> 负责对格式化后的消息进行截断，它的实现逻辑：</p>
+<ul>
+<li>保留 system 消息</li>
+<li><strong>保证 tool_use 和 tool_result 总是成对出现，即要么整体保留，要么整体删除</strong></li>
+<li>从最早的消息开始删除</li>
+</ul>
+</li>
+</ul>
+<h3 id="openaichatformatter-openaimultiagentformatter"><a class="markdownIt-Anchor" href="#openaichatformatter-openaimultiagentformatter"></a> OpenAIChatFormatter &amp; OpenAIMultiAgentFormatter</h3>
+<p>接下来我们再来看具体的、对消息内容真正进行格式化的子类。这里以适配 OpenAI 模型的 <code>OpenAIChatFormatter</code> 和 <code>OpenAIMultiAgentFormatter</code> 为例。在 AgentScope 中，提供了两种类型的格式化器：<code>ChatFormatter</code> 和 <code>MultiAgentFormatter</code>：</p>
+<ul>
+<li>ChatFormatter：专为标准的用户-助手场景的聊天机器人（单 Agent 对话）设计，可以通过 role 来区分用户和助手</li>
+<li>MultiAgentFormatter：专为多智能体场景设计，<strong>此时可以额外通过 name 来识别不同的实体</strong></li>
+</ul>
+<p>先来看 <code>OpenAIChatFormatter</code> 的核心逻辑实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAIChatFormatter</span>(<span class="title class_ inherited__">TruncatedFormatterBase</span>):</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_format</span>(<span class="params">self, msgs: <span class="built_in">list</span>[Msg]</span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]:</span><br><span class="line">        messages = []</span><br><span class="line">        <span class="keyword">for</span> msg <span class="keyword">in</span> msgs:</span><br><span class="line">            content_blocks = []</span><br><span class="line">            tool_calls = []</span><br><span class="line"></span><br><span class="line">            <span class="keyword">for</span> block <span class="keyword">in</span> msg.get_content_blocks():</span><br><span class="line">                <span class="keyword">if</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;text&quot;</span>:</span><br><span class="line">                    content_blocks.append(block)</span><br><span class="line"></span><br><span class="line">                <span class="keyword">elif</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;tool_use&quot;</span>:</span><br><span class="line">                    tool_calls.append(&#123;</span><br><span class="line">                        <span class="string">&quot;id&quot;</span>: block[<span class="string">&quot;id&quot;</span>],</span><br><span class="line">                        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;function&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;function&quot;</span>: &#123;</span><br><span class="line">                            <span class="string">&quot;name&quot;</span>: block[<span class="string">&quot;name&quot;</span>],</span><br><span class="line">                            <span class="string">&quot;arguments&quot;</span>: json.dumps(block[<span class="string">&quot;input&quot;</span>]),</span><br><span class="line">                        &#125;,</span><br><span class="line">                    &#125;)</span><br><span class="line">                <span class="keyword">elif</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;tool_result&quot;</span>:</span><br><span class="line">                    messages.append(&#123;</span><br><span class="line">                        <span class="string">&quot;role&quot;</span>: <span class="string">&quot;tool&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;tool_call_id&quot;</span>: block[<span class="string">&quot;id&quot;</span>],</span><br><span class="line">                        <span class="string">&quot;content&quot;</span>: textual_output,</span><br><span class="line">                    &#125;)</span><br><span class="line">                <span class="keyword">elif</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;image&quot;</span>:</span><br><span class="line">                    content_blocks.append(&#123;</span><br><span class="line">                        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;image_url&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;image_url&quot;</span>: &#123;<span class="string">&quot;url&quot;</span>: ...&#125;,</span><br><span class="line">                    &#125;)</span><br><span class="line">                <span class="keyword">elif</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;audio&quot;</span>:</span><br><span class="line">                    content_blocks.append(&#123;</span><br><span class="line">                        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;input_audio&quot;</span>,</span><br><span class="line">                        <span class="string">&quot;input_audio&quot;</span>: &#123;...&#125;,</span><br><span class="line">                    &#125;)</span><br><span class="line"></span><br><span class="line">            messages.append(&#123;</span><br><span class="line">                <span class="string">&quot;role&quot;</span>: msg.role,</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: msg.name,</span><br><span class="line">                <span class="string">&quot;content&quot;</span>: content_blocks <span class="keyword">or</span> <span class="literal">None</span>,</span><br><span class="line">                <span class="string">&quot;tool_calls&quot;</span>: tool_calls <span class="keyword">or</span> <span class="literal">None</span>,</span><br><span class="line">            &#125;)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>OpenAIChatFormatter 虽然继承自 <code>TruncatedFormatterBase</code>，但它重新实现了 <code>_format</code> 方法，因此不需要实现 <code>_format_tool_sequence</code> 和 <code>_format_agent_message</code></li>
+<li>OpenAIChatFormatter 将 Msg 列表中的每条消息都转换为 OpenAI 所需的格式，因此其对话历史就是用户和助手的消息</li>
+</ul>
+<p>再来看 <code>OpenAIMultiAgentFormatter</code> 的实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAIMultiAgentFormatter</span>(<span class="title class_ inherited__">TruncatedFormatterBase</span>):</span><br><span class="line">    <span class="comment"># 将 tool_sequence 交给 OpenAIChatFormatter 处理</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_format_tool_sequence</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        msgs: <span class="built_in">list</span>[Msg],</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;Given a sequence of tool call/result messages, format them into</span></span><br><span class="line"><span class="string">        the required format for the OpenAI API.&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">await</span> OpenAIChatFormatter(</span><br><span class="line">            promote_tool_result_images=self.promote_tool_result_images,</span><br><span class="line">        ).<span class="built_in">format</span>(msgs)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_format_agent_message</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        msgs: <span class="built_in">list</span>[Msg],</span></span><br><span class="line"><span class="params">        is_first: <span class="built_in">bool</span> = <span class="literal">True</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]]:</span><br><span class="line">        <span class="comment"># 核心代码抽象</span></span><br><span class="line">        accumulated_text = []</span><br><span class="line">        <span class="keyword">for</span> msg <span class="keyword">in</span> msgs:</span><br><span class="line">            <span class="keyword">for</span> block <span class="keyword">in</span> msg.get_content_blocks():</span><br><span class="line">                <span class="keyword">if</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;text&quot;</span>:</span><br><span class="line">                    accumulated_text.append(<span class="string">f&quot;<span class="subst">&#123;msg.name&#125;</span>: <span class="subst">&#123;block[<span class="string">&#x27;text&#x27;</span>]&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 添加历史记录提示词</span></span><br><span class="line">        conversation_blocks_text = conversation_history_prompt + <span class="string">&quot;&lt;history&gt;\n&quot;</span> + <span class="string">&quot;\n&quot;</span>.join(accumulated_text) + <span class="string">&quot;\n&lt;/history&gt;&quot;</span></span><br><span class="line"></span><br><span class="line">        content_list: <span class="built_in">list</span>[<span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>]] = []</span><br><span class="line">        <span class="keyword">if</span> conversation_blocks_text:</span><br><span class="line">            content_list.append(</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="string">&quot;type&quot;</span>: <span class="string">&quot;text&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;text&quot;</span>: conversation_blocks_text,</span><br><span class="line">                &#125;,</span><br><span class="line">            )</span><br><span class="line">        <span class="keyword">if</span> images:</span><br><span class="line">            content_list.extend(images)</span><br><span class="line">        <span class="keyword">if</span> audios:</span><br><span class="line">            content_list.extend(audios)</span><br><span class="line"></span><br><span class="line">        user_message = &#123;</span><br><span class="line">            <span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">            <span class="string">&quot;content&quot;</span>: content_list,</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 添加 content</span></span><br><span class="line">        <span class="keyword">if</span> content_list:</span><br><span class="line">            formatted_msgs.append(user_message)</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>OpenAIMultiAgentFormatter</code> 同样继承自 <code>TruncatedFormatterBase</code>，但它直接复用父类的 <code>_format</code> 方法，因此需要提供 <code>_format_tool_sequence</code> 和 <code>_format_agent_message</code> 方法的实现</li>
+<li><code>_format_tool_sequence</code> 直接使用 OpenAIChatFormatter 来格式化工具调用序列</li>
+<li><code>_format_agent_message</code> 则是将多 agent 的文本消息合并为一个 <code>&lt;history&gt;</code> 标签包裹的消息</li>
+</ul>
+<p>值得说明的是，因为 OpenAI API 本身支持 name 字段，因此 <code>OpenAIFormatter</code> 也可以用于多智能体。而如果使用 <code>OpenAIMultiAgentFormatter</code>，则会将对话历史合并为单个用户消息。</p>
+<p>另外，两种 <code>Formatter</code> 都支持 <code>promote_tool_result_images</code> 参数来控制是否将工具调用结果中的图片数据提升为文本消息说明：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> self.promote_tool_result_images <span class="keyword">and</span> multimodal_block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;image&quot;</span>:</span><br><span class="line">    <span class="comment"># 创建新的用户消息，包含图片</span></span><br><span class="line">    msgs.insert(i + <span class="number">1</span>, Msg(</span><br><span class="line">        name=<span class="string">&quot;user&quot;</span>,</span><br><span class="line">        content=[</span><br><span class="line">            TextBlock(text=<span class="string">&quot;&lt;system-info&gt;The following are images...&quot;</span>),</span><br><span class="line">            ImageBlock(source=...),</span><br><span class="line">            TextBlock(text=<span class="string">&quot;&lt;/system-info&gt;&quot;</span>),</span><br><span class="line">        ],</span><br><span class="line">        role=<span class="string">&quot;user&quot;</span>,</span><br><span class="line">    ))</span><br></pre></td></tr></table></figure>
+<h3 id="一个示例"><a class="markdownIt-Anchor" href="#一个示例"></a> 一个示例</h3>
+<p>最后，我们通过两个极简的例子，分别来看下这两种格式化器最后生成的内容是怎样的，以更好理解上述实现逻辑：</p>
+<ul>
+<li>OpenAIChatFormatter 示例：</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">from</span> agentscope.message <span class="keyword">import</span> Msg</span><br><span class="line"><span class="keyword">from</span> agentscope.formatter <span class="keyword">import</span> OpenAIChatFormatter</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    formatter = OpenAIChatFormatter()</span><br><span class="line"></span><br><span class="line">    msgs = [</span><br><span class="line">        Msg(name=<span class="string">&quot;user&quot;</span>, content=<span class="string">&quot;你好&quot;</span>, role=<span class="string">&quot;user&quot;</span>),</span><br><span class="line">        Msg(name=<span class="string">&quot;assistant&quot;</span>, content=<span class="string">&quot;你好！有什么可以帮助你的？&quot;</span>, role=<span class="string">&quot;assistant&quot;</span>),</span><br><span class="line">        Msg(name=<span class="string">&quot;user&quot;</span>, content=<span class="string">&quot;介绍一下自己&quot;</span>, role=<span class="string">&quot;user&quot;</span>),</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line">    formatted = <span class="keyword">await</span> formatter.<span class="built_in">format</span>(msgs)</span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;=== OpenAIChatFormatter 输出 ===&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(json.dumps(formatted, ensure_ascii=<span class="literal">False</span>, indent=<span class="number">2</span>))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<p>输出结果</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">[</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">    <span class="string">&quot;name&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">    <span class="string">&quot;content&quot;</span>: [</span><br><span class="line">      &#123;</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;text&quot;</span>,</span><br><span class="line">        <span class="string">&quot;text&quot;</span>: <span class="string">&quot;你好&quot;</span></span><br><span class="line">      &#125;</span><br><span class="line">    ]</span><br><span class="line">  &#125;,</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="string">&quot;role&quot;</span>: <span class="string">&quot;assistant&quot;</span>,</span><br><span class="line">    <span class="string">&quot;name&quot;</span>: <span class="string">&quot;assistant&quot;</span>,</span><br><span class="line">    <span class="string">&quot;content&quot;</span>: [</span><br><span class="line">      &#123;</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;text&quot;</span>,</span><br><span class="line">        <span class="string">&quot;text&quot;</span>: <span class="string">&quot;你好！有什么可以帮助你的？&quot;</span></span><br><span class="line">      &#125;</span><br><span class="line">    ]</span><br><span class="line">  &#125;,</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">    <span class="string">&quot;name&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">    <span class="string">&quot;content&quot;</span>: [</span><br><span class="line">      &#123;</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;text&quot;</span>,</span><br><span class="line">        <span class="string">&quot;text&quot;</span>: <span class="string">&quot;介绍一下自己&quot;</span></span><br><span class="line">      &#125;</span><br><span class="line">    ]</span><br><span class="line">  &#125;</span><br><span class="line">]</span><br></pre></td></tr></table></figure>
+<ul>
+<li>OpenAIMultiAgentFormatter 示例：</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> asyncio</span><br><span class="line"><span class="keyword">import</span> json</span><br><span class="line"><span class="keyword">from</span> agentscope.message <span class="keyword">import</span> Msg</span><br><span class="line"><span class="keyword">from</span> agentscope.formatter <span class="keyword">import</span> OpenAIMultiAgentFormatter</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">main</span>():</span><br><span class="line">    formatter = OpenAIMultiAgentFormatter()</span><br><span class="line"></span><br><span class="line">    msgs = [</span><br><span class="line">        Msg(name=<span class="string">&quot;Alice&quot;</span>, content=<span class="string">&quot;你好，我是 Alice&quot;</span>, role=<span class="string">&quot;user&quot;</span>),</span><br><span class="line">        Msg(name=<span class="string">&quot;Bob&quot;</span>, content=<span class="string">&quot;你好 Alice，我是 Bob&quot;</span>, role=<span class="string">&quot;assistant&quot;</span>),</span><br><span class="line">        Msg(name=<span class="string">&quot;Alice&quot;</span>, content=<span class="string">&quot;很高兴认识你&quot;</span>, role=<span class="string">&quot;user&quot;</span>),</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line">    formatted = <span class="keyword">await</span> formatter.<span class="built_in">format</span>(msgs)</span><br><span class="line"></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;=== OpenAIMultiAgentFormatter 输出 ===&quot;</span>)</span><br><span class="line">    <span class="built_in">print</span>(json.dumps(formatted, ensure_ascii=<span class="literal">False</span>, indent=<span class="number">2</span>))</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>:</span><br><span class="line">    asyncio.run(main())</span><br></pre></td></tr></table></figure>
+<p>输出结果：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">[</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>,</span><br><span class="line">    <span class="string">&quot;content&quot;</span>: [</span><br><span class="line">      &#123;</span><br><span class="line">        <span class="string">&quot;type&quot;</span>: <span class="string">&quot;text&quot;</span>,</span><br><span class="line">        <span class="string">&quot;text&quot;</span>: <span class="string">&quot;# Conversation History\nThe content between &lt;history&gt;&lt;/history&gt; tags contains your conversation history\n&lt;history&gt;\nAlice: 你好，我是 Alice\nBob: 你好 Alice，我是 Bob\nAlice: 很高兴认识你\n&lt;/history&gt;&quot;</span></span><br><span class="line">      &#125;</span><br><span class="line">    ]</span><br><span class="line">  &#125;</span><br><span class="line">]</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>本篇文章通过分析 AgentScope 里 <code>Message</code>、<code>Model</code>、<code>Token</code>、<code>Formatter</code> 模块的源码实现，深入探讨了该框架兼容多 Provider、多模态大模型（LM）的底层原理。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/21/python-agentscope-02/" rel="next" title="agentscope 源码分析（2）：MCP & Agent Skills">
+      agentscope 源码分析（2）：MCP & Agent Skills <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E4%BD%93%E8%AE%BE%E8%AE%A1"><span class="nav-number">1.</span> <span class="nav-text"> 总体设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#message-%E6%A8%A1%E5%9D%97"><span class="nav-number">2.</span> <span class="nav-text"> Message 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#msg-%E7%B1%BB"><span class="nav-number">2.1.</span> <span class="nav-text"> Msg 类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#contentblock-%E7%B1%BB"><span class="nav-number">2.2.</span> <span class="nav-text"> ContentBlock 类</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#model-%E6%A8%A1%E5%9D%97"><span class="nav-number">3.</span> <span class="nav-text"> Model 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#chatmodelbase-%E6%8A%BD%E8%B1%A1%E5%9F%BA%E7%B1%BB"><span class="nav-number">3.1.</span> <span class="nav-text"> ChatModelBase 抽象基类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#openaichatmodel"><span class="nav-number">3.2.</span> <span class="nav-text"> OpenAIChatModel</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E4%BE%8B%E5%AD%90"><span class="nav-number">3.3.</span> <span class="nav-text"> 一个例子</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#token-%E6%A8%A1%E5%9D%97"><span class="nav-number">4.</span> <span class="nav-text"> Token 模块</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#formatter-%E6%A8%A1%E5%9D%97"><span class="nav-number">5.</span> <span class="nav-text"> Formatter 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#formatterbase-%E6%8A%BD%E8%B1%A1%E5%9F%BA%E7%B1%BB"><span class="nav-number">5.1.</span> <span class="nav-text"> FormatterBase 抽象基类</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#truncatedformatterbase"><span class="nav-number">5.2.</span> <span class="nav-text"> TruncatedFormatterBase</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#openaichatformatter-openaimultiagentformatter"><span class="nav-number">5.3.</span> <span class="nav-text"> OpenAIChatFormatter &amp; OpenAIMultiAgentFormatter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E7%A4%BA%E4%BE%8B"><span class="nav-number">5.4.</span> <span class="nav-text"> 一个示例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">239</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
