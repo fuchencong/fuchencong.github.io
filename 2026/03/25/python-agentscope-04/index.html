@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章我们继续学习 AgentScope 的源码，主要聚焦于 AgentScope 的知识库实现。知识库就像是 AI Agent 的 离线图书馆，可以为 Agent 提供各种专业&#x2F;领域知识，让 Agent 能够突破预训练数据的限制，在处理专业任务时 有据可依。因此 AgentScope 提供了内置的 RAG（Retrieval-Augmented Generation）实现，为 Agent 可靠">
+<meta property="og:type" content="article">
+<meta property="og:title" content="agentscope 源码分析（4）：知识库">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/03/25/python-agentscope-04/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章我们继续学习 AgentScope 的源码，主要聚焦于 AgentScope 的知识库实现。知识库就像是 AI Agent 的 离线图书馆，可以为 Agent 提供各种专业&#x2F;领域知识，让 Agent 能够突破预训练数据的限制，在处理专业任务时 有据可依。因此 AgentScope 提供了内置的 RAG（Retrieval-Augmented Generation）实现，为 Agent 可靠">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-25T15:03:18.000Z">
+<meta property="article:modified_time" content="2026-03-25T15:05:47.796Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/25/python-agentscope-04/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>agentscope 源码分析（4）：知识库 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/25/python-agentscope-04/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          agentscope 源码分析（4）：知识库
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-03-25 23:03:18" itemprop="dateCreated datePublished" datetime="2026-03-25T23:03:18+08:00">2026-03-25</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章我们继续学习 AgentScope 的源码，主要聚焦于 AgentScope 的知识库实现。知识库就像是 AI Agent 的 <code>离线图书馆</code>，可以为 Agent 提供各种专业/领域知识，让 Agent 能够突破预训练数据的限制，在处理专业任务时 <code>有据可依</code>。因此 AgentScope 提供了内置的 RAG（Retrieval-Augmented Generation）实现，为 Agent 可靠执行复杂任务提供支撑。</p>
+<span id="more"></span>
+<p>AgentScope 的知识库实现主要涉及两个模块：<code>embedding</code> 和 <code>RAG</code>，下面我们将分别介绍这两个模块的实现原理。</p>
+<h2 id="embedding-模块"><a class="markdownIt-Anchor" href="#embedding-模块"></a> embedding 模块</h2>
+<p>embeddding 模块负责文本和多模态数据的向量化（Embedding），是 RAG（检索增强生成）和语义搜索的基础组件。简单来说，Embedding（嵌入） 是将现实世界中的碎片信息（如文字、图片、音频）转换成一串高维数字向量的过程，这些信息代表了信息在语义空间的坐标，语义相近的内容，在空间里的距离就近。</p>
+<p>embedding 模块的代码位于 <code>src/agentscope/embedding</code>，文件列表如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/embedding/</span><br><span class="line">├── __init__.py                      <span class="comment"># 模块导出</span></span><br><span class="line">├── _embedding_base.py               <span class="comment"># 抽象基类 EmbeddingModelBase</span></span><br><span class="line">├── _embedding_response.py           <span class="comment"># 响应数据类 EmbeddingResponse</span></span><br><span class="line">├── _embedding_usage.py              <span class="comment"># 用量统计 EmbeddingUsage</span></span><br><span class="line">├── _openai_embedding.py             <span class="comment"># OpenAI 文本嵌入</span></span><br><span class="line">├── _dashscope_embedding.py          <span class="comment"># DashScope 文本嵌入</span></span><br><span class="line">├── _dashscope_multimodal_embedding.py <span class="comment"># DashScope 多模态嵌入</span></span><br><span class="line">├── _gemini_embedding.py             <span class="comment"># Gemini 文本嵌入</span></span><br><span class="line">├── _ollama_embedding.py             <span class="comment"># Ollama 文本嵌入</span></span><br><span class="line">├── _cache_base.py                   <span class="comment"># 缓存抽象基类</span></span><br><span class="line">└── _file_cache.py                   <span class="comment"># 文件缓存实现</span></span><br></pre></td></tr></table></figure>
+<h3 id="embeddingmodelbase"><a class="markdownIt-Anchor" href="#embeddingmodelbase"></a> EmbeddingModelBase</h3>
+<p>和<a target="_blank" rel="noopener" href="https://fuchencong.com/2026/03/24/python-agentscope-03/">上篇文章</a>介绍 Model 模块实现类似，为了支持不同 Provider 的不同 embedding 模型，AgentScope 定义了 <code>EmbeddingModelBase</code> 抽象基类，为不同 embedding 模型提供统一的抽象。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">EmbeddingModelBase</span>:</span><br><span class="line">    model_name: <span class="built_in">str</span>              <span class="comment"># 模型名称</span></span><br><span class="line">    supported_modalities: <span class="built_in">list</span>[<span class="built_in">str</span>]  <span class="comment"># 支持的模态：[&quot;text&quot;]、[&quot;text&quot;, &quot;image&quot;]</span></span><br><span class="line">    dimensions: <span class="built_in">int</span>              <span class="comment"># 向量维度</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, model_name: <span class="built_in">str</span>, dimensions: <span class="built_in">int</span></span>):</span><br><span class="line">        self.model_name = model_name</span><br><span class="line">        self.dimensions = dimensions</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, *args, **kwargs</span>) -&gt; EmbeddingResponse:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;调用嵌入 API，子类必须实现&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">raise</span> NotImplementedError()</span><br></pre></td></tr></table></figure>
+<ul>
+<li>需要实现 <code>__call__</code> 方法，使得该类型的对象是可调用对象</li>
+<li>通过 <code>supported_modalities</code> 属性，表明该模型支持的模态</li>
+<li>每个模型都有其特定的 <code>model_name</code> 和 <code>dimensions</code>（向量维度）</li>
+</ul>
+<h3 id="embeddingresponse"><a class="markdownIt-Anchor" href="#embeddingresponse"></a> EmbeddingResponse</h3>
+<p>调用 Embedding 模型后，得到的响应数据使用 <code>EmbeddingResponse</code> 类封装，如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Embedding = <span class="type">List</span>[<span class="built_in">float</span>]</span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">EmbeddingResponse</span>(<span class="title class_ inherited__">DictMixin</span>):</span><br><span class="line">    embeddings: <span class="type">List</span>[Embedding]       <span class="comment"># 嵌入向量列表</span></span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span>                           <span class="comment"># 响应 ID</span></span><br><span class="line">    created_at: <span class="built_in">str</span>                   <span class="comment"># 创建时间</span></span><br><span class="line">    <span class="built_in">type</span>: <span class="type">Literal</span>[<span class="string">&quot;embedding&quot;</span>]        <span class="comment"># 类型标识</span></span><br><span class="line">    usage: EmbeddingUsage | <span class="literal">None</span>      <span class="comment"># 用量统计</span></span><br><span class="line">    source: <span class="type">Literal</span>[<span class="string">&quot;cache&quot;</span>, <span class="string">&quot;api&quot;</span>]   <span class="comment"># 数据来源</span></span><br></pre></td></tr></table></figure>
+<p>关于 Embedding 模型的 Token 用量统计，则定义了 <code>EmbeddingUsage</code> 类，如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">EmbeddingUsage</span>(<span class="title class_ inherited__">DictMixin</span>):</span><br><span class="line">    time: <span class="built_in">float</span>           <span class="comment"># 耗时（秒）</span></span><br><span class="line">    tokens: <span class="built_in">int</span> | <span class="literal">None</span>    <span class="comment"># Token 数量</span></span><br><span class="line">    <span class="built_in">type</span>: <span class="type">Literal</span>[<span class="string">&quot;embedding&quot;</span>]</span><br></pre></td></tr></table></figure>
+<p>以上就介绍了 Embedding 模块定义的基本数据结构，接下来我们来看具体的 Embedding 子类实现，我们以 OpenAI 的 Embedding 模型调用为例。</p>
+<h3 id="openaitextembedding"><a class="markdownIt-Anchor" href="#openaitextembedding"></a> OpenAITextEmbedding</h3>
+<p>AgentScope 针对 OpenAI 模型只提供了文本 Embeeding 的实现，使用 <code>OpenAITextEmbedding</code> 定义：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAITextEmbedding</span>(<span class="title class_ inherited__">EmbeddingModelBase</span>):</span><br><span class="line">    supported_modalities = [<span class="string">&quot;text&quot;</span>]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        api_key: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        model_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        dimensions: <span class="built_in">int</span> = <span class="number">1024</span>,</span></span><br><span class="line"><span class="params">        embedding_cache: EmbeddingCacheBase | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">import</span> openai</span><br><span class="line"></span><br><span class="line">        <span class="built_in">super</span>().__init__(model_name, dimensions)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 创建 OpenAI client</span></span><br><span class="line">        self.client = openai.AsyncClient(api_key=api_key, **kwargs)</span><br><span class="line">        self.embedding_cache = embedding_cache</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, text: <span class="type">List</span>[<span class="built_in">str</span> | TextBlock]</span>) -&gt; EmbeddingResponse:</span><br><span class="line">        <span class="comment"># 1. 提取文本</span></span><br><span class="line">        gather_text = [item[<span class="string">&quot;text&quot;</span>] <span class="keyword">if</span> <span class="built_in">isinstance</span>(item, <span class="built_in">dict</span>) <span class="keyword">else</span> item <span class="keyword">for</span> item <span class="keyword">in</span> text]</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 计算嵌入的参数</span></span><br><span class="line">        kwargs = &#123;</span><br><span class="line">            <span class="string">&quot;input&quot;</span>: gather_text,</span><br><span class="line">            <span class="string">&quot;model&quot;</span>: self.model_name,</span><br><span class="line">            <span class="string">&quot;dimensions&quot;</span>: self.dimensions,</span><br><span class="line">            <span class="string">&quot;encoding_format&quot;</span>: <span class="string">&quot;float&quot;</span>,</span><br><span class="line">            **kwargs,</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 2. 检查缓存</span></span><br><span class="line">        <span class="keyword">if</span> self.embedding_cache:</span><br><span class="line">            cached = <span class="keyword">await</span> self.embedding_cache.retrieve(identifier=kwargs)</span><br><span class="line">            <span class="keyword">if</span> cached:</span><br><span class="line">                <span class="keyword">return</span> EmbeddingResponse(embeddings=cached, source=<span class="string">&quot;cache&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 3. 调用 API</span></span><br><span class="line">        response = <span class="keyword">await</span> self.client.embeddings.create(</span><br><span class="line">            <span class="built_in">input</span>=gather_text,</span><br><span class="line">            model=self.model_name,</span><br><span class="line">            dimensions=self.dimensions,</span><br><span class="line">            encoding_format=<span class="string">&quot;float&quot;</span>,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 4. 存入缓存</span></span><br><span class="line">        <span class="keyword">if</span> self.embedding_cache:</span><br><span class="line">            <span class="keyword">await</span> self.embedding_cache.store(identifier=kwargs, embeddings=embeddings)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> EmbeddingResponse(</span><br><span class="line">            embeddings=[_.embedding <span class="keyword">for</span> _ <span class="keyword">in</span> response.data],</span><br><span class="line">            usage=EmbeddingUsage(tokens=response.usage.total_tokens, time=time),</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<ul>
+<li>仍然是通过 <code>openai.AsyncClient</code> 进行 Embedding 模型调用</li>
+<li>在真实调用 Embedding 模型的 API 之前，会先检查缓存中是否能够直接提供 Embedding 结果</li>
+<li>只有当缓存未命中时，才会调用 OpenAI 的 Embedding API，并将结果存入缓存</li>
+<li>最后返回 <code>EmbeddingResponse</code> 对象，包含 embedding 向量列表、用量统计等信息</li>
+</ul>
+<p>这里以 OpenAI 为例，介绍了如何实现 Embedding 能力，<code>embeeding</code> 模块还提供了其他 Provider 的 Embedding 实现，例如 DashScope（支持多模态嵌入）、Gemini 等，这里就不再一一列举。</p>
+<h3 id="embedding-缓存"><a class="markdownIt-Anchor" href="#embedding-缓存"></a> Embedding 缓存</h3>
+<p>Embedding 模块还实现了 Embedding 缓存机制，以减少不必要的模型 API 调用。<code>EmbeddingCacheBase</code> 定义了缓存机制的抽象基类，定义了 Embedding 缓存的检索和存储方法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">EmbeddingCacheBase</span>:</span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">store</span>(<span class="params">self, embeddings: <span class="type">List</span>[Embedding], identifier: JSONSerializableObject</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;存储嵌入向量&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">retrieve</span>(<span class="params">self, identifier: JSONSerializableObject</span>) -&gt; <span class="type">List</span>[Embedding] | <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;检索嵌入向量&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">remove</span>(<span class="params">self, identifier: JSONSerializableObject</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;删除嵌入向量&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">clear</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;清空缓存&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p><code>FileEmbeddingCache</code> 则实现了基于文件的缓存实现，它将每个 identifier 对应的 Embeddings 存储为文件系统中的一个单独文件：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">FileEmbeddingCache</span>(<span class="title class_ inherited__">EmbeddingCacheBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        cache_dir: <span class="built_in">str</span> = <span class="string">&quot;./.cache/embeddings&quot;</span>,</span></span><br><span class="line"><span class="params">        max_file_number: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        max_cache_size: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        self._cache_dir = os.path.abspath(cache_dir)</span><br><span class="line">        <span class="comment"># 最大缓存文件数量和缓存大小</span></span><br><span class="line">        self.max_file_number = max_file_number</span><br><span class="line">        self.max_cache_size = max_cache_size</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 获取对应的缓存文件</span></span><br><span class="line"><span class="meta">    @staticmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">_get_filename</span>(<span class="params">identifier: JSONSerializableObject</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;Generate a filename based on the identifier.&quot;&quot;&quot;</span></span><br><span class="line">        json_str = json.dumps(identifier, ensure_ascii=<span class="literal">False</span>)</span><br><span class="line">        <span class="keyword">return</span> hashlib.sha256(json_str.encode(<span class="string">&quot;utf-8&quot;</span>)).hexdigest() + <span class="string">&quot;.npy&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 存储缓存数据</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">store</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        embeddings: <span class="type">List</span>[Embedding],</span></span><br><span class="line"><span class="params">        identifier: JSONSerializableObject,</span></span><br><span class="line"><span class="params">        overwrite: <span class="built_in">bool</span> = <span class="literal">False</span>,</span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        filename = self._get_filename(identifier)</span><br><span class="line">        path_file = os.path.join(self.cache_dir, filename)</span><br><span class="line"></span><br><span class="line">        np.save(path_file, embeddings)</span><br><span class="line">        <span class="comment"># 维护缓存目录，删除旧的缓存文件，保持缓存大小和数量限制</span></span><br><span class="line">        <span class="keyword">await</span> self._maintain_cache_dir()</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 检索缓存</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">retrieve</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        identifier: JSONSerializableObject,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="type">List</span>[Embedding] | <span class="literal">None</span>:</span><br><span class="line">        filename = self._get_filename(identifier)</span><br><span class="line">        path_file = os.path.join(self.cache_dir, filename)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> np.load(os.path.join(self.cache_dir, filename)).tolist()</span><br></pre></td></tr></table></figure>
+<ul>
+<li>使用 <code>identifier</code> 的 SHA256 哈希作为文件名</li>
+<li>使用 numpy 库存储 Embeddings 向量</li>
+<li><code>_maintain_cache_dir()</code> 实现了基于 LRU 策略的缓存维护机制，当缓存文件数量或大小超过限制时，会删除最旧的缓存文件</li>
+</ul>
+<p>具体的 Embedding 实现可以通过 <code>组合</code> 的方式来使用缓存机制，例如 OpenAITextEmbedding 就将 <code>EmbeddingCacheBase</code> 的对象保存为对象属性：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAITextEmbedding</span>(<span class="title class_ inherited__">EmbeddingModelBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        api_key: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        model_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        dimensions: <span class="built_in">int</span> = <span class="number">1024</span>,</span></span><br><span class="line"><span class="params">        embedding_cache: EmbeddingCacheBase | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        self.embedding_cache = embedding_cache</span><br></pre></td></tr></table></figure>
+<p>以上我们就介绍了 AgentScope 框架的 Embedding 模块的实现，它主要提供了对各种 Embedding 模型调用的封装，同时提供了一个 Embedding 缓存机制，接下来我们继续介绍 RAG 模块的实现原理。</p>
+<h2 id="rag-模块"><a class="markdownIt-Anchor" href="#rag-模块"></a> RAG 模块</h2>
+<p>RAG 模块实现了检索增强生成（Retrieval-Augmented Generation）功能，为 Agent 提供知识检索能力。它包含文档读取、向量存储和知识库管理三个核心子模块。源码位于 <code>src/agentscope/rag</code> 目录下。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/rag/</span><br><span class="line">├── __init__.py                    <span class="comment"># 模块导出</span></span><br><span class="line">├── _document.py                   <span class="comment"># 文档数据结构</span></span><br><span class="line">├── _knowledge_base.py             <span class="comment"># 知识库抽象基类</span></span><br><span class="line">├── _simple_knowledge.py           <span class="comment"># 简单知识库实现</span></span><br><span class="line">├── _reader/                       <span class="comment"># 文档读取器</span></span><br><span class="line">│   ├── __init__.py</span><br><span class="line">│   ├── _reader_base.py            <span class="comment"># 读取器基类</span></span><br><span class="line">│   ├── _text_reader.py            <span class="comment"># 文本读取器</span></span><br><span class="line">│   ├── _pdf_reader.py             <span class="comment"># PDF 读取器</span></span><br><span class="line">│   ├── _word_reader.py            <span class="comment"># Word 读取器</span></span><br><span class="line">│   ├── _excel_reader.py           <span class="comment"># Excel 读取器</span></span><br><span class="line">│   ├── _ppt_reader.py             <span class="comment"># PPT 读取器</span></span><br><span class="line">│   ├── _image_reader.py           <span class="comment"># 图片读取器</span></span><br><span class="line">│   └── _utils.py</span><br><span class="line">└── _store/                        <span class="comment"># 向量数据库存储</span></span><br><span class="line">    ├── __init__.py</span><br><span class="line">    ├── _store_base.py             <span class="comment"># 存储基类</span></span><br><span class="line">    ├── _qdrant_store.py           <span class="comment"># Qdrant 存储</span></span><br><span class="line">    ├── _milvuslite_store.py       <span class="comment"># Milvus Lite 存储</span></span><br><span class="line">    ├── _mongodb_store.py          <span class="comment"># MongoDB 存储</span></span><br><span class="line">    ├── _oceanbase_store.py        <span class="comment"># OceanBase 存储</span></span><br><span class="line">    └── _alibabacloud_mysql_store.py <span class="comment"># 阿里云 MySQL 存储</span></span><br></pre></td></tr></table></figure>
+<h3 id="文档读取"><a class="markdownIt-Anchor" href="#文档读取"></a> 文档读取</h3>
+<p>解析读取各类文档并从中提取数据内容，是构建知识库的首要环节。RAG 模块中定义了如下数据结构来表示文档分块：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">DocMetadata</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;文档元数据&quot;&quot;&quot;</span></span><br><span class="line">    content: TextBlock | ImageBlock | VideoBlock  <span class="comment"># 内容块</span></span><br><span class="line">    doc_id: <span class="built_in">str</span>           <span class="comment"># 文档 ID</span></span><br><span class="line">    chunk_id: <span class="built_in">int</span>         <span class="comment"># 分块 ID</span></span><br><span class="line">    total_chunks: <span class="built_in">int</span>     <span class="comment"># 总分块数</span></span><br><span class="line"></span><br><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Document</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;文档分块&quot;&quot;&quot;</span></span><br><span class="line">    metadata: DocMetadata           <span class="comment"># 元数据</span></span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span>                         <span class="comment"># 唯一 ID（自动生成）</span></span><br><span class="line">    embedding: Embedding | <span class="literal">None</span>     <span class="comment"># 嵌入向量（添加/检索时填充）</span></span><br><span class="line">    score: <span class="built_in">float</span> | <span class="literal">None</span>             <span class="comment"># 相关性分数（检索时填充）</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>Document</code> 表示一个文档分块（chunk），一个传统意义上的文件（例如 pdf 文件、txt 文件等）会包含多个这样的 <code>Document</code>（分档分块）</li>
+<li><code>DocMetadata</code> 用来表示文档分块的数据，包括文档 ID、分块 ID 和总分块数，以及真正的内容数据</li>
+</ul>
+<p>为了支持从各种格式的文档中读取数据，RAG 模块定义了 <code>ReaderBase</code> 抽象基类，每种具体的文件读取子类都需要继承该抽象基类，通过实现 <code>__call__</code> 方法，该类型的对象是可调用对象，返回文档块列表</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">ReaderBase</span>:</span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, *args, **kwargs</span>) -&gt; <span class="built_in">list</span>[Document]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;读取文件，拆分为文档块&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">get_doc_id</span>(<span class="params">self, *args, **kwargs</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;生成文档唯一 ID&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<p>我们以 <code>TextReader</code> 为例，它支持从文本文件（或者文本字符串）中读取数，并将其拆分为多个 Document 文档块 ：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line">lass TextReader(ReaderBase):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, chunk_size: <span class="built_in">int</span> = <span class="number">512</span>, split_by: <span class="type">Literal</span>[<span class="string">&quot;char&quot;</span>, <span class="string">&quot;sentence&quot;</span>, <span class="string">&quot;paragraph&quot;</span>] = <span class="string">&quot;sentence&quot;</span></span>):</span><br><span class="line">        self.chunk_size = chunk_size</span><br><span class="line">        self.split_by = split_by</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, text: <span class="built_in">str</span></span>) -&gt; <span class="built_in">list</span>[Document]:</span><br><span class="line">        <span class="comment"># 支持文件路径或文本字符串</span></span><br><span class="line">        <span class="keyword">if</span> os.path.exists(text):</span><br><span class="line">            <span class="keyword">with</span> <span class="built_in">open</span>(text, <span class="string">&quot;r&quot;</span>, encoding=<span class="string">&quot;utf-8&quot;</span>) <span class="keyword">as</span> f:</span><br><span class="line">                text = f.read()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 按指定方式拆分</span></span><br><span class="line">        splits = []</span><br><span class="line">        <span class="keyword">if</span> self.split_by == <span class="string">&quot;char&quot;</span>:</span><br><span class="line">            <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">0</span>, <span class="built_in">len</span>(text), self.chunk_size):</span><br><span class="line">                splits.append(text[i:i + self.chunk_size])</span><br><span class="line">        <span class="keyword">elif</span> self.split_by == <span class="string">&quot;sentence&quot;</span>:</span><br><span class="line">            <span class="keyword">import</span> nltk</span><br><span class="line">            sentences = nltk.sent_tokenize(text)</span><br><span class="line">            splits.extend(sentences)</span><br><span class="line">        <span class="keyword">elif</span> self.split_by == <span class="string">&quot;paragraph&quot;</span>:</span><br><span class="line">            paragraphs = [p <span class="keyword">for</span> p <span class="keyword">in</span> text.split(<span class="string">&quot;\n&quot;</span>) <span class="keyword">if</span> p]</span><br><span class="line">            splits.extend(paragraphs)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 创建 Document 列表</span></span><br><span class="line">        doc_id = self.get_doc_id(text)</span><br><span class="line">        <span class="keyword">return</span> [</span><br><span class="line">            Document(</span><br><span class="line">                <span class="built_in">id</span>=doc_id,</span><br><span class="line">                metadata=DocMetadata(</span><br><span class="line">                    content=TextBlock(<span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>, text=split),</span><br><span class="line">                    doc_id=doc_id,</span><br><span class="line">                    chunk_id=idx,</span><br><span class="line">                    total_chunks=<span class="built_in">len</span>(splits),</span><br><span class="line">                ),</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">for</span> idx, split <span class="keyword">in</span> <span class="built_in">enumerate</span>(splits)</span><br><span class="line">        ]</span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">get_doc_id</span>(<span class="params">self, text: <span class="built_in">str</span></span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">        <span class="keyword">return</span> hashlib.sha256(text.encode(<span class="string">&quot;utf-8&quot;</span>)).hexdigest()</span><br></pre></td></tr></table></figure>
+<ul>
+<li>支持多种分割方式，包括按字符、句子或段落分割</li>
+<li>支持定义每个分割块的最大长度</li>
+<li>将分割后的文本块，转换为 Document 对象</li>
+</ul>
+<p>除了支持 TextReader 之外，RAG 模块还支持 <code>WordReader</code>、<code>PowerPointReader</code>、<code>ExcelReader</code>、<code>ImageReader</code>、<code>PDFReader</code> 等，以实现对不同格式文档的读取。</p>
+<h3 id="向量存储"><a class="markdownIt-Anchor" href="#向量存储"></a> 向量存储</h3>
+<p>读取文档内容并将其向量化之后，还需要将这些向量保存到向量数据库中，这样我们就能直接通过向量检索的方式来获取与指定 query 相关的文档片段。RAG 模块支持多种向量存储数据库，其定义了 <code>VDBStoreBase</code> 抽象基类来表示向量存储应该实现的公共接口：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">VDBStoreBase</span>:</span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">add</span>(<span class="params">self, documents: <span class="built_in">list</span>[Document]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;添加文档到向量数据库&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">delete</span>(<span class="params">self, *args, **kwargs</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;删除文档&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">search</span>(<span class="params">self, query_embedding: Embedding, limit: <span class="built_in">int</span>, score_threshold: <span class="built_in">float</span> | <span class="literal">None</span> = <span class="literal">None</span></span>) -&gt; <span class="built_in">list</span>[Document]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;向量搜索&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">get_client</span>(<span class="params">self</span>) -&gt; <span class="type">Any</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;获取底层客户端&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">raise</span> NotImplementedError()</span><br></pre></td></tr></table></figure>
+<p>RAG 模块目前内置了以下向量存储的实现：</p>
+<table>
+<thead>
+<tr>
+<th>Store</th>
+<th>特点</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QdrantStore</code></td>
+<td>支持内存/本地/远程模式</td>
+<td>开发测试、生产部署</td>
+</tr>
+<tr>
+<td><code>MilvusLiteStore</code></td>
+<td>Milvus 轻量版</td>
+<td>本地开发</td>
+</tr>
+<tr>
+<td><code>MongoDBStore</code></td>
+<td>MongoDB Atlas Vector Search</td>
+<td>已有 MongoDB 环境</td>
+</tr>
+<tr>
+<td><code>OceanBaseStore</code></td>
+<td>OceanBase 向量扩展</td>
+<td>企业级部署</td>
+</tr>
+<tr>
+<td><code>AlibabaCloudMySQLStore</code></td>
+<td>阿里云 MySQL 向量搜索</td>
+<td>阿里云环境</td>
+</tr>
+</tbody>
+</table>
+<p>我们以 <code>QdrantStore</code> 这个实现为例，其核心就是通过 <code>QdrantClient</code> 来操作 Qdrant 向量数据库，实现文档向量的增删查操作：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">QdrantStore</span>(<span class="title class_ inherited__">VDBStoreBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, location: <span class="built_in">str</span>, collection_name: <span class="built_in">str</span>, dimensions: <span class="built_in">int</span>, distance: <span class="built_in">str</span> = <span class="string">&quot;Cosine&quot;</span></span>):</span><br><span class="line">        <span class="keyword">from</span> qdrant_client <span class="keyword">import</span> AsyncQdrantClient</span><br><span class="line">        self._client = AsyncQdrantClient(location=location)</span><br><span class="line">        self.collection_name = collection_name</span><br><span class="line">        self.dimensions = dimensions</span><br><span class="line">        self.distance = distance</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_validate_collection</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;确保集合存在&quot;&quot;&quot;</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> <span class="keyword">await</span> self._client.collection_exists(self.collection_name):</span><br><span class="line">            <span class="keyword">await</span> self._client.create_collection(</span><br><span class="line">                collection_name=self.collection_name,</span><br><span class="line">                vectors_config=models.VectorParams(</span><br><span class="line">                    size=self.dimensions,</span><br><span class="line">                    distance=<span class="built_in">getattr</span>(models.Distance, self.distance.upper()),</span><br><span class="line">                ),</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">add</span>(<span class="params">self, documents: <span class="built_in">list</span>[Document]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">await</span> self._validate_collection()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">await</span> self._client.upsert(</span><br><span class="line">            collection_name=self.collection_name,</span><br><span class="line">            points=[</span><br><span class="line">                PointStruct(</span><br><span class="line">                    <span class="built_in">id</span>=_map_text_to_uuid(json.dumps(&#123;</span><br><span class="line">                        <span class="string">&quot;doc_id&quot;</span>: _.metadata.doc_id,</span><br><span class="line">                        <span class="string">&quot;chunk_id&quot;</span>: _.metadata.chunk_id,</span><br><span class="line">                        <span class="string">&quot;content&quot;</span>: _.metadata.content,</span><br><span class="line">                    &#125;)),</span><br><span class="line">                    vector=_.embedding,</span><br><span class="line">                    payload=_.metadata,  <span class="comment"># 元数据存储在 payload 中</span></span><br><span class="line">                )</span><br><span class="line">                <span class="keyword">for</span> _ <span class="keyword">in</span> documents</span><br><span class="line">            ],</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">search</span>(<span class="params">self, query_embedding: Embedding, limit: <span class="built_in">int</span>, score_threshold: <span class="built_in">float</span> | <span class="literal">None</span> = <span class="literal">None</span></span>) -&gt; <span class="built_in">list</span>[Document]:</span><br><span class="line">        res = <span class="keyword">await</span> self._client.query_points(</span><br><span class="line">            collection_name=self.collection_name,</span><br><span class="line">            query=query_embedding,</span><br><span class="line">            limit=limit,</span><br><span class="line">            score_threshold=score_threshold,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> [</span><br><span class="line">            Document(</span><br><span class="line">                embedding=point.vector,</span><br><span class="line">                score=point.score,</span><br><span class="line">                metadata=DocMetadata(**point.payload),</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">for</span> point <span class="keyword">in</span> res.points</span><br><span class="line">        ]</span><br></pre></td></tr></table></figure>
+<h3 id="知识库实现"><a class="markdownIt-Anchor" href="#知识库实现"></a> 知识库实现</h3>
+<p>有了 embedding 模型、文档读取、向量存储这些基本组件后，知识库的构建就相当简单了。RAG 模块使用 <code>KnowledgeBase</code> 类来表示知识库，定义一个知识库应该提供哪些 API：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">KnowledgeBase</span>:</span><br><span class="line">    embedding_store: VDBStoreBase      <span class="comment"># 向量存储</span></span><br><span class="line">    embedding_model: EmbeddingModelBase <span class="comment"># 嵌入模型</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, embedding_store, embedding_model</span>):</span><br><span class="line">        self.embedding_store = embedding_store</span><br><span class="line">        self.embedding_model = embedding_model</span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">retrieve</span>(<span class="params">self, query: <span class="built_in">str</span>, limit: <span class="built_in">int</span> = <span class="number">5</span>, score_threshold: <span class="built_in">float</span> | <span class="literal">None</span> = <span class="literal">None</span></span>) -&gt; <span class="built_in">list</span>[Document]:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;检索相关文档&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">add_documents</span>(<span class="params">self, documents: <span class="built_in">list</span>[Document]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;添加文档&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">retrieve_knowledge</span>(<span class="params">self, query: <span class="built_in">str</span>, limit: <span class="built_in">int</span> = <span class="number">5</span>, score_threshold: <span class="built_in">float</span> | <span class="literal">None</span> = <span class="literal">None</span></span>) -&gt; ToolResponse:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;便捷方法：返回 ToolResponse，可直接作为工具结果&quot;&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>其包含 <code>embedding_store</code> 和 <code>embedding_model</code> 两个属性，分别表示向量存储和所使用嵌入模型</li>
+</ul>
+<p><code>SimpleKnowledgeBase</code> 是 <code>KnowledgeBase</code> 的一个具体实现，实现了简单的基于向量检索的知识库实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">SimpleKnowledge</span>(<span class="title class_ inherited__">KnowledgeBase</span>):</span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">retrieve</span>(<span class="params">self, query: <span class="built_in">str</span>, limit: <span class="built_in">int</span> = <span class="number">5</span>, score_threshold: <span class="built_in">float</span> | <span class="literal">None</span> = <span class="literal">None</span></span>) -&gt; <span class="built_in">list</span>[Document]:</span><br><span class="line">        <span class="comment"># 1. 将查询文本转换为向量</span></span><br><span class="line">        res_embedding = <span class="keyword">await</span> self.embedding_model([TextBlock(<span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>, text=query)])</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 2. 向量搜索</span></span><br><span class="line">        res = <span class="keyword">await</span> self.embedding_store.search(</span><br><span class="line">            res_embedding.embeddings[<span class="number">0</span>],</span><br><span class="line">            limit=limit,</span><br><span class="line">            score_threshold=score_threshold,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">return</span> res</span><br><span class="line"></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">add_documents</span>(<span class="params">self, documents: <span class="built_in">list</span>[Document]</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="comment"># 1. 验证模态支持</span></span><br><span class="line">        <span class="keyword">for</span> doc <span class="keyword">in</span> documents:</span><br><span class="line">            <span class="keyword">if</span> doc.metadata.content[<span class="string">&quot;type&quot;</span>] <span class="keyword">not</span> <span class="keyword">in</span> self.embedding_model.supported_modalities:</span><br><span class="line">                <span class="keyword">raise</span> ValueError(...)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 2. 计算嵌入向量</span></span><br><span class="line">        res_embeddings = <span class="keyword">await</span> self.embedding_model([_.metadata.content <span class="keyword">for</span> _ <span class="keyword">in</span> documents])</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 3. 设置嵌入向量</span></span><br><span class="line">        <span class="keyword">for</span> doc, embedding <span class="keyword">in</span> <span class="built_in">zip</span>(documents, res_embeddings.embeddings):</span><br><span class="line">            doc.embedding = embedding</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 4. 存入向量数据库</span></span><br><span class="line">        <span class="keyword">await</span> self.embedding_store.add(documents)</span><br></pre></td></tr></table></figure>
+<h3 id="知识库小结"><a class="markdownIt-Anchor" href="#知识库小结"></a> 知识库小结</h3>
+<p>通过 embedding 模块和 rag 模块，AgentScope 提供了最基本的知识库特性，整体使用流程如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                    1. 文档读取与分块                              │</span><br><span class="line">│   Reader(PDF/Word/Text) → list[Document]                        │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">                              ▼</span><br><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                    2. 向量化与存储                                │</span><br><span class="line">│   KnowledgeBase.add_documents()                                 │</span><br><span class="line">│       └── EmbeddingModel([content]) → embeddings               │</span><br><span class="line">│       └── VDBStore.add(documents with embeddings)              │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">                              ▼</span><br><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                    3. 检索                                       │</span><br><span class="line">│   KnowledgeBase.retrieve(query)                                 │</span><br><span class="line">│       └── EmbeddingModel([query]) → query_embedding            │</span><br><span class="line">│       └── VDBStore.search(query_embedding) → list[Document]    │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br><span class="line">                              │</span><br><span class="line">                              ▼</span><br><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                    4. 返回结果                                   │</span><br><span class="line">│   list[Document] with scores                                    │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们学习了 AgentScope 知识库实现原理，包括 embedding 模块和 rag 模块的代码实现。这里我们只是介绍了知识库内部是如何实现的，在 Agent 中到底应该怎么使用知识库呢？这个我们将在后续介绍 Agent 实现时再详细说明。</p>
+<h2 id="reference"><a class="markdownIt-Anchor" href="#reference"></a> Reference</h2>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://doc.agentscope.io/zh_CN/tutorial/task_embedding.html">AgentScope Embedding</a></li>
+<li><a target="_blank" rel="noopener" href="https://doc.agentscope.io/zh_CN/tutorial/task_rag.html">AgentScope RAG</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/24/python-agentscope-03/" rel="next" title="agentscope 源码分析（3）：模型交互">
+      agentscope 源码分析（3）：模型交互 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#embedding-%E6%A8%A1%E5%9D%97"><span class="nav-number">1.</span> <span class="nav-text"> embedding 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#embeddingmodelbase"><span class="nav-number">1.1.</span> <span class="nav-text"> EmbeddingModelBase</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#embeddingresponse"><span class="nav-number">1.2.</span> <span class="nav-text"> EmbeddingResponse</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#openaitextembedding"><span class="nav-number">1.3.</span> <span class="nav-text"> OpenAITextEmbedding</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#embedding-%E7%BC%93%E5%AD%98"><span class="nav-number">1.4.</span> <span class="nav-text"> Embedding 缓存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#rag-%E6%A8%A1%E5%9D%97"><span class="nav-number">2.</span> <span class="nav-text"> RAG 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E8%AF%BB%E5%8F%96"><span class="nav-number">2.1.</span> <span class="nav-text"> 文档读取</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%91%E9%87%8F%E5%AD%98%E5%82%A8"><span class="nav-number">2.2.</span> <span class="nav-text"> 向量存储</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.3.</span> <span class="nav-text"> 知识库实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9F%A5%E8%AF%86%E5%BA%93%E5%B0%8F%E7%BB%93"><span class="nav-number">2.4.</span> <span class="nav-text"> 知识库小结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">3.</span> <span class="nav-text"> 小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">4.</span> <span class="nav-text"> Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">240</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
