@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章我们继续学习 AgentScope 的源码，主要聚焦于 AgentScope Plan 与 Trace 两个组件的实现。Plan 组件为 Agent 提供了将复杂任务分解为一系列子任务的能力，而 Trace 组件则用于追踪和记录 Agent 的执行过程，属于 AgentScope 框架的基础设施。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="agentscope 源码分析（5）：Plan &amp; Trace">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/03/27/python-agentscope-05/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章我们继续学习 AgentScope 的源码，主要聚焦于 AgentScope Plan 与 Trace 两个组件的实现。Plan 组件为 Agent 提供了将复杂任务分解为一系列子任务的能力，而 Trace 组件则用于追踪和记录 Agent 的执行过程，属于 AgentScope 框架的基础设施。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-27T15:03:31.000Z">
+<meta property="article:modified_time" content="2026-04-02T15:05:31.000Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/27/python-agentscope-05/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>agentscope 源码分析（5）：Plan & Trace | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/27/python-agentscope-05/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          agentscope 源码分析（5）：Plan & Trace
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-03-27 23:03:31" itemprop="dateCreated datePublished" datetime="2026-03-27T23:03:31+08:00">2026-03-27</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章我们继续学习 AgentScope 的源码，主要聚焦于 AgentScope Plan 与 Trace 两个组件的实现。Plan 组件为 Agent 提供了将复杂任务分解为一系列子任务的能力，而 Trace 组件则用于追踪和记录 Agent 的执行过程，属于 AgentScope 框架的基础设施。</p>
+<span id="more"></span>
+<h2 id="plan-模块"><a class="markdownIt-Anchor" href="#plan-模块"></a> Plan 模块</h2>
+<p>AgentScope 的 <code>plan</code> 模块是一个任务规划与管理系统，旨在帮助 AI Agent 将复杂任务分解为可执行的子任务，并通过状态机机制追踪任务执行进度。Plan 模块的代码位于 <code>src/agentscope/plan/</code> 目录下，文件列表如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/plan/</span><br><span class="line">├── __init__.py              <span class="comment"># 模块导出</span></span><br><span class="line">├── _plan_model.py           <span class="comment"># 数据模型定义</span></span><br><span class="line">├── _plan_notebook.py        <span class="comment"># 核心管理器</span></span><br><span class="line">├── _storage_base.py         <span class="comment"># 存储抽象基类</span></span><br><span class="line">└── _in_memory_storage.py    <span class="comment"># 内存存储实现</span></span><br></pre></td></tr></table></figure>
+<h3 id="数据模型"><a class="markdownIt-Anchor" href="#数据模型"></a> 数据模型</h3>
+<p><code>_plan_model.py</code> 定义了 Plan 模块的核心数据模型抽象，其使用 <code>SubTask</code> 来表示计划中的每个子任务：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">SubTask</span>(<span class="title class_ inherited__">BaseModel</span>):</span><br><span class="line">    name: <span class="built_in">str</span>                          <span class="comment"># 子任务名称</span></span><br><span class="line">    description: <span class="built_in">str</span>                   <span class="comment"># 详细描述</span></span><br><span class="line">    expected_outcome: <span class="built_in">str</span>              <span class="comment"># 预期产出</span></span><br><span class="line">    outcome: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>         <span class="comment"># 实际产出</span></span><br><span class="line">    state: <span class="type">Literal</span>[<span class="string">&quot;todo&quot;</span>, <span class="string">&quot;in_progress&quot;</span>, <span class="string">&quot;done&quot;</span>, <span class="string">&quot;abandoned&quot;</span>] = <span class="string">&quot;todo&quot;</span></span><br><span class="line">    created_at: <span class="built_in">str</span>                    <span class="comment"># 创建时间</span></span><br><span class="line">    finished_at: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>     <span class="comment"># 完成时间</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>使用 <code>state</code> 属性追踪子任务的执行状态，包括待办（todo）、进行中（in_progress）、完成（done）和废弃（abandoned）</li>
+</ul>
+<p><code>SubTask</code> 类型还提供了一系列方法，用以管理子任务：</p>
+<ul>
+<li><code>finish(self, outcome: str) -&gt; None</code> 完成子任务，设置状态为 done，记录实际产出和完成时间</li>
+<li><code>to_oneline_markdown(self) -&gt; str</code>：转换为单行 Markdown 格式（<code>如 - [ ] task_name</code>）</li>
+<li><code>to_markdown(self</code>：转换为 Markdown 格式，detailed=True 时包含详细描述</li>
+</ul>
+<p><code>Plan</code> 用来表示整个计划：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">Plan</span>(<span class="title class_ inherited__">BaseModel</span>):</span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span>                            <span class="comment"># 唯一标识（自动生成）</span></span><br><span class="line">    name: <span class="built_in">str</span>                          <span class="comment"># 计划名称</span></span><br><span class="line">    description: <span class="built_in">str</span>                   <span class="comment"># 计划描述</span></span><br><span class="line">    expected_outcome: <span class="built_in">str</span>             <span class="comment"># 预期产出</span></span><br><span class="line">    subtasks: <span class="built_in">list</span>[SubTask]           <span class="comment"># 子任务列表</span></span><br><span class="line">    created_at: <span class="built_in">str</span>                    <span class="comment"># 创建时间</span></span><br><span class="line">    state: <span class="type">Literal</span>[<span class="string">&quot;todo&quot;</span>, <span class="string">&quot;in_progress&quot;</span>, <span class="string">&quot;done&quot;</span>, <span class="string">&quot;abandoned&quot;</span>]</span><br><span class="line">    finished_at: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">    outcome: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+<p><code>Plan</code> 类型也提供了一系列方法，用以管理计划：</p>
+<ul>
+<li><code>refresh_plan_state(self) -&gt; str</code>：基于子任务状态刷新计划状态</li>
+<li><code>finish(self, state: Literal[&quot;done&quot;, &quot;abandoned&quot;], outcome: str) -&gt; None</code>：完成计划，设置状态和产出，记录完成时间</li>
+<li><code>to_markdown(self, detailed: bool = False) -&gt; str</code>：转换为 Markdown 格式，包含计划信息和子任务列表</li>
+</ul>
+<p><code>refreshed_plan_state</code> 方法通过检查子任务状态来更新计划的整体状态：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">refresh_plan_state</span>(<span class="params">self</span>) -&gt; <span class="built_in">str</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;基于子任务状态自动刷新计划状态&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> self.state <span class="keyword">in</span> [<span class="string">&quot;done&quot;</span>, <span class="string">&quot;abandoned&quot;</span>]:</span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    any_in_progress = <span class="built_in">any</span>(_.state == <span class="string">&quot;in_progress&quot;</span> <span class="keyword">for</span> _ <span class="keyword">in</span> self.subtasks)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> any_in_progress <span class="keyword">and</span> self.state == <span class="string">&quot;todo&quot;</span>:</span><br><span class="line">        self.state = <span class="string">&quot;in_progress&quot;</span></span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;The plan state has been updated to &#x27;in_progress&#x27;.&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">elif</span> <span class="keyword">not</span> any_in_progress <span class="keyword">and</span> self.state == <span class="string">&quot;in_progress&quot;</span>:</span><br><span class="line">        self.state = <span class="string">&quot;todo&quot;</span></span><br><span class="line">        <span class="keyword">return</span> <span class="string">&quot;The plan state has been updated to &#x27;todo&#x27;.&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;&quot;</span></span><br></pre></td></tr></table></figure>
+<h3 id="计划存储"><a class="markdownIt-Anchor" href="#计划存储"></a> 计划存储</h3>
+<p><code>PlanStorageBase</code> 定义了计划存储的抽象基类，用来保存所有计划。它继承自 <code>StateModule</code> 类，支持历史计划数据的序列化/反序列化操作。关于 <code>StateModule</code> 的详细用法，我们将在后续的文章中详细介绍。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PlanStorageBase</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">add_plan</span>(<span class="params">self, plan: Plan</span>) -&gt; <span class="literal">None</span>: ...</span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">delete_plan</span>(<span class="params">self, plan_id: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>: ...</span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_plans</span>(<span class="params">self</span>) -&gt; <span class="built_in">list</span>[Plan]: ...</span><br><span class="line"></span><br><span class="line"><span class="meta">    @abstractmethod</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_plan</span>(<span class="params">self, plan_id: <span class="built_in">str</span></span>) -&gt; Plan | <span class="literal">None</span>: ...</span><br></pre></td></tr></table></figure>
+<ul>
+<li>定义存储接口，支持未来扩展（如数据库存储、分布式存储）</li>
+<li>继承 <code>StateModule</code>，支持状态序列化与反序列化</li>
+</ul>
+<p><code>InMemoryPlanStorage</code> 实现了 <code>PlanStorageBase</code>，使用内存中的有序字典来存储计划，并通过 <code>plans</code> 这个 <code>state</code> 属性支持 Plan 的序列化与反序列化。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">InMemoryPlanStorage</span>(<span class="title class_ inherited__">PlanStorageBase</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        <span class="comment"># key 为 plan 的 id，value 为 Plan 对象</span></span><br><span class="line">        self.plans = OrderedDict()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 注册状态序列化/反序列化</span></span><br><span class="line">        self.register_state(</span><br><span class="line">            <span class="string">&quot;plans&quot;</span>,</span><br><span class="line">            <span class="keyword">lambda</span> plans: &#123;k: v.model_dump() <span class="keyword">for</span> k, v <span class="keyword">in</span> plans.items()&#125;,</span><br><span class="line">            <span class="keyword">lambda</span> json_data: OrderedDict(</span><br><span class="line">                (k, Plan.model_validate(v)) <span class="keyword">for</span> k, v <span class="keyword">in</span> json_data.items()</span><br><span class="line">            ),</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<h3 id="plannotebook"><a class="markdownIt-Anchor" href="#plannotebook"></a> PlanNotebook</h3>
+<p><code>PlanNotebook</code> 是 Plan 模块的核心数据类，为 Agent 提供完整的 <code>计划管理</code> 工具集。其定义如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">PlanNotebook</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        max_subtasks: <span class="built_in">int</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        plan_to_hint: <span class="type">Callable</span>[[Plan | <span class="literal">None</span>], <span class="built_in">str</span> | <span class="literal">None</span>] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        storage: PlanStorageBase | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    </span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.max_tasks = max_subtasks</span><br><span class="line">        self.plan_to_hint = plan_to_hint <span class="keyword">or</span> DefaultPlanToHint()</span><br><span class="line">        self.storage = storage <span class="keyword">or</span> InMemoryPlanStorage()</span><br><span class="line">        self.current_plan: Plan | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">        self._plan_change_hooks: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="type">Callable</span>] = OrderedDict()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 当前计划需要进行状态管理</span></span><br><span class="line">        self.register_state(</span><br><span class="line">            <span class="string">&quot;current_plan&quot;</span>,</span><br><span class="line">            custom_to_json=<span class="keyword">lambda</span> _: _.model_dump() <span class="keyword">if</span> _ <span class="keyword">else</span> <span class="literal">None</span>,</span><br><span class="line">            custom_from_json=<span class="keyword">lambda</span> _: Plan.model_validate(_) <span class="keyword">if</span> _ <span class="keyword">else</span> <span class="literal">None</span>,</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<ul>
+<li>plan_to_hint 是一个可调用对象，用于将 Plan 对象转换为 LLM 提示词</li>
+<li>storage 用来保存所有的历史 Plan</li>
+<li>current_plan 指向当前正在处理的 Plan</li>
+<li>_plan_change_hooks 用来注册计划状态变更时的 hooks 函数</li>
+<li><code>PlanNotebook</code> 也继承自 <code>StateModule</code>，以支持对 <code>current_plan</code> 进行状态管理</li>
+</ul>
+<p><code>PlanNotebook</code> 是以 Tool 的形式为 Agent 提供计划管理能力的，其 <code>list_tools</code> 返回了所有可用的工具：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">list_tools</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">    </span>) -&gt; <span class="built_in">list</span>[<span class="type">Callable</span>[..., <span class="type">Coroutine</span>[<span class="type">Any</span>, <span class="type">Any</span>, ToolResponse]]]:</span><br><span class="line">        <span class="keyword">return</span> [</span><br><span class="line">            <span class="comment"># subtask related tools</span></span><br><span class="line">            self.view_subtasks,</span><br><span class="line">            self.update_subtask_state,</span><br><span class="line">            self.finish_subtask,</span><br><span class="line">            <span class="comment"># plan related tools</span></span><br><span class="line">            self.create_plan,</span><br><span class="line">            self.revise_current_plan,</span><br><span class="line">            self.finish_plan,</span><br><span class="line">            <span class="comment"># historical plan related tools</span></span><br><span class="line">            self.view_historical_plans,</span><br><span class="line">            self.recover_historical_plan,</span><br><span class="line">        ]</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>工具函数</th>
+<th>功能</th>
+<th>关键逻辑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>create_plan</code></td>
+<td>创建新计划</td>
+<td>替换现有计划，触发 hooks</td>
+</tr>
+<tr>
+<td><code>revise_current_plan</code></td>
+<td>修改计划</td>
+<td>支持增/改/删子任务</td>
+</tr>
+<tr>
+<td><code>update_subtask_state</code></td>
+<td>更新子任务状态</td>
+<td>校验前置任务完成情况</td>
+</tr>
+<tr>
+<td><code>finish_subtask</code></td>
+<td>完成子任务</td>
+<td>自动激活下一子任务</td>
+</tr>
+<tr>
+<td><code>view_subtasks</code></td>
+<td>查看子任务详情</td>
+<td>Markdown 格式输出</td>
+</tr>
+<tr>
+<td><code>finish_plan</code></td>
+<td>结束计划</td>
+<td>归档到历史记录</td>
+</tr>
+<tr>
+<td><code>view_historical_plans</code></td>
+<td>查看历史计划</td>
+<td>从存储中检索</td>
+</tr>
+<tr>
+<td><code>recover_historical_plan</code></td>
+<td>恢复历史计划</td>
+<td>替换当前计划</td>
+</tr>
+</tbody>
+</table>
+<p>我们来看下 <code>create_plan</code> 和 <code>finish_plan</code> 的实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">create_plan</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        description: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        expected_outcome: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">        subtasks: <span class="built_in">list</span>[SubTask],</span></span><br><span class="line"><span class="params">    </span>) -&gt; ToolResponse:</span><br><span class="line">        plan = Plan(</span><br><span class="line">            name=name,</span><br><span class="line">            description=description,</span><br><span class="line">            expected_outcome=expected_outcome,</span><br><span class="line">            subtasks=subtasks,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 返回工具响应</span></span><br><span class="line">        <span class="keyword">if</span> self.current_plan <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            res = ToolResponse(</span><br><span class="line">                content=[</span><br><span class="line">                    TextBlock(</span><br><span class="line">                        <span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>,</span><br><span class="line">                        text=<span class="string">f&quot;Plan &#x27;<span class="subst">&#123;name&#125;</span>&#x27; created successfully.&quot;</span>,</span><br><span class="line">                    ),</span><br><span class="line">                ],</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        <span class="keyword">else</span>:</span><br><span class="line">            res = ToolResponse(</span><br><span class="line">                content=[</span><br><span class="line">                    TextBlock(</span><br><span class="line">                        <span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>,</span><br><span class="line">                        text=(</span><br><span class="line">                            <span class="string">&quot;The current plan named &quot;</span></span><br><span class="line">                            <span class="string">f&quot;&#x27;<span class="subst">&#123;self.current_plan.name&#125;</span>&#x27; is replaced by the &quot;</span></span><br><span class="line">                            <span class="string">f&quot;newly created plan named &#x27;<span class="subst">&#123;name&#125;</span>&#x27;.&quot;</span></span><br><span class="line">                        ),</span><br><span class="line">                    ),</span><br><span class="line">                ],</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 更新计划</span></span><br><span class="line">        self.current_plan = plan</span><br><span class="line">        <span class="keyword">await</span> self._trigger_plan_change_hooks()</span><br><span class="line">        <span class="keyword">return</span> res</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">finish_plan</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        state: <span class="type">Literal</span>[<span class="string">&quot;done&quot;</span>, <span class="string">&quot;abandoned&quot;</span>],</span></span><br><span class="line"><span class="params">        outcome: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; ToolResponse:</span><br><span class="line">        <span class="keyword">if</span> self.current_plan <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">            <span class="keyword">return</span> ToolResponse(</span><br><span class="line">                content=[</span><br><span class="line">                    TextBlock(</span><br><span class="line">                        <span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>,</span><br><span class="line">                        text=<span class="string">&quot;There is no plan to finish.&quot;</span>,</span><br><span class="line">                    ),</span><br><span class="line">                ],</span><br><span class="line">            )</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 将当前计划标记为 done</span></span><br><span class="line">        self.current_plan.finish(state, outcome)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 将当前计划存入 history</span></span><br><span class="line">        <span class="keyword">await</span> self.storage.add_plan(self.current_plan)</span><br><span class="line"></span><br><span class="line">        self.current_plan = <span class="literal">None</span></span><br><span class="line">        <span class="keyword">await</span> self._trigger_plan_change_hooks()</span><br><span class="line">        <span class="keyword">return</span> ToolResponse(</span><br><span class="line">            content=[</span><br><span class="line">                TextBlock(</span><br><span class="line">                    <span class="built_in">type</span>=<span class="string">&quot;text&quot;</span>,</span><br><span class="line">                    text=<span class="string">f&quot;The current plan is finished successfully as &quot;</span></span><br><span class="line">                    <span class="string">f&quot;&#x27;<span class="subst">&#123;state&#125;</span>&#x27;.&quot;</span>,</span><br><span class="line">                ),</span><br><span class="line">            ],</span><br><span class="line">        )</span><br></pre></td></tr></table></figure>
+<p><code>PlanNotebook</code> 的 <code>get_current_hint()</code> 方法则用于根据当前计划的状态来获取提示词：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">get_current_hint</span>(<span class="params">self</span>) -&gt; Msg | <span class="literal">None</span>:</span><br><span class="line">        hint_content = self.plan_to_hint(self.current_plan)</span><br><span class="line">        <span class="keyword">if</span> hint_content:</span><br><span class="line">            msg = Msg(</span><br><span class="line">                <span class="string">&quot;user&quot;</span>,</span><br><span class="line">                hint_content,</span><br><span class="line">                <span class="string">&quot;user&quot;</span>,</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">return</span> msg</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>它调用 <code>plan_to_hint</code> 将当前计划转换为提示词，如果用户在创建 <code>PlanNotebook</code> 时没有提供 <code>plan_to_hint</code>，则会使用默认的转换逻辑，即 <code>DefaultPlanToHint</code> 的实现</li>
+<li><code>DefaultPlanToHint</code> 根据当前计划的状态，生成相应的提示词。例如如下分别展示了 <code>没有计划</code>、<code>计划刚开始执行</code> 是所使用的提示词：</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">no_plan: <span class="built_in">str</span> = (</span><br><span class="line">    <span class="string">&quot;If the user&#x27;s query is complex (e.g. programming a website, game or &quot;</span></span><br><span class="line">    <span class="string">&quot;app), or requires a long chain of steps to complete (e.g. conduct &quot;</span></span><br><span class="line">    <span class="string">&quot;research on a certain topic from different sources), you NEED to &quot;</span></span><br><span class="line">    <span class="string">&quot;create a plan first by calling &#x27;create_plan&#x27;. Otherwise, you can &quot;</span></span><br><span class="line">    <span class="string">&quot;directly execute the user&#x27;s query without planning.&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">at_the_beginning: <span class="built_in">str</span> = (</span><br><span class="line">    <span class="string">&quot;The current plan:\n&quot;</span></span><br><span class="line">    <span class="string">&quot;```\n&quot;</span></span><br><span class="line">    <span class="string">&quot;&#123;plan&#125;\n&quot;</span></span><br><span class="line">    <span class="string">&quot;```\n&quot;</span></span><br><span class="line">    <span class="string">&quot;Your options include:\n&quot;</span></span><br><span class="line">    <span class="string">&quot;- Mark the first subtask as &#x27;in_progress&#x27; by calling &quot;</span></span><br><span class="line">    <span class="string">&quot;&#x27;update_subtask_state&#x27; with subtask_idx=0 and state=&#x27;in_progress&#x27;, &quot;</span></span><br><span class="line">    <span class="string">&quot;and start executing it.\n&quot;</span></span><br><span class="line">    <span class="string">&quot;- If the first subtask is not executable, analyze why and what you &quot;</span></span><br><span class="line">    <span class="string">&quot;can do to advance the plan, e.g. ask user for more information, &quot;</span></span><br><span class="line">    <span class="string">&quot;revise the plan by calling &#x27;revise_current_plan&#x27;.\n&quot;</span></span><br><span class="line">    <span class="string">&quot;- If the user asks you to do something unrelated to the plan, &quot;</span></span><br><span class="line">    <span class="string">&quot;prioritize the completion of user&#x27;s query first, and then return &quot;</span></span><br><span class="line">    <span class="string">&quot;to the plan afterward.\n&quot;</span></span><br><span class="line">    <span class="string">&quot;- If the user no longer wants to perform the current plan, confirm &quot;</span></span><br><span class="line">    <span class="string">&quot;with the user and call the &#x27;finish_plan&#x27; function.\n&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<h3 id="plan-小结"><a class="markdownIt-Anchor" href="#plan-小结"></a> Plan 小结</h3>
+<p>以上就介绍了 AgentScope 的 Plan 模块的核心原理，包括其核心数据结构、提供的工具、以及如何将计划转换为提示词。这里只是介绍了 Plan 模块的内部实现原理，我们将在后续文章继续介绍 Agent 是如何使用 Plan 模块的。</p>
+<h2 id="trace-模块"><a class="markdownIt-Anchor" href="#trace-模块"></a> Trace 模块</h2>
+<p>接下来我们再来分析 AgentScope 的 Trace 模块实现，它为 AI Agent 系统提供可观测性（Observability）支持。它追踪 Agent 执行过程中的关键操作，包括 LLM 调用、Agent 回复、工具执行、消息格式化、Embedding 等。通过 Trace，有助于解决如下问题：</p>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>Tracing 如何解决</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调用链路不透明</td>
+<td>记录每个操作的 Span，形成完整调用树</td>
+</tr>
+<tr>
+<td>性能瓶颈难定位</td>
+<td>记录每个操作的耗时</td>
+</tr>
+<tr>
+<td>错误难以追踪</td>
+<td>自动捕获异常并记录</td>
+</tr>
+<tr>
+<td>Token 消耗不明</td>
+<td>记录 input/output tokens</td>
+</tr>
+<tr>
+<td>调试困难</td>
+<td>可导出到可视化平台（如 Jaeger、Arize）</td>
+</tr>
+</tbody>
+</table>
+<p>AgentScope 的 Trace 实现基于 OpenTelemetry 标准，OpenTelemetry 是云原生计算基金会（CNCF）的可观测性标准，提供：</p>
+<ul>
+<li><strong>统一 API</strong>：一套 API 支持多种后端（Jaeger、Prometheus、Arize 等）</li>
+<li><strong>语义约定</strong>：标准化的属性命名，确保跨系统兼容</li>
+<li><strong>GenAI 扩展</strong>：专为 AI/LLM 场景定义的属性规范</li>
+</ul>
+<p>Trace 模块的代码位于 <code>src/agentscope/tracing/</code> 目录下，文件列表如下所示：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/tracing/</span><br><span class="line">├── __init__.py          <span class="comment"># 导出接口</span></span><br><span class="line">├── _setup.py            <span class="comment"># OpenTelemetry 配置</span></span><br><span class="line">├── _attributes.py       <span class="comment"># 属性定义（Semantic Conventions）</span></span><br><span class="line">├── _extractor.py        <span class="comment"># 属性提取器（核心逻辑）</span></span><br><span class="line">├── _converter.py        <span class="comment"># ContentBlock 转换器</span></span><br><span class="line">├── _utils.py            <span class="comment"># 序列化工具</span></span><br><span class="line">└── _trace.py            <span class="comment"># 装饰器实现</span></span><br></pre></td></tr></table></figure>
+<p>整体调用关系如下所示：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">┌────────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                     用户代码                                        │</span><br><span class="line">│   @trace_llm / @trace_reply / @trace_toolkit / @trace / ...        │</span><br><span class="line">├────────────────────────────────────────────────────────────────────┤</span><br><span class="line">│                         │                                           │</span><br><span class="line">│                         ▼                                           │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│  │                    _trace.py (装饰器层)                        │ │</span><br><span class="line">│  │  - 包装函数调用                                                │ │</span><br><span class="line">│  │  - 创建 Span                                                  │ │</span><br><span class="line">│  │  - 处理同步/异步/生成器                                        │ │</span><br><span class="line">│  │  - 错误捕获                                                    │ │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│                         │                                           │</span><br><span class="line">│                         ▼                                           │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│  │                 _extractor.py (属性提取层)                     │ │</span><br><span class="line">│  │  - _get_llm_request_attributes                                │ │</span><br><span class="line">│  │  - _get_agent_request_attributes                              │ │</span><br><span class="line">│  │  - _get_tool_request_attributes                               │ │</span><br><span class="line">│  │  - ...                                                        │ │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│                         │                                           │</span><br><span class="line">│                         ▼                                           │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│  │              _converter.py + _utils.py                        │ │</span><br><span class="line">│  │  - _convert_block_to_part (ContentBlock → OTel Part)          │ │</span><br><span class="line">│  │  - _serialize_to_str (对象 → JSON 字符串)                      │ │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│                         │                                           │</span><br><span class="line">│                         ▼                                           │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│  │                 _attributes.py + _setup.py                    │ │</span><br><span class="line">│  │  - SpanAttributes (OpenTelemetry Semantic Conventions)        │ │</span><br><span class="line">│  │  - TracerProvider + OTLPSpanExporter                          │ │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│                         │                                           │</span><br><span class="line">│                         ▼                                           │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│  │                   OpenTelemetry SDK                           │ │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│                         │                                           │</span><br><span class="line">│                         ▼                                           │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│  │            外部后端 (Jaeger / Arize / Datadog / ...)          │ │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────┘ │</span><br><span class="line">└────────────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<h3 id="trace-全局配置"><a class="markdownIt-Anchor" href="#trace-全局配置"></a> Trace 全局配置</h3>
+<p><code>_setup.py</code> 负责初始化 Trace 系统，<code>setup_tracing</code> 函数负责完成全局 Trace 系统的初始化工作：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">setup_tracing</span>(<span class="params">endpoint: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    exporter = OTLPSpanExporter(endpoint=endpoint)</span><br><span class="line">    span_processor = BatchSpanProcessor(exporter)</span><br><span class="line"></span><br><span class="line">    tracer_provider: TracerProvider = trace.get_tracer_provider()</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">isinstance</span>(tracer_provider, TracerProvider):</span><br><span class="line">        <span class="comment"># 应用程序可能已经在其他地方初始化了 TracerProvider</span></span><br><span class="line">        <span class="comment"># The provider is set outside, just add the span processor</span></span><br><span class="line">        tracer_provider.add_span_processor(span_processor)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        tracer_provider = TracerProvider()</span><br><span class="line">        tracer_provider.add_span_processor(span_processor)</span><br><span class="line">        trace.set_tracer_provider(tracer_provider)</span><br></pre></td></tr></table></figure>
+<p>这段函数涉及 OpenTelemetry 的几个关键概念：</p>
+<ul>
+<li>
+<p>TracerProvidor：负责整个追踪系统的全局配置和资源管理。通常一个应用只有一个 TracerProvider 实例，所有 所有 Tracer 共享相同的配置。它的主要职责有：</p>
+<ul>
+<li>创建和管理 Tracer</li>
+<li>管理全局配置，例如配置资源信息</li>
+<li>管理 Span 处理器</li>
+<li>配置采样策略</li>
+</ul>
+</li>
+<li>
+<p>Tracer：追踪器，负责创建和启动 Span，是实际记录追踪数据的入口。Tracer 负责开启具体的监控任务。它定义了当前这一段监控属于哪个模块或哪个库</p>
+<ul>
+<li>多实例：可以为不同模块创建不同的 Tracer</li>
+<li>上下文传播：自动处理 Span 之间的父子关系</li>
+<li>轻量级：创建成本低，可频繁使用</li>
+</ul>
+</li>
+<li>
+<p>Span：代表一个操作或工作单元，记录操作的详细信息。它代表了一段操作过程，记录了具体发生了什么（操作名）、什么时候开始、什么时候结束、以及在这个过程中发生了哪些小事（Attributes/Events）</p>
+<ul>
+<li>Span 是有层级关系的（父子关系），通过这种关系，你能看到一个请求在系统内部是如何跳转的</li>
+<li>每个 Span 都有 Trace ID、Span ID、Attributes、Events 等信息</li>
+</ul>
+</li>
+<li>
+<p>Exporter：导出器，负责将追踪数据（Span）发送到后端系统</p>
+<ul>
+<li>可以将 exporter 理解为&quot;数据快递员&quot;——负责把追踪数据打包并送到指定的目的地</li>
+<li>这段代码创建了一个 <code>OTLPSpanExporter</code>，即使用 OTLP 协议（OpenTelemetry Protocol）导出 Span 数据</li>
+<li>endpoint：指定接收数据的目标地址（如 Jaeger、Zipkin、或其他 APM 系统的 OTLP 接收端点）</li>
+</ul>
+</li>
+<li>
+<p>Span Processor（Span 处理器）：管理 Span 的生命周期和导出时机</p>
+<ul>
+<li>这里使用 BatchSpanProcessor，即批量处理器，会收集多个 Span 后批量导出，而不是每个 Span 都立即导出，这样减少网络开销，提高性能</li>
+<li>可以将 <code>Span Processor</code> 理解为 <code>数据调度员</code>——决定何时将 Span 交给 Exporter 发送</li>
+<li>还有其他类型的处理器，如 SimpleSpanProcessor（立即导出每个 Span）</li>
+</ul>
+</li>
+</ul>
+<p>理解上述概念后，就非常容易理解 <code>setup_tracing</code> 函数是如何工作的了。它的核心目的是：</p>
+<ul>
+<li>如果当前环境中已经存在 TracerProvider，则直接添加一个新的 Span 处理器</li>
+<li>如果当前不存在全局的 TracerProvider，则创建一个新的 TracerProvider，并设置其 Span 处理器</li>
+</ul>
+<p><code>_get_tracer()</code> 函数则用于获取一个 Tracer 实例（使用全局的 TracerProvidor）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_get_tracer</span>() -&gt; Tracer:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Get the tracer</span></span><br><span class="line"><span class="string">    Returns:</span></span><br><span class="line"><span class="string">        `Tracer`: The tracer with the name &quot;agentscope&quot; and version.</span></span><br><span class="line"><span class="string">    &quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">from</span> opentelemetry <span class="keyword">import</span> trace</span><br><span class="line">    <span class="keyword">from</span> .._version <span class="keyword">import</span> __version__</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> trace.get_tracer(<span class="string">&quot;agentscope&quot;</span>, __version__)</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<h3 id="_tracepy"><a class="markdownIt-Anchor" href="#_tracepy"></a> <code>_trace.py</code></h3>
+<p><code>_trace.py</code> 中提供了各种装饰器，用来对各种函数调用进行 Trace。</p>
+<table>
+<thead>
+<tr>
+<th>装饰器</th>
+<th>目标函数</th>
+<th>Span 名称格式</th>
+<th>核心属性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trace_llm</code></td>
+<td>ChatModelBase.<strong>call</strong></td>
+<td><code>chat &#123;model&#125;</code></td>
+<td>provider, model, tokens, messages</td>
+</tr>
+<tr>
+<td><code>trace_reply</code></td>
+<td>AgentBase.reply</td>
+<td><code>invoke_agent &#123;agent_name&#125;</code></td>
+<td>agent_id, agent_name, messages</td>
+</tr>
+<tr>
+<td><code>trace_toolkit</code></td>
+<td>Toolkit.call_tool_function</td>
+<td><code>execute_tool &#123;tool_name&#125;</code></td>
+<td>tool_call_id, tool_name, arguments</td>
+</tr>
+<tr>
+<td><code>trace_format</code></td>
+<td>FormatterBase.format</td>
+<td><code>format &#123;provider&#125;</code></td>
+<td>format_target, format_count</td>
+</tr>
+<tr>
+<td><code>trace_embedding</code></td>
+<td>EmbeddingModelBase</td>
+<td><code>embeddings &#123;model&#125;</code></td>
+<td>model, dimensions</td>
+</tr>
+<tr>
+<td><code>trace</code></td>
+<td>任意函数</td>
+<td><code>invoke_generic_function &#123;name&#125;</code></td>
+<td>function_name, input, output</td>
+</tr>
+</tbody>
+</table>
+<p>我们以追踪 LLM 调用的装饰器实现 <code>trace_llm</code> 为例：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">trace_llm</span>(<span class="params">func: <span class="type">Callable</span></span>) -&gt; <span class="type">Callable</span>:</span><br><span class="line">    <span class="string">&quot;&quot;&quot;追踪 LLM 调用&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">    @wraps(<span class="params">func</span>)</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">wrapper</span>(<span class="params">self: ChatModelBase, *args, **kwargs</span>):</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> _check_tracing_enabled():</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">await</span> func(*args, **kwargs)</span><br><span class="line"></span><br><span class="line">        tracer = _get_tracer()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 提取请求属性</span></span><br><span class="line">        request_attrs = _get_llm_request_attributes(self, args, kwargs)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 获取 span name</span></span><br><span class="line">        span_name = _get_llm_span_name(request_attributes)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">with</span> tracer.start_as_current_span(</span><br><span class="line">            name=span_name,</span><br><span class="line">            attributes=&#123;</span><br><span class="line">                **request_attributes,</span><br><span class="line">                **_get_common_attributes(),</span><br><span class="line">                SpanAttributes.AGENTSCOPE_FUNCTION_NAME: function_name,</span><br><span class="line">            &#125;,</span><br><span class="line">            end_on_exit=<span class="literal">False</span>,</span><br><span class="line">        ) <span class="keyword">as</span> span:</span><br><span class="line">            <span class="keyword">try</span>:</span><br><span class="line">                res = <span class="keyword">await</span> func(*args, **kwargs)</span><br><span class="line"></span><br><span class="line">                <span class="comment"># 处理流式响应</span></span><br><span class="line">                <span class="keyword">if</span> <span class="built_in">isinstance</span>(res, AsyncGenerator):</span><br><span class="line">                    <span class="keyword">return</span> _trace_async_generator_wrapper(res, span)</span><br><span class="line"></span><br><span class="line">                <span class="comment"># 记录响应属性</span></span><br><span class="line">                span.set_attributes(_get_llm_response_attributes(res))</span><br><span class="line">                span.set_status(StatusCode.OK)</span><br><span class="line">                <span class="keyword">return</span> res</span><br><span class="line">            <span class="keyword">except</span> Exception <span class="keyword">as</span> e:</span><br><span class="line">                span.set_status(StatusCode.ERROR)</span><br><span class="line">                span.record_exception(e)</span><br><span class="line">                <span class="keyword">raise</span></span><br><span class="line">    <span class="keyword">return</span> wrapper</span><br></pre></td></tr></table></figure>
+<ul>
+<li>使用 <code>_get_llm_request_attributes()</code> 提取 llm 调用请求的相关属性</li>
+<li>根据请求属性的相关字段，初始化 span name</li>
+<li>创建 span，并记录请求相关属性</li>
+<li>调用原始函数</li>
+<li>如果是流式响应，则包装原始生成器（在迭代生成器结束后，负责记录响应属性并设置 span 状态）</li>
+<li>否则直接记录 <code>_get_llm_response_attributes()</code> 所提取的响应属性</li>
+</ul>
+<p>之后，在所有的 LLM 调用实现上，使用 <code>@trace_llm</code> 装饰器，就可以自动追踪 LLM 的调用情况了。例如</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">OpenAIChatModel</span>(<span class="title class_ inherited__">ChatModelBase</span>):</span><br><span class="line"><span class="meta">    @trace_llm</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params"></span></span><br><span class="line"><span class="params">        self,</span></span><br><span class="line"><span class="params">        messages: <span class="built_in">list</span>[<span class="built_in">dict</span>],</span></span><br><span class="line"><span class="params">        tools: <span class="built_in">list</span>[<span class="built_in">dict</span>] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        tool_choice: <span class="type">Literal</span>[<span class="string">&quot;auto&quot;</span>, <span class="string">&quot;none&quot;</span>, <span class="string">&quot;required&quot;</span>] | <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        structured_model: <span class="type">Type</span>[BaseModel] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">        **kwargs: <span class="type">Any</span>,</span></span><br><span class="line"><span class="params">    </span>) -&gt; ChatResponse | AsyncGenerator[ChatResponse, <span class="literal">None</span>]:</span><br><span class="line">        ......</span><br></pre></td></tr></table></figure>
+<p>其他装饰器的实现都是类似的，只不过根据 trace 的目标对象不同，提取的属性、记录的 span name 会有所差异。</p>
+<h3 id="_extractorpy"><a class="markdownIt-Anchor" href="#_extractorpy"></a> _extractor.py</h3>
+<p><code>_extractor.py</code> 提供了各种属性提取工具函数，根据 trace 对象的不同，提取出相应的属性。例如对于 llm 调用的请求，由 <code>_get_llm_request_attributes()</code> 负责从请求对象中提取出所希望追踪的属性，并以字典形式返回（属性名和值的键值对）:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_get_llm_request_attributes</span>(<span class="params">instance, args, kwargs</span>) -&gt; <span class="type">Dict</span>:</span><br><span class="line">    <span class="keyword">return</span> &#123;</span><br><span class="line">        <span class="comment"># 必需属性</span></span><br><span class="line">        GEN_AI_OPERATION_NAME: <span class="string">&quot;chat&quot;</span>,</span><br><span class="line">        GEN_AI_PROVIDER_NAME: _get_provider_name(instance),</span><br><span class="line">        GEN_AI_REQUEST_MODEL: instance.model_name,</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 可选参数</span></span><br><span class="line">        GEN_AI_REQUEST_TEMPERATURE: kwargs.get(<span class="string">&quot;temperature&quot;</span>),</span><br><span class="line">        GEN_AI_REQUEST_MAX_TOKENS: kwargs.get(<span class="string">&quot;max_tokens&quot;</span>),</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 工具定义</span></span><br><span class="line">        GEN_AI_TOOL_DEFINITIONS: _get_tool_definitions(kwargs.get(<span class="string">&quot;tools&quot;</span>)),</span><br><span class="line"></span><br><span class="line">        <span class="comment"># AgentScope 扩展</span></span><br><span class="line">        AGENTSCOPE_FUNCTION_INPUT: serialize(args, kwargs),</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+<h3 id="其他代码"><a class="markdownIt-Anchor" href="#其他代码"></a> 其他代码</h3>
+<ul>
+<li><code>_converter.py</code> 和 <code>_utils.py</code> 提供了一些工具函数，主要用于将应用程序中的属性类型转换为 OpenTelemetry 属性值</li>
+<li><code>_attributes.py</code> 定义了所有追踪时使用的属性名常量，AgentScope 遵循 OpenTelemetry GenAI Semantic<br />
+Conventions 所定义的标准属性名，以提高追踪数据的可读性和兼容性</li>
+</ul>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们学习了 AgentScope 中 Plan 模块的实现，Plan 模块为 Agent 提供了任务规划能力，以支持复杂任务的执行。而 Trace 模块则为 AgentScope 本身提供了可观测能力，对于现代应用程序而言，可观测性是其不可或缺的一部分。通过 Trace 模块，我们可以追踪 AgentScope 的运行情况，从而更好地理解其内部行为和性能瓶颈。</p>
+<h2 id="reference"><a class="markdownIt-Anchor" href="#reference"></a> Reference</h2>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://doc.agentscope.io/zh_CN/tutorial/task_plan.html">AgentScope Plan</a></li>
+<li><a target="_blank" rel="noopener" href="https://doc.agentscope.io/zh_CN/tutorial/task_tracing.html">AgentScope Trace</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/25/python-agentscope-04/" rel="next" title="agentscope 源码分析（4）：知识库">
+      agentscope 源码分析（4）：知识库 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#plan-%E6%A8%A1%E5%9D%97"><span class="nav-number">1.</span> <span class="nav-text"> Plan 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B"><span class="nav-number">1.1.</span> <span class="nav-text"> 数据模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A1%E5%88%92%E5%AD%98%E5%82%A8"><span class="nav-number">1.2.</span> <span class="nav-text"> 计划存储</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#plannotebook"><span class="nav-number">1.3.</span> <span class="nav-text"> PlanNotebook</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#plan-%E5%B0%8F%E7%BB%93"><span class="nav-number">1.4.</span> <span class="nav-text"> Plan 小结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#trace-%E6%A8%A1%E5%9D%97"><span class="nav-number">2.</span> <span class="nav-text"> Trace 模块</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#trace-%E5%85%A8%E5%B1%80%E9%85%8D%E7%BD%AE"><span class="nav-number">2.1.</span> <span class="nav-text"> Trace 全局配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#_tracepy"><span class="nav-number">2.2.</span> <span class="nav-text"> _trace.py</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#_extractorpy"><span class="nav-number">2.3.</span> <span class="nav-text"> _extractor.py</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B6%E4%BB%96%E4%BB%A3%E7%A0%81"><span class="nav-number">2.4.</span> <span class="nav-text"> 其他代码</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">3.</span> <span class="nav-text"> 小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">4.</span> <span class="nav-text"> Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">241</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
