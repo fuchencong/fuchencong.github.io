@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="从本篇文章开始，我们将正式深入剖析 AgentScope 框架中 Agent 模块的核心实现源码，首先聚焦于 Agent 底层的基础设计，逐一解析 StateModule、_AgentMeta 元类与 AgentBase 基类等关键组件。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="agentscope 源码分析（6）：Agent 的元类与基类">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/03/29/python-agentscope-06/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="从本篇文章开始，我们将正式深入剖析 AgentScope 框架中 Agent 模块的核心实现源码，首先聚焦于 Agent 底层的基础设计，逐一解析 StateModule、_AgentMeta 元类与 AgentBase 基类等关键组件。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-03-29T14:40:21.000Z">
+<meta property="article:modified_time" content="2026-04-05T14:44:10.919Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta property="article:tag" content="Python">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/29/python-agentscope-06/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>agentscope 源码分析（6）：Agent 的元类与基类 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/03/29/python-agentscope-06/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          agentscope 源码分析（6）：Agent 的元类与基类
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-03-29 22:40:21" itemprop="dateCreated datePublished" datetime="2026-03-29T22:40:21+08:00">2026-03-29</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Python/" itemprop="url" rel="index"><span itemprop="name">Python</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>从本篇文章开始，我们将正式深入剖析 AgentScope 框架中 Agent 模块的核心实现源码，首先聚焦于 Agent 底层的基础设计，逐一解析 <code>StateModule</code>、<code>_AgentMeta</code> 元类与 <code>AgentBase</code> 基类等关键组件。</p>
+<span id="more"></span>
+<h2 id="agent-模块"><a class="markdownIt-Anchor" href="#agent-模块"></a> Agent 模块</h2>
+<p>AgentScope 的 <code>agent</code> 模块是整个框架的核心，定义了 Agent 的基础架构、行为模式和扩展能力。模块采用分层设计，从基类到具体实现，构建了一套完整的 Agent 开发体系。Agent 模块的代码位于 <code>src/agentscope/agent/</code> 目录下，文件列表如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">src/agentscope/agent/</span><br><span class="line">├── __init__.py           <span class="comment"># 模块导出</span></span><br><span class="line">├── _utils.py             <span class="comment"># 工具函数</span></span><br><span class="line">├── _agent_meta.py        <span class="comment"># 元类（Hook 机制）</span></span><br><span class="line">├── _agent_base.py        <span class="comment"># Agent 基类</span></span><br><span class="line">├── _react_agent_base.py  <span class="comment"># ReAct Agent 基类</span></span><br><span class="line">├── _react_agent.py       <span class="comment"># ReAct Agent 完整实现</span></span><br><span class="line">├── _user_agent.py        <span class="comment"># 用户 Agent</span></span><br><span class="line">├── _user_input.py        <span class="comment"># 用户输入处理</span></span><br><span class="line">├── _a2a_agent.py         <span class="comment"># A2A 协议 Agent</span></span><br><span class="line">└── _realtime_agent.py    <span class="comment"># 实时 Agent</span></span><br></pre></td></tr></table></figure>
+<p><code>AgentBase</code> 是所有 Agent 的基类，定义了所有 Agent 的公共接口和属性：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">AgentBase</span>(StateModule, metaclass=_AgentMeta):</span><br><span class="line">    ......</span><br></pre></td></tr></table></figure>
+<p>可以看到 <code>AgentBase</code> 又继承自 StateModule 类，其实不仅 <code>AgentBase</code> 继承自 <code>StateModule</code>，之前介绍的 <code>Toolkit</code>、<code>PlanNotebook</code>、<code>PlanStorageBase</code>、<code>LongTermMemoryBase</code> 等类型都继承自 <code>StateModule</code>，那这个 <code>StateModule</code> 类到底起什么作用呢？我们详细介绍一下。</p>
+<h2 id="statemodule"><a class="markdownIt-Anchor" href="#statemodule"></a> StateModule</h2>
+<p>在构建 AI Agent 系统时，存在一个核心需求：<strong>状态持久化</strong>。典型场景：</p>
+<ul>
+<li>Agent 执行长任务时崩溃，需要恢复现场</li>
+<li>Agent 需要在多次对话间保持记忆</li>
+<li>Agent 需要保存/加载历史会话</li>
+</ul>
+<p>StateModule 提供了一套<strong>声明式状态管理机制</strong>，提供统一的序列化/反序列化机制，支持：</p>
+<ul>
+<li><strong>自动状态追踪</strong>：自动追踪继承自 <code>StateModule</code> 的子属性</li>
+<li><strong>手动状态注册</strong>：支持注册普通属性并提供自定义序列化方法</li>
+<li><strong>嵌套状态管理</strong>：支持多层嵌套对象的状态序列化和恢复</li>
+<li><strong>Session 管理</strong>：与 Session 模块配合实现应用级状态持久化</li>
+</ul>
+<p>StateModule 模块的代码位于 <code>src/agentscope/module/_state_module.py</code>。AgentScope 中，以下类型都继承自 StateModule：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">StateModule (基类)</span><br><span class="line">    │</span><br><span class="line">    ├── AgentBase          <span class="comment"># 所有 Agent 的基类</span></span><br><span class="line">    ├── MemoryBase         <span class="comment"># 内存记忆基类</span></span><br><span class="line">    ├── LongTermMemoryBase <span class="comment"># 长期记忆基类</span></span><br><span class="line">    ├── Toolkit            <span class="comment"># 工具集</span></span><br><span class="line">    ├── PlanNotebook       <span class="comment"># 计划笔记本</span></span><br><span class="line">    ├── PlanStorageBase    <span class="comment"># 计划存储基类</span></span><br><span class="line">    └── RealtimeAgent      <span class="comment"># 实时 Agent</span></span><br></pre></td></tr></table></figure>
+<h3 id="statemodule-用法示例"><a class="markdownIt-Anchor" href="#statemodule-用法示例"></a> StateModule 用法示例</h3>
+<p>首先我们将通过一些简单例子来展示 <code>StateModule</code> 的用法，以对 <code>StateModule</code> 有个直观的认识。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> collections <span class="keyword">import</span> OrderedDict</span><br><span class="line"><span class="keyword">from</span> agentscope.module <span class="keyword">import</span> StateModule</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># ========== 1. 必须注册才能追踪 ==========</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Counter</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.count = <span class="number">0</span></span><br><span class="line">        self.temp = <span class="string">&quot;not tracked&quot;</span>  <span class="comment"># 未注册，不会被追踪</span></span><br><span class="line">        self.register_state(<span class="string">&quot;count&quot;</span>)  <span class="comment"># 只有 count 被注册</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">c = Counter()</span><br><span class="line">c.count = <span class="number">100</span></span><br><span class="line">c.temp = <span class="string">&quot;new value&quot;</span></span><br><span class="line">state = c.state_dict()</span><br><span class="line"></span><br><span class="line">new_c = Counter()</span><br><span class="line">new_c.load_state_dict(state)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;【1】state=<span class="subst">&#123;state&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;    count=<span class="subst">&#123;new_c.count&#125;</span> (registered, restored)&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;    temp=&#x27;<span class="subst">&#123;new_c.temp&#125;</span>&#x27; (not registered, NOT restored)&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># ========== 2. 子模块自动追踪 ==========</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Memory</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.msgs = []</span><br><span class="line">        self.register_state(<span class="string">&quot;msgs&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Agent</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.memory = Memory()  <span class="comment"># 自动追踪，无需 register_state</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line">agent = Agent()</span><br><span class="line">agent.memory.msgs.append(<span class="string">&quot;hello&quot;</span>)</span><br><span class="line">state = agent.state_dict()</span><br><span class="line"></span><br><span class="line">new_agent = Agent()</span><br><span class="line">new_agent.load_state_dict(state)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;【2】state=<span class="subst">&#123;state&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;    restored: msgs=<span class="subst">&#123;new_agent.memory.msgs&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment"># ========== 3. 复杂类型自定义序列化 ==========</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">User</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.prefs = OrderedDict()</span><br><span class="line">        self.register_state(</span><br><span class="line">            <span class="string">&quot;prefs&quot;</span>,</span><br><span class="line">            custom_to_json=<span class="keyword">lambda</span> x: <span class="built_in">dict</span>(x),</span><br><span class="line">            custom_from_json=<span class="keyword">lambda</span> x: OrderedDict(x),</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">user = User()</span><br><span class="line">user.prefs[<span class="string">&quot;lang&quot;</span>] = <span class="string">&quot;zh&quot;</span></span><br><span class="line">state = user.state_dict()</span><br><span class="line"></span><br><span class="line">new_user = User()</span><br><span class="line">new_user.load_state_dict(state)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;【3】state=<span class="subst">&#123;state&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(</span><br><span class="line">    <span class="string">f&quot;    restored: prefs=<span class="subst">&#123;<span class="built_in">dict</span>(new_user.prefs)&#125;</span>, type=<span class="subst">&#123;<span class="built_in">type</span>(new_user.prefs).__name__&#125;</span>&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python demo_statemodule_basics.py</span></span><br><span class="line">【1】state=&#123;<span class="string">&#x27;count&#x27;</span>: 100&#125;</span><br><span class="line">    count=100 (registered, restored)</span><br><span class="line">    temp=<span class="string">&#x27;not tracked&#x27;</span> (not registered, NOT restored)</span><br><span class="line">【2】state=&#123;<span class="string">&#x27;memory&#x27;</span>: &#123;<span class="string">&#x27;msgs&#x27;</span>: [<span class="string">&#x27;hello&#x27;</span>]&#125;&#125;</span><br><span class="line">    restored: msgs=[<span class="string">&#x27;hello&#x27;</span>]</span><br><span class="line">【3】state=&#123;<span class="string">&#x27;prefs&#x27;</span>: &#123;<span class="string">&#x27;lang&#x27;</span>: <span class="string">&#x27;zh&#x27;</span>&#125;&#125;</span><br><span class="line">    restored: prefs=&#123;<span class="string">&#x27;lang&#x27;</span>: <span class="string">&#x27;zh&#x27;</span>&#125;, <span class="built_in">type</span>=OrderedDict</span><br></pre></td></tr></table></figure>
+<ul>
+<li>对于继承自 <code>StateModule</code> 的类，通过 <code>state_dict()</code> 获取该对象的所有 state 信息（序列化）、而通过 <code>load_state_dict</code> 从 state 信息中恢复该对象的状态（反序列化）</li>
+<li>在第一个例子中，对于 <code>Counter</code> 类，想要将 <code>counter</code> 属性作为一个可持久化的状态，必须通过 <code>register_state(&quot;counter&quot;)</code>，而 <code>temp</code> 属性没有被注册为状态，因此不会被状态跟踪</li>
+<li>对于第二个例子，对于 Agent 类型，其继承自 StateModule 类，因此可以对 Agent 类型进行状态跟踪。而其内部的 memory 成员，由于其类型 <code>Memory</code> 本身继承自 <code>StateModule</code>，因此 memory 自动就会被状态跟踪，无需再调用 <code>register_state</code></li>
+<li>第三个例子则展示了，我们可以在 <code>register_state()</code> 中自定义序列化和反序列化方法</li>
+</ul>
+<p>这个例子展示了我们所说的 <code>StateModule</code> 的两个关键能力：即</p>
+<ul>
+<li><code>自动状态追踪</code>：自动追踪继承自 <code>StateModule</code> 的子属性</li>
+<li><code>手动状态注册</code>：手动通过 <code>register_state()</code> 注册普通属性，并可以提供自定义序列化方法</li>
+</ul>
+<p>接下来我们这个例子，则展示了 <code>StateModule</code> 的 <code>嵌套状态管理</code>，<strong>支持多层嵌套对象的状态序列化和恢复</strong>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> agentscope.module <span class="keyword">import</span> StateModule</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ToolHistory</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.calls = []</span><br><span class="line">        self.register_state(<span class="string">&quot;calls&quot;</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">ToolKit</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.history = ToolHistory()  <span class="comment"># auto tracked</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Agent</span>(<span class="title class_ inherited__">StateModule</span>):</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self, name: <span class="built_in">str</span></span>):</span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line">        self.name = name</span><br><span class="line">        self.register_state(<span class="string">&quot;name&quot;</span>)</span><br><span class="line">        self.toolkit = ToolKit()  <span class="comment"># auto tracked</span></span><br><span class="line"></span><br><span class="line">agent = Agent(<span class="string">&quot;Assistant&quot;</span>)</span><br><span class="line">agent.toolkit.history.calls.append(&#123;<span class="string">&quot;tool&quot;</span>: <span class="string">&quot;search&quot;</span>, <span class="string">&quot;args&quot;</span>: &#123;<span class="string">&quot;q&quot;</span>: <span class="string">&quot;test&quot;</span>&#125;&#125;)</span><br><span class="line"></span><br><span class="line">new_agent = Agent(<span class="string">&quot;temp&quot;</span>)</span><br><span class="line">new_agent.load_state_dict(agent.state_dict())</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;【Nested】state=<span class="subst">&#123;state&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;          name=<span class="subst">&#123;new_agent.name&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;          calls=<span class="subst">&#123;new_agent.toolkit.history.calls&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># python demo_statemodule_nested.py</span></span><br><span class="line">【Nested】state=&#123;<span class="string">&#x27;toolkit&#x27;</span>: &#123;<span class="string">&#x27;history&#x27;</span>: &#123;<span class="string">&#x27;calls&#x27;</span>: [&#123;<span class="string">&#x27;tool&#x27;</span>: <span class="string">&#x27;search&#x27;</span>, <span class="string">&#x27;args&#x27;</span>: &#123;<span class="string">&#x27;q&#x27;</span>: <span class="string">&#x27;test&#x27;</span>&#125;&#125;]&#125;&#125;, <span class="string">&#x27;name&#x27;</span>: <span class="string">&#x27;Assistant&#x27;</span>&#125;</span><br><span class="line">          name=Assistant</span><br><span class="line">          calls=[&#123;<span class="string">&#x27;tool&#x27;</span>: <span class="string">&#x27;search&#x27;</span>, <span class="string">&#x27;args&#x27;</span>: &#123;<span class="string">&#x27;q&#x27;</span>: <span class="string">&#x27;test&#x27;</span>&#125;&#125;]</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<h3 id="statemodule-的实现"><a class="markdownIt-Anchor" href="#statemodule-的实现"></a> <code>StateModule</code> 的实现</h3>
+<p>接下来我们再来看 <code>StateModule</code> 是如何实现的。<code>StateModule</code> 的类型定义如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">StateModule</span>:</span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>):</span><br><span class="line">        self._module_dict = OrderedDict()    <span class="comment"># 存储子 StateModule 属性</span></span><br><span class="line">        self._attribute_dict = OrderedDict() <span class="comment"># 存储注册的普通属性</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__setattr__</span>(<span class="params">self, key: <span class="built_in">str</span>, value: <span class="type">Any</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">isinstance</span>(value, StateModule):</span><br><span class="line">            <span class="comment"># 自动将 StateModule 类型的属性注册到 _module_dict</span></span><br><span class="line">            self._module_dict[key] = value</span><br><span class="line">        <span class="built_in">super</span>().__setattr__(key, value)</span><br><span class="line"></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<ul>
+<li>通过 <code>_module_dict</code> 来保存所有本身是 <code>StateModule</code> 的属性，而通过 <code>_attribute_dict</code> 来保存所有手动注册的普通属性</li>
+<li>上文说过，对于本身就是 <code>StateModule</code> 类型的属性会自动进行状态跟踪，就是依靠 <code>__setattr__</code> 方法，在设置属性时，如果发现是 <code>StateModule</code> 类型，则将其添加到 <code>_module_dict</code> 中</li>
+</ul>
+<p><code>register_state()</code> 方法用于手动状态注册：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">register_state</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    attr_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    custom_to_json: <span class="type">Callable</span>[[<span class="type">Any</span>], JSONSerializableObject] | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params">    custom_from_json: <span class="type">Callable</span>[[JSONSerializableObject], <span class="type">Any</span>]</span></span><br><span class="line"><span class="params">    | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    attr = <span class="built_in">getattr</span>(self, attr_name)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 判断是否原生可以 json 序列化</span></span><br><span class="line">    <span class="keyword">if</span> custom_to_json <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="comment"># Make sure the attribute is JSON serializable natively</span></span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            json.dumps(attr)</span><br><span class="line">        <span class="keyword">except</span> Exception <span class="keyword">as</span> e:</span><br><span class="line">            <span class="keyword">raise</span> TypeError(</span><br><span class="line">                <span class="string">f&quot;Attribute &#x27;<span class="subst">&#123;attr_name&#125;</span>&#x27; is not JSON serializable. &quot;</span></span><br><span class="line">                <span class="string">&quot;Please provide a custom function to convert the &quot;</span></span><br><span class="line">                <span class="string">&quot;attribute to a JSON-serializable format.&quot;</span>,</span><br><span class="line">            ) <span class="keyword">from</span> e</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> attr_name <span class="keyword">in</span> self._module_dict:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(</span><br><span class="line">            <span class="string">f&quot;Attribute `<span class="subst">&#123;attr_name&#125;</span>` is already registered as a module. &quot;</span>,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 添加到注册的属性字典</span></span><br><span class="line">    <span class="comment"># 记录下所提供的 json 序列化/反序列化函数，如果没有提供，则为 None</span></span><br><span class="line">    self._attribute_dict[attr_name] = _JSONSerializeFunction(</span><br><span class="line">        to_json=custom_to_json,</span><br><span class="line">        load_json=custom_from_json,</span><br><span class="line">    )</span><br></pre></td></tr></table></figure>
+<p><code>state_dict()</code> 方法则以字典的形式，返回该类型的状态信息，它的核心逻辑是：对于 <code>_module_dict</code> 中的子模块，递归调用 <code>state_dict()</code> 方法获取其状态信息；而对于 <code>_attribute_dict</code> 中的普通属性，根据是否有自定义的序列化方法，选择使用自定义方法或直接返回：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">state_dict</span>(<span class="params">self</span>) -&gt; <span class="built_in">dict</span>:</span><br><span class="line">    state = &#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 1. 递归收集子模块状态</span></span><br><span class="line">    <span class="keyword">for</span> key <span class="keyword">in</span> self._module_dict:</span><br><span class="line">        attr = <span class="built_in">getattr</span>(self, key)</span><br><span class="line">        state[key] = attr.state_dict()  <span class="comment"># 递归调用</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. 收集注册属性状态</span></span><br><span class="line">    <span class="keyword">for</span> key <span class="keyword">in</span> self._attribute_dict:</span><br><span class="line">        attr = <span class="built_in">getattr</span>(self, key)</span><br><span class="line">        to_json = self._attribute_dict[key].to_json</span><br><span class="line">        <span class="comment"># 如果没有提供 json 序列化函数，直接记录属性值</span></span><br><span class="line">        state[key] = to_json(attr) <span class="keyword">if</span> to_json <span class="keyword">else</span> attr</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> state</span><br></pre></td></tr></table></figure>
+<p><code>load_state_dict()</code> 方法则从状态字典中恢复出原始的类型对象：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">load_state_dict</span>(<span class="params">self, state_dict: <span class="built_in">dict</span>, strict: <span class="built_in">bool</span> = <span class="literal">True</span></span>):</span><br><span class="line">    <span class="comment"># 1. 递归加载子模块状态</span></span><br><span class="line">    <span class="keyword">for</span> key <span class="keyword">in</span> self._module_dict:</span><br><span class="line">        self._module_dict[key].load_state_dict(state_dict[key])</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. 加载注册属性状态</span></span><br><span class="line">    <span class="keyword">for</span> key <span class="keyword">in</span> self._attribute_dict:</span><br><span class="line">        from_json = self._attribute_dict[key].load_json</span><br><span class="line">        value = from_json(state_dict[key]) <span class="keyword">if</span> from_json <span class="keyword">else</span> state_dict[key]</span><br><span class="line">        <span class="built_in">setattr</span>(self, key, value)</span><br></pre></td></tr></table></figure>
+<p><code>StateModule</code> 为自定义类型提供了状态的控制能力（即控制哪些属性需要作为状态进行跟踪），但它只是提供了序列化（state_dict）和反序列化（load_state_dict）的基本功能，为了将状态持久化，还需要依赖 AgentScope 所提供的 <code>Session</code> 模块。关于 <code>Session</code> 模块，我们在后续文章继续介绍。</p>
+<h2 id="_agentmeta-元类"><a class="markdownIt-Anchor" href="#_agentmeta-元类"></a> _AgentMeta 元类</h2>
+<p>分析完 <code>StateModule</code> 实现之后，我们再来分析 <code>AgentBase</code> 类申明中另一个值得注意点，即 <code>AgentBase</code> 将 <code>_AgentMeta</code> 作为元类：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">AgentBase</span>(StateModule, metaclass=_AgentMeta):</span><br><span class="line">    ......</span><br></pre></td></tr></table></figure>
+<p>Python 中的元类是 <code>构建类的类</code>，负责控制 <code>类的创建和行为</code>。普通类用来指导构建实例对象，而元类则是用来指导如何构建类本身（Python 中类本身也是一种对象）。关于 Python 元类的基础知识，可以参考 <a target="_blank" rel="noopener" href="https://fuchencong.com/2025/11/18/fluent-python-v2-24/">流畅的 Python 第 2 版（24）：类元编程</a>。</p>
+<p><code>_AgentMeta</code> 元类的定义如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">_AgentMeta</span>(<span class="title class_ inherited__">type</span>):</span><br><span class="line">    <span class="comment"># 如何创建一个 Agent 类</span></span><br><span class="line">    <span class="comment"># mcs 是元类，name 是类名，bases 是父类，attrs 是类的属性</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__new__</span>(<span class="params">mcs, name: <span class="type">Any</span>, bases: <span class="type">Any</span>, attrs: <span class="type">Dict</span></span>) -&gt; <span class="type">Any</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;Wrap the agent&#x27;s functions with hooks.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 对这些函数，添加 hook 逻辑</span></span><br><span class="line">        <span class="keyword">for</span> func_name <span class="keyword">in</span> [</span><br><span class="line">            <span class="string">&quot;reply&quot;</span>,</span><br><span class="line">            <span class="string">&quot;print&quot;</span>,</span><br><span class="line">            <span class="string">&quot;observe&quot;</span>,</span><br><span class="line">        ]:</span><br><span class="line">            <span class="keyword">if</span> func_name <span class="keyword">in</span> attrs:</span><br><span class="line">                attrs[func_name] = _wrap_with_hooks(attrs[func_name])</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">super</span>().__new__(mcs, name, bases, attrs)</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>_AgentMeta</code> 是一个元类，因为它集成自 <code>type</code>，因此具有创建类对象的能力，因此它是一个元类</li>
+<li><code>__new__</code> 方法定义了如何创建类对象，即这里的 <code>AgentBase</code> 类</li>
+<li><code>__new__</code> 方法中检查了 <code>AgentBase</code> 类中的三个属性：<code>reply</code>、<code>print</code>、<code>observe</code>，为这些属性添加 hooks 逻辑</li>
+</ul>
+<p>简单来说，<code>_AgentMeta</code> 就是为 <code>AgentBase</code> 类及其子类自动添加了一些钩子逻辑。因为 <code>AgentBase</code> 类在构建时会执行 <code>_AgentMeta.__new__</code>，而 <code>__new__</code> 方法则检查这些创建的类中是否有 <code>reply</code>、<code>print</code>、<code>observe</code> 这三个方法，如果有，则将这些方法包装成带有钩子逻辑的新方法。</p>
+<p><code>_wrap_with_hooks</code> 的代码虽然有些多，但是其核心逻辑就是根据当前 hook 的函数名，判断 AgentBase 类中是否定义了 <code>_pre_&#123;method.__name__&#125;_hooks</code> 和 <code>_post_&#123;method.__name__&#125;_hooks</code> 字典。如果存在，则会从这些字典中取出相关的 hooks 方法，并在调用原始方法的前后，分别执行这些 hooks 函数。<code>hooks</code> 方法支持实例方法和类方法：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">assert</span> (</span><br><span class="line">    <span class="built_in">hasattr</span>(self, <span class="string">f&quot;_instance_pre_<span class="subst">&#123;func_name&#125;</span>_hooks&quot;</span>)</span><br><span class="line">    <span class="keyword">and</span> <span class="built_in">hasattr</span>(self, <span class="string">f&quot;_instance_post_<span class="subst">&#123;func_name&#125;</span>_hooks&quot;</span>)</span><br><span class="line">    <span class="keyword">and</span> <span class="built_in">hasattr</span>(self.__class__, <span class="string">f&quot;_class_pre_<span class="subst">&#123;func_name&#125;</span>_hooks&quot;</span>)</span><br><span class="line">    <span class="keyword">and</span> <span class="built_in">hasattr</span>(self.__class__, <span class="string">f&quot;_class_post_<span class="subst">&#123;func_name&#125;</span>_hooks&quot;</span>)</span><br><span class="line">), <span class="string">f&quot;Hooks for <span class="subst">&#123;func_name&#125;</span> not found in <span class="subst">&#123;self.__class__.__name__&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+<p><code>_warp_with_hooks</code> 方法的简化逻辑如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_wrap_with_hooks</span>(<span class="params">original_func</span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;装饰器：在函数前后执行 hooks&quot;&quot;&quot;</span></span><br><span class="line">    func_name = original_func.__name__.replace(<span class="string">&quot;_&quot;</span>, <span class="string">&quot;&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="meta">    @wraps(<span class="params">original_func</span>)</span></span><br><span class="line">    <span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">async_wrapper</span>(<span class="params">self, *args, **kwargs</span>):</span><br><span class="line">        <span class="comment"># 1. 参数归一化</span></span><br><span class="line">        normalized_kwargs = _normalize_to_kwargs(original_func, self, *args, **kwargs)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 2. 执行 pre-hooks（可修改参数）</span></span><br><span class="line">        pre_hooks = <span class="built_in">list</span>(self._instance_pre_hooks.values()) + \</span><br><span class="line">                    <span class="built_in">list</span>(self.__class__._class_pre_hooks.values())</span><br><span class="line">        <span class="keyword">for</span> pre_hook <span class="keyword">in</span> pre_hooks:</span><br><span class="line">            modified = <span class="keyword">await</span> pre_hook(self, deepcopy(normalized_kwargs))</span><br><span class="line">            <span class="keyword">if</span> modified:</span><br><span class="line">                normalized_kwargs = modified</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 3. 执行原函数</span></span><br><span class="line">        output = <span class="keyword">await</span> original_func(self, **normalized_kwargs)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 4. 执行 post-hooks（可修改输出）</span></span><br><span class="line">        post_hooks = <span class="built_in">list</span>(self._instance_post_hooks.values()) + \</span><br><span class="line">                     <span class="built_in">list</span>(self.__class__._class_post_hooks.values())</span><br><span class="line">        <span class="keyword">for</span> post_hook <span class="keyword">in</span> post_hooks:</span><br><span class="line">            modified = <span class="keyword">await</span> post_hook(self, deepcopy(normalized_kwargs), output)</span><br><span class="line">            <span class="keyword">if</span> modified:</span><br><span class="line">                output = modified</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> output</span><br><span class="line">    <span class="keyword">return</span> async_wrapper</span><br></pre></td></tr></table></figure>
+<p>所以总结一下，<code>_AgentMeta</code> 实现了 hook 约定：</p>
+<ul>
+<li>如果你的类中定义了相关的字典（例如 <code>_instance_pre_&#123;func_name&#125;_hooks</code> 等）来保存 hooks 函数，则 <code>_AgentMeta</code> 可以帮你自动地在执行相关方法时，完成相关 hooks 的调用</li>
+<li><code>_AgentMeta</code> 支持为 <code>reply</code>、<code>print</code>、<code>observe</code> 这些方法添加 hooks 逻辑，hook 执行时机可以是 <code>pre</code> 或者 <code>post</code></li>
+<li>hook 函数是实例方法或者类方法</li>
+</ul>
+<h2 id="agentbase"><a class="markdownIt-Anchor" href="#agentbase"></a> AgentBase</h2>
+<p>分析完 <code>AgentBase</code> 定义中所指定的基类 <code>StateModule</code> 以及其元类 <code>metaclass</code>，接下来我们再来看 <code>AgentBase</code>类的主体实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">AgentBase</span>(StateModule, metaclass=_AgentMeta):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;Base class for asynchronous agents.&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="built_in">id</span>: <span class="built_in">str</span></span><br><span class="line"></span><br><span class="line">    supported_hook_types: <span class="built_in">list</span>[<span class="built_in">str</span>] = [</span><br><span class="line">        <span class="string">&quot;pre_reply&quot;</span>,</span><br><span class="line">        <span class="string">&quot;post_reply&quot;</span>,</span><br><span class="line">        <span class="string">&quot;pre_print&quot;</span>,</span><br><span class="line">        <span class="string">&quot;post_print&quot;</span>,</span><br><span class="line">        <span class="string">&quot;pre_observe&quot;</span>,</span><br><span class="line">        <span class="string">&quot;post_observe&quot;</span>,</span><br><span class="line">    ]</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 类级别的 hooks 函数</span></span><br><span class="line">    _class_pre_reply_hooks: <span class="built_in">dict</span> = OrderedDict()</span><br><span class="line">    _class_post_reply_hooks: <span class="built_in">dict</span> = OrderedDict()</span><br><span class="line">    _class_pre_print_hooks: <span class="built_in">dict</span> = OrderedDict()</span><br><span class="line">    _class_post_print_hooks: <span class="built_in">dict</span> = OrderedDict()</span><br><span class="line">    _class_pre_observe_hooks: <span class="built_in">dict</span> = OrderedDict()</span><br><span class="line">    _class_post_observe_hooks: <span class="built_in">dict</span> = OrderedDict()</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 初始化</span></span><br><span class="line">    <span class="keyword">def</span> <span class="title function_">__init__</span>(<span class="params">self</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">        <span class="string">&quot;&quot;&quot;Initialize the agent.&quot;&quot;&quot;</span></span><br><span class="line">        <span class="built_in">super</span>().__init__()</span><br><span class="line"></span><br><span class="line">        self.<span class="built_in">id</span> = shortuuid.uuid()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># The replying task and identify of the current replying</span></span><br><span class="line">        self._reply_task: Task | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line">        self._reply_id: <span class="built_in">str</span> | <span class="literal">None</span> = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">        <span class="comment"># 实例级别的 hooks 函数</span></span><br><span class="line">        <span class="comment"># Initialize the instance-level hooks</span></span><br><span class="line">        self._instance_pre_print_hooks = OrderedDict()</span><br><span class="line">        self._instance_post_print_hooks = OrderedDict()</span><br><span class="line"></span><br><span class="line">        self._instance_pre_reply_hooks = OrderedDict()</span><br><span class="line">        self._instance_post_reply_hooks = OrderedDict()</span><br><span class="line"></span><br><span class="line">        self._instance_pre_observe_hooks = OrderedDict()</span><br><span class="line">        self._instance_post_observe_hooks = OrderedDict()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 用于保存流式打印的累计数据</span></span><br><span class="line">        self._stream_prefix = &#123;&#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 定义该 agent 的 subscribers，subscriber 可以通过 observe 方法接收到该 agent 的消息</span></span><br><span class="line">        <span class="comment"># key 是 MsgHub 的 id</span></span><br><span class="line">        <span class="comment"># value 是一系列是的 subagent</span></span><br><span class="line">        self._subscribers: <span class="built_in">dict</span>[<span class="built_in">str</span>, <span class="built_in">list</span>[AgentBase]] = &#123;&#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment"># disable 控制台输出</span></span><br><span class="line">        self._disable_console_output: <span class="built_in">bool</span> = (</span><br><span class="line">            os.getenv(</span><br><span class="line">                <span class="string">&quot;AGENTSCOPE_DISABLE_CONSOLE_OUTPUT&quot;</span>,</span><br><span class="line">                <span class="string">&quot;false&quot;</span>,</span><br><span class="line">            ).lower()</span><br><span class="line">            == <span class="string">&quot;true&quot;</span></span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line">        self._disable_msg_queue: <span class="built_in">bool</span> = <span class="literal">True</span></span><br><span class="line">        self.msg_queue = <span class="literal">None</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>每个 Agent 都会有一个 id</li>
+<li>使用字典保存类级别和实例级别的 hooks 函数，这块和我们对 <code>_AgentMeta</code> 的分析是一致的</li>
+</ul>
+<p>AgentBase 定义了如下方法：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>作用</th>
+<th>实现状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reply()</code></td>
+<td>生成回复</td>
+<td>抽象方法，子类实现</td>
+</tr>
+<tr>
+<td><code>observe()</code></td>
+<td>观察消息</td>
+<td>抽象方法，子类实现</td>
+</tr>
+<tr>
+<td><code>print()</code></td>
+<td>打印消息</td>
+<td>已实现，支持流式输出</td>
+</tr>
+<tr>
+<td><code>__call__()</code></td>
+<td>调用入口</td>
+<td>已实现，处理中断和广播</td>
+</tr>
+<tr>
+<td><code>interrupt()</code></td>
+<td>中断执行</td>
+<td>已实现</td>
+</tr>
+<tr>
+<td><code>handle_interrupt()</code></td>
+<td>中断处理</td>
+<td>抽象方法</td>
+</tr>
+</tbody>
+</table>
+<p>AgentBase 实现了 <code>__call__()</code> 方法，因此可以直接调用 AgentBase 的实例，以处理用户的输入消息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">__call__</span>(<span class="params">self, *args, **kwargs</span>) -&gt; Msg:</span><br><span class="line">    self._reply_id = shortuuid.uuid()</span><br><span class="line">    reply_msg = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">try</span>:</span><br><span class="line">        self._reply_task = asyncio.current_task()</span><br><span class="line">        reply_msg = <span class="keyword">await</span> self.reply(*args, **kwargs)  <span class="comment"># 执行回复</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">except</span> asyncio.CancelledError:</span><br><span class="line">        reply_msg = <span class="keyword">await</span> self.handle_interrupt(*args, **kwargs)  <span class="comment"># 处理中断</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">finally</span>:</span><br><span class="line">        <span class="keyword">if</span> reply_msg:</span><br><span class="line">            <span class="keyword">await</span> self._broadcast_to_subscribers(reply_msg)  <span class="comment"># 广播给订阅者</span></span><br><span class="line">        self._reply_task = <span class="literal">None</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> reply_msg</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>__call__</code> 和核心逻辑是定义了处理输入消息的总体流程，包括调用 <code>reply()</code> 方法来处理消息，调用 <code>handle_interrupt()</code> 来处理中断，并将回复的消息广播给所有订阅者</li>
+<li><code>reply()</code>、<code>handle_interrupt()</code> 都是抽象方法，需要子类实现，这些才是 Agent 的核心业务逻辑</li>
+<li>AgentBase 支持 <code>智能体回复消息</code> 的广播机制，用于将回复消息广播给其他智能体，每个智能体都需要实现 <code>observe()</code> 方法来接收并处理消息</li>
+</ul>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">_broadcast_to_subscribers</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    msg: Msg | <span class="built_in">list</span>[Msg] | <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="comment"># 调用所有订阅者的 observe 方法</span></span><br><span class="line">    <span class="string">&quot;&quot;&quot;Broadcast the message to all subscribers.&quot;&quot;&quot;</span></span><br><span class="line">    <span class="keyword">for</span> subscribers <span class="keyword">in</span> self._subscribers.values():</span><br><span class="line">        <span class="keyword">for</span> subscriber <span class="keyword">in</span> subscribers:</span><br><span class="line">            <span class="keyword">await</span> subscriber.observe(msg)</span><br></pre></td></tr></table></figure>
+<p><code>reset_subscribers()</code> 和 <code>reset_subscribers()</code> 方法用于管理当前智能体的订阅者：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">reset_subscribers</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    msghub_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    subscribers: <span class="built_in">list</span>[<span class="string">&quot;AgentBase&quot;</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="comment"># 重新设置订阅者，排除当前代理自身</span></span><br><span class="line">    self._subscribers[msghub_name] = [_ <span class="keyword">for</span> _ <span class="keyword">in</span> subscribers <span class="keyword">if</span> _ != self]</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">remove_subscribers</span>(<span class="params">self, msghub_name: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> msghub_name <span class="keyword">not</span> <span class="keyword">in</span> self._subscribers:</span><br><span class="line">        logger.warning(</span><br><span class="line">            <span class="string">&quot;MsgHub named &#x27;%s&#x27; not found&quot;</span>,</span><br><span class="line">            msghub_name,</span><br><span class="line">        )</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        self._subscribers.pop(msghub_name)</span><br></pre></td></tr></table></figure>
+<p>AgentBase 提供了 <code>print()</code> 方法，用来流式输出 Agent 执行过程中的消息，其核心逻辑如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">print</span>(<span class="params">self, msg: Msg, last: <span class="built_in">bool</span> = <span class="literal">True</span>, speech: AudioBlock = <span class="literal">None</span></span>):</span><br><span class="line">    <span class="string">&quot;&quot;&quot;支持流式打印消息&quot;&quot;&quot;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 1. 消息队列支持（用于外部消费）</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> self._disable_msg_queue:</span><br><span class="line">        <span class="keyword">await</span> self.msg_queue.put((deepcopy(msg), last, speech))</span><br><span class="line">        <span class="keyword">await</span> asyncio.sleep(<span class="number">0</span>)  <span class="comment"># 让出控制权</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 2. 控制台输出</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> self._disable_console_output:</span><br><span class="line">        <span class="keyword">for</span> block <span class="keyword">in</span> msg.get_content_blocks():</span><br><span class="line">            <span class="keyword">if</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;text&quot;</span>:</span><br><span class="line">                self._print_text_block(msg.<span class="built_in">id</span>, block[<span class="string">&quot;text&quot;</span>])</span><br><span class="line">            <span class="keyword">elif</span> block[<span class="string">&quot;type&quot;</span>] == <span class="string">&quot;thinking&quot;</span>:</span><br><span class="line">                self._print_text_block(msg.<span class="built_in">id</span>, block[<span class="string">&quot;thinking&quot;</span>])</span><br><span class="line">            <span class="comment"># ... 处理其他 block 类型</span></span><br><span class="line"></span><br><span class="line">    <span class="comment"># 3. 音频播放</span></span><br><span class="line">    <span class="keyword">if</span> speech:</span><br><span class="line">        self._process_audio_block(msg.<span class="built_in">id</span>, speech)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> last <span class="keyword">and</span> msg.<span class="built_in">id</span> <span class="keyword">in</span> self._stream_prefix:</span><br><span class="line">        <span class="comment"># 1. 关闭音频播放器</span></span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;audio&quot;</span> <span class="keyword">in</span> self._stream_prefix[msg.<span class="built_in">id</span>]:</span><br><span class="line">            player, _ = self._stream_prefix[msg.<span class="built_in">id</span>][<span class="string">&quot;audio&quot;</span>]</span><br><span class="line">            player.close()</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 2. 移除缓存</span></span><br><span class="line">        stream_prefix = self._stream_prefix.pop(msg.<span class="built_in">id</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># 3. 补换行符</span></span><br><span class="line">        <span class="keyword">if</span> <span class="string">&quot;text&quot;</span> <span class="keyword">in</span> stream_prefix <span class="keyword">and</span> <span class="keyword">not</span> stream_prefix[<span class="string">&quot;text&quot;</span>].endswith(<span class="string">&quot;\n&quot;</span>):</span><br><span class="line">            <span class="built_in">print</span>()</span><br></pre></td></tr></table></figure>
+<p><code>print()</code> 的函数入口处，支持将 Msg 额外保存到 <code>self.msg_queue</code>，这样允许其他组件消费这些消息。<code>AgentBase.set_msg_queue_enabled()</code> 方法允许设置所使用的 <code>msg_queue</code>，默认为空。</p>
+<p><code>print()</code> 的一个特点是支持流式增量输出，其通过 <code>_stream_prefix</code> 记录每个消息已经输出内容：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">self._stream_prefix = &#123;</span><br><span class="line">    msg_id: &#123;</span><br><span class="line">        <span class="string">&quot;text&quot;</span>: <span class="string">&quot;已打印的文本内容&quot;</span>,</span><br><span class="line">        <span class="string">&quot;audio&quot;</span>: (player_object, <span class="string">&quot;已播放的base64数据&quot;</span>),</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>之后只会输出增量部分，我们可以通过 <code>_print_text_block()</code> 查看其如何实现：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_print_text_block</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    msg_id: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    name_prefix: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    text_content: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    thinking_and_text_to_print: <span class="built_in">list</span>[<span class="built_in">str</span>],</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    thinking_and_text_to_print.append(</span><br><span class="line">        <span class="string">f&quot;<span class="subst">&#123;name_prefix&#125;</span>: <span class="subst">&#123;text_content&#125;</span>&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    <span class="comment"># The accumulated text and thinking blocks to print</span></span><br><span class="line">    to_print = <span class="string">&quot;\n&quot;</span>.join(thinking_and_text_to_print)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 添加 msg_id 到 _stream_prefix 中</span></span><br><span class="line">    <span class="comment"># The text prefix that has been printed</span></span><br><span class="line">    <span class="keyword">if</span> msg_id <span class="keyword">not</span> <span class="keyword">in</span> self._stream_prefix:</span><br><span class="line">        self._stream_prefix[msg_id] = &#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 获取前缀</span></span><br><span class="line">    text_prefix = self._stream_prefix[msg_id].get(<span class="string">&quot;text&quot;</span>, <span class="string">&quot;&quot;</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment"># 答应新的内容</span></span><br><span class="line">    <span class="comment"># Only print when there is new text content</span></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(to_print) &gt; <span class="built_in">len</span>(text_prefix):</span><br><span class="line">        <span class="built_in">print</span>(to_print[<span class="built_in">len</span>(text_prefix) :], end=<span class="string">&quot;&quot;</span>)</span><br><span class="line"></span><br><span class="line">        <span class="comment"># Save the printed text prefix</span></span><br><span class="line">        self._stream_prefix[msg_id][<span class="string">&quot;text&quot;</span>] = to_print</span><br></pre></td></tr></table></figure>
+<p><code>_process_audio_block()</code> 方法则用于处理音频消息的输出，可以处理 URL 类型和 Base64 字符串类型的音频数据。这里就不再展开其代码。</p>
+<p>AgentBase 还提供了几个工具函数，用来简化 Hook 的注册：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 注册实例级别的钩子</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">register_instance_hook</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    hook_type: AgentHookTypes,</span></span><br><span class="line"><span class="params">    hook_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    hook: <span class="type">Callable</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(self, AgentBase):</span><br><span class="line">        <span class="keyword">raise</span> TypeError(</span><br><span class="line">            <span class="string">&quot;The register_instance_hook method should be called on an &quot;</span></span><br><span class="line">            <span class="string">f&quot;instance of AsyncAgentBase, but got <span class="subst">&#123;self&#125;</span> of &quot;</span></span><br><span class="line">            <span class="string">f&quot;type <span class="subst">&#123;<span class="built_in">type</span>(self)&#125;</span>.&quot;</span>,</span><br><span class="line">        )</span><br><span class="line">    hooks = <span class="built_in">getattr</span>(self, <span class="string">f&quot;_instance_<span class="subst">&#123;hook_type&#125;</span>_hooks&quot;</span>)</span><br><span class="line">    hooks[hook_name] = hook</span><br><span class="line"></span><br><span class="line"><span class="comment"># 移除实例级别的钩子</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">remove_instance_hook</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    hook_type: AgentHookTypes,</span></span><br><span class="line"><span class="params">    hook_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> <span class="built_in">isinstance</span>(self, AgentBase):</span><br><span class="line">    <span class="keyword">raise</span> TypeError(</span><br><span class="line">        <span class="string">&quot;The remove_instance_hook method should be called on an &quot;</span></span><br><span class="line">        <span class="string">f&quot;instance of AsyncAgentBase, but got <span class="subst">&#123;self&#125;</span> of &quot;</span></span><br><span class="line">        <span class="string">f&quot;type <span class="subst">&#123;<span class="built_in">type</span>(self)&#125;</span>.&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    hooks = <span class="built_in">getattr</span>(self, <span class="string">f&quot;_instance_<span class="subst">&#123;hook_type&#125;</span>_hooks&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> hook_name <span class="keyword">in</span> hooks:</span><br><span class="line">        <span class="keyword">del</span> hooks[hook_name]</span><br><span class="line">    <span class="keyword">else</span>:</span><br><span class="line">        <span class="keyword">raise</span> ValueError(</span><br><span class="line">            <span class="string">f&quot;Hook &#x27;<span class="subst">&#123;hook_name&#125;</span>&#x27; not found in &#x27;<span class="subst">&#123;hook_type&#125;</span>&#x27; hooks of &quot;</span></span><br><span class="line">            <span class="string">f&quot;<span class="subst">&#123;self.__class__.__name__&#125;</span> instance.&quot;</span>,</span><br><span class="line">        )</span><br><span class="line"></span><br><span class="line"><span class="comment"># 注册类级别的钩子</span></span><br><span class="line"><span class="meta">@classmethod</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">register_class_hook</span>(<span class="params"></span></span><br><span class="line"><span class="params">    cls,</span></span><br><span class="line"><span class="params">    hook_type: AgentHookTypes,</span></span><br><span class="line"><span class="params">    hook_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params">    hook: <span class="type">Callable</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="keyword">assert</span> (</span><br><span class="line">        hook_type <span class="keyword">in</span> cls.supported_hook_types</span><br><span class="line">    ), <span class="string">f&quot;Invalid hook type: <span class="subst">&#123;hook_type&#125;</span>&quot;</span></span><br><span class="line"></span><br><span class="line">    hooks = <span class="built_in">getattr</span>(cls, <span class="string">f&quot;_class_<span class="subst">&#123;hook_type&#125;</span>_hooks&quot;</span>)</span><br><span class="line">    hooks[hook_name] = hook</span><br><span class="line"></span><br><span class="line"><span class="comment"># 移除类级别的钩子</span></span><br><span class="line"><span class="meta">@classmethod</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">remove_class_hook</span>(<span class="params"></span></span><br><span class="line"><span class="params">    cls,</span></span><br><span class="line"><span class="params">    hook_type: AgentHookTypes,</span></span><br><span class="line"><span class="params">    hook_name: <span class="built_in">str</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    ......</span><br><span class="line"></span><br><span class="line"><span class="comment"># 清除类级别的钩子</span></span><br><span class="line"><span class="meta">@classmethod</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">clear_class_hooks</span>(<span class="params"></span></span><br><span class="line"><span class="params">    cls,</span></span><br><span class="line"><span class="params">    hook_type: AgentHookTypes | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    ......</span><br><span class="line"></span><br><span class="line"><span class="comment"># 清除实例级别的钩子</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">clear_instance_hooks</span>(<span class="params"></span></span><br><span class="line"><span class="params">    self,</span></span><br><span class="line"><span class="params">    hook_type: AgentHookTypes | <span class="literal">None</span> = <span class="literal">None</span>,</span></span><br><span class="line"><span class="params"></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    ......</span><br></pre></td></tr></table></figure>
+<p>以上我们就完成了对 AgentBase 类的主体介绍，主要是其 <code>__call__()</code> 定义了 Agent 的最基本的流程，包括 <code>reply()</code>、<code>handle_interrupt()</code>、<code>observe()</code>。另外提供了 <code>print()</code> 方法来流式输出消息。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们学习了 AgentBase 类，它是所有 Agent 实现的基类，它本身继承自 StateModule 以支持状态信息管理，并使用 <code>_AgentMeta</code> 作为元类以支持 Hooks 的执行，另外详细介绍了 AgentBase 本身的实现，包括各种 hooks 的管理、<code>__call__</code> 方法和 <code>print</code> 方法等。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+              <a href="/fuchencong.github.io/tags/Python/" rel="tag"># Python</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/03/27/python-agentscope-05/" rel="next" title="agentscope 源码分析（5）：Plan & Trace">
+      agentscope 源码分析（5）：Plan & Trace <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#agent-%E6%A8%A1%E5%9D%97"><span class="nav-number">1.</span> <span class="nav-text"> Agent 模块</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#statemodule"><span class="nav-number">2.</span> <span class="nav-text"> StateModule</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#statemodule-%E7%94%A8%E6%B3%95%E7%A4%BA%E4%BE%8B"><span class="nav-number">2.1.</span> <span class="nav-text"> StateModule 用法示例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#statemodule-%E7%9A%84%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.2.</span> <span class="nav-text"> StateModule 的实现</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#_agentmeta-%E5%85%83%E7%B1%BB"><span class="nav-number">3.</span> <span class="nav-text"> _AgentMeta 元类</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#agentbase"><span class="nav-number">4.</span> <span class="nav-text"> AgentBase</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">242</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">17</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">35</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
