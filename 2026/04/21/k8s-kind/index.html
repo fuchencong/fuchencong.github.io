@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章将学习如何使用 Kind（Kubernetes IN Docker）来搭建一个本地 k8s 环境，其实之前在配置 cilium 环境的时候就使用过 Kind，而这篇文章我们将会更详细地学习 Kind 的使用，并在此基础上搭建一个完整的 k8s 环境。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="基于 Kind 搭建 k8s 开发环境">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/21/k8s-kind/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章将学习如何使用 Kind（Kubernetes IN Docker）来搭建一个本地 k8s 环境，其实之前在配置 cilium 环境的时候就使用过 Kind，而这篇文章我们将会更详细地学习 Kind 的使用，并在此基础上搭建一个完整的 k8s 环境。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-21T07:15:56.000Z">
+<meta property="article:modified_time" content="2026-04-21T07:26:24.868Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="k8s">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/21/k8s-kind/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>基于 Kind 搭建 k8s 开发环境 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/21/k8s-kind/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          基于 Kind 搭建 k8s 开发环境
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-04-21 15:15:56" itemprop="dateCreated datePublished" datetime="2026-04-21T15:15:56+08:00">2026-04-21</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%90%8E%E7%AB%AF/" itemprop="url" rel="index"><span itemprop="name">后端</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章将学习如何使用 <a target="_blank" rel="noopener" href="https://kind.sigs.k8s.io/">Kind</a>（Kubernetes IN Docker）来搭建一个本地 k8s 环境，其实之前在配置 <a target="_blank" rel="noopener" href="https://fuchencong.com/2024/01/04/cilium-03/">cilium 环境</a>的时候就使用过 Kind，而这篇文章我们将会更详细地学习 Kind 的使用，并在此基础上搭建一个完整的 k8s 环境。</p>
+<span id="more"></span>
+<h2 id="kind-环境安装"><a class="markdownIt-Anchor" href="#kind-环境安装"></a> Kind 环境安装</h2>
+<p>Kubernetes (k8s) 是一个容器编排平台，用于自动化容器的部署、扩展和管理。Kind (Kubernetes in Docker) 是用 Docker 容器模拟 k8s 节点的工具，每个<a target="_blank" rel="noopener" href="https://kind.sigs.k8s.io/docs/design/node-image">节点</a> 实际上是一个 Docker 容器，容器内运行着完整的 K8s 组件。通过 Kind，可以适合快速搭建本地开发、测试和学习的 k8s 环境。</p>
+<h3 id="系统信息"><a class="markdownIt-Anchor" href="#系统信息"></a> 系统信息</h3>
+<ul>
+<li>如下是我当前的 Linux 服务器信息（单台服务器）</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>信息</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统</td>
+<td>Ubuntu 22.04.5 LTS</td>
+</tr>
+<tr>
+<td>内核</td>
+<td>5.15.0-40-generic</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td>4核</td>
+</tr>
+<tr>
+<td>内存</td>
+<td>15Gi</td>
+</tr>
+<tr>
+<td>Docker</td>
+<td>28.5.1</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>由于 Kind 依赖于 Docker 来运行 k8s 节点，因此首先需要确保 Docker 已经安装并运行正常</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">docker info --format <span class="string">&#x27;&#123;&#123;.ServerVersion&#125;&#125;&#x27;</span></span><br><span class="line">docker ps -q | <span class="built_in">head</span> -1</span><br></pre></td></tr></table></figure>
+<h3 id="安装-kind"><a class="markdownIt-Anchor" href="#安装-kind"></a> 安装 Kind</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">curl -sLo /usr/local/sbin/kind <span class="string">&quot;https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64&quot;</span></span><br><span class="line"><span class="built_in">chmod</span> +x /usr/local/sbin/kind</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kind version</span></span><br><span class="line">kind v0.31.0 go1.25.5 linux/amd64</span><br></pre></td></tr></table></figure>
+<ul>
+<li>这里直接安装 Kind 的最新<a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/kind/releases">稳定二进制版本</a></li>
+<li><a href="(https://kind.sigs.k8s.io/docs/user/quick-start)">官网</a>也提供了其他安装方式，例如通过包管理器安装或者源码安装</li>
+</ul>
+<h3 id="22-安装-kubectl"><a class="markdownIt-Anchor" href="#22-安装-kubectl"></a> 2.2 安装 Kubectl</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">curl -sLo /usr/local/sbin/kubectl <span class="string">&quot;https://dl.k8s.io/release/v1.35.0/bin/linux/amd64/kubectl&quot;</span></span><br><span class="line"><span class="built_in">chmod</span> +x /usr/local/sbin/kubectl</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl version</span></span><br><span class="line">Client Version: v1.35.0</span><br><span class="line">Kustomize Version: v5.7.1</span><br><span class="line">Server Version: v1.35.0</span><br></pre></td></tr></table></figure>
+<ul>
+<li>kubectl 是 Kubernetes 的命令行工具，kind 本身不需要 kubectl，但是为了方便管理集群和资源，建议安装 kubectl</li>
+<li>kubectl 用于与 K8s API Server 交互，管理集群资源</li>
+<li>Kustomize 是 K8s 原生的配置管理工具，内置于 kubectl</li>
+<li>kubectl 的官方安装文档，可以参考<a target="_blank" rel="noopener" href="https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/">这里</a></li>
+<li>这里我们安装的 kubectl 版本和 k8s 版本都是最新的<a target="_blank" rel="noopener" href="https://kubernetes.io/releases/">稳定版本</a></li>
+</ul>
+<h2 id="3-创建集群"><a class="markdownIt-Anchor" href="#3-创建集群"></a> 3. 创建集群</h2>
+<h3 id="31-编写集群配置文件"><a class="markdownIt-Anchor" href="#31-编写集群配置文件"></a> 3.1 编写集群配置文件</h3>
+<p>创建文件 <code>kind-config.yaml</code>：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">kind:</span> <span class="string">Cluster</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">kind.x-k8s.io/v1alpha4</span></span><br><span class="line"><span class="attr">name:</span> <span class="string">k8s-cluster</span></span><br><span class="line"><span class="attr">nodes:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">role:</span> <span class="string">control-plane</span></span><br><span class="line">    <span class="attr">extraPortMappings:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">30000</span></span><br><span class="line">        <span class="attr">hostPort:</span> <span class="number">30000</span></span><br><span class="line">        <span class="attr">protocol:</span> <span class="string">TCP</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">30001</span></span><br><span class="line">        <span class="attr">hostPort:</span> <span class="number">30001</span></span><br><span class="line">        <span class="attr">protocol:</span> <span class="string">TCP</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">30002</span></span><br><span class="line">        <span class="attr">hostPort:</span> <span class="number">30002</span></span><br><span class="line">        <span class="attr">protocol:</span> <span class="string">TCP</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">role:</span> <span class="string">worker</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">role:</span> <span class="string">worker</span></span><br><span class="line"><span class="attr">networking:</span></span><br><span class="line">  <span class="attr">podSubnet:</span> <span class="string">&quot;10.244.0.0/16&quot;</span></span><br><span class="line">  <span class="attr">serviceSubnet:</span> <span class="string">&quot;10.96.0.0/12&quot;</span></span><br></pre></td></tr></table></figure>
+<p><strong>配置详解</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind: Cluster</code></td>
+<td>声明这是一个 Kind 集群配置</td>
+</tr>
+<tr>
+<td><code>apiVersion: kind.x-k8s.io/v1alpha4</code></td>
+<td>Kind 配置的 API 版本</td>
+</tr>
+<tr>
+<td><code>name: k8s-cluster</code></td>
+<td>集群名称，用于标识和切换上下文</td>
+</tr>
+<tr>
+<td><code>nodes</code></td>
+<td>定义集群节点列表</td>
+</tr>
+<tr>
+<td><code>role: control-plane</code></td>
+<td>控制面节点，运行 K8s 管理组件（API Server、Controller、Scheduler、etcd）</td>
+</tr>
+<tr>
+<td><code>role: worker</code></td>
+<td>工作节点，运行用户的应用 Pod</td>
+</tr>
+<tr>
+<td><code>extraPortMappings</code></td>
+<td>端口映射，将容器端口映射到宿主机，便于访问 NodePort 服务</td>
+</tr>
+<tr>
+<td><code>podSubnet</code></td>
+<td>Pod 网络地址范围，每个 Pod 会获得该范围内的 IP</td>
+</tr>
+<tr>
+<td><code>serviceSubnet</code></td>
+<td>Service 网络地址范围，每个 Service 会获得虚拟 IP（ClusterIP）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>K8s 节点角色说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>功能</th>
+<th>类比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>control-plane</td>
+<td>集群大脑，管理调度、存储状态、响应 API 请求</td>
+<td>公司管理层</td>
+</tr>
+<tr>
+<td>worker</td>
+<td>执行者，运行实际的应用容器</td>
+<td>公司员工</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-创建集群"><a class="markdownIt-Anchor" href="#32-创建集群"></a> 3.2 创建集群</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kind create cluster --config kind-config.yaml --<span class="built_in">wait</span> 300s</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">Creating cluster &quot;k8s-cluster&quot; ...</span><br><span class="line"> • Ensuring node image (kindest/node:v1.35.0) 🖼  ...</span><br><span class="line"> ✓ Ensuring node image (kindest/node:v1.35.0) 🖼</span><br><span class="line"> • Preparing nodes 📦 📦 📦   ...</span><br><span class="line"> ✓ Preparing nodes 📦 📦 📦</span><br><span class="line"> • Writing configuration 📜  ...</span><br><span class="line"> ✓ Writing configuration 📜</span><br><span class="line"> • Starting control-plane 🕹️  ...</span><br><span class="line"> ✓ Starting control-plane 🕹️</span><br><span class="line"> • Installing CNI 🔌  ...</span><br><span class="line"> ✓ Installing CNI 🔌</span><br><span class="line"> • Installing StorageClass 💾  ...</span><br><span class="line"> ✓ Installing StorageClass 💾</span><br><span class="line"> • Joining worker nodes 🚜  ...</span><br><span class="line"> ✓ Joining worker nodes 🚜</span><br><span class="line"> • Waiting ≤ 5m0s for control-plane = Ready ⏳  ...</span><br><span class="line"> ✓ Waiting ≤ 5m0s for control-plane = Ready ⏳</span><br><span class="line"> • Ready after 12s 💚</span><br><span class="line">Set kubectl context to &quot;kind-k8s-cluster&quot;</span><br></pre></td></tr></table></figure>
+<p><strong>步骤解释</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>步骤</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ensuring node image</td>
+<td>下载 Kind 的 K8s 节点镜像（包含完整 K8s 组件）</td>
+</tr>
+<tr>
+<td>Preparing nodes</td>
+<td>创建 3 个 Docker 容器作为 K8s 节点</td>
+</tr>
+<tr>
+<td>Writing configuration</td>
+<td>写入集群配置（证书、kubeconfig 等）</td>
+</tr>
+<tr>
+<td>Starting control-plane</td>
+<td>启动控制面组件（API Server、etcd、Controller、Scheduler）</td>
+</tr>
+<tr>
+<td>Installing CNI</td>
+<td>安装容器网络接口（Kind 默认使用 kindnet），让 Pod 可以互相通信</td>
+</tr>
+<tr>
+<td>Installing StorageClass</td>
+<td>安装默认存储类（local-path），支持持久化存储</td>
+</tr>
+<tr>
+<td>Joining worker nodes</td>
+<td>让 worker 节点加入集群，建立与控制面的连接</td>
+</tr>
+<tr>
+<td>Waiting for Ready</td>
+<td>等待控制面节点状态变为 Ready</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键概念解释</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CNI (Container Network Interface)</strong></td>
+<td>Pod 网络插件，负责 Pod 之间的网络通信。每个 Pod 都有自己的 IP，CNI 让它们 能互相访问</td>
+</tr>
+<tr>
+<td><strong>StorageClass</strong></td>
+<td>存储类型定义，告诉 K8s 如何创建持久化存储卷。应用数据需要持久化时，K8s 会根据 StorageClass 自动创建存储</td>
+</tr>
+<tr>
+<td><strong>kubeconfig</strong></td>
+<td>认证配置文件，包含集群地址、证书、用户信息，kubectl 用它连接集群</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="4-验证集群状态"><a class="markdownIt-Anchor" href="#4-验证集群状态"></a> 4. 验证集群状态</h2>
+<p>在创建集群之后，就可以使用 <code>kubectl</code> 命令来和 k8s 集群进行<a target="_blank" rel="noopener" href="https://kind.sigs.k8s.io/docs/user/quick-start">交互</a>了。kubectl 会自动使用 KIND 所生成的 <a target="_blank" rel="noopener" href="https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/">kubeconfig 文件</a> 来连接集群，该配置文件默认保存在 <code>$&#123;HOME&#125;/.kube/config</code> 目录下。<code>kubeconfig</code> 文件告诉 <code>kubectl</code>：我要连接哪个集群？用什么身份连接？以及如何验证安全连接？</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl config view</span></span><br><span class="line">apiVersion: v1</span><br><span class="line">clusters:</span><br><span class="line">- cluster:</span><br><span class="line">    certificate-authority-data: DATA+OMITTED</span><br><span class="line">    server: https://127.0.0.1:44199</span><br><span class="line">  name: kind-k8s-cluster</span><br><span class="line">contexts:</span><br><span class="line">- context:</span><br><span class="line">    cluster: kind-k8s-cluster</span><br><span class="line">    user: kind-k8s-cluster</span><br><span class="line">  name: kind-k8s-cluster</span><br><span class="line">current-context: kind-k8s-cluster</span><br><span class="line">kind: Config</span><br><span class="line"><span class="built_in">users</span>:</span><br><span class="line">- name: kind-k8s-cluster</span><br><span class="line">  user:</span><br><span class="line">    client-certificate-data: DATA+OMITTED</span><br><span class="line">    client-key-data: DATA+OMITTED</span><br></pre></td></tr></table></figure>
+<ul>
+<li>clusters 字段：集群信息，包括证书和 API 服务器地址，通过 kubectl 命令和集群交互时，就是往这个 API 服务器发送请求</li>
+<li>users：用户信息，包括客户端证书和密钥，用于认证和授权</li>
+<li>contexts：当前使用的上下文，即当前连接的集群和用户，实现一个逻辑绑定，将用户和集群关联起来</li>
+<li>current-context：默认的上下文，执行 kubectl 时会自动使用这个上下文</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl cluster-info</span></span><br><span class="line">Kubernetes control plane is running at https://127.0.0.1:44199</span><br><span class="line">CoreDNS is running at https://127.0.0.1:44199/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy</span><br><span class="line"></span><br><span class="line">To further debug and diagnose cluster problems, use <span class="string">&#x27;kubectl cluster-info dump&#x27;</span>.</span><br></pre></td></tr></table></figure>
+<h3 id="41-查看节点状态"><a class="markdownIt-Anchor" href="#41-查看节点状态"></a> 4.1 查看节点状态</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl get nodes -o wide</span><br></pre></td></tr></table></figure>
+<p><strong>输出</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">NAME                        STATUS   ROLES           AGE   VERSION   INTERNAL-IP   EXTERNAL-IP   OS-IMAGE                         KERNEL-VERSION      CONTAINER-RUNTIME</span><br><span class="line">k8s-cluster-control-plane   Ready    control-plane   27s   v1.35.0   172.19.0.4    &lt;none&gt;        Debian GNU/Linux 12 (bookworm)   5.15.0-40-generic   containerd://2.2.0</span><br><span class="line">k8s-cluster-worker          Ready    &lt;none&gt;          17s   v1.35.0   172.19.0.3    &lt;none&gt;        Debian GNU/Linux 12 (bookworm)   5.15.0-40-generic   containerd://2.2.0</span><br><span class="line">k8s-cluster-worker2         Ready    &lt;none&gt;          17s   v1.35.0   172.19.0.2    &lt;none&gt;        Debian GNU/Linux 12 (bookworm)   5.15.0-40-generic   containerd://2.2.0</span><br></pre></td></tr></table></figure>
+<p><strong>字段解释</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NAME</td>
+<td>节点名称，Kind 以 <code>集群名-角色</code> 命名</td>
+</tr>
+<tr>
+<td>STATUS</td>
+<td>节点状态，<code>Ready</code> 表示节点正常，可接受调度 Pod</td>
+</tr>
+<tr>
+<td>ROLES</td>
+<td>节点角色，<code>control-plane</code> 是控制面，<code>&lt;none&gt;</code> 是工作节点</td>
+</tr>
+<tr>
+<td>AGE</td>
+<td>节点创建后的运行时间</td>
+</tr>
+<tr>
+<td>VERSION</td>
+<td>节点上的 Kubernetes 版本</td>
+</tr>
+<tr>
+<td>INTERNAL-IP</td>
+<td>节点在集群内部的 IP 地址（Docker 网络）</td>
+</tr>
+<tr>
+<td>EXTERNAL-IP</td>
+<td>外部可访问的 IP（Kind 环境无）</td>
+</tr>
+<tr>
+<td>OS-IMAGE</td>
+<td>节点容器内的操作系统</td>
+</tr>
+<tr>
+<td>CONTAINER-RUNTIME</td>
+<td>容器运行时（containerd 是 K8s 默认的容器运行时）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42-查看系统组件"><a class="markdownIt-Anchor" href="#42-查看系统组件"></a> 4.2 查看系统组件</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl get pods -A</span><br></pre></td></tr></table></figure>
+<p><strong>输出</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">NAMESPACE            NAME                                                READY   STATUS    RESTARTS   AGE</span><br><span class="line">kube-system          coredns-7d764666f9-9xzlc                            1/1     Running   0          18s</span><br><span class="line">kube-system          coredns-7d764666f9-s9pfm                            1/1     Running   0          18s</span><br><span class="line">kube-system          etcd-k8s-cluster-control-plane                      1/1     Running   0          25s</span><br><span class="line">kube-system          kindnet-267dt                                       1/1     Running   0          19s</span><br><span class="line">kube-system          kindnet-kxncz                                       1/1     Running   0          18s</span><br><span class="line">kube-system          kindnet-rp49k                                       1/1     Running   0          18s</span><br><span class="line">kube-system          kube-apiserver-k8s-cluster-control-plane            1/1     Running   0          25s</span><br><span class="line">kube-system          kube-controller-manager-k8s-cluster-control-plane   1/1     Running   0          25s</span><br><span class="line">kube-system          kube-proxy-4bbcx                                    1/1     Running   0          18s</span><br><span class="line">kube-system          kube-proxy-5mq89                                    1/1     Running   0          19s</span><br><span class="line">kube-system          kube-proxy-6bzmj                                    1/1     Running   0          18s</span><br><span class="line">kube-system          kube-scheduler-k8s-cluster-control-plane            1/1     Running   0          25s</span><br><span class="line">local-path-storage   local-path-provisioner-67b8995b4b-fpggw             1/1     Running   0          18s</span><br></pre></td></tr></table></figure>
+<p><strong>参数解释</strong>：</p>
+<ul>
+<li><code>-A</code> 或 <code>--all-namespaces</code>：显示所有命名空间的 Pod</li>
+</ul>
+<p><strong>字段解释</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NAMESPACE</td>
+<td>命名空间，用于资源隔离。<code>kube-system</code> 存放系统组件</td>
+</tr>
+<tr>
+<td>NAME</td>
+<td>Pod 名称（格式：<code>部署名-随机ID</code>）</td>
+</tr>
+<tr>
+<td>READY</td>
+<td>就绪状态，格式 <code>就绪容器数/总容器数</code></td>
+</tr>
+<tr>
+<td>STATUS</td>
+<td>Pod 状态，<code>Running</code> 表示正常运行</td>
+</tr>
+<tr>
+<td>RESTARTS</td>
+<td>容器重启次数</td>
+</tr>
+<tr>
+<td>AGE</td>
+<td>Pod 创建后的运行时间</td>
+</tr>
+</tbody>
+</table>
+<p><strong>系统组件说明</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>Pod</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>coredns</strong></td>
+<td>集群内 DNS 服务，让 Pod 可以通过 Service 名称访问服务（如 <code>nginx-svc.default.svc.cluster.local</code>）</td>
+</tr>
+<tr>
+<td><strong>etcd</strong></td>
+<td>K8s 的数据库，存储集群所有状态信息（键值存储）</td>
+</tr>
+<tr>
+<td><strong>kindnet</strong></td>
+<td>Kind 的 CNI 网络，负责 Pod 网络通信</td>
+</tr>
+<tr>
+<td><strong>kube-apiserver</strong></td>
+<td>K8s API 服务器，所有请求（kubectl、应用）都通过它</td>
+</tr>
+<tr>
+<td><strong>kube-controller-manager</strong></td>
+<td>控制器管理器，维护集群状态（如 Pod 数量、节点健康）</td>
+</tr>
+<tr>
+<td><strong>kube-scheduler</strong></td>
+<td>调度器，决定新 Pod 运行在哪个节点上</td>
+</tr>
+<tr>
+<td><strong>kube-proxy</strong></td>
+<td>代理组件，负责 Service 的网络转发规则</td>
+</tr>
+<tr>
+<td><strong>local-path-provisioner</strong></td>
+<td>存储供应器，按需创建本地存储卷</td>
+</tr>
+</tbody>
+</table>
+<p><strong>命名空间（Namespace）</strong> 是类似文件系统的目录，用于隔离资源：</p>
+<ul>
+<li>不同命名空间的资源互不可见（除非跨命名空间访问）</li>
+<li><code>kube-system</code>：系统组件的命名空间</li>
+<li><code>default</code>：用户默认的命名空间</li>
+</ul>
+<h2 id="5-部署测试应用"><a class="markdownIt-Anchor" href="#5-部署测试应用"></a> 5. 部署测试应用</h2>
+<h3 id="51-创建-deployment"><a class="markdownIt-Anchor" href="#51-创建-deployment"></a> 5.1 创建 Deployment</h3>
+<p><strong>Deployment</strong>是 K8s 中管理应用的资源类型，</p>
+<ul>
+<li>声明式定义：描述期望状态（如 <code>nginx</code> 运行 3 个副本)</li>
+<li><strong>无状态应用</strong>控制器：自动维持 Pod 的数量和状态，挂了自动重启，更新自动滚动。Pod 是 k8s 中的最小运行单位（一个容器组）</li>
+<li>Deployment 并不直接操作 Pod，它通过管理 ReplicaSet（副本集）来实现副本管理（Replicas）、滚动更新（Rolling Update）、版本回滚（Rollback）等功能</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl create deployment nginx --image=nginx:alpine --replicas=3</span><br><span class="line">kubectl create deployment httpbin --image=kennethreitz/httpbin --replicas=2</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>create deployment</code>：创建 Deployment（应用部署声明）</li>
+<li><code>--image</code>：使用的容器镜像</li>
+<li><code>--replicas</code>：副本数量，即运行多少个 Pod</li>
+</ul>
+<p>查看当前的 deployment：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get deployment</span></span><br><span class="line">NAME      READY   UP-TO-DATE   AVAILABLE   AGE</span><br><span class="line">httpbin   2/2     2            2           122m</span><br><span class="line">nginx     3/3     3            3           122m</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>READY</code>：就绪副本数/期望副本数</li>
+<li><code>UP-TO-DATE</code>：已更新到最新版本的副本数</li>
+<li><code>AVAILABLE</code>：可用的副本数</li>
+</ul>
+<p>查看当前的业务 pods</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get pods --show-labels</span></span><br><span class="line">NAME                       READY   STATUS    RESTARTS   AGE     LABELS</span><br><span class="line">httpbin-75c95868c8-b429q   1/1     Running   0          3h49m   app=httpbin,pod-template-hash=75c95868c8</span><br><span class="line">httpbin-75c95868c8-xh99r   1/1     Running   0          3h49m   app=httpbin,pod-template-hash=75c95868c8</span><br><span class="line">nginx-6658f59756-h82mq     1/1     Running   0          3h49m   app=nginx,pod-template-hash=6658f59756</span><br><span class="line">nginx-6658f59756-h8k5j     1/1     Running   0          3h49m   app=nginx,pod-template-hash=6658f59756</span><br><span class="line">nginx-6658f59756-z6zgf     1/1     Running   0          3h49m   app=nginx,pod-template-hash=6658f59756</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<ul>
+<li>httpbin 的 2 个 Pod 也分布在两个 worker 节点</li>
+<li>nginx 的 3 个 Pod 分布在 worker 和 worker2 两个节点</li>
+<li>这是 K8s 调度器自动决定的，会考虑负载均衡</li>
+</ul>
+<h3 id="52-创建-service"><a class="markdownIt-Anchor" href="#52-创建-service"></a> 5.2 创建 Service</h3>
+<p><code>kubectl expose</code> 的作用是为一组 Pod（通常是 Deployment 管理的 Pod）创建一个 Service，从而让这些 Pod 能够被访问。在 K8s 中，<strong>Pod 的 IP 地址是动态且不可靠的。如果一个 Pod 退出了，Deployment 会拉起一个新的 Pod，但新 Pod 的 IP 会变，这样就会导致客户端（或其它服务）无法通过一个固定的 IP 找到你的应用</strong>。<code>kubectl expose</code> 会创建一个 Service。Service 拥有一个固定的虚拟 IP（ClusterIP），它像一个负载均衡器，会自动追踪并转发流量给后端那些变化的 Pod。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl expose deployment nginx --port=80 --target-port=80 --<span class="built_in">type</span>=NodePort --name=nginx-svc</span><br><span class="line">kubectl expose deployment httpbin --port=80 --target-port=80 --<span class="built_in">type</span>=NodePort --name=httpbin-svc</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>expose deployment</code>：为 Deployment 创建 Service</li>
+<li><code>--port</code>：Service 对外暴露的端口，其他服务访问 Service 时使用该端口</li>
+<li><code>--target-port</code>：容器内部的应用端口，也就是你的程序在容器里实际监听的端口</li>
+<li><code>--type=NodePort</code>：type 指定了 service 类型
+<ul>
+<li>ClusterIP (默认): 仅在集群内部可见，适合服务间通信</li>
+<li>NodePort: 在每个 Node 上开启一个高位端口（30000+），让你可以通过 <code>节点IP:端口</code> 从集群外部访问</li>
+<li>LoadBalancer: 如果你在云环境（阿里云、AWS），它会自动去申请一个公网负载均衡器</li>
+</ul>
+</li>
+</ul>
+<p>查看当前 service：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get svc</span></span><br><span class="line">NAME          TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE</span><br><span class="line">httpbin-svc   NodePort    10.108.21.16   &lt;none&gt;        80:31995/TCP   135m</span><br><span class="line">kubernetes    ClusterIP   10.96.0.1      &lt;none&gt;        443/TCP        135m</span><br><span class="line">nginx-svc     NodePort    10.97.67.102   &lt;none&gt;        80:30858/TCP   135m</span><br></pre></td></tr></table></figure>
+<ul>
+<li>NAME：服务名称，集群内其他 Pod 可以通过这个名字直接访问（依靠 CoreDNS）</li>
+<li>TYPE：服务类型，
+<ul>
+<li>ClusterIP: 仅限集群内访问</li>
+<li>NodePort: 在每个节点上开启一个固定端口，允许外部访问</li>
+</ul>
+</li>
+<li>CLUSTER-IP：集群内部虚拟 IP，K8s 为服务分配的固定 IP。即使后端的 Pod 销毁重建，这个 IP 也永远不变</li>
+<li>EXTERNAL-IP：外部访问 IP，在 Kind 或私有环境通常为 <code>&lt;none&gt;</code>。只有在阿里云/AWS 等云环境使用 LoadBalancer 时才会显示 IP</li>
+<li>PORT(S)：端口映射，格式为 <code>Service端口:NodePort端口/协议</code>。这是流量进入的 <code>大门</code></li>
+</ul>
+<p>需要注意，当你创建一个 NodePort 或 LoadBalancer 类型的 Service 时，Kubernetes 仍然会自动为其分配一个 ClusterIP（除非你显式设置 <code>clusterIP: None</code>，即 <a target="_blank" rel="noopener" href="https://kubernetes.io/docs/concepts/services-networking/service/">Headless Services</a>。在 Kubernetes 的设计逻辑中，Service 类型是**层层递进（继承）**的。你可以把这看作一个 <code>包含关系</code>：</p>
+<ul>
+<li>ClusterIP：最基础的，只有 <code>ClusterIP</code></li>
+<li>NodePort：包含 <code>ClusterIP</code> + <code>NodePort</code>。</li>
+<li>LoadBalancer：包含 <code>ClusterIP</code> + <code>NodePort</code> + <code>External LoadBalancer IP</code>（云厂商提供）</li>
+</ul>
+<p>这样实现的原因是：</p>
+<ul>
+<li>统一的内部访问入口：集群内的 Pod 可以通过 ClusterIP 稳定访问，无需知道 NodePort</li>
+<li>kube-proxy 转发逻辑：kube-proxy 依赖 ClusterIP 配置 iptables/IPVS 规则</li>
+<li>负载均衡：ClusterIP 提供负载均衡，NodePort 最终也转发到 ClusterIP</li>
+</ul>
+<p>当你通过 NodePort 访问服务时，流量经过的链路如下：</p>
+<ul>
+<li>用户请求 <code>节点IP:31995</code></li>
+<li>节点网络层捕获流量，根据 iptables 或 IPVS 规则将其转发给 ClusterIP (10.108.21.16:80)。</li>
+<li>ClusterIP 负载均衡器再将流量转发给具体的 <code>Pod IP</code></li>
+</ul>
+<p><strong>如果没有 ClusterIP，流量在进入节点后就没有一个统一的、稳定的目的地来做负载均衡了</strong>。</p>
+<p>因此对于上述服务：</p>
+<ul>
+<li>
+<p>httpbin-svc (NodePort)：</p>
+<ul>
+<li>内部访问：集群里的其他 Pod 可以访问 <code>10.108.21.16:80</code> 或直接访问 <code>http://httpbin-svc</code></li>
+<li>外部访问：因为它是 NodePort 类型，你可以通过任何一个 K8s 节点的 IP 加上端口 31995 来访问它</li>
+</ul>
+</li>
+<li>
+<p>nginx-svc (NodePort) 也是类似的：</p>
+<ul>
+<li>内部访问： 访问 10.97.67.102:80 或直接访问 <code>http://nginx-svc</code></li>
+<li>外部访问：通过任意节点的 IP 加端口 30858</li>
+</ul>
+</li>
+<li>
+<p>kubernetes (ClusterIP)</p>
+<ul>
+<li>这是系统的内置服务，类型为 <code>ClusterIP</code>，只能集群内访问</li>
+<li>这个服务是给集群内部组件访问 K8s API 的，即让集群里的 Pod 能够找到并调用 K8s API Server</li>
+</ul>
+</li>
+</ul>
+<h2 id="6-服务访问测试"><a class="markdownIt-Anchor" href="#6-服务访问测试"></a> 6. 服务访问测试</h2>
+<h3 id="61-通过临时-pod-测试"><a class="markdownIt-Anchor" href="#61-通过临时-pod-测试"></a> 6.1 通过临时 Pod 测试</h3>
+<p>由于 Kind 集群节点运行在 Docker 容器内，直接从宿主机访问 NodePort 较复杂。使用临时 Pod 测试是最可靠的方式。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl run curl-test --image=curlimages/curl:latest --<span class="built_in">rm</span> --restart=Never -it -- curl -s http://nginx-svc.default.svc.cluster.local/</span><br></pre></td></tr></table></figure>
+<p>输出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&lt;!DOCTYPE html&gt;</span><br><span class="line">&lt;html&gt;</span><br><span class="line">&lt;head&gt;</span><br><span class="line">&lt;title&gt;Welcome to nginx!&lt;/title&gt;</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>kubectl run</code>：创建一个临时 Pod 并运行命令</li>
+<li><code>--rm</code>：Pod 执行完毕后自动删除</li>
+<li><code>--restart=Never</code>：不自动重启</li>
+<li><code>-it</code>：交互模式，可以看到输出</li>
+<li><code>curl -s</code>：静默模式请求 URL</li>
+</ul>
+<p>这里的 <code>nginx-svc.default.svc.cluster.local</code> 格式为：</p>
+<ul>
+<li><code>nginx-svc</code>：Service Name，你创建服务时指定的 NAME</li>
+<li><code>default</code>：Namespace，服务所属的命名空间。如果不指定，默认就在 default</li>
+<li><code>svc</code>：Resource Type，表示这是一个 Service 资源（区别于 pod）</li>
+<li><code>Root Domain</code>：Root Domain，<code>cluster.local</code>，K8s 集群默认的内部根域名（通常在安装时配置）</li>
+</ul>
+<p>K8s 的 DNS 搜索域（Search Domains）非常智能，它可以让你在不同场景下使用 <code>缩写</code>：</p>
+<ul>
+<li>同 Namespace 访问：只需要指定 <code>nginx-svc</code> 即可</li>
+<li>跨 Namespace 访问：需要加命名空间，<code>nginx-svc.default</code></li>
+<li>最全路径（全限定域名）：即当前这种格式</li>
+</ul>
+<p>所以这样访问也是可以的：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl run curl-test --image=curlimages/curl:latest --rm --restart=Never -it -- curl -s http://nginx-svc</span></span><br></pre></td></tr></table></figure>
+<h3 id="通过-nodeport-访问"><a class="markdownIt-Anchor" href="#通过-nodeport-访问"></a> 通过 NodePort 访问</h3>
+<p>这条命令在 k8s 集群中创建客户端 Pod 并在客户端 Pod 内访问 nginx-svc 服务。这种集群内服务访问的方式本质上是通过 <code>ClusterIP</code> 的来访问的，如果想在 Kind 环境（节点是 Docker 容器）中通过 NodePort 来访问服务，有以下几种方式：</p>
+<ul>
+<li>通过 docker exec 进入节点容器，然后 curl localhost:NodePort</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># docker exec k8s-cluster-worker curl -I http://localhost:30858</span></span><br><span class="line"></span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+<ul>
+<li>通过节点 IP（Docker 网络 IP）访问</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 首先需要获取各个节点（容器）的 IP</span></span><br><span class="line"><span class="comment"># kubectl get nodes -o jsonpath=&#x27;&#123;range .items[*]&#125;&#123;.metadata.name&#125;&#123;&quot;\t&quot;&#125;&#123;.status.addresses[?(@.type==&quot;InternalIP&quot;)].address&#125;&#123;&quot;\n&quot;&#125;&#123;end&#125;&#x27;</span></span><br><span class="line">k8s-cluster-control-plane	172.19.0.4</span><br><span class="line">k8s-cluster-worker	172.19.0.3</span><br><span class="line">k8s-cluster-worker2	172.19.0.2</span><br><span class="line"></span><br><span class="line"><span class="comment"># 通过容器网络访问</span></span><br><span class="line"><span class="comment"># --noroxy 防止使用宿主机的 http 代理配置</span></span><br><span class="line"><span class="comment"># curl --noproxy &quot;*&quot; http://172.19.0.3:30858/  -I</span></span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Server: nginx/1.29.8</span><br></pre></td></tr></table></figure>
+<ul>
+<li>如果配置了 <code>extraPortMappings</code>，可以通过宿主机端口访问，但是由于我们之前配置的 <code>extraPortMappings</code> 中没有映射 <code>30858</code> 端口，因此这里服务无法通过宿主机端口访问</li>
+</ul>
+<h3 id="指定-service-的-nodeport"><a class="markdownIt-Anchor" href="#指定-service-的-nodeport"></a> 指定 Service 的 NodePort</h3>
+<p>我们新创建一个 NodePort 类型的 Service，并指定具体的 NodePort，这样就可以演示通过宿主机的 <code>NodePort</code> 来访问服务了。</p>
+<ul>
+<li>服务的配置文件 <code>nginx-external-svc.yaml</code>：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">apiVersion: v1</span><br><span class="line">kind: Service</span><br><span class="line">metadata:</span><br><span class="line">  name: nginx-external</span><br><span class="line">spec:</span><br><span class="line">  <span class="built_in">type</span>: NodePort</span><br><span class="line">  selector:</span><br><span class="line">    app: nginx</span><br><span class="line">  ports:</span><br><span class="line">    - port: 80</span><br><span class="line">      targetPort: 80</span><br><span class="line">      nodePort: 30000</span><br></pre></td></tr></table></figure>
+<ul>
+<li>应用配置文件：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f /root/code/private/go/test/k8s/nginx-external-svc.yaml</span><br></pre></td></tr></table></figure>
+<ul>
+<li>查看服务</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get svc nginx-external</span></span><br><span class="line">NAME             TYPE       CLUSTER-IP    EXTERNAL-IP   PORT(S)        AGE</span><br><span class="line">nginx-external   NodePort   10.96.2.159   &lt;none&gt;        80:30000/TCP   2m5s</span><br></pre></td></tr></table></figure>
+<ul>
+<li>通过宿主机映射的端口 30000（映射到容器的 30000 端口，也就是所指定的 NodePort）访问：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl localhost:30000 -I</span></span><br><span class="line">HTTP/1.1 200 OK</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">$ curl 10.9.33.133:30000 -I</span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Server: nginx/1.29.8</span><br></pre></td></tr></table></figure>
+<p>httpbin 服务也可以通过上面类似的方式访问，这里就不再赘述。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章详细介绍了如何通过 KIND 在本地 Linux 服务器上搭建 k8s 环境，并学习了 k8s 的 集群、节点、Pod、Deployment、Service 等基础知识，后续我们就可以继续在这个环境中学习和实验 k8s 的各种功能特性了。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/k8s/" rel="tag"># k8s</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/04/01/python-agentscope-07/" rel="next" title="agentscope 源码分析（7）：ReActAgent 核心">
+      agentscope 源码分析（7）：ReActAgent 核心 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#kind-%E7%8E%AF%E5%A2%83%E5%AE%89%E8%A3%85"><span class="nav-number">1.</span> <span class="nav-text"> Kind 环境安装</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B3%BB%E7%BB%9F%E4%BF%A1%E6%81%AF"><span class="nav-number">1.1.</span> <span class="nav-text"> 系统信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-kind"><span class="nav-number">1.2.</span> <span class="nav-text"> 安装 Kind</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#22-%E5%AE%89%E8%A3%85-kubectl"><span class="nav-number">1.3.</span> <span class="nav-text"> 2.2 安装 Kubectl</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#3-%E5%88%9B%E5%BB%BA%E9%9B%86%E7%BE%A4"><span class="nav-number">2.</span> <span class="nav-text"> 3. 创建集群</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#31-%E7%BC%96%E5%86%99%E9%9B%86%E7%BE%A4%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6"><span class="nav-number">2.1.</span> <span class="nav-text"> 3.1 编写集群配置文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#32-%E5%88%9B%E5%BB%BA%E9%9B%86%E7%BE%A4"><span class="nav-number">2.2.</span> <span class="nav-text"> 3.2 创建集群</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#4-%E9%AA%8C%E8%AF%81%E9%9B%86%E7%BE%A4%E7%8A%B6%E6%80%81"><span class="nav-number">3.</span> <span class="nav-text"> 4. 验证集群状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#41-%E6%9F%A5%E7%9C%8B%E8%8A%82%E7%82%B9%E7%8A%B6%E6%80%81"><span class="nav-number">3.1.</span> <span class="nav-text"> 4.1 查看节点状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#42-%E6%9F%A5%E7%9C%8B%E7%B3%BB%E7%BB%9F%E7%BB%84%E4%BB%B6"><span class="nav-number">3.2.</span> <span class="nav-text"> 4.2 查看系统组件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#5-%E9%83%A8%E7%BD%B2%E6%B5%8B%E8%AF%95%E5%BA%94%E7%94%A8"><span class="nav-number">4.</span> <span class="nav-text"> 5. 部署测试应用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#51-%E5%88%9B%E5%BB%BA-deployment"><span class="nav-number">4.1.</span> <span class="nav-text"> 5.1 创建 Deployment</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#52-%E5%88%9B%E5%BB%BA-service"><span class="nav-number">4.2.</span> <span class="nav-text"> 5.2 创建 Service</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#6-%E6%9C%8D%E5%8A%A1%E8%AE%BF%E9%97%AE%E6%B5%8B%E8%AF%95"><span class="nav-number">5.</span> <span class="nav-text"> 6. 服务访问测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#61-%E9%80%9A%E8%BF%87%E4%B8%B4%E6%97%B6-pod-%E6%B5%8B%E8%AF%95"><span class="nav-number">5.1.</span> <span class="nav-text"> 6.1 通过临时 Pod 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%9A%E8%BF%87-nodeport-%E8%AE%BF%E9%97%AE"><span class="nav-number">5.2.</span> <span class="nav-text"> 通过 NodePort 访问</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%87%E5%AE%9A-service-%E7%9A%84-nodeport"><span class="nav-number">5.3.</span> <span class="nav-text"> 指定 Service 的 NodePort</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">243</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
