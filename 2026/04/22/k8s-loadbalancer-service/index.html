@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上篇文章我们已经 Kind 搭建了 k8s 环境，并且测试了 ClusterIP 和 NodePort 类型的 Service，这篇文章我们继续探索 k8s 中的 LoadBalancer 类型的 Service，之后我们还会简单介绍一下 k8s 的 ExternalName Service 和 Headless Service。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="基于 MetalLB 部署 k8s 的 LoadBalancer 服务">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/22/k8s-loadbalancer-service/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上篇文章我们已经 Kind 搭建了 k8s 环境，并且测试了 ClusterIP 和 NodePort 类型的 Service，这篇文章我们继续探索 k8s 中的 LoadBalancer 类型的 Service，之后我们还会简单介绍一下 k8s 的 ExternalName Service 和 Headless Service。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-22T07:18:47.000Z">
+<meta property="article:modified_time" content="2026-04-22T07:24:14.941Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="k8s">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/22/k8s-loadbalancer-service/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>基于 MetalLB 部署 k8s 的 LoadBalancer 服务 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/22/k8s-loadbalancer-service/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          基于 MetalLB 部署 k8s 的 LoadBalancer 服务
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-04-22 15:18:47" itemprop="dateCreated datePublished" datetime="2026-04-22T15:18:47+08:00">2026-04-22</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%90%8E%E7%AB%AF/" itemprop="url" rel="index"><span itemprop="name">后端</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://fuchencong.com/2026/04/21/k8s-kind/">上篇文章</a>我们已经 Kind 搭建了 k8s 环境，并且测试了 ClusterIP 和 NodePort 类型的 Service，这篇文章我们继续探索 k8s 中的 LoadBalancer 类型的 Service，之后我们还会简单介绍一下 k8s 的 ExternalName Service 和 Headless Service。</p>
+<span id="more"></span>
+<h2 id="loadbalancer-service"><a class="markdownIt-Anchor" href="#loadbalancer-service"></a> LoadBalancer Service</h2>
+<h3 id="什么是-loadbalancer-service"><a class="markdownIt-Anchor" href="#什么是-loadbalancer-service"></a> 什么是 LoadBalancer Service</h3>
+<p><a target="_blank" rel="noopener" href="https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer">LoadBalancer</a> 是 Kubernetes Service 的一种类型，用于将服务暴露给外部网络，下面简单对比了 k8s 的三种主要 Service 类型：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>外部访问方式</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ClusterIP</td>
+<td>仅集群内部访问</td>
+<td>内部服务通信</td>
+</tr>
+<tr>
+<td>NodePort</td>
+<td>节点 IP + 端口（30000-32767）</td>
+<td>测试、简单暴露</td>
+</tr>
+<tr>
+<td>LoadBalancer</td>
+<td>外部负载均衡器分配的 IP</td>
+<td>生产环境、云环境</td>
+</tr>
+</tbody>
+</table>
+<p>当需要从外部访问 k8s 集群内的服务时，NodePort 类型的 Service 有很多 <code>痛点</code>：</p>
+<ul>
+<li>单点故障风险：外部流量通常会硬编码指向某几个 Node 的 IP。如果那个特定的 Node 宕机了，用户的连接就会断开</li>
+<li>缺乏真正的负载均衡：NodePort Service 的流量转发路径是：流量到任意节点，节点再转发给 Port。如果大量流量涌入同一个 Node IP，这个节点的网络带宽会成为瓶颈</li>
+<li>端口难以管理：默认使用的是 30000-32767 范围内的端口，不能直接用标准的 80 或 443 端口</li>
+</ul>
+<p>而 LoadBalancer 类型的 Service 则是为了解决这些问题而设计的。它具有如下优点：</p>
+<ul>
+<li>避免节点故障影响：云厂商的负载均衡器会自动监控所有后端的节点。如果一个节点健康检查失败，负载均衡器会自动停止向该节点转发流量，只发给健康的节点。对客户端来说，它始终访问同一个 IP（负载均衡器的 IP），完全感知不到后端节点的故障。</li>
+<li>提供一个稳定、统一的访问入口：客户端始终通过固定的、公开的外部 IP 地址来访问服务</li>
+<li>使用标准的服务端口 (80, 443)：客户端看到的就是一个标准的网站地址</li>
+</ul>
+<p>当你向 Kubernetes 提交一个 type: LoadBalancer 的 Service 的 YAML 文件时，集群内部会发生以下联动：</p>
+<ul>
+<li>分配内部资源： API Server 收到请求后，会先给这个 Service 分配一个内部的 ClusterIP，并在所有节点上随机开启一个 <code>NodePort</code>（比如 31080）</li>
+<li>云控制器介入：此时，集群中的一个核心组件 Cloud Controller Manager (CCM) 检测到了这个特殊类型的 Service。</li>
+<li>调用云厂商 API：CCM 会拿着你的凭证，通过 API 去呼叫底层的云提供商（如阿里云、AWS、腾讯云）：请给我创建一个公网负载均衡实例，并将它的后端挂载到我这些 Kubernetes 节点的 31080 端口上</li>
+<li>回写状态： 云厂商创建完毕后，返回一个公网 IP。CCM 会把这个外部 IP 写回到你的 Service 的 EXTERNAL-IP 字段中</li>
+</ul>
+<p>而当通过这个外部 IP 访问集群内的服务时：</p>
+<ul>
+<li>流量到达云厂商的负载均衡（Cloud LB）</li>
+<li>LB 分发到 Node (利用 NodePort)：云 LB 会根据自身的负载均衡算法（如轮询），将请求转发给集群中任意一个健康节点的宿主机 IP 和指定的 NodePort（如 Node-A-IP:31080）</li>
+<li>Node 内部的拦截与分发 (kube-proxy 发力)：流量进入节点后，该节点上的 <code>kube-proxy</code> 配置的 iptables/ipvs 规则会立刻拦截这个包：<code>哦，你是访问 31080 端口的，我知道你想去哪个 Pod</code></li>
+<li>抵达目标 Pod：流量最终路由到真正运行代码的 Pod IP 上</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">用户 -&gt; (访问公网IP:80) -&gt; 云厂商负载均衡器 (如 AWS ELB, 阿里云 SLB)</span><br><span class="line">                           |</span><br><span class="line">                           | (监听后端节点健康状态)</span><br><span class="line">                           | (流量转发)</span><br><span class="line">                           v</span><br><span class="line">+----------------------+  |  +----------------------+</span><br><span class="line">|  Kubernetes Node 1   |&lt;-----|  Kubernetes Node 2   |</span><br><span class="line">| (健康)               |     | (不健康，被自动跳过)  |</span><br><span class="line">| NodePort: 30080      |     | NodePort: 30080      |</span><br><span class="line">+----------------------+     +----------------------+</span><br><span class="line">           |                               (流量不到达这里)</span><br><span class="line">           v (通过 kube-proxy)</span><br><span class="line">+----------------------+</span><br><span class="line">|  ClusterIP: 10.96... |</span><br><span class="line">+----------------------+</span><br><span class="line">           |</span><br><span class="line">           v (负载均衡到 Pod)</span><br><span class="line">+-----+ +-----+ +-----+</span><br><span class="line">| Pod | | Pod | | Pod |</span><br><span class="line">+-----+ +-----+ +-----+</span><br></pre></td></tr></table></figure>
+<h3 id="为什么需要-metallb"><a class="markdownIt-Anchor" href="#为什么需要-metallb"></a> 为什么需要 MetalLB？</h3>
+<p>在云环境（AWS、阿里云、GCP）中，创建 LoadBalancer Service 时，云厂商会自动创建一个外部负载均衡器（如 AWS ELB），并分配一个外部 IP。但在本地/裸金属环境（如 Kind、Minikube、自建集群）中，没有云厂商支持，LoadBalancer Service 的 EXTERNAL-IP 会一直处于 <code>&lt;pending&gt;</code> 状态。而 <a target="_blank" rel="noopener" href="https://metallb.io/">MetalLB</a> 是面向裸金属 Kubernetes 集群的负载均衡器实现，基于标准路由协议，让裸金属 K8s 也能正常使用 <code>Service: LoadBalancer</code> 类型：</p>
+<ul>
+<li>为裸金属环境提供 LoadBalancer 功能</li>
+<li>分配虚拟 IP 给 LoadBalancer Service</li>
+<li>支持 Layer2（ARP）和 BGP 模式</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>原理</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Layer2</strong></td>
+<td>通过 ARP 响应，让网络认为某节点拥有 LoadBalancer IP</td>
+<td>小规模网络、简单测试</td>
+</tr>
+<tr>
+<td><strong>BGP</strong></td>
+<td>通过 BGP 协议向路由器广播 IP</td>
+<td>大规模网络、生产环境</td>
+</tr>
+</tbody>
+</table>
+<p>这篇文章我们将以 <code>Layer2</code> 模式来部署使用 <code>MetalLB</code>，如下简单介绍了 Layer2 模式工作流程：</p>
+<ul>
+<li>MetalLB 从 IP 地址池中选择一个 IP 分配给 Service</li>
+<li>MetalLB speaker（DaemonSet）在某节点上响应 ARP 请求</li>
+<li>网络流量到达该节点</li>
+<li>kube-proxy 将流量转发到 Service 的后端 Pod</li>
+</ul>
+<h2 id="创建-loadbalancer-service"><a class="markdownIt-Anchor" href="#创建-loadbalancer-service"></a> 创建 LoadBalancer Service</h2>
+<p>首先我们看下在没有部署安装 MetalLB 时，如果创建一个 <code>LoadBalancer</code> 类型的 Service，会发生什么？环境仍然基于<a target="_blank" rel="noopener" href="https://fuchencong.com/2026/04/21/k8s-kind/">上篇文章</a>所部署的 Kind 环境：</p>
+<ul>
+<li>创建 service 配置文件 <code>nginx-lb-svc.yaml</code>，Service 的 Type 为 <code>LoadBalancer</code>：</li>
+</ul>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">nginx-lb</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">type:</span> <span class="string">LoadBalancer</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">nginx</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">      <span class="attr">targetPort:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p><code>type: LoadBalancer</code>：Service 类型为 LoadBalancer</p>
+</li>
+<li>
+<p><code>selector: app: nginx</code>：选择标签为 <code>app: nginx</code> 的 Pod 作为后端</p>
+</li>
+<li>
+<p><code>port: 80</code>：Service 暴露的端口</p>
+</li>
+<li>
+<p><code>targetPort: 80</code>：Pod 内部应用监听的端口</p>
+</li>
+<li>
+<p>创建服务</p>
+</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f nginx-lb-svc.yaml</span><br></pre></td></tr></table></figure>
+<ul>
+<li>查看 Service 状态</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get svc nginx-lb</span></span><br><span class="line"></span><br><span class="line">NAME       TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE</span><br><span class="line">nginx-lb   LoadBalancer   10.104.44.36   &lt;pending&gt;     80:32617/TCP   4s</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NAME</td>
+<td>nginx-lb</td>
+<td>Service 名称</td>
+</tr>
+<tr>
+<td>TYPE</td>
+<td>LoadBalancer</td>
+<td>Service 类型</td>
+</tr>
+<tr>
+<td>CLUSTER-IP</td>
+<td>10.104.44.36</td>
+<td>集群内部虚拟 IP</td>
+</tr>
+<tr>
+<td>EXTERNAL-IP</td>
+<td><code>&lt;pending&gt;</code></td>
+<td><strong>等待分配外部 IP</strong>（无负载均衡器实现）</td>
+</tr>
+<tr>
+<td>PORT(S)</td>
+<td>80:32617/TCP</td>
+<td>Service 端口:NodePort 端口</td>
+</tr>
+<tr>
+<td>AGE</td>
+<td>4s</td>
+<td>创建时间</td>
+</tr>
+</tbody>
+</table>
+<p>这里 <code>EXTERNAL-IP: &lt;pending&gt;</code> 表示没有负载均衡器来分配外部 IP。虽然 EXTERNAL-IP 为 <code>&lt;pending&gt;</code>，但 NodePort 已自动分配（32617），可通过 NodePort 方式访问。</p>
+<ul>
+<li>查看 Service 详细信息</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl describe svc nginx-lb</span></span><br><span class="line"></span><br><span class="line">Name:                     nginx-lb</span><br><span class="line">Namespace:                default</span><br><span class="line">Labels:                   &lt;none&gt;</span><br><span class="line">Annotations:              &lt;none&gt;</span><br><span class="line">Selector:                 app=nginx</span><br><span class="line">Type:                     LoadBalancer</span><br><span class="line">IP Family Policy:         SingleStack</span><br><span class="line">IP Families:              IPv4</span><br><span class="line">IP:                       10.104.44.36</span><br><span class="line">IPs:                      10.104.44.36</span><br><span class="line">Port:                     &lt;<span class="built_in">unset</span>&gt;  80/TCP</span><br><span class="line">TargetPort:               80/TCP</span><br><span class="line">NodePort:                 &lt;<span class="built_in">unset</span>&gt;  32617/TCP</span><br><span class="line">Endpoints:                10.244.2.2:80,10.244.1.2:80,10.244.2.3:80</span><br><span class="line">Session Affinity:         None</span><br><span class="line">External Traffic Policy:  Cluster</span><br><span class="line">Internal Traffic Policy:  Cluster</span><br><span class="line">Events:                   &lt;none&gt;</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Selector</td>
+<td>选择 Pod 的标签匹配规则</td>
+</tr>
+<tr>
+<td>IP/IPs</td>
+<td>Service 的 ClusterIP</td>
+</tr>
+<tr>
+<td>NodePort</td>
+<td>自动分配的节点端口（32617）</td>
+</tr>
+<tr>
+<td>Endpoints</td>
+<td>后端 Pod 的 IP:端口列表</td>
+</tr>
+<tr>
+<td>Events</td>
+<td>事件记录（当前无事件）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="安装-metallb"><a class="markdownIt-Anchor" href="#安装-metallb"></a> 安装 MetalLB</h2>
+<p>因为我们将使用 <code>Layer2</code> 模式来部署 MetalLB，因此需要确保 MetalLB 的 IP 地址池必须与 Kind 集群在同一网络，否则无法通信。</p>
+<h3 id="实际部署"><a class="markdownIt-Anchor" href="#实际部署"></a> 实际部署</h3>
+<ul>
+<li>我们首先确认 Kind Docker 网络范围：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">docker network inspect kind --format <span class="string">&#x27;&#123;&#123;range .IPAM.Config&#125;&#125;&#123;&#123;.Subnet&#125;&#125;&#123;&#123;end&#125;&#125;&#x27;</span></span><br><span class="line"></span><br><span class="line">fc00:f853:ccd:e793::/64</span><br><span class="line">172.19.0.0/16</span><br></pre></td></tr></table></figure>
+<ul>
+<li>安装 MetalLB v0.15.3</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.15.3/config/manifests/metallb-native.yaml</span><br></pre></td></tr></table></figure>
+<ul>
+<li>等待 MetalLB 就绪</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl <span class="built_in">wait</span> --namespace metallb-system --<span class="keyword">for</span>=condition=ready pod --selector=app=metallb --<span class="built_in">timeout</span>=90s</span><br></pre></td></tr></table></figure>
+<ul>
+<li>创建配置文件<code>metallb-config.yaml</code>，配置 MetalLB IP 地址池：</li>
+</ul>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">metallb.io/v1beta1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">IPAddressPool</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">default-pool</span></span><br><span class="line">  <span class="attr">namespace:</span> <span class="string">metallb-system</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">addresses:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="number">172.19</span><span class="number">.0</span><span class="number">.100</span><span class="number">-172.19</span><span class="number">.0</span><span class="number">.200</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">metallb.io/v1beta1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">L2Advertisement</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">default-advertisement</span></span><br><span class="line">  <span class="attr">namespace:</span> <span class="string">metallb-system</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">ipAddressPools:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="string">default-pool</span></span><br></pre></td></tr></table></figure>
+<p><strong>IPAddressPool 详解</strong>：</p>
+<ul>
+<li>定义 MetalLB 可以分配给 LoadBalancer Service 的 IP 范围</li>
+<li>每个 LoadBalancer Service 会从这个池中获取一个 IP</li>
+<li>这里 IP 范围必须与集群网络在同一网段</li>
+</ul>
+<p><strong>L2Advertisement 详解</strong>：</p>
+<ul>
+<li>
+<p>Layer2 模式通过 ARP 协议让网络知道 LoadBalancer IP 在哪</p>
+</li>
+<li>
+<p>speaker Pod 会响应 ARP 请求，告诉网络 <code>这个 IP 在我这台节点上</code></p>
+</li>
+<li>
+<p>流量到达该节点后，由 kube-proxy 转发到 Service</p>
+</li>
+<li>
+<p>应用 <code>metallb-config.yaml</code> 配置文件：</p>
+</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f metallb-config.yaml</span><br></pre></td></tr></table></figure>
+<h3 id="检查-metallb-状态"><a class="markdownIt-Anchor" href="#检查-metallb-状态"></a> 检查 metallb 状态</h3>
+<p>我们来看一下 <code>metallb</code> 相关的状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get all -n metallb-system</span></span><br><span class="line">NAME                              READY   STATUS    RESTARTS   AGE</span><br><span class="line">pod/controller-66bdd896c6-hvd6x   1/1     Running   0          62m</span><br><span class="line">pod/speaker-5wqc5                 1/1     Running   0          62m</span><br><span class="line">pod/speaker-n77zs                 1/1     Running   0          62m</span><br><span class="line">pod/speaker-zw7rz                 1/1     Running   0          62m</span><br><span class="line"></span><br><span class="line">NAME                              TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE</span><br><span class="line">service/metallb-webhook-service   ClusterIP   10.101.140.128   &lt;none&gt;        443/TCP   62m</span><br><span class="line"></span><br><span class="line">NAME                     DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE</span><br><span class="line">daemonset.apps/speaker   3         3         3       3            3           kubernetes.io/os=linux   62m</span><br><span class="line"></span><br><span class="line">NAME                         READY   UP-TO-DATE   AVAILABLE   AGE</span><br><span class="line">deployment.apps/controller   1/1     1            1           62m</span><br><span class="line"></span><br><span class="line">NAME                                    DESIRED   CURRENT   READY   AGE</span><br><span class="line">replicaset.apps/controller-66bdd896c6   1         1         1       62m</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#  kubectl get ipaddresspool,l2advertisement -n metallb-system</span></span><br><span class="line">NAME                                    AUTO ASSIGN   AVOID BUGGY IPS   ADDRESSES</span><br><span class="line">ipaddresspool.metallb.io/default-pool   <span class="literal">true</span>          <span class="literal">false</span>             [<span class="string">&quot;172.19.0.100-172.19.0.200&quot;</span>]</span><br><span class="line"></span><br><span class="line">NAME                                               IPADDRESSPOOLS     IPADDRESSPOOL SELECTORS   INTERFACES</span><br><span class="line">l2advertisement.metallb.io/default-advertisement   [<span class="string">&quot;default-pool&quot;</span>]</span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl describe ipaddresspool default-pool -n metallb-system</span></span><br><span class="line">Name:         default-pool</span><br><span class="line">Namespace:    metallb-system</span><br><span class="line">Labels:       &lt;none&gt;</span><br><span class="line">Annotations:  &lt;none&gt;</span><br><span class="line">API Version:  metallb.io/v1beta1</span><br><span class="line">Kind:         IPAddressPool</span><br><span class="line">Metadata:</span><br><span class="line">  Creation Timestamp:  2026-04-22T02:53:17Z</span><br><span class="line">  Generation:          1</span><br><span class="line">  Resource Version:    126786</span><br><span class="line">  UID:                 5d2e1559-03f1-43a5-af13-f46e434821c0</span><br><span class="line">Spec:</span><br><span class="line">  Addresses:</span><br><span class="line">    172.19.0.100-172.19.0.200</span><br><span class="line">  Auto Assign:       <span class="literal">true</span></span><br><span class="line">  Avoid Buggy I Ps:  <span class="literal">false</span></span><br><span class="line">Status:</span><br><span class="line">  assignedIPv4:   1</span><br><span class="line">  assignedIPv6:   0</span><br><span class="line">  availableIPv4:  100</span><br><span class="line">  availableIPv6:  0</span><br><span class="line">Events:           &lt;none&gt;</span><br></pre></td></tr></table></figure>
+<p>这里，<code>metallb-system</code> 是 MetalLB 组件运行的 <code>命名空间</code>（Namespace），命名空间是 Kubernetes 中用于 <code>隔离资源</code> 的逻辑分区，例如 <code>k8s</code> 核心组件本身运行在 <code>kube-system</code> 命名空间，用户应用运行在 <code>default</code> 命名空间，而 MetalLB 组件运行在 <code>metallb-system</code> 命名空间。</p>
+<ul>
+<li>
+<p>controller：主要用于监听 Service，分配 IP，通过 Deployment（1个副本）运行</p>
+<ul>
+<li>监听 Kubernetes API，发现 type=LoadBalancer 的 Service</li>
+<li>如果 Service 的 EXTERNAL-IP 为空，从 IPAddressPool 选择 IP</li>
+<li>更新 Service 的 EXTERNAL-IP 字段</li>
+<li>记录分配状态</li>
+</ul>
+</li>
+<li>
+<p>speaker：响应 ARP/BGP，宣布节点拥有 LoadBalancer IP，通过 DaemonSet（每个节点一个副本）运行。<code>Layer2</code> 模式工作 流程：</p>
+<ul>
+<li>监听 IP 分配事件</li>
+<li>当某节点被选中，开始响应 ARP 请求</li>
+<li>ARP 响应告诉网络：<code>LoadBalancer IP 在我这台节点上</code></li>
+<li>流量到达该节点，由 kube-proxy 转发</li>
+</ul>
+</li>
+</ul>
+<p><code>IPAddressPool</code> 和 <code>L2Advertisement</code> 则是 MetalLB 自定义资源（Custom Resource Definition，CRD），用于配置 IP 地址池和 Layer2 通告。</p>
+<h3 id="检查-service-状态"><a class="markdownIt-Anchor" href="#检查-service-状态"></a> 检查 Service 状态</h3>
+<p>安装 MetalLB 后，之前创建的 LoadBalancer Service 会自动获得外部 IP：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get svc nginx-lb</span></span><br><span class="line"></span><br><span class="line">NAME       TYPE           CLUSTER-IP     EXTERNAL-IP    PORT(S)        AGE</span><br><span class="line">nginx-lb   LoadBalancer   10.104.44.36   172.19.0.100   80:32617/TCP   3h23m</span><br></pre></td></tr></table></figure>
+<p>可以看到，MetalLB 从地址池分配为该 Service 分配了 <code>172.19.0.100</code> IP 地址。</p>
+<h2 id="服务访问测试"><a class="markdownIt-Anchor" href="#服务访问测试"></a> 服务访问测试</h2>
+<p>接下来访问该 <code>172.19.0.100</code> 这个 <code>EXTERNAL-IP</code> IP 地址，可以看到页面正常返回：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># --noproxy 关闭宿主机的代理配置</span></span><br><span class="line"><span class="comment"># curl -I --noproxy &quot;*&quot;  http://172.19.0.100</span></span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Server: nginx/1.29.8</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+<p>整个请求流程如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">客户端请求 http://172.19.0.100/</span><br><span class="line">        │</span><br><span class="line">        │ ① ARP 请求: <span class="string">&quot;谁是 172.19.0.100?&quot;</span></span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">┌───────────────────────────────────────────────────────────┐</span><br><span class="line">│  某 Worker 节点 (例如 worker-1)                             │</span><br><span class="line">│  metallb-speaker (在此节点上) 应答 ARP:                      │</span><br><span class="line">│      <span class="string">&quot;172.19.0.100 的 MAC 地址是 节点网卡的 MAC&quot;</span>             │</span><br><span class="line">└───────────────────────────────────────────────────────────┘</span><br><span class="line">        │</span><br><span class="line">        │ ② 流量被路由到该 Worker 节点的物理/虚拟网卡</span><br><span class="line">        │    (因为 ARP 告诉客户端这个 IP 的 MAC 属于这个节点)</span><br><span class="line">        ▼</span><br><span class="line">┌───────────────────────────────────────────────────────────┐</span><br><span class="line">│  Worker 节点网卡收到包，进入内核协议栈                         │</span><br><span class="line">│  iptables / IPVS 规则 (由 kube-proxy 维护) 捕获目的 IP       │</span><br><span class="line">│  为 172.19.0.100:80 的流量                                 │</span><br><span class="line">└───────────────────────────────────────────────────────────┘</span><br><span class="line">        │</span><br><span class="line">        │ ③ 规则将 VIP 转换为 Service 的 ClusterIP</span><br><span class="line">        │    (做 DNAT: 172.19.0.100:80 → 10.104.44.36:80)</span><br><span class="line">        ▼</span><br><span class="line">┌───────────────────────────────────────────────────────────┐</span><br><span class="line">│   nginx-lb Service                                        │</span><br><span class="line">│   ClusterIP: 10.104.44.36 (虚拟 IP，只存在于规则中)          │</span><br><span class="line">│   选择器: app: nginx                                       │</span><br><span class="line">└───────────────────────────────────────────────────────────┘</span><br><span class="line">        │</span><br><span class="line">        │ ④ kube-proxy 规则再将 ClusterIP 负载均衡到后端 Pod</span><br><span class="line">        │    (再次 DNAT: 10.104.44.36:80 → 某个 Pod IP:80)</span><br><span class="line">        ▼</span><br><span class="line">┌───────────────────────────────────────────────────────────┐</span><br><span class="line">│   nginx Pod (例如 10.244.1.2)                              │</span><br><span class="line">│   返回 nginx 响应页面                                       │</span><br><span class="line">└───────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<p>我们可以看下对应的 ARP 表，验证 <code>Layer2</code> 模式的工作原理：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># arp -an | grep 172.19.0.100</span></span><br><span class="line">? (172.19.0.100) at 36:9d:8e:26:b2:43 [ether] on br-e8a629bdbe41</span><br><span class="line"></span><br><span class="line"><span class="comment"># docker exec -it k8s-cluster-worker ip link show | grep 36:9d:8e:26:b2:43 -B 1</span></span><br><span class="line">2: eth0@if18: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP mode DEFAULT group default</span><br><span class="line">    <span class="built_in">link</span>/ether 36:9d:8e:26:b2:43 brd ff:ff:ff:ff:ff:ff link-netnsid 0</span><br></pre></td></tr></table></figure>
+<p>这里也可以看到 <code>Layer2</code> 模式的特点：</p>
+<ul>
+<li>单节点响应 ARP，非真正多节点负载均衡</li>
+<li>该节点故障时，speaker 会迁移到其他节点</li>
+<li>适合小规模测试环境</li>
+</ul>
+<p>以上我们就通过 MetalLB 部署了 Kubernetes 的 LoadBalancer 服务。接下来简单介绍下 k8s 的 <code>ExternalName 服务</code> 和 <code>Headless 服务</code>。</p>
+<h2 id="externalname-服务"><a class="markdownIt-Anchor" href="#externalname-服务"></a> ExternalName 服务</h2>
+<p><a target="_blank" rel="noopener" href="https://kubernetes.io/docs/concepts/services-networking/service/#externalname">ExteranlName 服务</a> 是 Kubernetes 提供的一种特殊类型的 Service，它允许你将服务映射到集群外部的域名，这对于需要将内部服务和外部系统集成时非常有用。<code>ExternalName 服务</code> 不指向集群内部的任何 Pod，而是指向集群外部的一个域名。</p>
+<ul>
+<li>它不涉及任何代理（Proxy）或转发（Forwarding），它在 DNS 层面上工作</li>
+<li>当你访问这个 Service 的域名时，Kubernetes DNS 会返回一个 CNAME 记录，指向你指定的外部域名</li>
+</ul>
+<p>如下是一个配置示例：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">my-database</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">type:</span> <span class="string">ExternalName</span></span><br><span class="line">  <span class="attr">externalName:</span> <span class="string">rds.aliyun.com</span> <span class="comment"># 外部数据库地址</span></span><br></pre></td></tr></table></figure>
+<p>那为什么不直接在代码中编写外部域名呢：</p>
+<ul>
+<li>解耦（隔离变化）：代码里只需要访问集群内部域名 <code>http://my-database</code>，如果以后数据库迁移了（比如从阿里云切到腾讯云），你只需要修改 Service 的配置，而不需要修改并重新发布代码</li>
+<li>统一管理：让外部资源在 K8s 内部像普通 Service 一样被管理</li>
+</ul>
+<h2 id="headless-服务"><a class="markdownIt-Anchor" href="#headless-服务"></a> Headless 服务</h2>
+<p><a target="_blank" rel="noopener" href="https://kubernetes.io/docs/concepts/services-networking/service/#headless-services">Headless 服务</a>（也称为无头服务）没有 ClusterIP。当你请求 DNS 查询这个 Service 的域名时，DNS 不会返回一个虚拟 IP，而是直接返回所有后端 Pod 的具体 IP 列表。要定义 <code>Headless 服务</code>，只需在 Service 的 YAML 文件中设置 <code>clusterIP: None</code>。</p>
+<p><code>Headless 服务</code> 的核心特点：</p>
+<ul>
+<li>直接暴露 Pod：客户端可以绕过 Service 层的负载均衡，直接与特定的 Pod 建立连接</li>
+<li>DNS 记录：DNS 会为每个 Pod 生成唯一的域名，格式为：<code>&lt;pod-name&gt;.&lt;service-name&gt;.&lt;namespace&gt;.svc.cluster.local</code>。</li>
+<li>用于有状态应用：最常用于 StatefulSet（有状态应用，如 MongoDB、Redis 集群、Kafka）、客户端 LB（客户端自己决定访问哪个节点）、需要稳定的 Pod 域名</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">普通 Service:</span><br><span class="line">Pod → Service 名称 → DNS 返回 ClusterIP → kube-proxy 负载均衡 → Pod</span><br><span class="line"></span><br><span class="line">Headless Service:</span><br><span class="line">Pod → Service 名称 → DNS 返回所有 Pod IP → 客户端自行选择 Pod</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们重点学习了 k8s 的 LoadBalancer 服务，并通过 MetalLB 在 Kind 环境中实际部署了一个 LoadBalancer 服务。我们还介绍了 k8s 的 <code>ExternalName</code> 和 <code>Headless</code> 两种特殊类型的服务，他们都有各自的应用场景。</p>
+<h2 id="reference"><a class="markdownIt-Anchor" href="#reference"></a> Reference</h2>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://www.cuiliangblog.cn/detail/section/94199827">Service(LoadBalancer)</a></li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/k8s/" rel="tag"># k8s</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/04/21/k8s-kind/" rel="next" title="基于 Kind 搭建 k8s 开发环境">
+      基于 Kind 搭建 k8s 开发环境 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#loadbalancer-service"><span class="nav-number">1.</span> <span class="nav-text"> LoadBalancer Service</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%80%E4%B9%88%E6%98%AF-loadbalancer-service"><span class="nav-number">1.1.</span> <span class="nav-text"> 什么是 LoadBalancer Service</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-metallb"><span class="nav-number">1.2.</span> <span class="nav-text"> 为什么需要 MetalLB？</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-loadbalancer-service"><span class="nav-number">2.</span> <span class="nav-text"> 创建 LoadBalancer Service</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-metallb"><span class="nav-number">3.</span> <span class="nav-text"> 安装 MetalLB</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E9%99%85%E9%83%A8%E7%BD%B2"><span class="nav-number">3.1.</span> <span class="nav-text"> 实际部署</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A3%80%E6%9F%A5-metallb-%E7%8A%B6%E6%80%81"><span class="nav-number">3.2.</span> <span class="nav-text"> 检查 metallb 状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A3%80%E6%9F%A5-service-%E7%8A%B6%E6%80%81"><span class="nav-number">3.3.</span> <span class="nav-text"> 检查 Service 状态</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E8%AE%BF%E9%97%AE%E6%B5%8B%E8%AF%95"><span class="nav-number">4.</span> <span class="nav-text"> 服务访问测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#externalname-%E6%9C%8D%E5%8A%A1"><span class="nav-number">5.</span> <span class="nav-text"> ExternalName 服务</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#headless-%E6%9C%8D%E5%8A%A1"><span class="nav-number">6.</span> <span class="nav-text"> Headless 服务</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 小结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#reference"><span class="nav-number">8.</span> <span class="nav-text"> Reference</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">244</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
