@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Gateway API 是一个官方 Kubernetes 项目，专注于 Kubernetes 中的 L4 和 L7 路由。该项目代表了下一代 Kubernetes Ingress、负载均衡和服务网格 API。从一开始，它就被设计为通用的、表达能力强的且面向角色的。这篇文章我们将学习如何在 k8s 环境中使用 Gateway API。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="在 k8s 环境中使用 Gateway API">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="Gateway API 是一个官方 Kubernetes 项目，专注于 Kubernetes 中的 L4 和 L7 路由。该项目代表了下一代 Kubernetes Ingress、负载均衡和服务网格 API。从一开始，它就被设计为通用的、表达能力强的且面向角色的。这篇文章我们将学习如何在 k8s 环境中使用 Gateway API。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/01.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/02.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/03.png">
+<meta property="article:published_time" content="2026-04-27T08:13:26.000Z">
+<meta property="article:modified_time" content="2026-04-27T08:17:47.642Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="k8s">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/01.png">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>在 k8s 环境中使用 Gateway API | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/27/k8s-gateway-api/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          在 k8s 环境中使用 Gateway API
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-04-27 16:13:26" itemprop="dateCreated datePublished" datetime="2026-04-27T16:13:26+08:00">2026-04-27</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%90%8E%E7%AB%AF/" itemprop="url" rel="index"><span itemprop="name">后端</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://gateway-api.sigs.k8s.io/">Gateway API</a> 是一个官方 Kubernetes 项目，专注于 Kubernetes 中的 L4 和 L7 路由。该项目代表了下一代 Kubernetes Ingress、负载均衡和服务网格 API。从一开始，它就被设计为通用的、表达能力强的且面向角色的。这篇文章我们将学习如何在 k8s 环境中使用 Gateway API。</p>
+<span id="more"></span>
+<h2 id="k8s-gateway-api-简介"><a class="markdownIt-Anchor" href="#k8s-gateway-api-简介"></a> k8s Gateway API 简介</h2>
+<p><a target="_blank" rel="noopener" href="https://kubernetes.io/docs/concepts/services-networking/gateway/">Gateway API</a> 是一组 API 类型，用于提供动态基础设施配置与高级流量路由能力。它通过可扩展、面向角色、感知协议的配置机制，将网络服务对外暴露。Gateway API 是一个附加组件，包含可提供动态基础设施配置和高级流量路由的各类 API 资源。</p>
+<h3 id="设计原则"><a class="markdownIt-Anchor" href="#设计原则"></a> 设计原则</h3>
+<p>Gateway API 的核心设计原则包括：</p>
+<ul>
+<li>面向角色：Gateway API 资源按组织中负责 Kubernetes 服务网络管理的角色建模：
+<ul>
+<li>基础设施提供者：管理支撑多租户、多隔离集群的基础设施，如云厂商。</li>
+<li>集群运维人员：负责集群管理，通常关注策略、网络访问、应用权限等。</li>
+<li>应用开发者：管理集群中运行的应用，关注应用级配置与 Service 组合</li>
+</ul>
+</li>
+</ul>
+<img src="/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/01.png" class="">
+<ul>
+<li>可移植：Gateway API 规范以自定义资源（CRD）定义，被众多实现所支持</li>
+<li>表达力强：原生支持常见流量路由场景，如基于请求头匹配、流量权重分流等，这些能力在 Ingress 中只能靠自定义注解实现</li>
+<li>可扩展：允许在 API 各层级挂载自定义资源，支持在 API 结构内合适位置做精细化定制</li>
+</ul>
+<h3 id="资源模型"><a class="markdownIt-Anchor" href="#资源模型"></a> 资源模型</h3>
+<p>Gateway API 包含 4 个稳定版 API 类型：</p>
+<ul>
+<li>GatewayClass：定义了一组具有通用配置，并由实现该类别的 Controller 管理的网关。它相当于一个 <code>模板</code> 或<code>品牌</code>，定义了网关的底层实现方式</li>
+<li>Gateway：定义流量处理基础设施的实例，如云负载均衡器。</li>
+<li>HTTPRoute：定义 HTTP 专属规则，将网关监听器流量映射到后端网络端点（通常是 Service）</li>
+<li>GRPCRoute：定义 gRPC 专属规则，将网关监听器流量映射到后端网络端点（通常是 Service）</li>
+</ul>
+<p>Gateway API 由相互依赖的 API 类型构成，以适配组织的角色分工：</p>
+<ul>
+<li>一个 Gateway 仅关联一个 GatewayClass；GatewayClass 声明负责管理该类网关的 Controller</li>
+<li>一个或多个路由类型（如 HTTPRoute）可关联到 Gateway</li>
+<li>Gateway 可过滤允许挂载到其 listeners 的路由，与路由形成双向信任模型</li>
+</ul>
+<img src="/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/02.png" class="">
+<h3 id="请求流"><a class="markdownIt-Anchor" href="#请求流"></a> 请求流</h3>
+<p>以下是通过 Gateway + HTTPRoute 将 HTTP 流量路由到 Service 的简单示例：</p>
+<img src="/fuchencong.github.io/2026/04/27/k8s-gateway-api/images/03.png" class="">
+<p>以实现反向代理的网关为例，请求流程：</p>
+<ul>
+<li>客户端开始针对 URL <a target="_blank" rel="noopener" href="http://www.example.com">http://www.example.com</a> 准备一个 HTTP 请求。</li>
+<li>客户端的 DNS 解析器查询目标域名，并获取到与该网关（Gateway）关联的一个或多个 IP 地址的映射。</li>
+<li>客户端向该网关 IP 地址发送请求；反向代理接收到该 HTTP 请求，并利用 Host: 请求头来匹配由网关（Gateway）及关联的 HTTP 路由（HTTPRoute）所生成的配置。</li>
+<li>（可选）反向代理可以根据 HTTP 路由（HTTPRoute）的匹配规则，执行请求头匹配和/或路径匹配。</li>
+<li>（可选）反向代理可以根据 HTTP 路由（HTTPRoute）的过滤规则修改请求；例如，添加或移除请求头。</li>
+<li>最后，反向代理将请求转发给一个或多个后端服务。</li>
+</ul>
+<h3 id="和-ingress-的对比"><a class="markdownIt-Anchor" href="#和-ingress-的对比"></a> 和 Ingress 的对比</h3>
+<p>Gateway API 是 Ingress 的继任者。Ingress 的一个重要缺点是：将基础设施配置（如负载均衡器、TLS 证书）和应用层路由规则（如域名、路径）混杂在同一个对象中。这导致职责不清，应用开发者可能需要修改本应由集群运维人员管理的底层配置，在多团队协作时容易产生冲突和权限问题。而 Gateway API 将网络配置的职责清晰地拆分给了不同的角色，实现了关注点分离：</p>
+<ul>
+<li>基础设施提供商 (Infrastructure Provider): 负责提供网关控制器的实现，对应 GatewayClass 资源</li>
+<li>集群运维者 (Cluster Operator): 负责实例化一个具体的网关，对应 Gateway 资源。他们配置监听端口、协议、TLS 证书等，为应用团队提供一个统一的流量入口。</li>
+<li>应用开发者 (Application Developer): 负责定义自己应用的路由规则，对应 HTTPRoute、GRPCRoute 等资源。他们只需关心如何将流量引向自己的服务，而无需触碰底层网关配置</li>
+</ul>
+<p>Gateway API 在功能上对 Ingress 进行了全面的增强，许多在 Ingress 中需要依赖特定控制器注解（Annotation）才能实现的高级功能，在 Gateway API 中都成为了原生支持的标准特性。</p>
+<ul>
+<li>Gateway API 覆盖了 L4/L7 全场景流量，原生支持 HTTP/HTTPS/TCP/UDP/gRPC/TLS</li>
+<li>Gateway API 支持更精细化的流量调度，如 A/B 测试</li>
+<li>原生支持 weight 字段，标准化了金丝雀发布和蓝绿部署</li>
+<li>标准化的策略附件（Policy Attachment）机制，配置在不同 Gateway 实现间具有更好的可移植性</li>
+<li>跨命名空间引用服务</li>
+</ul>
+<p><strong>Ingress API 功能已被冻结</strong>，<a target="_blank" rel="noopener" href="https://kubernetes.io/zh-cn/docs/concepts/services-networking/ingress/">停止新功能开发</a>。新的 Kubernetes 项目推荐使用 Gateway 而不是 Ingress。 对于老的 k8s 项目，你可以将现有的 Ingress 资源一次性转换为 Gateway API 资源。关于如何将 Ingress 资源迁移到 Gateway API 资源的具体细节，可以参考 <a target="_blank" rel="noopener" href="https://gateway-api.sigs.k8s.io/guides/getting-started/migrating-from-ingress/">Ingress 迁移指南</a>。</p>
+<h2 id="服务网格与-gamma-倡议"><a class="markdownIt-Anchor" href="#服务网格与-gamma-倡议"></a> 服务网格与 GAMMA 倡议</h2>
+<p><a target="_blank" rel="noopener" href="https://gateway-api.sigs.k8s.io/mesh/gamma/">GAMMA</a>（Gateway API for Mesh Management and Administration，即 <code>面向网格管理的 Gateway API</code>）是 Gateway API 子项目下的专项工作流，<strong>目标是定义如何将 Gateway API 用于配置服务网格（Service Mesh）</strong>。该倡议旨在：</p>
+<ul>
+<li>对 Gateway API 本身进行最小化修改，始终保留其面向角色的核心特性</li>
+<li>推动服务网格项目（istio、kuma 等等）在实现 Gateway API 时的一致性，无论其技术栈或底层代理是什么</li>
+</ul>
+<p>Gateway API 最初是为了处理集群外到集群内的流量（也就是所谓的 <code>入口</code> 或 <code>南北向流量</code>）。不过后来，<a target="_blank" rel="noopener" href="https://gateway-api.sigs.k8s.io/mesh/">服务网格</a>用户的需求推动了 GAMMA 倡议在 2022 年的诞生，旨在定义如何用 Gateway API 来处理同一集群内的服务间流量（也就是 <code>东西向流量</code>）。</p>
+<p>到目前为止，GAMMA 引入的最重大的变更是：<strong>在配置服务网格时，独立的路由资源（例如 HTTPRoute）会直接与 Service 资源关联</strong>。<strong>这主要是因为集群中通常只会有一个活跃的网格，所以在使用网格时不会用到 Gateway 和 GatewayClass 资源。反过来，这就使得 Service 资源成为了路由信息最自然的绑定点</strong>。</p>
+<p>由于 Service 资源本身的设计比较复杂，有些功能被过度重载，有些定义又不够明确，GAMMA 认为必须正式区分 Service 的前端和后端两个层面。具体定义如下：</p>
+<ul>
+<li>Service 前端（Service frontend）：指的是它的名称和集群 IP。</li>
+<li>Service 后端（Service backend）：指的是它包含的一组端点 IP。</li>
+</ul>
+<p><strong>这种区分非常关键，它让 Gateway API 能够精确地描述服务网格内部的路由是如何运作的，同时也避免了引入那些与 Service 功能大量重复的新资源</strong>。</p>
+<h3 id="连接路由与服务"><a class="markdownIt-Anchor" href="#连接路由与服务"></a> 连接路由与服务</h3>
+<p>GAMMA 规定，独立的 Route 资源会直接附加到 Service 上，这代表了一种配置，旨在应用于所有定向到该 Service 的流量。</p>
+<ul>
+<li>传统入口网关模式（南北向）</li>
+</ul>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">example-route</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">my-gateway</span>  <span class="comment"># 绑定到 Gateway 实例</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">matches:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="attr">path:</span></span><br><span class="line">            <span class="attr">value:</span> <span class="string">/api</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>GAMMA 服务网格模式（东西向）</li>
+</ul>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">example-route</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-svc</span></span><br><span class="line">    <span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line">    <span class="attr">group:</span> <span class="string">&quot;&quot;</span>  <span class="comment"># Service 属于 core 组，group 留空</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">matches:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="attr">path:</span></span><br><span class="line">            <span class="attr">value:</span> <span class="string">/api</span></span><br></pre></td></tr></table></figure>
+<p>在这种模式下：</p>
+<ul>
+<li>路由直接附加到 Service 上，表示 <code>所有发往该 Service 的流量都将遵循此路由规则</code>。</li>
+<li>当一个 Service 附加了多个路由时，未匹配任何路由规则的请求会被拒绝</li>
+<li>无需再创建 Gateway 和 GatewayClass 资源，适配服务网格单集群单网格的典型场景</li>
+</ul>
+<h3 id="parentrefs"><a class="markdownIt-Anchor" href="#parentrefs"></a> parentRefs</h3>
+<p>在 Gateway API 的设计中，<code>parentRefs</code>（父资源引用）是一个非常核心的概念。简单来说，它定义了 <code>这份配置要挂载到哪里</code> 或者说 <code>谁来负责实现这份路由规则</code>。</p>
+<p>在传统的 Ingress 中，路由和网关是耦合在一起的；而在 Gateway API 中，路由（如 HTTPRoute）通过 parentRefs 明确告诉集群：我这份路由规则是给哪个网关（Gateway）或哪个服务（Service）定义的。</p>
+<p>在南北流量场景下（对接 Gateway），需要指定这个路由规则由哪个具体的 <code>入口网关</code> 来执行。即需要指定一个 Gateway 资源：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">my-internet-gateway</span> <span class="comment"># 引用名为 my-internet-gateway 的 Gateway 资源</span></span><br><span class="line">      <span class="attr">namespace:</span> <span class="string">infra-ns</span></span><br><span class="line">      <span class="attr">sectionName:</span> <span class="string">https</span> <span class="comment"># (可选) 仅挂载到该网关名为 https 的监听器上</span></span><br></pre></td></tr></table></figure>
+<p>在东西流量场景下（对接 Service，即 GAMMA），在服务网格（Service Mesh）中，流量不经过物理网关，而是服务之间直接通信。<code>parentRefs</code> 通常指向一个 Service 资源。此时，声明这些路由规则（如负载均衡、重试、超时）适用于所有发往该 Service 的请求。此时，Service 充当了 <code>逻辑上的父资源</code>。</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">user-service</span> <span class="comment"># 引用名为 user-service 的 Service</span></span><br><span class="line">      <span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line">      <span class="attr">group:</span> <span class="string">core</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">8080</span> <span class="comment"># (可选) 仅当访问该服务的 8080 端口时生效</span></span><br></pre></td></tr></table></figure>
+<p>对于 GAMMA，当你定义一个路由（如 HTTPRoute）时，<code>parentRef</code> 绑定的就是 <code>服务前端</code>，它代表了流量的目标地址。<code>路由规则</code>（如权重转发）最终会将流量分发到这些具体的后端实例上。</p>
+<p>假设你正在开发一个名为 order-service（订单服务）的应用：</p>
+<ul>
+<li>你有一个正在运行的旧版本（v1）</li>
+<li>刚刚部署了一个新版本（v2），你想让 10% 的流量去 v2，90% 的流量留在 v1</li>
+</ul>
+<p>在 Gateway API 中，服务前端只有一个：</p>
+<ul>
+<li>你依然只暴露一个名为 <code>order-service</code> 的 Kubernetes Service。所有的客户端依然访问 <code>http://order-service</code>。这个名称就是 <code>Frontend</code></li>
+<li>在 K8S 层面，你会定义两个不同的 Deployment：<code>order-v1</code> 和 <code>order-v2</code></li>
+<li>通过路由（HTTPRoute）进行解耦：
+<ul>
+<li>它的 parentRef 指向：order-service（前端/身份）</li>
+<li>它的 rules 指向：
+<ul>
+<li><code>backendRef 1</code>：指向 Pod 标签为 version: v1 的后端（权重 90）</li>
+<li><code>backendRef 2</code>：指向 Pod 标签为 version: v2 的后端（权重 10）</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="部署-envoy-gateway"><a class="markdownIt-Anchor" href="#部署-envoy-gateway"></a> 部署 Envoy Gateway</h2>
+<p><a target="_blank" rel="noopener" href="https://gateway.envoyproxy.io/docs/concepts/">Envoy Gateway</a> 是一个 Kubernetes 原生的 API 网关和反向代理控制平面。它利用标准的 k8s Gateway API 及其自身的可扩展 API，<strong>简化了将 <code>Envoy Proxy</code> 作为数据平面进行部署和运维的流程</strong>。通过将 Envoy 的性能与灵活性和 Kubernetes 原生配置相结合，Envoy Gateway 可以帮助平台团队以极低的运维开销，对外暴露并管理安全、可观测且可扩展的 API。</p>
+<p>接下来我们将通过实际部署 Envoy Gateway 来熟悉如何在 k8s 环境中使用 Gateway API。基础环境仍然是基于之前搭建的 <a target="_blank" rel="noopener" href="https://fuchencong.com/2026/04/21/k8s-kind/">k8s Kind 集群</a>。我们将使用 Helm 来完成相关安装。</p>
+<h3 id="helm-简介"><a class="markdownIt-Anchor" href="#helm-简介"></a> Helm 简介</h3>
+<p>Helm 是 Kubernetes 的包管理器，类似于 apt/yum 之于 Debian/RedHat、pip 之于 Python、npm 之于 Node.js。在没有 Helm 的时候，部署一个稍复杂的应用（比如带有数据库、缓存、前端和后端的应用），你可能需要编写大量的 YAML 文件：</p>
+<ul>
+<li>deployment.yaml (好几个)</li>
+<li>service.yaml</li>
+<li>ingress.yaml</li>
+<li>configmap.yaml</li>
+<li>secret.yaml</li>
+</ul>
+<p>Helm 引入了一些关键概念，使得部署和管理 Kubernetes 应用变得更加简单：</p>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Repository</td>
+<td>Chart 存放的仓库</td>
+</tr>
+<tr>
+<td>Chart</td>
+<td>应用打包模板，包含一组 K8s 资源定义，包含了部署一个应用所需的所有 YAML 模板，定义了应用的结构</td>
+</tr>
+<tr>
+<td>Values</td>
+<td>这是 <code>配置文件</code>。它包含了你想要自定义的参数，Helm 会把这些参数填入 Chart 的模板中</td>
+</tr>
+<tr>
+<td>Release</td>
+<td>这是 <code>安装后的实例</code>。当你运行一次安装命令，Helm 就会创建一个 Release。你可以在同一个集群里，用同一个 Chart 安装出两个不同的 Release</td>
+</tr>
+</tbody>
+</table>
+<p>Helm 的作用:</p>
+<ul>
+<li>简化复杂应用的部署（一个命令安装几十个 K8s 资源）</li>
+<li>支持版本管理和回滚</li>
+<li>支持配置模板化（同一 Chart 不同配置）</li>
+<li>便于应用分发和复用</li>
+</ul>
+<p>使用如下命令完成 Helm 的[安装](<a target="_blank" rel="noopener" href="https://helm.sh/zh/docs/v3/intro/install/%EF%BC%9A">https://helm.sh/zh/docs/v3/intro/install/：</a></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 &amp;&amp; <span class="built_in">chmod</span> 700 get_helm.sh &amp;&amp; ./get_helm.sh</span><br></pre></td></tr></table></figure>
+<h3 id="使用-helm-安装-envoy-gateway"><a class="markdownIt-Anchor" href="#使用-helm-安装-envoy-gateway"></a> 使用 Helm 安装 Envoy Gateway</h3>
+<p>使用 Helm 安装 Gateway API CRDs 和 Envoy Gateway：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.7.2 -n envoy-gateway-system --create-namespace</span></span><br></pre></td></tr></table></figure>
+<p>等待部署完成：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl <span class="built_in">wait</span> --<span class="built_in">timeout</span>=5m -n envoy-gateway-system deployment/envoy-gateway --<span class="keyword">for</span>=condition=Available</span><br></pre></td></tr></table></figure>
+<ul>
+<li>安装的命名空间是 <code>envoy-gateway-system</code></li>
+</ul>
+<h3 id="检查-gateway-api-crds"><a class="markdownIt-Anchor" href="#检查-gateway-api-crds"></a> 检查 Gateway API CRDs</h3>
+<p>安装完成后，我们可以检查下当前环境下的 Gateway API CRDs：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get crd | grep gateway</span></span><br><span class="line">backends.gateway.envoyproxy.io                        2026-04-27T06:36:31Z</span><br><span class="line">backendtlspolicies.gateway.networking.k8s.io          2026-04-27T06:36:31Z</span><br><span class="line">backendtrafficpolicies.gateway.envoyproxy.io          2026-04-27T06:36:31Z</span><br><span class="line">clienttrafficpolicies.gateway.envoyproxy.io           2026-04-27T06:36:31Z</span><br><span class="line">envoyextensionpolicies.gateway.envoyproxy.io          2026-04-27T06:36:31Z</span><br><span class="line">envoypatchpolicies.gateway.envoyproxy.io              2026-04-27T06:36:31Z</span><br><span class="line">envoyproxies.gateway.envoyproxy.io                    2026-04-27T06:36:31Z</span><br><span class="line">gatewayclasses.gateway.networking.k8s.io              2026-04-27T06:36:31Z</span><br><span class="line">gateways.gateway.networking.k8s.io                    2026-04-27T06:36:31Z</span><br><span class="line">grpcroutes.gateway.networking.k8s.io                  2026-04-27T06:36:31Z</span><br><span class="line">httproutefilters.gateway.envoyproxy.io                2026-04-27T06:36:32Z</span><br><span class="line">httproutes.gateway.networking.k8s.io                  2026-04-27T06:36:31Z</span><br><span class="line">referencegrants.gateway.networking.k8s.io             2026-04-27T06:36:31Z</span><br><span class="line">securitypolicies.gateway.envoyproxy.io                2026-04-27T06:36:32Z</span><br><span class="line">tcproutes.gateway.networking.k8s.io                   2026-04-27T06:36:31Z</span><br><span class="line">tlsroutes.gateway.networking.k8s.io                   2026-04-27T06:36:31Z</span><br><span class="line">udproutes.gateway.networking.k8s.io                   2026-04-27T06:36:31Z</span><br><span class="line">xbackendtrafficpolicies.gateway.networking.x-k8s.io   2026-04-27T06:36:31Z</span><br><span class="line">xlistenersets.gateway.networking.x-k8s.io             2026-04-27T06:36:31Z</span><br><span class="line">xmeshes.gateway.networking.x-k8s.io                   2026-04-27T06:36:31Z</span><br></pre></td></tr></table></figure>
+<p>这些 CRD 可以分为两类：</p>
+<ol>
+<li><strong>标准 Gateway API CRDs</strong> (<code>gateway.networking.k8s.io</code>):</li>
+</ol>
+<ul>
+<li><code>gatewayclasses</code> - GatewayClass 定义</li>
+<li><code>gateways</code> - Gateway 实例</li>
+<li><code>httproutes</code> - HTTP 路由规则</li>
+<li><code>grpcroutes</code> - GRPC 路由规则</li>
+<li><code>tcproutes/udproutes</code> - TCP/UDP 路由</li>
+<li><code>tlsroutes</code> - TLS 路由</li>
+<li><code>referencegrants</code> - 跨命名空间引用授权</li>
+</ul>
+<ol start="2">
+<li><strong>Envoy Gateway 扩展 CRDs</strong> (<code>gateway.envoyproxy.io</code>):</li>
+</ol>
+<ul>
+<li><code>envoyproxies</code> - Envoy Proxy 自定义配置</li>
+<li><code>securitypolicies</code> - 安全策略</li>
+<li><code>clienttrafficpolicies</code> - 客户端流量策略</li>
+<li><code>backendtrafficpolicies</code> - 后端流量策略</li>
+</ul>
+<h2 id="测试-envoy-gateway"><a class="markdownIt-Anchor" href="#测试-envoy-gateway"></a> 测试 Envoy Gateway</h2>
+<p>接下来通过一个简答的应用实例，来测试下 Gateway API 和 Envoy Gateway 的使用。</p>
+<h3 id="部署业务应用"><a class="markdownIt-Anchor" href="#部署业务应用"></a> 部署业务应用</h3>
+<p>首先创建 3 个 echo 服务，包含 Deployment 和 Service 配置：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">apps/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Deployment</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">echo-a</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">replicas:</span> <span class="number">1</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">matchLabels:</span></span><br><span class="line">      <span class="attr">app:</span> <span class="string">echo-a</span></span><br><span class="line">  <span class="attr">template:</span></span><br><span class="line">    <span class="attr">metadata:</span></span><br><span class="line">      <span class="attr">labels:</span></span><br><span class="line">        <span class="attr">app:</span> <span class="string">echo-a</span></span><br><span class="line">        <span class="attr">version:</span> <span class="string">v1</span></span><br><span class="line">    <span class="attr">spec:</span></span><br><span class="line">      <span class="attr">containers:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo</span></span><br><span class="line">        <span class="attr">image:</span> <span class="string">hashicorp/http-echo:0.2.3</span></span><br><span class="line">        <span class="attr">args:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-text=echo-a&quot;</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-listen=:80&quot;</span></span><br><span class="line">        <span class="attr">ports:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">echo-a</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">echo-a</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">apps/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Deployment</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">echo-b</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">replicas:</span> <span class="number">1</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">matchLabels:</span></span><br><span class="line">      <span class="attr">app:</span> <span class="string">echo-b</span></span><br><span class="line">  <span class="attr">template:</span></span><br><span class="line">    <span class="attr">metadata:</span></span><br><span class="line">      <span class="attr">labels:</span></span><br><span class="line">        <span class="attr">app:</span> <span class="string">echo-b</span></span><br><span class="line">        <span class="attr">version:</span> <span class="string">v1</span></span><br><span class="line">    <span class="attr">spec:</span></span><br><span class="line">      <span class="attr">containers:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo</span></span><br><span class="line">        <span class="attr">image:</span> <span class="string">hashicorp/http-echo:0.2.3</span></span><br><span class="line">        <span class="attr">args:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-text=echo-b&quot;</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-listen=:80&quot;</span></span><br><span class="line">        <span class="attr">ports:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">echo-b</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">echo-b</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">apps/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Deployment</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">echo-v2</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">replicas:</span> <span class="number">1</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">matchLabels:</span></span><br><span class="line">      <span class="attr">app:</span> <span class="string">echo-v2</span></span><br><span class="line">  <span class="attr">template:</span></span><br><span class="line">    <span class="attr">metadata:</span></span><br><span class="line">      <span class="attr">labels:</span></span><br><span class="line">        <span class="attr">app:</span> <span class="string">echo-v2</span></span><br><span class="line">        <span class="attr">version:</span> <span class="string">v2</span></span><br><span class="line">    <span class="attr">spec:</span></span><br><span class="line">      <span class="attr">containers:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo</span></span><br><span class="line">        <span class="attr">image:</span> <span class="string">hashicorp/http-echo:0.2.3</span></span><br><span class="line">        <span class="attr">args:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-text=echo-v2&quot;</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-listen=:80&quot;</span></span><br><span class="line">        <span class="attr">ports:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">echo-v2</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">echo-v2</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>应用配置</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl apply -f manifests/echo-services.yaml</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>查看生效的服务和资源</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#  kubectl get deployment,svc</span></span><br><span class="line">NAME                      READY   UP-TO-DATE   AVAILABLE   AGE</span><br><span class="line">deployment.apps/echo-a    1/1     1            1           56m</span><br><span class="line">deployment.apps/echo-b    1/1     1            1           56m</span><br><span class="line">deployment.apps/echo-v2   1/1     1            1           56m</span><br><span class="line"></span><br><span class="line">NAME                 TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE</span><br><span class="line">service/echo-a       ClusterIP   10.98.231.116   &lt;none&gt;        80/TCP    56m</span><br><span class="line">service/echo-b       ClusterIP   10.96.196.139   &lt;none&gt;        80/TCP    56m</span><br><span class="line">service/echo-v2      ClusterIP   10.108.11.121   &lt;none&gt;        80/TCP    56m</span><br><span class="line">service/kubernetes   ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP   6d3h</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<h3 id="创建-gatewayclass"><a class="markdownIt-Anchor" href="#创建-gatewayclass"></a> 创建 GatewayClass</h3>
+<p>接下来创建 <code>GatewayClass</code> 资源，用以定义 Gateway 的类型和配置：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">GatewayClass</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">eg</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">controllerName:</span> <span class="string">gateway.envoyproxy.io/gatewayclass-controller</span></span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl apply -f manifests/gatewayclass.yaml</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>使用的 Controller 是 <code>gateway.envoyproxy.io/gatewayclass-controller</code></li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get gatewayclass</span></span><br><span class="line">NAME   CONTROLLER                                      ACCEPTED   AGE</span><br><span class="line">eg     gateway.envoyproxy.io/gatewayclass-controller   True       62m</span><br></pre></td></tr></table></figure>
+<h3 id="创建-gateway"><a class="markdownIt-Anchor" href="#创建-gateway"></a> 创建 Gateway</h3>
+<p>使用如下配置，创建 Gateway 实例：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Gateway</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">eg</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">gatewayClassName:</span> <span class="string">eg</span></span><br><span class="line">  <span class="attr">listeners:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">http</span></span><br><span class="line">    <span class="attr">protocol:</span> <span class="string">HTTP</span></span><br><span class="line">    <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">allowedRoutes:</span></span><br><span class="line">      <span class="attr">namespaces:</span></span><br><span class="line">        <span class="attr">from:</span> <span class="string">Same</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>gatewayClassName</code>: 指定使用哪个 GatewayClass（决定了由谁实现）</li>
+<li><code>listeners</code>: 定义监听的端口和协议</li>
+<li><code>allowedRoutes</code>: 控制哪些 HTTPRoute 可以绑定到此 Gateway
+<ul>
+<li><code>Same</code>: 同命名空间</li>
+<li><code>All</code>: 所有命名空间</li>
+<li><code>Selector</code>: 通过 Label 选择</li>
+</ul>
+</li>
+</ul>
+<p>查看 Gateway 实例信息：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get gateway</span></span><br><span class="line">NAME   CLASS   ADDRESS        PROGRAMMED   AGE</span><br><span class="line">eg     eg      172.19.0.100   True         65m</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>ADDRESS</code>: Gateway 的外部访问地址（由 MetalLB 分配的 LoadBalancer IP）</li>
+<li><code>PROGRAMMED=True</code>: Gateway 已配置完成，Envoy Proxy 已就绪</li>
+</ul>
+<p>Envoy Gateway 创建 Gateway 时，自动创建 <code>Envoy Proxy Service</code>，默认类型是 <code>LoadBalancer</code>（也可以通过 EnvoyProxy CRD 配置改为 NodePort 类型）。由于我们 Kind 环境已经部署了 MetalLB，因此这里的 LoadBalancer 可以正常工作。查看 Gateway 所对应的资源：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get svc -n envoy-gateway-system</span></span><br><span class="line"></span><br><span class="line">NAME                        TYPE           EXTERNAL-IP    PORT(S)</span><br><span class="line">envoy-default-eg-e41e7b31   LoadBalancer   172.19.0.100   80:30947/TCP</span><br><span class="line">envoy-gateway               ClusterIP       &lt;none&gt;         18000/TCP,18001/TCP...</span><br><span class="line"></span><br><span class="line"><span class="comment"># kubectl get pods -n envoy-gateway-system</span></span><br><span class="line">NAME                                         READY   STATUS    RESTARTS   AGE</span><br><span class="line">envoy-default-eg-e41e7b31-68749fc97c-khlnx   2/2     Running   0          7m20s</span><br><span class="line">envoy-gateway-db9b87d6c-cjtq8                1/1     Running   0          8m55s</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>envoy-default-eg-e41e7b31</code>: Envoy Proxy Service，处理实际流量</li>
+<li><code>envoy-gateway</code>: 控制面管理端口（xDS 配置下发等）</li>
+</ul>
+<p>Envoy Gateway 运行时的核心组件包括两部分：</p>
+<ul>
+<li>
+<p>envoy-gateway (控制面):</p>
+<ul>
+<li><code>Envoy Gateway Controller</code></li>
+<li>控制面：监听 Gateway API 资源变化，翻译成 Envoy 配置，通过 xDS 下发给数据面（Envoy Proxy）</li>
+</ul>
+</li>
+<li>
+<p>envoy-default-eg-e41e7b31 (数据面):</p>
+<ul>
+<li><code>Envoy Proxy 实例</code></li>
+<li>数据面：实际处理流量转发，接收控制面下发的配置</li>
+<li>名称格式: envoy-{namespace}-{gateway-name}-{hash}</li>
+</ul>
+</li>
+</ul>
+<h3 id="基本-http-路由"><a class="markdownIt-Anchor" href="#基本-http-路由"></a> 基本 HTTP 路由</h3>
+<p>测试最基本的路由，将请求转发到单一后端服务</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">basic-route</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">eg</span>           <span class="comment"># 绑定到 Gateway eg</span></span><br><span class="line">    <span class="attr">sectionName:</span> <span class="string">http</span>  <span class="comment"># 绑定到 http listener</span></span><br><span class="line">  <span class="attr">hostnames:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;echo.example.com&quot;</span> <span class="comment"># 匹配的 Host 名</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo-a</span>     <span class="comment"># 后端 Service</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>parentRefs</strong>: 指定 HTTPRoute 绑定的 Gateway
+<ul>
+<li><code>name</code>: Gateway 名称</li>
+<li><code>sectionName</code>: 具体的 listener 名称（可以绑定多个 listener）</li>
+</ul>
+</li>
+<li><strong>hostnames</strong>: 匹配请求的 Host 头（支持精确匹配和通配符）</li>
+<li><strong>backendRefs</strong>: 后端服务引用
+<ul>
+<li><code>name</code>: Service 名称</li>
+<li><code>port</code>: Service 端口</li>
+</ul>
+</li>
+<li>默认匹配所有路径 (<code>PathPrefix: /</code>)</li>
+</ul>
+<p>下发路由：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl apply -f manifests/httproute-basic.yaml</span></span><br></pre></td></tr></table></figure>
+<p>检查路由：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get httproute basic-route</span></span><br><span class="line">NAME          HOSTNAMES              AGE</span><br><span class="line">basic-route   [<span class="string">&quot;echo.example.com&quot;</span>]   78m</span><br></pre></td></tr></table></figure>
+<p>实际流量测试：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl -s --noproxy &#x27;*&#x27; -H &quot;Host: echo.example.com&quot; http://172.19.0.100/</span></span><br><span class="line">echo-a</span><br></pre></td></tr></table></figure>
+<h3 id="多服务路由-基于路径"><a class="markdownIt-Anchor" href="#多服务路由-基于路径"></a> 多服务路由 (基于路径)</h3>
+<p>如下配置则测试基于 URL 路径的路由，不同路径转发到不同服务。</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">multi-service-route</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">eg</span></span><br><span class="line">    <span class="attr">sectionName:</span> <span class="string">http</span></span><br><span class="line">  <span class="attr">hostnames:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;multi.example.com&quot;</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">matches:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">path:</span></span><br><span class="line">        <span class="attr">type:</span> <span class="string">PathPrefix</span></span><br><span class="line">        <span class="attr">value:</span> <span class="string">/a</span></span><br><span class="line">    <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo-a</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">matches:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">path:</span></span><br><span class="line">        <span class="attr">type:</span> <span class="string">PathPrefix</span></span><br><span class="line">        <span class="attr">value:</span> <span class="string">/b</span></span><br><span class="line">    <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo-b</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>rules</strong>: 规则列表，按顺序匹配（先匹配的生效）</li>
+<li><strong>matches</strong>: 路由匹配条件
+<ul>
+<li><code>path.type</code>: 匹配类型
+<ul>
+<li><code>Exact</code>: 精确匹配（如 <code>/api</code> 只匹配 <code>/api</code>）</li>
+<li><code>PathPrefix</code>: 前缀匹配（如 <code>/api</code> 匹配 <code>/api</code>, <code>/api/v1</code>, <code>/api/users</code>）</li>
+<li><code>RegularExpression</code>: 正则匹配</li>
+</ul>
+</li>
+<li><code>path.value</code>: 匹配的路径值</li>
+</ul>
+</li>
+<li>每个 rule 可以有多个 matches 和多个 backendRefs</li>
+</ul>
+<p>应用路由：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f manifests/httproute-multi-service.yaml</span><br></pre></td></tr></table></figure>
+<p>查看路由</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get httproute multi-service-route</span></span><br><span class="line">NAME                  HOSTNAMES               AGE</span><br><span class="line">multi-service-route   [<span class="string">&quot;multi.example.com&quot;</span>]   83m</span><br></pre></td></tr></table></figure>
+<p>测试路由：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl -s --noproxy &#x27;*&#x27; -H &quot;Host: multi.example.com&quot; http://172.19.0.100/a</span></span><br><span class="line">echo-a</span><br><span class="line"></span><br><span class="line"><span class="comment"># curl -s --noproxy &#x27;*&#x27; -H &quot;Host: multi.example.com&quot; http://172.19.0.100/b</span></span><br><span class="line">echo-b</span><br></pre></td></tr></table></figure>
+<h3 id="流量分割"><a class="markdownIt-Anchor" href="#流量分割"></a> 流量分割</h3>
+<p>如下则将测试流量按权重分配到多个后端服务（金丝雀发布场景）。</p>
+<p>配置文件如下：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">traffic-split-route</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">eg</span></span><br><span class="line">    <span class="attr">sectionName:</span> <span class="string">http</span></span><br><span class="line">  <span class="attr">hostnames:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;split.example.com&quot;</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo-a</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">      <span class="attr">weight:</span> <span class="number">80</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">echo-v2</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">      <span class="attr">weight:</span> <span class="number">20</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>weight</strong>: 权重比例，决定流量分配
+<ul>
+<li>权重是相对值，实际比例为 weight/(总weight)</li>
+<li>80:20 表示 80% 到 echo-a，20% 到 echo-v2</li>
+</ul>
+</li>
+<li><strong>流量分割用途</strong>:
+<ul>
+<li>金丝雀发布：新版本先接收少量流量</li>
+<li>A/B 测试：不同版本接收不同流量比例</li>
+<li>蓝绿部署：快速切换流量比例</li>
+</ul>
+</li>
+</ul>
+<p>在下发路由后，我们实际进行测试：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># for i in &#123;1..20&#125;; do curl -s --noproxy &#x27;*&#x27; -H &quot;Host: split.example.com&quot; http://172.19.0.100/; done | sort | uniq -c</span></span><br><span class="line">     15 echo-a</span><br><span class="line">      5 echo-v2</span><br><span class="line"></span><br><span class="line"><span class="comment"># for i in &#123;1..20&#125;; do curl -s --noproxy &#x27;*&#x27; -H &quot;Host: split.example.com&quot; http://172.19.0.100/; done | sort | uniq -c</span></span><br><span class="line">     16 echo-a</span><br><span class="line">      4 echo-v2</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们学习了 k8s 的 Gateway API，包括其核心概念、为 Service Mesh 场景所引入的 GAMMA 等等。同时我们实际部署了 Envoy Gateway，并通过 Gateway API 实现了各种路由功能：单一服务、多服务（基于路径）、流量分割等场景。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/k8s/" rel="tag"># k8s</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/04/23/k8s-ingress-nginx-controller/" rel="next" title="在 k8s 环境中使用 Ingress">
+      在 k8s 环境中使用 Ingress <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#k8s-gateway-api-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> k8s Gateway API 简介</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%BE%E8%AE%A1%E5%8E%9F%E5%88%99"><span class="nav-number">1.1.</span> <span class="nav-text"> 设计原则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B5%84%E6%BA%90%E6%A8%A1%E5%9E%8B"><span class="nav-number">1.2.</span> <span class="nav-text"> 资源模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E6%B5%81"><span class="nav-number">1.3.</span> <span class="nav-text"> 请求流</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%92%8C-ingress-%E7%9A%84%E5%AF%B9%E6%AF%94"><span class="nav-number">1.4.</span> <span class="nav-text"> 和 Ingress 的对比</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%BD%91%E6%A0%BC%E4%B8%8E-gamma-%E5%80%A1%E8%AE%AE"><span class="nav-number">2.</span> <span class="nav-text"> 服务网格与 GAMMA 倡议</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5%E8%B7%AF%E7%94%B1%E4%B8%8E%E6%9C%8D%E5%8A%A1"><span class="nav-number">2.1.</span> <span class="nav-text"> 连接路由与服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#parentrefs"><span class="nav-number">2.2.</span> <span class="nav-text"> parentRefs</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%83%A8%E7%BD%B2-envoy-gateway"><span class="nav-number">3.</span> <span class="nav-text"> 部署 Envoy Gateway</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#helm-%E7%AE%80%E4%BB%8B"><span class="nav-number">3.1.</span> <span class="nav-text"> Helm 简介</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-helm-%E5%AE%89%E8%A3%85-envoy-gateway"><span class="nav-number">3.2.</span> <span class="nav-text"> 使用 Helm 安装 Envoy Gateway</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A3%80%E6%9F%A5-gateway-api-crds"><span class="nav-number">3.3.</span> <span class="nav-text"> 检查 Gateway API CRDs</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B5%8B%E8%AF%95-envoy-gateway"><span class="nav-number">4.</span> <span class="nav-text"> 测试 Envoy Gateway</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%83%A8%E7%BD%B2%E4%B8%9A%E5%8A%A1%E5%BA%94%E7%94%A8"><span class="nav-number">4.1.</span> <span class="nav-text"> 部署业务应用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-gatewayclass"><span class="nav-number">4.2.</span> <span class="nav-text"> 创建 GatewayClass</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-gateway"><span class="nav-number">4.3.</span> <span class="nav-text"> 创建 Gateway</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC-http-%E8%B7%AF%E7%94%B1"><span class="nav-number">4.4.</span> <span class="nav-text"> 基本 HTTP 路由</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E6%9C%8D%E5%8A%A1%E8%B7%AF%E7%94%B1-%E5%9F%BA%E4%BA%8E%E8%B7%AF%E5%BE%84"><span class="nav-number">4.5.</span> <span class="nav-text"> 多服务路由 (基于路径)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%81%E9%87%8F%E5%88%86%E5%89%B2"><span class="nav-number">4.6.</span> <span class="nav-text"> 流量分割</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">246</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
