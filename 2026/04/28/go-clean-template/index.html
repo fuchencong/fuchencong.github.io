@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="今天来分析一个开源项目 go-clean-template，这是 Go 项目模版，用来演示在 Go 中如何实现 整洁架构（Clean Architecture）。它展示了：  如何组织项目，以防止项目演化成难以维护的代码 在哪里处理业务逻辑，使其保持独立、整洁、可扩展 如何在微服务增长时保持控制">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-clean-template 源码分析">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="今天来分析一个开源项目 go-clean-template，这是 Go 项目模版，用来演示在 Go 中如何实现 整洁架构（Clean Architecture）。它展示了：  如何组织项目，以防止项目演化成难以维护的代码 在哪里处理业务逻辑，使其保持独立、整洁、可扩展 如何在微服务增长时保持控制">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/images/01.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/images/03.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/images/02.png">
+<meta property="og:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/images/04.png">
+<meta property="article:published_time" content="2026-04-28T15:59:45.000Z">
+<meta property="article:modified_time" content="2026-04-28T16:02:26.386Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/images/01.png">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-clean-template 源码分析 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/28/go-clean-template/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-clean-template 源码分析
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-04-28 23:59:45" itemprop="dateCreated datePublished" datetime="2026-04-28T23:59:45+08:00">2026-04-28</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>今天来分析一个开源项目 <a target="_blank" rel="noopener" href="https://github.com/evrone/go-clean-template.git">go-clean-template</a>，这是 Go 项目模版，用来演示在 Go 中如何实现 <code>整洁架构</code>（<a target="_blank" rel="noopener" href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">Clean Architecture</a>）。它展示了：</p>
+<ul>
+<li>如何组织项目，以防止项目演化成难以维护的代码</li>
+<li>在哪里处理业务逻辑，使其保持独立、整洁、可扩展</li>
+<li>如何在微服务增长时保持控制</li>
+</ul>
+<span id="more"></span>
+<h2 id="项目简介"><a class="markdownIt-Anchor" href="#项目简介"></a> 项目简介</h2>
+<p>当我们在开发一个大型项目时，可能会遇到如下问题：</p>
+<ul>
+<li>缺乏项目结构的最佳实践参考</li>
+<li>业务逻辑与基础设施代码耦合</li>
+<li>微服务架构难以维护和扩展</li>
+<li>多种传输协议（REST、gRPC、AMQP RPC、NATS RPC）的统一处理</li>
+</ul>
+<p>而 <code>go-clean-template</code> 则展示了一个整洁的架构，尝试解决这些问题：</p>
+<ul>
+<li>提供了清晰的项目结构模板，可直接用于生产项目</li>
+<li>多种服务器类型的实现示例（REST API、gRPC、AMQP RPC、NATS RPC）</li>
+<li>完整的依赖注入实现</li>
+<li>可测试的业务逻辑设计</li>
+<li>可测试的业务逻辑设计</li>
+</ul>
+<p>这个项目包含了 3 个完整的业务领域，包括 <code>用户认证</code>、<code>任务管理</code>、<code>翻译服务</code>，可以认为是 <a target="_blank" rel="noopener" href="https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html">Clean Architecture</a> 在 Go 中的实践案例，也可以作为 Go 语言微服务开发模板。而且它是生产环境就绪的，它包含 Prometheus 指标、Swagger 文档、数据库迁移等生产必需组件。</p>
+<h2 id="整洁架构"><a class="markdownIt-Anchor" href="#整洁架构"></a> 整洁架构</h2>
+<p>本项目采用 <strong>Clean Architecture</strong>（整洁架构），遵循 Robert C. Martin(Uncle Bob) 提出的架构原则，其核心思想包括：</p>
+<ul>
+<li>依赖反转原则（Dependency Inversion）</li>
+<li>业务逻辑独立于框架和基础设施</li>
+<li>外层的代码可以依赖内层，但内层永远不能依赖外层</li>
+</ul>
+<img src="/fuchencong.github.io/2026/04/28/go-clean-template/images/01.png" class="">
+<p>图中同心圆代表软件的不同领域。<strong>通常情况下，越往里，软件的层次越高。外圆是机制，内圆是策略</strong>。使这套架构能够工作的核心规则是依赖规则：<strong>源代码的依赖关系只能指向内圆</strong>：</p>
+<ul>
+<li>在内圆中的任何事物都不能知道外圆中的任何事物。特别是，在外圆中声明的名字（包括函数、类、变量或任何其他软件实体）不能被内圆的代码所提及</li>
+<li>在外圆使用的数据格式也不应该被内圆使用，特别是当这些格式是由外圆的框架生成的时候。我们不希望外圆的任何东西影响到内圆</li>
+</ul>
+<p>注意，<strong>这里的高层/低层指的是软件模块是否承载了业务的核心价值</strong>，而不是其在代码控制控制流/执行流中的位置。例如对于一个提供 REST API 的应用，<code>Controller</code> 通常会实现 HTTP 参数的解析等逻辑，虽然它在代码执行流中比较靠前执行的，但它属于实现细节/机制（适配 cli、gRPC、REST API 可能有不同的参数传递方式），因此它在同心圆的外层，属于低层模块。</p>
+<p>在 <code>Clean Architecture</code> 中，整个系统可以分为四层，通常至少会有这四层：</p>
+<ul>
+<li>
+<p>实体（Entities）：实体封装企业级业务规则。一个实体可以是一个带方法的对象，也可以是一组数据结构和函数。只要它能被企业内多个不同应用使用，就可以是实体。如果你没有企业，只是写单个应用，那么实体就是应用的业务对象。它们封装最通用、最高层的规则。当外部变化时，这些对象最不容易被改动</p>
+</li>
+<li>
+<p>用例（Use Cases）：这一层包含应用特有的业务规则。它协调实体的数据流，指挥实体实现系统的用例。这一层的变更不会影响实体。同时，这一层也不会被外部变化（如数据库、UI、框架）影响。</p>
+</li>
+<li>
+<p>接口适配器（Interface Adapters）：这一层是一组适配器，<strong>负责把数据从用例/实体方便使用的格式，转换为外部系统方便使用的格式（比如数据库、Web），反之亦然</strong>。这一层是内外格式转换的中间层：数据从数据库取出，转为实体使用的格式；实体的数据转为数据库表格式。Controller、Presenter、Gateway 都属于这一层</p>
+</li>
+<li>
+<p>框架与驱动（Frameworks and Drivers）：最外层，通常由框架和工具组成：Web 框架、数据库驱动、消息队列客户端、UI 组件等。这里只有胶水代码，没有业务逻辑。你在这里写代码把外层工具连接到内层，不写业务规则</p>
+</li>
+</ul>
+<h3 id="内层调用外层需要依赖倒置"><a class="markdownIt-Anchor" href="#内层调用外层需要依赖倒置"></a> 内层调用外层，需要依赖倒置</h3>
+<p>假设你正在写一个 <code>保存用户信息</code> 的功能：</p>
+<ul>
+<li>高层业务（用例）：保存用户。</li>
+<li>低层细节（数据库）：MySQL</li>
+</ul>
+<p>在传统的思维里，你会直接在业务逻辑里调用数据库的代码，这样就形成了 <code>业务逻辑层 依赖 MySQL 驱动</code>。但是如果哪天你想把 MySQL 换成 MongoDB，或者换成一个外部 API，你就不得不去修改最核心的 <code>业务逻辑层</code>。这就是 <code>内层依赖外层</code> 所带来的问题。</p>
+<p>而在依赖倒置（Dependency Inversion Principle, DIP）中：<strong>高层模块不应该依赖低层模块，二者都应该依赖抽象</strong>。</p>
+<p><code>倒置</code> 指的是控制权的翻转，举例来说：</p>
+<ul>
+<li>传统情况：业务逻辑求着数据库：<code>哎呀你快帮我存一下，你叫什么函数我就调什么函数</code>（依赖指向外圆/低层）</li>
+<li>倒置情况：业务逻辑制定规矩，<code>谁想给我干活，就得按我的规矩写。数据库反过来要贴合业务的需求</code>（依赖指向内圆/高层）</li>
+</ul>
+<p>对于上面的圆形图来说，就是：</p>
+<ul>
+<li>内圆（Use Case 层，高层）：定义一个接口 <code>UserRepository</code>，里面有个方法叫 <code>save(user)</code></li>
+<li>外圆（DB 层，低层）：写一个类叫 <code>SqlUserRepository</code>，它继承并实现了内圆的 <code>UserRepository</code></li>
+<li>运行时：虽然代码执行流是从 <code>业务</code> 流向 <code>数据库</code> 的，但在源代码层面，数据库层的代码却在开头写着 <code>import &#123; UserRepository &#125; from '内圆'</code></li>
+</ul>
+<p>这就是关键，当控制流需要从 <code>内层流向外层</code> 时，必须实现 <code>依赖倒置</code>，从而保证总是 <code>低层依赖高层</code>。这里的倒置指的是<strong>运行时的 <code>控制流</code> 和代码编写时的 <code>依赖向</code> 是相反的</strong>。</p>
+<h3 id="外层调用内层可以解耦"><a class="markdownIt-Anchor" href="#外层调用内层可以解耦"></a> 外层调用内层，可以解耦</h3>
+<p>那当外层 <code>Controller</code> 调用内层 <code>Use Case</code> 时，需要怎么处理呢？在 <code>Controller</code> 调用 <code>Use Case</code> 这个环节，依赖关系本身就是 <code>正向</code> 的，并不需要像数据库那样进行 <code>倒置</code>。在干净架构中：</p>
+<ul>
+<li>内圆（Use Case 层）：是高层策略，它代表了业务的核心逻辑（比如 <code>处理用户下单</code>）</li>
+<li>外圆（Controller 层）：是低层细节，它只负责处理 HTTP 请求、解析参数、分发指令</li>
+</ul>
+<p><strong>我们的依赖规则总是要求：低层（细节）必须依赖高层（策略）</strong>。而这里 <code>Controller</code>（低层）的确是依赖 <code>Use Case（高层）</code>，所以，这里不需要通过 <code>倒置</code> 来改变方向，此时依赖方向（从外向内）和业务的控制流方向（从 Controller 到 Use Case）也是一致的。</p>
+<p>虽然方向不用倒置，但为了代码的松耦合，我们通常会引入一个 <code>输入端口（Input Port）</code>（即接口）。在代码实现上，它长这样：</p>
+<ul>
+<li><code>Use Case 层</code>（内圆）：定义一个接口 <code>CreateOrderInputPort（输入端口）</code>，并编写具体的实现类 CreateOrderInteractor</li>
+<li><code>Controller 层</code>（外圆）：持有一个 <code>CreateOrderInputPort</code> 接口的引用，而不是直接持有 CreateOrderInteractor 具体的类</li>
+</ul>
+<p>引入接口符合 DIP 的另一半定义：<code>细节应该依赖抽象</code>。</p>
+<ul>
+<li>Controller（细节）：不依赖具体的 <code>实现类</code>，而是依赖 <code>抽象接口</code></li>
+<li>Use Case（实现类）：也依赖于 <code>抽象接口</code>（因为它要实现这个接口）</li>
+</ul>
+<p>这样，即便你以后想给同一个用例换一个不同的实现方式（Interactor），Controller 的代码也完全不需要动。这一步的本质是 <code>解耦</code>，而不是 <code>反转依赖方向</code>。</p>
+<h3 id="整洁架构小结"><a class="markdownIt-Anchor" href="#整洁架构小结"></a> 整洁架构小结</h3>
+<p>以上两个例子就展示了上图右下角的控制流与依赖关系，这也体现了 DIP 的两个层间的定义：</p>
+<ul>
+<li>高层模块不应该依赖低层模块，二者都应该依赖抽象</li>
+<li>抽象不应该依赖细节，细节应该依赖抽象</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>场景</th>
+<th>控制流方向 (谁调谁)</th>
+<th>依赖规则要求 (谁是高层)</th>
+<th>矛盾点</th>
+<th>解决方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Controller -&gt; Use Case</td>
+<td>外层调内层,内层是高层</td>
+<td>没矛盾</td>
+<td>方向本来就是往内指的。</td>
+<td>使用接口（Input Port）解耦即可</td>
+</tr>
+<tr>
+<td>Use Case -&gt; Database</td>
+<td>内层调外层,内层是高层</td>
+<td>有矛盾</td>
+<td>如果直接调用，内层就会依赖外层（违反规则）</td>
+<td>必须倒置。内层定义接口，外层去实现</td>
+</tr>
+</tbody>
+</table>
+<h3 id="跨边界传递简单数据"><a class="markdownIt-Anchor" href="#跨边界传递简单数据"></a> 跨边界传递简单数据</h3>
+<p>为了保护架构内层的纯净，我们绝不能把外层（比如数据库）的复杂对象直接传进去，而是要转换成内层最舒服的格式。</p>
+<ul>
+<li>数据要 <code>笨一点</code>：跨边界传数据时，不要传那些带有复杂业务逻辑或框架依赖的“胖对象”（比如数据库框架自带的 Row 对象），如果你愿意，可以使用基础的结构体（structs）或简单的数据传输对象（DTO）。</li>
+<li>依赖不能倒置：内层代码（业务逻辑）不应该知道外层代码（数据库、UI）的存在。如果你把数据库的 Row 对象直接传进业务层，业务层就被数据库框架 <code>污染</code> 了。</li>
+<li>内层是老大：数据转换成什么样，不是看外层怎么方便，而是看内层（业务核心）怎么用着最顺手。</li>
+</ul>
+<p>当我们跨边界传递数据时，其形式永远应该是最方便内层圈子使用的那种。</p>
+<h2 id="工程架构"><a class="markdownIt-Anchor" href="#工程架构"></a> 工程架构</h2>
+<p>总体上，这个项目采用如下分层结构：</p>
+<img src="/fuchencong.github.io/2026/04/28/go-clean-template/images/03.png" class="">
+<p>各层之间的交换关系可以使用下图表示：</p>
+<img src="/fuchencong.github.io/2026/04/28/go-clean-template/images/02.png" class="">
+<p>带有业务逻辑的内层应该是干净的，它应该有如下特征：</p>
+<ul>
+<li>没有从外层导入的包</li>
+<li>仅使用标准库的功能</li>
+<li>通过接口调用外层</li>
+</ul>
+<p>业务逻辑对 <code>数据存储</code> 或特定的 <code>Web API</code> 是无感知的，业务逻辑用 <code>抽象接口</code> 来处理数据库或 <code>Web API</code>。</p>
+<p>而对于外层，则有其他限制：</p>
+<ul>
+<li>该层的所有组件都不知道彼此的存在，如何进行组件间的调用呢? 只能通过业务逻辑的内层间接调用</li>
+<li>所有对内层的调用都是通过接口进行的</li>
+<li>为了便捷地进行业务数据传输，数据格式需要标准化（internal/entity）</li>
+</ul>
+<p>例如，当需要从 HTTP（控制器）访问数据库时，HTTP 和数据库都在外层，这意味着他们彼此无法感知。它们之间的通信是通过 <code>usecase</code>（业务逻辑）进行的：</p>
+<img src="/fuchencong.github.io/2026/04/28/go-clean-template/images/04.png" class="">
+<h3 id="目录结构"><a class="markdownIt-Anchor" href="#目录结构"></a> 目录结构</h3>
+<p>下面列举了该项目的目录结构，通过这个目录结构的组织，可以清晰地看出项目层次/模块的划分：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line">go-clean-template/</span><br><span class="line">├── cmd/app/           <span class="comment"># 应用入口</span></span><br><span class="line">├── config/            <span class="comment"># 配置定义</span></span><br><span class="line">├── docs/              <span class="comment"># Swagger 文档和 Proto 文件</span></span><br><span class="line">│   ├── proto/v1/      <span class="comment"># Protobuf 定义</span></span><br><span class="line">│   └── swagger.json   <span class="comment"># Swagger 文档</span></span><br><span class="line">├── integration-test/  <span class="comment"># 集成测试</span></span><br><span class="line">├── internal/          <span class="comment"># 内部模块（不可被外部导入）</span></span><br><span class="line">│   ├── app/           <span class="comment"># 应用组装</span></span><br><span class="line">│   ├── controller/    <span class="comment"># 控制器层</span></span><br><span class="line">│   │   ├── amqp_rpc/  <span class="comment"># AMQP RPC 控制器</span></span><br><span class="line">│   │   ├── grpc/      <span class="comment"># gRPC 控制器</span></span><br><span class="line">│   │   ├── nats_rpc/  <span class="comment"># NATS RPC 控制器</span></span><br><span class="line">│   │   └── restapi/   <span class="comment"># REST API 控制器</span></span><br><span class="line">│   ├── entity/        <span class="comment"># 实体层</span></span><br><span class="line">│   ├── repo/          <span class="comment"># Repository 层</span></span><br><span class="line">│   │   ├── persistent/<span class="comment"># 数据库 Repository</span></span><br><span class="line">│   │   └── webapi/    <span class="comment"># WebAPI Repository</span></span><br><span class="line">│   └── usecase/       <span class="comment"># UseCase 层</span></span><br><span class="line">│       ├── task/</span><br><span class="line">│       ├── translation/</span><br><span class="line">│       └── user/</span><br><span class="line">├── migrations/        <span class="comment"># 数据库迁移文件</span></span><br><span class="line">├── pkg/               <span class="comment"># 公共包（可被外部导入）</span></span><br><span class="line">│   ├── grpcserver/</span><br><span class="line">│   ├── httpserver/</span><br><span class="line">│   ├── jwt/</span><br><span class="line">│   ├── logger/</span><br><span class="line">│   ├── nats/</span><br><span class="line">│   ├── postgres/</span><br><span class="line">│   └── rabbitmq/</span><br><span class="line">├── Makefile           <span class="comment"># 构建脚本</span></span><br><span class="line">├── docker-compose.yml <span class="comment"># Docker 配置</span></span><br><span class="line">└── go.mod             <span class="comment"># Go 模块定义</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>Controller：位于 <code>internal/controller</code>，处理外部请求，调用 UseCase，返回响应</li>
+<li>Use Cases：业务逻辑，位于 <code>internal/usecase</code> 中，协调 <code>Entity</code> 和 <code>Repository</code></li>
+<li>ENTITY：定义核心业务实体和数据结构。它们位于 <code>internal/entity</code> 文件夹中。在 MVC 术语中，实体是 models</li>
+<li>与业务逻辑直接交互的层通常称为 <code>infrastructure</code> 层，这些可以是
+<ul>
+<li><code>存储库</code>（<code>internal/repo/persistent</code>）</li>
+<li><code>外部 webapi</code>（<code>internal/repo/webapi</code>）</li>
+<li>任何包和其他微服务</li>
+<li>在模板中，<code>infrastructure</code> 包位于 <code>internal/repo</code> 中（<strong>个人感觉不如直接命名为 <code>internal/infra</code> 更合适，因此 <code>repo</code> 一般会被理解为 <code>repository</code>，仅用于表示持久化存储</strong>）</li>
+</ul>
+</li>
+<li>pkg：公共基础设施组件</li>
+</ul>
+<p>各目录模块间的依赖、导入关系：</p>
+<ul>
+<li><strong>internal 目录</strong>: 只能被本项目导入</li>
+<li><strong>pkg 目录</strong>: 可以被外部项目导入</li>
+<li><strong>entity</strong>: 无外部依赖</li>
+<li><strong>usecase</strong>: 只依赖 entity 和接口</li>
+<li><strong>controller</strong>: 依赖 usecase 和 pkg</li>
+<li><strong>repo</strong>: 实现接口，依赖 pkg</li>
+</ul>
+<h3 id="项目文件详解"><a class="markdownIt-Anchor" href="#项目文件详解"></a> 项目文件详解</h3>
+<ul>
+<li><code>cmd/app/main.go</code>：配置和日志能力初始化，主要的功能在 <code>internal/app/app.go</code></li>
+<li><code>config</code>：12-Factor推荐将应用的配置存储于 <code>环境变量</code> 中：
+<ul>
+<li>环境变量可以非常方便地在不同的部署间做修改，却不动一行代码</li>
+<li>与配置文件不同，不小心把它们签入代码库的概率微乎其微</li>
+<li>环境变量与语言和系统无关</li>
+</ul>
+</li>
+<li><code>docs</code>：Swagger 文档。由 <code>swag</code> 库自动生成 你不需要自己修改任何内容
+<ul>
+<li><code>docs/proto</code>：Protobuf 文件，它们用于为 gRPC 服务生成 Go 代码</li>
+<li>这些 <code>proto</code> 文件也用于生成 gRPC 服务的文档</li>
+</ul>
+</li>
+<li><code>integration-test</code>：集成测试</li>
+<li><code>internal</code>：内部实现，只能被本项目导入
+<ul>
+<li><code>internal/app</code>：
+<ul>
+<li><code>app.go</code>：它是 main 函数的延续，通过依赖注入完成应用的组装</li>
+<li><code>migrate.go</code>：完成数据库的自动构建、迁移</li>
+</ul>
+</li>
+<li><code>internal/controller</code>：服务器处理层（MVC 控制器），模板展示了 4 种服务器
+<ul>
+<li>AMQP RPC（基于 RabbitMQ 作为传输）</li>
+<li>NATS RPC（基于 NATS 作为传输）</li>
+<li>gRPC（基于 protobuf 的 gRPC 框架）</li>
+<li>REST API（基于 Fiber 框架）</li>
+</ul>
+</li>
+<li><code>internal/entity</code>：业务逻辑实体（模型），可用于任何层</li>
+<li><code>internal/usecase</code>：业务逻辑，按 <code>应用领域</code> 分组，每个组都有自己的结构</li>
+<li><code>internal/repo</code>：与业务逻辑直接交互的 <code>infrastructure</code> 层
+<ul>
+<li><code>internal/repo/persistent</code>：业务逻辑所需要的持久化存储，如数据库</li>
+<li><code>internal/repo/webapi</code>：业务逻辑所需要的外部 Web API，例如，它可能是业务逻辑通过 REST API 访问的另一个微服务。实际项目中，<strong>根据业务的真正用途进行命名</strong></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><code>pkg</code>：公共基础设施组件</li>
+</ul>
+<h2 id="代码详解"><a class="markdownIt-Anchor" href="#代码详解"></a> 代码详解</h2>
+<p>因为这本身是一个示例项目，因此并没有很复杂的业务逻辑，我们重点学习其是如何组织代码、划分模块、模块之间是调用的。</p>
+<h3 id="程序入口点"><a class="markdownIt-Anchor" href="#程序入口点"></a> 程序入口点</h3>
+<p>整个程序的入口点位于 <code>cmd/app/main.go</code>，它的核心作用就是解析配置，并将解析后的配置作为参数，启动程序：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="comment">// 解析配置</span></span><br><span class="line">	cfg, err := config.NewConfig()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatalf(<span class="string">&quot;Config error: %s&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 启动程序</span></span><br><span class="line">	app.Run(cfg)</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<h3 id="配置解析"><a class="markdownIt-Anchor" href="#配置解析"></a> 配置解析</h3>
+<p>按照 <code>12-Factor</code> 推荐，配置信息通过环境变量传入。因此该项目使用了 <a href="github.com/caarlos0/env/v11">caarlos0/env</a> 库来将环境变量解析到配置结构体中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> (</span><br><span class="line">	<span class="comment">// Config -.</span></span><br><span class="line">	Config <span class="keyword">struct</span> &#123;</span><br><span class="line">		App     App</span><br><span class="line">		HTTP    HTTP</span><br><span class="line">		Log     Log</span><br><span class="line">		PG      PG</span><br><span class="line">		GRPC    GRPC</span><br><span class="line">		RMQ     RMQ</span><br><span class="line">		NATS    NATS</span><br><span class="line">		JWT     JWT</span><br><span class="line">		Metrics Metrics</span><br><span class="line">		Swagger Swagger</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// App -.</span></span><br><span class="line">	App <span class="keyword">struct</span> &#123;</span><br><span class="line">		Name    <span class="type">string</span> <span class="string">`env:&quot;APP_NAME,required&quot;`</span></span><br><span class="line">		Version <span class="type">string</span> <span class="string">`env:&quot;APP_VERSION,required&quot;`</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// HTTP -.</span></span><br><span class="line">	HTTP <span class="keyword">struct</span> &#123;</span><br><span class="line">		Port           <span class="type">string</span> <span class="string">`env:&quot;HTTP_PORT,required&quot;`</span></span><br><span class="line">		UsePreforkMode <span class="type">bool</span>   <span class="string">`env:&quot;HTTP_USE_PREFORK_MODE&quot; envDefault:&quot;false&quot;`</span></span><br><span class="line">	&#125;</span><br><span class="line">    ......</span><br></pre></td></tr></table></figure>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewConfig</span><span class="params">()</span></span> (*Config, <span class="type">error</span>) &#123;</span><br><span class="line">	cfg := &amp;Config&#123;&#125;</span><br><span class="line">	<span class="keyword">if</span> err := env.Parse(cfg); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;config error: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> cfg, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="应用程序运行"><a class="markdownIt-Anchor" href="#应用程序运行"></a> 应用程序运行</h3>
+<p><code>internal/app</code> 目录负责 app 启动启动、运行、停止逻辑。核心函数是 <code>Run</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Run</span><span class="params">(cfg *config.Config)</span></span> &#123;</span><br><span class="line">    l := logger.New(cfg.Log.Level)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 连接数据库</span></span><br><span class="line">    pg, err := postgres.New(cfg.PG.URL, postgres.MaxPoolSize(cfg.PG.PoolMax))</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        l.Fatal(fmt.Errorf(<span class="string">&quot;app - Run - postgres.New: %w&quot;</span>, err))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">defer</span> pg.Close()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 初始化 JWT Manager</span></span><br><span class="line">    jwtManager := jwt.New(cfg.JWT.Secret, cfg.JWT.TokenExpiry)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 初始化 useCases 和 servers</span></span><br><span class="line">    uc := initUseCases(pg, jwtManager)</span><br><span class="line">    s := initServers(cfg, uc, jwtManager, l)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 启动 servers</span></span><br><span class="line">    s.startServers()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 等待服务停止</span></span><br><span class="line">    s.waitForShutdown(l)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>启动流程可以分为以下几个阶段：</p>
+<ol>
+<li><strong>初始化基础设施</strong>：创建 logger 和数据库连接</li>
+<li><strong>初始化业务组件</strong>：创建 JWT Manager 和所有 useCases</li>
+<li><strong>初始化服务端</strong>：创建 HTTP、gRPC、RabbitMQ RPC、NATS RPC 四种服务器</li>
+<li><strong>启动服务</strong>：并行启动所有服务器</li>
+<li><strong>等待关闭信号</strong>：监听系统信号，优雅关闭所有服务</li>
+</ol>
+<p>初始化核心是 <code>initUseCases</code> 和 <code>initServers</code>，它们分别负责初始化业务逻辑和服务器。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> useCases <span class="keyword">struct</span> &#123;</span><br><span class="line">	translation *translation.UseCase</span><br><span class="line">	user        *user.UseCase</span><br><span class="line">	task        *task.UseCase</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">initUseCases</span><span class="params">(pg *postgres.Postgres, jwtManager *jwt.Manager)</span></span> useCases &#123;</span><br><span class="line">	userRepo := persistent.NewUserRepo(pg)</span><br><span class="line">	taskRepo := persistent.NewTaskRepo(pg)</span><br><span class="line">	translationRepo := persistent.NewTranslationRepo(pg)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> useCases&#123;</span><br><span class="line">		user:        user.New(userRepo, jwtManager),</span><br><span class="line">		task:        task.New(taskRepo),</span><br><span class="line">		translation: translation.New(translationRepo, webapi.New()),</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>useCases</code> 按照业务领域分组，每个业务领域都有自己的 <code>UseCase</code></li>
+<li>在初始化时，这里是手动构造各个 UseCase 的依赖，并将其只作为参数传入 UseCase 的 New 函数。对于大型复杂的生产项目，可以考虑使用 <a target="_blank" rel="noopener" href="https://fuchencong.com/2025/05/01/go-library-wire/">Wire</a> 等依赖注册工具</li>
+</ul>
+<p>Server 的初始化也是类似的，<code>servers</code> 结构体是各个服务器的集合，也是手动根据 <code>initServers</code> 所传入的参数，构造各个具体 Server 所需要的依赖，并将其作为参数来构造各个具体的 Server：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> servers <span class="keyword">struct</span> &#123;</span><br><span class="line">	rmq  *rmqRPCServer.Server</span><br><span class="line">	nats *natsRPCServer.Server</span><br><span class="line">	grpc *grpcserver.Server</span><br><span class="line">	http *httpserver.Server</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">initServers</span><span class="params">(cfg *config.Config, uc useCases, jwtManager *jwt.Manager, l logger.Interface)</span></span> servers &#123;</span><br><span class="line">    <span class="comment">// RabbitMQ RPC Server</span></span><br><span class="line">    rmqRouter := amqprpc.NewRouter(uc.translation, uc.user, uc.task, jwtManager, l)</span><br><span class="line">    rmqServer, err := rmqRPCServer.New(cfg.RMQ.URL, cfg.RMQ.ServerExchange, rmqRouter, l)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// NATS RPC Server</span></span><br><span class="line">    natsRouter := natsrpc.NewRouter(uc.translation, uc.user, uc.task, jwtManager, l)</span><br><span class="line">    natsServer, err := natsRPCServer.New(cfg.NATS.URL, cfg.NATS.ServerExchange, natsRouter, l)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// gRPC Server</span></span><br><span class="line">    grpcServer := grpcserver.New(l,</span><br><span class="line">        grpcserver.Port(cfg.GRPC.Port),</span><br><span class="line">        grpcserver.ServerOptions(pbgrpc.UnaryInterceptor(grpcmw.AuthInterceptor(jwtManager))),</span><br><span class="line">    )</span><br><span class="line">    grpc.NewRouter(grpcServer.App, uc.translation, uc.user, uc.task, l)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// HTTP Server</span></span><br><span class="line">    httpServer := httpserver.New(l, httpserver.Port(cfg.HTTP.Port), httpserver.Prefork(cfg.HTTP.UsePreforkMode))</span><br><span class="line">    restapi.NewRouter(httpServer.App, cfg, uc.translation, uc.user, uc.task, jwtManager, l)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> servers&#123;rmq: rmqServer, nats: natsServer, grpc: grpcServer, http: httpServer&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Server 初始化时都会依赖到 UseCase，这样才能在 Server 中实现具体的业务逻辑，<strong>只不过 Server 并不是直接使用 UseCase，而是通过 Controller 来封装 UseCase 的使用，不同 Server 对应不同的 Controller</strong>。</p>
+<h3 id="server-实现"><a class="markdownIt-Anchor" href="#server-实现"></a> Server 实现</h3>
+<p>我们首先分析下 <code>grpc Server</code> 的实现，它的代码位于 <code>pkg/grpcserver</code> 目录下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">pkg/grpcserver/</span><br><span class="line">├── server.go    <span class="comment"># Server 结构体和核心方法</span></span><br><span class="line">└── options.go   <span class="comment"># Option 函数式选项模式</span></span><br></pre></td></tr></table></figure>
+<p>其中最重要的结构体是 <code>Server</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">pbgrpc <span class="string">&quot;google.golang.org/grpc&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    ctx    context.Context     <span class="comment">// 控制生命周期</span></span><br><span class="line">    eg     *errgroup.Group     <span class="comment">// 并发控制 + 错误收集</span></span><br><span class="line"></span><br><span class="line">    App    *pbgrpc.Server      <span class="comment">// 原生 gRPC Server（暴露给外部注册路由）</span></span><br><span class="line">    notify <span class="keyword">chan</span> <span class="type">error</span>          <span class="comment">// 错误通知 channel</span></span><br><span class="line"></span><br><span class="line">    address    <span class="type">string</span>          <span class="comment">// 监听地址</span></span><br><span class="line">    serverOpts []pbgrpc.ServerOption  <span class="comment">// 原生 Server 选项</span></span><br><span class="line"></span><br><span class="line">    logger logger.Interface</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>pkg/grpcserver</code> 本质上是对 <a href="google.golang.org/grpc">gRPC Server</a> 的简单封装：</p>
+<table>
+<thead>
+<tr>
+<th>封装功能</th>
+<th>原生 gRPC</th>
+<th>pkg/grpcserver</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>创建 Server</td>
+<td><code>pbgrpc.NewServer(opts...)</code></td>
+<td><code>New(logger, opts...)</code> + Option 模式</td>
+</tr>
+<tr>
+<td>启动 Server</td>
+<td><code>server.Serve(listener)</code></td>
+<td><code>Start()</code> + errgroup 并发控制</td>
+</tr>
+<tr>
+<td>优雅关闭</td>
+<td><code>server.GracefulStop()</code></td>
+<td><code>Shutdown()</code> + 等待 goroutine 完成</td>
+</tr>
+<tr>
+<td>错误通知</td>
+<td>手动实现</td>
+<td><code>Notify() &lt;-chan error</code> 自动通知</td>
+</tr>
+<tr>
+<td>配置方式</td>
+<td>直接传参数</td>
+<td>Option 函数式选项模式</td>
+</tr>
+</tbody>
+</table>
+<p>支持通过 <code>Option</code> 函数式选项模式，在创建 Server 时传入配置：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Option <span class="function"><span class="keyword">func</span><span class="params">(*Server)</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Port</span><span class="params">(port <span class="type">string</span>)</span></span> Option &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(s *Server)</span></span> &#123;</span><br><span class="line">        s.address = net.JoinHostPort(<span class="string">&quot;&quot;</span>, port)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 传入原生 gRPC Server 的配置选项</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ServerOptions</span><span class="params">(opts ...pbgrpc.ServerOption)</span></span> Option &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(s *Server)</span></span> &#123;</span><br><span class="line">        s.serverOpts = <span class="built_in">append</span>(s.serverOpts, opts...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>httpserver</code> 的实现也是类似的，它是对 <code>fiber.App </code> 的封装。这里我们再分析下 <code>NATS RPC Server</code> 的实现，它的代码位于 <code>pkg/natsrpcserver</code> 目录下。核心代码如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> <span class="string">&quot;github.com/nats-io/nats.go&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> CallHandler <span class="function"><span class="keyword">func</span><span class="params">(*nats.Msg)</span></span> (any, <span class="type">error</span>)  <span class="comment">// ← 定义 RPC 处理函数类型</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    connection   *nats.Conn</span><br><span class="line">    subscription *nats.Subscription</span><br><span class="line">    router       <span class="keyword">map</span>[<span class="type">string</span>]CallHandler    <span class="comment">// ← 路由表</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(url, serverSubject <span class="type">string</span>, router <span class="keyword">map</span>[<span class="type">string</span>]CallHandler, l logger.Interface, ...)</span></span> (*Server, <span class="type">error</span>) &#123;</span><br><span class="line">    connection, err := nats.Connect(</span><br><span class="line">        url,</span><br><span class="line">        nats.ReconnectWait(_defaultWaitTime),</span><br><span class="line">        nats.MaxReconnects(_defaultAttempts),</span><br><span class="line">        nats.Timeout(_defaultWaitTime),</span><br><span class="line">    )  <span class="comment">// ← 连接 NATS，带自动重连配置</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Start() &#123;</span><br><span class="line">    s.eg.Go(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        err := s.subscribe()  <span class="comment">// ← 订阅 subject</span></span><br><span class="line">        &lt;-s.stop              <span class="comment">// ← 等待停止信号</span></span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> handleMessage(msg *nats.Msg) &#123;</span><br><span class="line">    handler := msg.Header.Get(<span class="string">&quot;Handler&quot;</span>)  <span class="comment">// ← 从 Header 获取 handler 名称</span></span><br><span class="line">    callHandler, ok := s.router[handler]   <span class="comment">// ← 查找 handler</span></span><br><span class="line">    response, err := callHandler(msg)      <span class="comment">// ← 执行 handler</span></span><br><span class="line">    s.publish(msg, body, status)           <span class="comment">// ← 发送响应</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>RPC Server 的核心逻辑是订阅 NATS 的 subject，然后根据消息的 Header 找到对应的处理函数执行。订阅 <code>subscribe()</code> 的实现如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> subscribe() <span class="type">error</span> &#123;</span><br><span class="line">	subscription, err := s.connection.Subscribe(s.subject, s.handleMessage)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;nats_rpc server - subscribe - s.conn.AttemptConnect: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	s.subscription = subscription</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因为是基于 NATS 简单封装的 RPC 实现，因此除了提供 <code>Server</code> 的实现，还提供了 <code>Client</code> 实现以简化客户端的使用，代码位于 <code>pkg/nats/nats_rpc/client</code> 目录下。</p>
+<p><code>rabbitmq rpc</code> 的实现类似于 <code>nat rpc</code>，这里就不再赘述了。</p>
+<p>所有的 Server 实现都会以某种方式让外部调用者可以注册路由：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grpcserver</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    App *pbgrpc.Server  <span class="comment">// ← 暴露给 grpc.NewRouter 注册服务</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// httpserver</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    App *fiber.App  <span class="comment">// ← 暴露给 restapi.NewRouter 注册路由</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// nats_rpc/server</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    router       <span class="keyword">map</span>[<span class="type">string</span>]CallHandler    <span class="comment">// ← 路由表，通过参数设置</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// rmq_rpc/server</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    router <span class="keyword">map</span>[<span class="type">string</span>]CallHandler  <span class="comment">// ← 通过参数传入，不是暴露</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>另外值得说明的是，这些 Server 的实现都位于 <code>pkg</code> 目录下，而不是 <code>internal</code> 目录下，因为这些 <code>Server</code> 本身的实现都是通用的，不包含任何业务依赖。它们都是对底层框架的功能增强，可以直接在其他 Go 项目中使用。<strong>因此代码保存在 <code>pkg</code> 目录下是合理的</strong>。</p>
+<h3 id="controller-实现"><a class="markdownIt-Anchor" href="#controller-实现"></a> Controller 实现</h3>
+<p>Controller 层在 Clean Architecture 中属于<strong>接口适配层</strong>（Interface Adapters），其核心职责：</p>
+<ul>
+<li>请求解析：将外部请求（HTTP/gRPC/RPC）解析为内部数据结构</li>
+<li>参数验证：验证请求参数的格式和有效性</li>
+<li>认证授权：提取用户身份信息，进行权限验证</li>
+<li>调用 UseCase：将请求转换为 UseCase 调用参数，执行业务逻辑</li>
+<li>响应转换：将 UseCase 返回的结果转换为外部响应格式</li>
+<li>错误处理：将业务错误转换为协议特定的错误响应</li>
+<li>日志记录：记录请求处理过程中的关键信息</li>
+</ul>
+<p>由于 Controller 负责外部请求/响应的处理，因此不同的 Server 实现，对应的 Controller 实现也天然是不同的。而且 <code>Controller</code> 层本身也是业务逻辑的处理入口，因此代码保存在 <code>internal</code> 目录下。如下展示了 <code>internal/controller</code> 目录下文件结构，每个 Server 都有对应的 Controller 实现：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br></pre></td><td class="code"><pre><span class="line">internal/controller/</span><br><span class="line">├── restapi/                  <span class="comment"># HTTP Controller (Fiber)</span></span><br><span class="line">│   ├── router.go            <span class="comment"># 顶层路由注册</span></span><br><span class="line">│   ├── middleware/          <span class="comment"># HTTP 中间件</span></span><br><span class="line">│   │   ├── auth.go          <span class="comment"># JWT 认证中间件</span></span><br><span class="line">│   │   ├── logger.go        <span class="comment"># 请求日志中间件</span></span><br><span class="line">│   │   └── recovery.go      <span class="comment"># Panic 恢复中间件</span></span><br><span class="line">│   └── v1/                  <span class="comment"># API v1 版本</span></span><br><span class="line">│       ├── controller.go    <span class="comment"># Controller 结构体定义</span></span><br><span class="line">│       ├── router.go        <span class="comment"># v1 路由注册</span></span><br><span class="line">│       ├── error.go         <span class="comment"># 错误响应辅助函数</span></span><br><span class="line">│       ├── user.go          <span class="comment"># 用户相关处理函数</span></span><br><span class="line">│       ├── task.go          <span class="comment"># 任务相关处理函数</span></span><br><span class="line">│       ├── translation.go   <span class="comment"># 翻译相关处理函数</span></span><br><span class="line">│       ├── request/         <span class="comment"># 请求结构体</span></span><br><span class="line">│       │   ├── user.go</span><br><span class="line">│       │   ├── task.go</span><br><span class="line">│       │   └── translate.go</span><br><span class="line">│       └── response/        <span class="comment"># 响应结构体</span></span><br><span class="line">│           ├── error.go</span><br><span class="line">│           ├── token.go</span><br><span class="line">│           └── task.go</span><br><span class="line">│</span><br><span class="line">├── grpc/                    <span class="comment"># gRPC Controller</span></span><br><span class="line">│   ├── router.go           <span class="comment"># gRPC 服务注册</span></span><br><span class="line">│   ├── middleware/         <span class="comment"># gRPC 拦截器</span></span><br><span class="line">│   │   └── auth.go         <span class="comment"># JWT 认证拦截器</span></span><br><span class="line">│   └── v1/</span><br><span class="line">│       ├── controller.go   <span class="comment"># TranslationController 结构体</span></span><br><span class="line">│       ├── router.go       <span class="comment"># gRPC 服务路由注册</span></span><br><span class="line">│       ├── auth_controller.go  <span class="comment"># AuthController 结构体</span></span><br><span class="line">│       ├── task_controller.go  <span class="comment"># TaskController 结构体</span></span><br><span class="line">│       ├── user.go         <span class="comment"># 用户相关 gRPC 方法</span></span><br><span class="line">│       ├── task.go         <span class="comment"># 任务相关 gRPC 方法</span></span><br><span class="line">│       ├── translation.go  <span class="comment"># 翻译相关 gRPC 方法</span></span><br><span class="line">│       └── response/       <span class="comment"># 响应转换函数</span></span><br><span class="line">│           ├── task.go</span><br><span class="line">│           ├── user.go</span><br><span class="line">│           └── translation.history.go</span><br><span class="line">│</span><br><span class="line">├── amqp_rpc/               <span class="comment"># RabbitMQ RPC Controller</span></span><br><span class="line">│   ├── router.go          <span class="comment"># RPC 路由创建</span></span><br><span class="line">│   └── v1/</span><br><span class="line">│       ├── controller.go  <span class="comment"># V1 结构体定义</span></span><br><span class="line">│       ├── router.go      <span class="comment"># RPC 路由注册</span></span><br><span class="line">│       ├── auth.go        <span class="comment"># 认证提取函数</span></span><br><span class="line">│       ├── user.go        <span class="comment"># 用户 RPC 处理</span></span><br><span class="line">│       ├── task.go        <span class="comment"># 任务 RPC 处理</span></span><br><span class="line">│       ├── translation.go <span class="comment"># 翻译 RPC 处理</span></span><br><span class="line">│       ├── request/       <span class="comment"># 请求结构体</span></span><br><span class="line">│       │   ├── auth.go    <span class="comment"># AuthenticatedRequest（带 Token 的请求封装）</span></span><br><span class="line">│       │   ├── user.go</span><br><span class="line">│       │   ├── task.go</span><br><span class="line">│       │   └── translate.go</span><br><span class="line">│       └── response/      <span class="comment"># 响应结构体</span></span><br><span class="line">│           ├── token.go</span><br><span class="line">│           ├── task.go</span><br><span class="line">│           └── error.go</span><br><span class="line">│</span><br><span class="line">└── nats_rpc/              <span class="comment"># NATS RPC Controller（结构与 amqp_rpc 相同）</span></span><br><span class="line">    ├── router.go</span><br><span class="line">    └── v1/</span><br><span class="line">        ├── controller.go</span><br><span class="line">        ├── router.go</span><br><span class="line">        ├── auth.go</span><br><span class="line">        ├── user.go</span><br><span class="line">        ├── task.go</span><br><span class="line">        ├── translation.go</span><br><span class="line">        ├── request/</span><br><span class="line">        │   ├── auth.go</span><br><span class="line">        │   ├── user.go</span><br><span class="line">        │   ├── task.go</span><br><span class="line">        │   └── translate.go</span><br><span class="line">        └── response/</span><br><span class="line">            ├── token.go</span><br><span class="line">            ├── task.go</span><br><span class="line">            └── error.go</span><br></pre></td></tr></table></figure>
+<p>由于 <code>Controller</code> 的实现与所使用的通信协议、开发框架强相关，因此它的路由注册、请求/响应转换、请求处理的实现都会有所差异。而这也正是 <code>Controller</code> 层的意义所在：<strong>它的核心职责是 <code>翻译</code>：将外部世界的协议（HTTP/gRPC/RPC）、框架翻译成统一的业务逻辑处理形式</strong>。</p>
+<p>当前项目将路由分发的相关实现也放到 <code>Controller</code> 目录下，这也是合理的，因为路由本身就与协议/框架强相关。而且该项目的路由组织也遵循了一定规则，以 <code>REST API</code> 为例：</p>
+<ul>
+<li>入口 (<code>restapi/router.go</code>): 负责初始化 <code>Fiber App</code>，挂载全局中间件，挂载各个版本的路由 group</li>
+<li>版本控制 (v1/router.go): 负责具体的路径映射</li>
+</ul>
+<p>接下来我们以 <code>createTask</code> 的实现来对比不同的 Controller 实现逻辑：</p>
+<p><strong>HTTP Controller 处理函数：</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *V1)</span></span> createTask(ctx *fiber.Ctx) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="comment">// 1. 从 context 获取 userID（中间件已注入）</span></span><br><span class="line">    userID, ok := ctx.Locals(<span class="string">&quot;userID&quot;</span>).(<span class="type">string</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 解析请求体</span></span><br><span class="line">    <span class="keyword">var</span> body request.CreateTask</span><br><span class="line">    ctx.BodyParser(&amp;body)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 验证请求</span></span><br><span class="line">    r.v.Struct(body)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 调用 UseCase</span></span><br><span class="line">    task, err := r.tk.Create(ctx.UserContext(), userID, body.Title, body.Description)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 5. 返回响应</span></span><br><span class="line">    <span class="keyword">return</span> ctx.Status(http.StatusCreated).JSON(task)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>gRPC Controller 处理函数：</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *TaskController)</span></span> CreateTask(ctx context.Context, req *v1.CreateTaskRequest) (*v1.TaskResponse, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 1. 从 context 获取 userID（拦截器已注入）</span></span><br><span class="line">    userID, ok := grpcmw.UserIDFromContext(ctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 直接使用 gRPC 请求（已由框架解析）</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 调用 UseCase</span></span><br><span class="line">    task, err := c.tk.Create(ctx, userID, req.GetTitle(), req.GetDescription())</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 转换为 gRPC 响应</span></span><br><span class="line">    <span class="keyword">return</span> response.NewTaskResponse(&amp;task), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>RabbitMQ RPC Controller 处理函数：</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *V1)</span></span> createTask() server.CallHandler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(d *amqp.Delivery)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="comment">// 1. 从消息中提取 userID（自己解析 Token）</span></span><br><span class="line">        userID, data, err := extractUserID(d, r.j)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 2. 解析请求体</span></span><br><span class="line">        <span class="keyword">var</span> req request.CreateTask</span><br><span class="line">        json.Unmarshal(data, &amp;req)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 3. 验证请求</span></span><br><span class="line">        r.v.Struct(req)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 4. 谬用 UseCase</span></span><br><span class="line">        task, err := r.tk.Create(context.Background(), userID, req.Title, req.Description)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 5. 返回任意类型（由 Server 序列化为 JSON）</span></span><br><span class="line">        <span class="keyword">return</span> task, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到，不同的应用层协议（HTTP、gRPC、NATS RPC、RabbitMQ RPC）、不同的开发框架（是否原生支持路由注册、Middleware、请求解析）等等都会对 <code>Controller</code> 层的实现造成很大的影响。</p>
+<p>下图简单总结了下 <code>Server</code>、<code>Controller</code>、<code>UseCase</code> 之间的依赖关系：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                              app.go (协调者)                                  │</span><br><span class="line">│                                                                             │</span><br><span class="line">│  1. 创建 UseCases                                                            │</span><br><span class="line">│     uc := initUseCases(pg, jwt)                                             │</span><br><span class="line">│                                                                             │</span><br><span class="line">│  2. 创建 Server + 注册 Controller                                            │</span><br><span class="line">│     ┌─────────────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│     │ HTTP Server                                                          │ │</span><br><span class="line">│     │ httpServer := httpserver.New(...)                                    │ │</span><br><span class="line">│     │ restapi.NewRouter(httpServer.App, uc)  ──► Controller 注册路由到 App  │ │</span><br><span class="line">│     └─────────────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│     ┌─────────────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│     │ gRPC Server                                                          │ │</span><br><span class="line">│     │ grpcServer := grpcserver.New(...)                                    │ │</span><br><span class="line">│     │ grpc.NewRouter(grpcServer.App, uc)    ──► Controller 注册服务到 App   │ │</span><br><span class="line">│     └─────────────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│     ┌─────────────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│     │ RabbitMQ RPC Server                                                  │ │</span><br><span class="line">│     │ rmqRouter := amqprpc.NewRouter(uc)    ──► Controller 返回路由表       │ │</span><br><span class="line">│     │ rmqServer := rmqRPCServer.New(rmqRouter)  ──► Server 持有路由表       │ │</span><br><span class="line">│     └─────────────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│     ┌─────────────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│     │ NATS RPC Server                                                      │ │</span><br><span class="line">│     │ natsRouter := natsrpc.NewRouter(uc)   ──► Controller 返回路由表       │ │</span><br><span class="line">│     │ natsServer := natsRPCServer.New(natsRouter) ──► Server 持有路由表     │ │</span><br><span class="line">│     └─────────────────────────────────────────────────────────────────────┘ │</span><br><span class="line">│                                                                             │</span><br><span class="line">│  3. 启动 Server                                                             │</span><br><span class="line">│     s.startServers()                                                        │</span><br><span class="line">│                                                                             │</span><br><span class="line">│  4. Server 运行时调用 Controller                                            │</span><br><span class="line">│     ┌─────────────────────────────────────────────────────────────────────┐ │</span><br><span class="line">│     │ 请求到达 ──► Server 接收 ──► 路由匹配 ──► Controller 处理 ──► 返回   │ │</span><br><span class="line">│     └─────────────────────────────────────────────────────────────────────┘ │</span><br><span class="line">└─────────────────────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<h3 id="usecase-实现"><a class="markdownIt-Anchor" href="#usecase-实现"></a> usecase 实现</h3>
+<p>接下来再来看 usercase 的实现，这块就是业务逻辑的核心了。<code>contracts.go</code> 定义了各个接口契约：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">//go:generate mockgen -source=contracts.go -destination=./mocks_usecase_test.go -package=usecase_test</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> (</span><br><span class="line">    Translation <span class="keyword">interface</span> &#123;</span><br><span class="line">        Translate(ctx context.Context, userID <span class="type">string</span>, t entity.Translation) (entity.Translation, <span class="type">error</span>)</span><br><span class="line">        History(ctx context.Context, userID <span class="type">string</span>) (entity.TranslationHistory, <span class="type">error</span>)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    User <span class="keyword">interface</span> &#123;</span><br><span class="line">        Register(ctx context.Context, username, email, password <span class="type">string</span>) (entity.User, <span class="type">error</span>)</span><br><span class="line">        Login(ctx context.Context, email, password <span class="type">string</span>) (<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">        GetUser(ctx context.Context, userID <span class="type">string</span>) (entity.User, <span class="type">error</span>)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    Task <span class="keyword">interface</span> &#123;</span><br><span class="line">        Create(ctx context.Context, userID, title, description <span class="type">string</span>) (entity.Task, <span class="type">error</span>)</span><br><span class="line">        Get(ctx context.Context, userID, taskID <span class="type">string</span>) (entity.Task, <span class="type">error</span>)</span><br><span class="line">        List(ctx context.Context, userID <span class="type">string</span>, status *entity.TaskStatus, limit, offset <span class="type">int</span>) ([]entity.Task, <span class="type">int</span>, <span class="type">error</span>)</span><br><span class="line">        Update(ctx context.Context, userID, taskID, title, description <span class="type">string</span>) (entity.Task, <span class="type">error</span>)</span><br><span class="line">        Transition(ctx context.Context, userID, taskID <span class="type">string</span>, newStatus entity.TaskStatus) (entity.Task, <span class="type">error</span>)</span><br><span class="line">        Delete(ctx context.Context, userID, taskID <span class="type">string</span>) <span class="type">error</span></span><br><span class="line">    &#125;</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>每个业务领域有独立接口</li>
+<li>输入参数/返回值都是都是基本类型/或者 Entity 类型，不直接使用 Request 结构体、Response 结构体</li>
+<li>通过 <code>go:generate</code> 注释自动生成 Mock</li>
+</ul>
+<p>接下来以 <code>Translation</code> UseCase 的实现为例，看下具体的 UseCase 应该如何实现。<code>internal/usecase/translation</code> 下定义了如下结构体：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> UseCase <span class="keyword">struct</span> &#123;</span><br><span class="line">	repo   repo.TranslationRepo</span><br><span class="line">	webAPI repo.TranslationWebAPI</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它实现了 <code>Translation</code> 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(uc *UseCase)</span></span> Translate(ctx context.Context, userID <span class="type">string</span>, t entity.Translation) (entity.Translation, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 1. 调用外部 API 翻译</span></span><br><span class="line">    translation, err := uc.webAPI.Translate(ctx, t)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> entity.Translation&#123;&#125;, fmt.Errorf(<span class="string">&quot;TranslationUseCase - Translate - s.webAPI.Translate: %w&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 存储翻译历史</span></span><br><span class="line">    err = uc.repo.Store(ctx, userID, translation)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> entity.Translation&#123;&#125;, fmt.Errorf(<span class="string">&quot;TranslationUseCase - Translate - s.repo.Store: %w&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> translation, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(uc *UseCase)</span></span> History(ctx context.Context, userID <span class="type">string</span>) (entity.TranslationHistory, <span class="type">error</span>) &#123;</span><br><span class="line">	translations, err := uc.repo.GetHistory(ctx, userID)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> entity.TranslationHistory&#123;&#125;, fmt.Errorf(<span class="string">&quot;TranslationUseCase - History - s.repo.GetHistory: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> entity.TranslationHistory&#123;History: translations&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个例子其实展示了典型的后端业务逻辑实现，包括数据库操作、外部 API 调用。其他两个 UseCase 也是类似的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/usecase/user/user.go</span></span><br><span class="line"><span class="keyword">type</span> UseCase <span class="keyword">struct</span> &#123;</span><br><span class="line">	repo repo.UserRepo</span><br><span class="line">	jwt  *jwt.Manager</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// internal/usecase/task/task.go</span></span><br><span class="line"><span class="keyword">type</span> UseCase <span class="keyword">struct</span> &#123;</span><br><span class="line">	repo repo.TaskRepo</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>User 的 UseCase 除了需要实现数据库操作，还需要通过 JWT 实现用户认证，JWT 相关实现可以是通用能力，因此保存在 <code>pkg/jwt</code> 目录下</li>
+<li>Task 的 UseCase 只需要实现数据库操作，因此只需要 <code>repo.TaskRepo</code> 接口即可</li>
+</ul>
+<h3 id="repo-实现"><a class="markdownIt-Anchor" href="#repo-实现"></a> repo 实现</h3>
+<p>这里的 <code>repo</code> 其实代表的是 <code>infrastructure</code> 层，也就是实现业务逻辑所依赖的外部基础设施。这个例子包含两种：</p>
+<ul>
+<li>数据库持久化：在 <code>internal/repo/persistent</code> 中实现</li>
+<li>外部 API 调用：在 <code>internal/repo/webapi</code> 中实现</li>
+</ul>
+<p>所有的 <code>repo</code> 同样通过接口契约的来对外暴露，<code>internal/repo/contracts.go</code> 定义了各个接口契约：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// TranslationRepo -.</span></span><br><span class="line">TranslationRepo <span class="keyword">interface</span> &#123;</span><br><span class="line">    Store(ctx context.Context, userID <span class="type">string</span>, t entity.Translation) <span class="type">error</span></span><br><span class="line">    GetHistory(ctx context.Context, userID <span class="type">string</span>) ([]entity.Translation, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// TranslationWebAPI -.</span></span><br><span class="line">TranslationWebAPI <span class="keyword">interface</span> &#123;</span><br><span class="line">    Translate(ctx context.Context, t entity.Translation) (entity.Translation, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+<p>这个项目并没有直接使用 GORM 等 ORM 框架来实现数据库操作，相反，其使用 <a target="_blank" rel="noopener" href="https://github.com/masterminds/squirrel">Masterminds/squirrel</a> 和 <a target="_blank" rel="noopener" href="https://github.com/jackc/pgx">jackc/pgx</a> 来实现持久化存储层的各个接口。如下提供一个实际实现举例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *TaskRepo)</span></span> Store(ctx context.Context, task *entity.Task) <span class="type">error</span> &#123;</span><br><span class="line">	sql, args, err := r.Builder.</span><br><span class="line">		Insert(<span class="string">&quot;tasks&quot;</span>).</span><br><span class="line">		Columns(<span class="string">&quot;id, user_id, title, description, status, created_at, updated_at&quot;</span>).</span><br><span class="line">		Values(task.ID, task.UserID, task.Title, task.Description, task.Status, task.CreatedAt, task.UpdatedAt).</span><br><span class="line">		ToSql()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;TaskRepo - Store - r.Builder: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	_, err = r.Pool.Exec(ctx, sql, args...)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;TaskRepo - Store - r.Pool.Exec: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="entity-实现"><a class="markdownIt-Anchor" href="#entity-实现"></a> Entity 实现</h3>
+<p><code>internal/entity</code> 定义了核心业务实体和数据结构，在该项目中，Controller 层、UseCase 层、Repository 层的输入输出参数都可以使用 Entity。Entity 一般就是简单的纯数据结构，也可以包含一些辅助方法。例如 Task 的 Entity 定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Task -.</span></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID          <span class="type">string</span>     <span class="string">`json:&quot;id&quot;          example:&quot;550e8400-e29b-41d4-a716-446655440000&quot;`</span></span><br><span class="line">	UserID      <span class="type">string</span>     <span class="string">`json:&quot;user_id&quot;     example:&quot;550e8400-e29b-41d4-a716-446655440000&quot;`</span></span><br><span class="line">	Title       <span class="type">string</span>     <span class="string">`json:&quot;title&quot;       example:&quot;My task&quot;`</span></span><br><span class="line">	Description <span class="type">string</span>     <span class="string">`json:&quot;description&quot; example:&quot;Task description&quot;`</span></span><br><span class="line">	Status      TaskStatus <span class="string">`json:&quot;status&quot;      example:&quot;todo&quot;`</span></span><br><span class="line">	CreatedAt   time.Time  <span class="string">`json:&quot;created_at&quot;  example:&quot;2026-01-01T00:00:00Z&quot;`</span></span><br><span class="line">	UpdatedAt   time.Time  <span class="string">`json:&quot;updated_at&quot;  example:&quot;2026-01-01T00:00:00Z&quot;`</span></span><br><span class="line">&#125; <span class="comment">// @name entity.Task</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>辅助方法实现的逻辑一定是和 Entity 数据结构本身紧密关联的（内聚性），例如这里 Task 的状态转换是 Task 的固有逻辑，因此提供 <code>Transition()</code> 方法用来修改 Task 的状态</li>
+</ul>
+<h3 id="entity-的使用"><a class="markdownIt-Anchor" href="#entity-的使用"></a> Entity 的使用</h3>
+<p>接下来我们通过一些实际例子，看看在这个项目中各层都是怎么使用 Entity 对象的。</p>
+<ul>
+<li>Repo 层直接以 Entity 作为参数或者返回值</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *TaskRepo)</span></span> Store(ctx context.Context, task *entity.Task) <span class="type">error</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *TaskRepo)</span></span> GetByID(ctx context.Context, userID, taskID <span class="type">string</span>) (entity.Task, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>UseCase 层直接构造 Entity 对象/或者直接接收 Entity作为参数，以 Entity 作为参数调用 Repo 层，或者将 Entity 作为返回值返回给 Controller 层</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 内部构造 Entity 对象，调用 Repo 层，返回 Entity 对象</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(uc *UseCase)</span></span> Create(ctx context.Context, userID, title, description <span class="type">string</span>) (entity.Task, <span class="type">error</span>) &#123;</span><br><span class="line">    task := entity.Task&#123;</span><br><span class="line">        ID:          uuid.New().String(),</span><br><span class="line">        UserID:      userID,</span><br><span class="line">        Title:       title,</span><br><span class="line">        Description: description,</span><br><span class="line">        Status:      entity.TaskStatusTodo,</span><br><span class="line">        CreatedAt:   now,</span><br><span class="line">        UpdatedAt:   now,</span><br><span class="line">    &#125;</span><br><span class="line">    err := uc.repo.Store(ctx, &amp;task)</span><br><span class="line">    <span class="keyword">return</span> task, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 直接接收 Entity 对象作为参数，调用 Repo 层，返回 Entity 对象</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(uc *UseCase)</span></span> Translate(ctx context.Context, userID <span class="type">string</span>, t entity.Translation) (entity.Translation, <span class="type">error</span>) &#123;</span><br><span class="line">    ......</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li>Controller 层：
+<ul>
+<li>如果 UseCase 层直接以 Entity 对象作为参数，会将请求转换为 Entity 对象，然后调用 UseCase 层</li>
+<li>当调用 UseCase 层得到 Entity 对象，部分 Controller 直接将 Entity 对象作为返回值，部分 Controller 则会额外将 Entity 进行转换。</li>
+</ul>
+</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/controller/restapi/v1/translation.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *V1)</span></span> doTranslate(ctx *fiber.Ctx) <span class="type">error</span> &#123;</span><br><span class="line">    ......</span><br><span class="line">    <span class="comment">// 将 body 转换 Entity 对象，并调用 UseCase 层</span></span><br><span class="line">    <span class="comment">// 执行 translation</span></span><br><span class="line">	translation, err := r.t.Translate(</span><br><span class="line">		ctx.UserContext(),</span><br><span class="line">		userID,</span><br><span class="line">		entity.Translation&#123;</span><br><span class="line">			Source:      body.Source,</span><br><span class="line">			Destination: body.Destination,</span><br><span class="line">			Original:    body.Original,</span><br><span class="line">		&#125;,</span><br><span class="line">	)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 将 Entity 对象直接作为返回值返回给客户端</span></span><br><span class="line">    <span class="keyword">return</span> ctx.Status(http.StatusOK).JSON(translation)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/controller/grpc/v1/translation.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *TranslationController)</span></span> Translate(ctx context.Context, req *v1.TranslateRequest) (*v1.TranslateResponse, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 将 gRPC 请求转换为 Entity 对象，并调用 UseCase 层</span></span><br><span class="line">    ......</span><br><span class="line">    t, err := c.t.Translate(ctx, userID, entity.Translation&#123;</span><br><span class="line">		Source:      req.GetSource(),</span><br><span class="line">		Destination: req.GetDestination(),</span><br><span class="line">		Original:    req.GetOriginal(),</span><br><span class="line">	&#125;)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 将 Entity 对象转换为 gRPC 响应，并返回给客户端</span></span><br><span class="line">    <span class="keyword">return</span> &amp;v1.TranslateResponse&#123;</span><br><span class="line">		Source:      t.Source,</span><br><span class="line">		Destination: t.Destination,</span><br><span class="line">		Original:    t.Original,</span><br><span class="line">		Translation: t.Translation,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line"></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>虽然 Entity 对象会在 Controller、UseCase、Repo 层直接使用。但是 Controller 层是否直接返回 Entity 对象并不统一：</p>
+<table>
+<thead>
+<tr>
+<th>接入方式</th>
+<th>输入</th>
+<th>输出</th>
+<th>转换层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>REST API</td>
+<td>有独立 Request 结构体 (<code>request.CreateTask</code>)</td>
+<td><strong>直接返回 Entity</strong></td>
+<td>无输出转换</td>
+</tr>
+<tr>
+<td>GRPC</td>
+<td>使用 Proto 生成的 Request</td>
+<td>有 Response 转换函数</td>
+<td><code>response.NewTaskResponse()</code></td>
+</tr>
+<tr>
+<td>NATS/AMQP RPC</td>
+<td>有独立 Request 结构体</td>
+<td>有独立 Response 结构体</td>
+<td>有转换</td>
+</tr>
+</tbody>
+</table>
+<p>在 Controller 层直接返回 Entity 对象，好处是代码简洁，无需在各层定义重复的数据结构，减少样板代码。但是也会带来一些问题：</p>
+<ul>
+<li>API 契约耦合：内部实现变化会直接影响 API 输出</li>
+<li>字段控制受限：无法灵活控制哪些字段对外暴露</li>
+<li>版本兼容问题：API 版本演进困难</li>
+<li>安全风险：可能意外暴露内部字段</li>
+<li>JSON tag 耦合：Entity 中需要定义 JSON tag（参见上面的 Task Entity 定义）来控制输出的序列化</li>
+</ul>
+<p>所以大型项目一般会通过 DTO 来缓解这个问题，如下是引入 DTO 之后的调用关系：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                     Controller Layer                            │</span><br><span class="line">│  ┌──────────────────┐    ┌──────────────────┐                   │</span><br><span class="line">│  │ Request DTO      │    │ Response DTO     │                   │</span><br><span class="line">│  │ (输入验证)        │    │ (输出控制)        │                   │</span><br><span class="line">│  └──────────────────┘    └──────────────────┘                   │</span><br><span class="line">│           │                       ↑                             │</span><br><span class="line">│           │ 转换                   │ 转换                        │</span><br><span class="line">│           ↓                       │                             │</span><br><span class="line">├─────────────────────────────────────────────────────────────────┤</span><br><span class="line">│                     UseCase Layer                               │</span><br><span class="line">│           │                       │                             │</span><br><span class="line">│           │                       │                             │</span><br><span class="line">│           ↓                       │                             │</span><br><span class="line">│  ┌──────────────────────────────────────────┐                   │</span><br><span class="line">│  │           Entity (业务模型)               │                   │</span><br><span class="line">│  │  - 包含业务逻辑方法                        │                   │</span><br><span class="line">│  │  - 不包含 JSON tag                        │                   │</span><br><span class="line">│  └──────────────────────────────────────────┘                   │</span><br><span class="line">│           │                       │                             │</span><br><span class="line">│           │                       │                             │</span><br><span class="line">│           ↓                       │                             │</span><br><span class="line">├─────────────────────────────────────────────────────────────────┤</span><br><span class="line">│                     Repository Layer                            │</span><br><span class="line">│  ┌──────────────────────────────────────────┐                   │</span><br><span class="line">│  │       DAO (Data Access Object)           │                   │</span><br><span class="line">│  │  - 数据库映射结构                          │                   │</span><br><span class="line">│  │  - 可与 Entity 相同或不同                  │                   │</span><br><span class="line">│  └──────────────────────────────────────────┘                   │</span><br><span class="line">└─────────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<p>如下则给出了使用 DTO 的具体的代码实现</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// === Entity 层 (无 JSON tag) ===</span></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID          <span class="type">string</span></span><br><span class="line">    UserID      <span class="type">string</span></span><br><span class="line">    Title       <span class="type">string</span></span><br><span class="line">    Description <span class="type">string</span></span><br><span class="line">    Status      TaskStatus</span><br><span class="line">    CreatedAt   time.Time</span><br><span class="line">    UpdatedAt   time.Time</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(t *Task)</span></span> Transition(newStatus TaskStatus) <span class="type">error</span> &#123; ... &#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// === Controller 层 - Request DTO ===</span></span><br><span class="line"><span class="keyword">type</span> CreateTaskRequest <span class="keyword">struct</span> &#123;</span><br><span class="line">    Title       <span class="type">string</span> <span class="string">`json:&quot;title&quot;       validate:&quot;required,max=255&quot;`</span></span><br><span class="line">    Description <span class="type">string</span> <span class="string">`json:&quot;description&quot; validate:&quot;max=1000&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// === Controller 层 - Response DTO ===</span></span><br><span class="line"><span class="keyword">type</span> TaskResponse <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID          <span class="type">string</span>    <span class="string">`json:&quot;id&quot;`</span></span><br><span class="line">    Title       <span class="type">string</span>    <span class="string">`json:&quot;title&quot;`</span></span><br><span class="line">    Description <span class="type">string</span>    <span class="string">`json:&quot;description&quot;`</span></span><br><span class="line">    Status      <span class="type">string</span>    <span class="string">`json:&quot;status&quot;`</span></span><br><span class="line">    CreatedAt   time.Time <span class="string">`json:&quot;created_at&quot;`</span></span><br><span class="line">    <span class="comment">// 注意：UserID 被隐藏，不对外暴露</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// === 转换函数 ===</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ToTaskResponse</span><span class="params">(task *entity.Task)</span></span> TaskResponse &#123;</span><br><span class="line">    <span class="keyword">return</span> TaskResponse&#123;</span><br><span class="line">        ID:          task.ID,</span><br><span class="line">        Title:       task.Title,</span><br><span class="line">        Description: task.Description,</span><br><span class="line">        Status:      <span class="type">string</span>(task.Status),</span><br><span class="line">        CreatedAt:   task.CreatedAt,</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// === Controller 使用 ===</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *V1)</span></span> createTask(ctx *fiber.Ctx) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> req CreateTaskRequest</span><br><span class="line">    ctx.BodyParser(&amp;req)</span><br><span class="line"></span><br><span class="line">    task, err := r.tk.Create(ctx.UserContext(), userID, req.Title, req.Description)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> ctx.JSON(ToTaskResponse(&amp;task))  <span class="comment">// 转换后返回</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这种在 Controller 层引入 DTO（Data Transfer Object）的做法，可以有效地解决直接返回 Entity 对象带来的问题。DTO 可以清晰地定义 API 的输入输出契约，控制字段的暴露和序列化方式，便于维护和版本演进：</p>
+<ul>
+<li>Controller 层独立 Request/Response 结构体</li>
+<li>Entity 专注业务逻辑，通过转换函数解耦</li>
+</ul>
+<p>这一些更复杂的项目中，可能每一层都会引入自己的数据结构：Controller 有其 DTO，Usecase 有其特定的输入/输出对象（有时称为 InputPort/OutputPort），Repo 有专门的对象（或 Entity）。当然这种设计方法也可能引入额外的复杂度，需要根据项目实际情况权衡。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章学习了 <code>go-clean-template</code> 这个项目，它通过将服务划分为 Controller、UseCase 和 Repo 这几个核心层，并使用 Entity 作为核心业务模型，展示了如何在 Go 项目中实现 Clean Architecture。但是其直接在 REST API 的 Controller 中返回 Entity 对象，而没有使用 DTO 来控制 API 的输出。这虽然减少了样板代码，但也引入了潜在的耦合和安全问题。</p>
+<p>关于如何组织 Go 后端服务的项目结构，还是有不同的观点和做法（甚至一些术语也存在含义不一致的情况）：</p>
+<ul>
+<li>GoFrame 中关于 <a target="_blank" rel="noopener" href="https://goframe.org/docs/design/project-structure">Go 工程设计的一些考虑</a></li>
+<li>个人感觉字节的开源的 <a target="_blank" rel="noopener" href="https://github.com/coze-dev/coze-loop">coze-loop</a> 项目也是一个非常不错的参考范例，例如 <a target="_blank" rel="noopener" href="https://github.com/coze-dev/coze-loop/tree/main/backend/modules/prompt">prompt</a> 这个服务的实现</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/04/27/k8s-gateway-api/" rel="next" title="在 k8s 环境中使用 Gateway API">
+      在 k8s 环境中使用 Gateway API <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> 项目简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E6%B4%81%E6%9E%B6%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> 整洁架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%85%E5%B1%82%E8%B0%83%E7%94%A8%E5%A4%96%E5%B1%82%E9%9C%80%E8%A6%81%E4%BE%9D%E8%B5%96%E5%80%92%E7%BD%AE"><span class="nav-number">2.1.</span> <span class="nav-text"> 内层调用外层，需要依赖倒置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%96%E5%B1%82%E8%B0%83%E7%94%A8%E5%86%85%E5%B1%82%E5%8F%AF%E4%BB%A5%E8%A7%A3%E8%80%A6"><span class="nav-number">2.2.</span> <span class="nav-text"> 外层调用内层，可以解耦</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B4%E6%B4%81%E6%9E%B6%E6%9E%84%E5%B0%8F%E7%BB%93"><span class="nav-number">2.3.</span> <span class="nav-text"> 整洁架构小结</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%A8%E8%BE%B9%E7%95%8C%E4%BC%A0%E9%80%92%E7%AE%80%E5%8D%95%E6%95%B0%E6%8D%AE"><span class="nav-number">2.4.</span> <span class="nav-text"> 跨边界传递简单数据</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B7%A5%E7%A8%8B%E6%9E%B6%E6%9E%84"><span class="nav-number">3.</span> <span class="nav-text"> 工程架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84"><span class="nav-number">3.1.</span> <span class="nav-text"> 目录结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE%E6%96%87%E4%BB%B6%E8%AF%A6%E8%A7%A3"><span class="nav-number">3.2.</span> <span class="nav-text"> 项目文件详解</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E8%AF%A6%E8%A7%A3"><span class="nav-number">4.</span> <span class="nav-text"> 代码详解</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A8%8B%E5%BA%8F%E5%85%A5%E5%8F%A3%E7%82%B9"><span class="nav-number">4.1.</span> <span class="nav-text"> 程序入口点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E8%A7%A3%E6%9E%90"><span class="nav-number">4.2.</span> <span class="nav-text"> 配置解析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%BF%90%E8%A1%8C"><span class="nav-number">4.3.</span> <span class="nav-text"> 应用程序运行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#server-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.4.</span> <span class="nav-text"> Server 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#controller-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.5.</span> <span class="nav-text"> Controller 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#usecase-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.6.</span> <span class="nav-text"> usecase 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#repo-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.7.</span> <span class="nav-text"> repo 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#entity-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.8.</span> <span class="nav-text"> Entity 实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#entity-%E7%9A%84%E4%BD%BF%E7%94%A8"><span class="nav-number">4.9.</span> <span class="nav-text"> Entity 的使用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">247</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
