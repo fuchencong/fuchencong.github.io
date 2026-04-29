@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上篇文章我们介绍了 k8s 的 Gateway API，也介绍了k8s 的 GAMMA（Gateway API For Mesh Management and Administration）倡议，旨在将 Kubernetes Gateway API 扩展到服务网格领域。这篇文章我们将继续在 k8s 环境中实际部署 Istio 这个服务网格实现。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="在 k8s 环境中使用 Istio">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/04/29/k8s-gamma-istio/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上篇文章我们介绍了 k8s 的 Gateway API，也介绍了k8s 的 GAMMA（Gateway API For Mesh Management and Administration）倡议，旨在将 Kubernetes Gateway API 扩展到服务网格领域。这篇文章我们将继续在 k8s 环境中实际部署 Istio 这个服务网格实现。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-04-29T04:26:12.000Z">
+<meta property="article:modified_time" content="2026-04-29T04:30:07.666Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="k8s">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/29/k8s-gamma-istio/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>在 k8s 环境中使用 Istio | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/04/29/k8s-gamma-istio/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          在 k8s 环境中使用 Istio
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-04-29 12:26:12" itemprop="dateCreated datePublished" datetime="2026-04-29T12:26:12+08:00">2026-04-29</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%90%8E%E7%AB%AF/" itemprop="url" rel="index"><span itemprop="name">后端</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://fuchencong.com/2026/04/27/k8s-gateway-api/">上篇文章</a>我们介绍了 k8s 的 Gateway API，也介绍了k8s 的 GAMMA（Gateway API For Mesh Management and Administration）倡议，旨在将 Kubernetes Gateway API 扩展到服务网格领域。这篇文章我们将继续在 k8s 环境中实际部署 Istio 这个服务网格实现。</p>
+<span id="more"></span>
+<h2 id="istio-简介"><a class="markdownIt-Anchor" href="#istio-简介"></a> Istio 简介</h2>
+<p>在 GAMMA 出现之前，Kubernetes 的网络管理处于 <code>割裂</code> 状态：</p>
+<ul>
+<li>Gateway API (南北向): 主要负责集群外部流量进入集群（Ingress 的继任者）。</li>
+<li>Service Mesh (东西向): 主要负责集群内部服务之间的通信、治理、加密（如 Istio, Linkerd）</li>
+</ul>
+<p>每个服务网格实现都有自己的私有 API（比如 Istio 的 VirtualService），这导致了用户在切换网格工具时面临巨大的迁移成本。<strong>GAMMA 的目标就是标准化服务网格的配置，让东西向流量也使用 Gateway API</strong>。GAMMA 并不是要取代服务网格，而是<strong>为服务网格提供一套通用的控制面标准</strong>，它使用标准的 Gateway API 资源（如 HTTPRoute）来管理服务网格内的东西向流量（服务间通信）。</p>
+<p>Istio 是目前功能最全、生态最丰富的服务网格实现。它采用了典型的控制面（Control Plane）与数据面（Data Plane）分离的架构。</p>
+<ul>
+<li>数据面 (Envoy Proxy): Istio 默认在每个服务 Pod 中注入一个 Envoy 代理作为 Sidecar。所有的进出流量都会被 Envoy 劫持。Envoy 负责实际的负载均衡、熔断、限流和指标收集</li>
+<li>控制面 (Istiod): 负责策略下发。它将你写的 YAML 配置（如 VirtualService）转换成 Envoy 能够理解的配置，并通过 xDS 协议推送到各个 Sidecar</li>
+</ul>
+<p>Istio 提供了以下核心功能：</p>
+<ul>
+<li>流量管理 (Traffic Management)：
+<ul>
+<li>动态路由: 可以实现非常精细的流量切分，轻松实现金丝雀发布或蓝绿部署</li>
+<li>弹性能力: 内置了重试（Retry）、超时（Timeout）、熔断（Circuit Breaker）和限流功能，这些逻辑在网格层实现，不需要在业务代码中实现</li>
+</ul>
+</li>
+<li>安全 (Security)
+<ul>
+<li>mTLS (双向 TLS): 自动为服务间的通信进行加密和身份验证</li>
+<li>策略控制: 可以定义 <code>只有 Service A 能访问 Service B 的 /admin 接口</code> 这种细粒度的授权规则</li>
+</ul>
+</li>
+<li>可观测性 (Observability):
+<ul>
+<li>网格可视化: 配合 Kiali 等工具，<a target="_blank" rel="noopener" href="https://istio.io/latest/zh/docs/tasks/observability/kiali/">可以自动绘出服务间的调用关系图</a>。</li>
+<li>分布式追踪: 自动注入 Trace ID，通过 Jaeger 查看请求在微服务间的流转耗时</li>
+</ul>
+</li>
+<li>策略执行: 支持配额管理和黑白名单</li>
+</ul>
+<p>Istio 目前存在两种模式：<a target="_blank" rel="noopener" href="https://istio.io/latest/zh/docs/setup/">Sidecar 模式</a> 和 <a target="_blank" rel="noopener" href="https://istio.io/latest/zh/docs/ambient/">Ambient 模式</a>。</p>
+<p>对于 Sidecar 模式：</p>
+<ul>
+<li>在 Sidecar 模式下，Istio 在每个业务 Pod 中注入一个 Envoy 代理容器。</li>
+<li>所有的进出流量都必须通过 iptables 强制劫持到这个 Envoy 代理中</li>
+<li>流量在到达业务代码前，在同一个 Pod 内完成 L4（传输层）加密和 L7（应用层）路由。</li>
+<li>代理和业务强绑定生命周期</li>
+</ul>
+<p>对于 Ambient 模式：</p>
+<ul>
+<li>不再将代理塞进 Pod 内部，而是将功能拆分为两个独立层级</li>
+<li>L4 层级：Ztunnel (Secure Overlay)：
+<ul>
+<li>每个节点（Node）部署一个共享的 ztunnel</li>
+<li>只负责 L4 流量的零信任加密（mTLS）、节点流量透明拦截、HBONE 隧道等</li>
+</ul>
+</li>
+<li>L7 层级：Waypoint Proxy
+<ul>
+<li>可选的 Envoy 实例，按需开启</li>
+<li>处理复杂的 L7 逻辑，如重试、限流、熔断、基于路径的路由等</li>
+</ul>
+</li>
+<li>业务 Pod 纯业务、无任何代理容器、无需重启注入</li>
+</ul>
+<p>Ambient 模式是一种全新改进的模型，旨在弥补 Sidecar 模式的不足。Istio 社区的大部分精力都投入到了 Ambient 模式的改进上， 尽管 Sidecar 模式仍然得到全面支持。一般来说，建议新用户从 Ambient 模式开始。它速度更快、 成本更低，而且更易于管理。</p>
+<h2 id="istio-部署"><a class="markdownIt-Anchor" href="#istio-部署"></a> Istio 部署</h2>
+<h3 id="istio-安装"><a class="markdownIt-Anchor" href="#istio-安装"></a> Istio 安装</h3>
+<p>接下来我们来实际<a target="_blank" rel="noopener" href="https://istio.io/latest/zh/docs/setup/getting-started/">安装 Istio</a>，首先通过如下命令下载安装 Istio release：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># curl -L https://istio.io/downloadIstio | sh -</span></span><br><span class="line"></span><br><span class="line">Downloading istio-1.29.2 from https://github.com/istio/istio/releases/download/1.29.2/istio-1.29.2-linux-amd64.tar.gz ...</span><br><span class="line">Istio 1.29.2 download complete!</span><br></pre></td></tr></table></figure>
+<ul>
+<li>release 包默认直接存放在当前目录下，因此需要设置 PATH 环境变量</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># cd istio-1.29.2/</span></span><br><span class="line"><span class="comment"># export PATH=$PWD/bin:$PATH</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<ul>
+<li>运行安装前检查：<code>istioctl x precheck</code>，检查集群是否满足 Istio 安装要求，包括：Kubernetes 版本、资源配额、网络配置等</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># istioctl x precheck</span></span><br><span class="line">✔ No issues found when checking the cluster. Istio is safe to install or upgrade!</span><br><span class="line">  To get started, check out https://istio.io/latest/docs/setup/getting-started/.</span><br></pre></td></tr></table></figure>
+<ul>
+<li>安装 Istio：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># istioctl install --set profile=default -y</span></span><br><span class="line"></span><br><span class="line">✔ Istio core installed ⛵️</span><br><span class="line">✔ Istiod installed 🧠</span><br><span class="line">✔ Ingress gateways installed 🛬</span><br><span class="line">✔ Installation complete</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Istiod</strong></td>
+<td>Istio 控制面，负责配置下发（xDS）、证书管理等</td>
+</tr>
+<tr>
+<td><strong>istio-ingressgateway</strong></td>
+<td>Istio 入口网关，处理南北向流量</td>
+</tr>
+<tr>
+<td><strong>Sidecar Proxy</strong></td>
+<td>数据面代理（Envoy），注入到每个 Pod</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>检查安装状态</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get pods -n istio-system</span></span><br><span class="line"></span><br><span class="line">NAME                                    READY   STATUS    RESTARTS   AGE</span><br><span class="line">istio-ingressgateway-65ccf95474-qcgjk   1/1     Running   0          18s</span><br><span class="line">istiod-54856f99c-rghgx                  1/1     Running   0          34s</span><br></pre></td></tr></table></figure>
+<ul>
+<li>如果 k8s 环境中还没有安装  Gateway API CRD，还需要手动安装。我的环境之前测试 Envoy Gateway 时已经安装过了，这里就不用手动安装</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl get crd gateways.gateway.networking.k8s.io &amp;&gt; /dev/null || \</span><br><span class="line">&#123; kubectl kustomize <span class="string">&quot;github.com/kubernetes-sigs/gateway-api/config/crd?ref=v1.4.0&quot;</span> | kubectl apply -f -; &#125;</span><br></pre></td></tr></table></figure>
+<h3 id="启用-sidecar-自动注入"><a class="markdownIt-Anchor" href="#启用-sidecar-自动注入"></a> 启用 Sidecar 自动注入</h3>
+<p>为命名空间添加标签，启用自动注入</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl label namespace default istio-injection=enabled --overwrite</span></span><br></pre></td></tr></table></figure>
+<p>这条命令的核心作用是监视 default 命名空间，并在部署新应用时，自动把 Sidecar 代理（Envoy）塞进去：</p>
+<ul>
+<li><code>kubectl label</code>: 这是 Kubernetes 的标准命令，用于给资源添加或修改 <code>标签</code>（Label）</li>
+<li><code>namespace default</code>: 指定操作的对象类型是 <code>namespace</code>（命名空间），对象名称是 <code>default</code></li>
+<li><code>istio-injection=enabled</code>: 这是关键的键值对
+<ul>
+<li><code>istio-injection</code> 是 Istio 控制面（istiod）预设的一个特殊 Key</li>
+<li><code>enabled</code> 表示开启自动注入</li>
+</ul>
+</li>
+<li><code>--overwrite</code>：如果该键值对已经存在，则覆盖原有值；如果不存在，则新增该键值对。这样可以确保默认命名空间总是开启自动注入</li>
+</ul>
+<p>这样当你执行 <code>kubectl apply -f deployment.yaml</code> 部署新应用时：</p>
+<ul>
+<li>API Server 发现命名空间有 <code>istio-injection=enabled</code> 标签，API Server 就会把 Pod 的定义发给 Istiod</li>
+<li>Istiod 在 Pod 的容器列表中插入一个新的 <code>istio-proxy</code> 容器（即 Sidecar），并配置好 iptables 初始化容器。</li>
+<li>API Server 接收修改后的 Pod 定义，最后由 Kubelet 启动这个 <code>双容器</code> Pod</li>
+</ul>
+<p>检查命名空间标签是否设置成功：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get ns default --show-labels</span></span><br><span class="line">NAME      STATUS   AGE   LABELS</span><br><span class="line">default   Active   8d    istio-injection=enabled,kubernetes.io/metadata.name=default</span><br></pre></td></tr></table></figure>
+<h2 id="应用测试"><a class="markdownIt-Anchor" href="#应用测试"></a> 应用测试</h2>
+<h3 id="部署测试应用"><a class="markdownIt-Anchor" href="#部署测试应用"></a> 部署测试应用</h3>
+<p>接下来创建如下配置文件 <code>manifests/gamma/echo-services-mesh.yaml</code>，用于配置测试应用：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">apps/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Deployment</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">sleep</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">replicas:</span> <span class="number">1</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">matchLabels:</span></span><br><span class="line">      <span class="attr">app:</span> <span class="string">sleep</span></span><br><span class="line">  <span class="attr">template:</span></span><br><span class="line">    <span class="attr">metadata:</span></span><br><span class="line">      <span class="attr">labels:</span></span><br><span class="line">        <span class="attr">app:</span> <span class="string">sleep</span></span><br><span class="line">    <span class="attr">spec:</span></span><br><span class="line">      <span class="attr">containers:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">sleep</span></span><br><span class="line">        <span class="attr">image:</span> <span class="string">curlimages/curl:8.9.1</span></span><br><span class="line">        <span class="attr">command:</span> [<span class="string">&quot;sleep&quot;</span>, <span class="string">&quot;365d&quot;</span>]</span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">sleep</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">sleep</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="comment"># backend-v1 Deployment + Service</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">apps/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Deployment</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">backend-v1</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">replicas:</span> <span class="number">1</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">matchLabels:</span></span><br><span class="line">      <span class="attr">app:</span> <span class="string">backend</span></span><br><span class="line">      <span class="attr">version:</span> <span class="string">v1</span></span><br><span class="line">  <span class="attr">template:</span></span><br><span class="line">    <span class="attr">metadata:</span></span><br><span class="line">      <span class="attr">labels:</span></span><br><span class="line">        <span class="attr">app:</span> <span class="string">backend</span></span><br><span class="line">        <span class="attr">version:</span> <span class="string">v1</span></span><br><span class="line">    <span class="attr">spec:</span></span><br><span class="line">      <span class="attr">containers:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend</span></span><br><span class="line">        <span class="attr">image:</span> <span class="string">hashicorp/http-echo:0.2.3</span></span><br><span class="line">        <span class="attr">args:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-text=backend-v1&quot;</span></span><br><span class="line">        <span class="bullet">-</span> <span class="string">&quot;-listen=:80&quot;</span></span><br><span class="line">        <span class="attr">ports:</span></span><br><span class="line">        <span class="bullet">-</span> <span class="attr">containerPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">backend-v1</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">backend</span></span><br><span class="line">    <span class="attr">version:</span> <span class="string">v1</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br><span class="line"><span class="meta">---</span></span><br><span class="line"><span class="comment"># backend-v2 Deployment + Service (类似结构)</span></span><br><span class="line"><span class="comment"># backend-alt Deployment + Service (类似结构)</span></span><br></pre></td></tr></table></figure>
+<p><strong>服务说明</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>服务</th>
+<th>说明</th>
+<th>返回内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>sleep</strong></td>
+<td>客户端服务，用于发起测试请求</td>
+<td>-</td>
+</tr>
+<tr>
+<td><strong>backend-v1</strong></td>
+<td>后端服务 v1 版本</td>
+<td><code>backend-v1</code></td>
+</tr>
+<tr>
+<td><strong>backend-v2</strong></td>
+<td>后端服务 v2 版本</td>
+<td><code>backend-v2</code></td>
+</tr>
+<tr>
+<td><strong>backend-alt</strong></td>
+<td>备用后端服务</td>
+<td><code>backend-alt</code></td>
+</tr>
+</tbody>
+</table>
+<p>应用配置文件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f manifests/gamma/echo-services-mesh.yaml</span><br></pre></td></tr></table></figure>
+<p>等待 Pod 就绪：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl <span class="built_in">wait</span> --<span class="built_in">timeout</span>=90s --<span class="keyword">for</span>=condition=Ready pods -l app=<span class="built_in">sleep</span></span><br><span class="line">kubectl <span class="built_in">wait</span> --<span class="built_in">timeout</span>=90s --<span class="keyword">for</span>=condition=Ready pods -l app=backend</span><br></pre></td></tr></table></figure>
+<p>查看 Pod 状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl get pods -o wide</span><br></pre></td></tr></table></figure>
+<p><strong>输出</strong>:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">NAME                          READY   STATUS    RESTARTS   AGE   IP           NODE</span><br><span class="line">backend-alt-97f4745c8-2rcf5   2/2     Running   0          21s   10.244.2.4   k8s-cluster-worker2</span><br><span class="line">backend-v1-bbdbb648f-42b2t    2/2     Running   0          21s   10.244.1.6   k8s-cluster-worker</span><br><span class="line">backend-v2-54f94c5cc9-9bnqw   2/2     Running   0          21s   10.244.1.7   k8s-cluster-worker</span><br><span class="line">sleep-7cd7b75dd-s8wg9         2/2     Running   0          21s   10.244.1.5   k8s-cluster-worker</span><br></pre></td></tr></table></figure>
+<p>这里尤其需要注意：</p>
+<ul>
+<li><code>READY 2/2</code>: 表示 Pod 中有 2 个容器（应用容器 + Istio Sidecar）</li>
+<li>Sidecar 已成功注入到所有 Pod</li>
+</ul>
+<p>验证基础连通性：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec deploy/sleep -- curl -s backend-v1:80/</span></span><br><span class="line">backend-v1</span><br><span class="line"></span><br><span class="line"><span class="comment"># kubectl exec deploy/sleep -- curl -s backend-v2:80/</span></span><br><span class="line">backend-v2</span><br><span class="line"></span><br><span class="line"><span class="comment">#kubectl exec deploy/sleep -- curl -s backend-alt:80/</span></span><br><span class="line">backend-alt</span><br></pre></td></tr></table></figure>
+<h3 id="场景-1基础-mesh-httproute-测试"><a class="markdownIt-Anchor" href="#场景-1基础-mesh-httproute-测试"></a> 场景 1：基础 Mesh HTTPRoute 测试</h3>
+<p>接下来测试使用 HTTPRoute 将流量从 <code>backend-v1</code> 重定向到 <code>backend-alt</code>：</p>
+<p>创建 <code>manifests/gamma/httproute-mesh-basic.yaml</code> 配置文件</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">mesh-route-basic</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-v1</span>          <span class="comment"># GAMMA 关键: parentRefs 指向 Service</span></span><br><span class="line">    <span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line">    <span class="attr">group:</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">  <span class="attr">hostnames:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;backend-v1.default.svc.cluster.local&quot;</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-alt</span>       <span class="comment"># 流量重定向到 backend-alt</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p><strong>parentRefs</strong>: GAMMA 的核心概念</p>
+<ul>
+<li>传统 Gateway API: parentRefs 指向 Gateway（南北向流量）</li>
+<li>GAMMA: parentRefs 指向 Service（东西向流量）</li>
+<li>Istio 监听 Service parentRefs 的 HTTPRoute，并在 Sidecar 中配置路由</li>
+</ul>
+</li>
+<li>
+<p><strong>hostnames</strong>: 匹配目标服务的 DNS 名称</p>
+<ul>
+<li>格式: <code>&#123;service&#125;.&#123;namespace&#125;.svc.cluster.local</code></li>
+</ul>
+</li>
+<li>
+<p><strong>backendRefs</strong>: 实际处理请求的后端服务</p>
+</li>
+</ul>
+<p>应用 HTTPRoute：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f manifests/gamma/httproute-mesh-basic.yaml</span><br></pre></td></tr></table></figure>
+<p>查看 HTTPRoute 详情：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl get httproute mesh-route-basic -o yaml</span></span><br><span class="line">......</span><br><span class="line">spec:</span><br><span class="line">  hostnames:</span><br><span class="line">  - backend-v1.default.svc.cluster.local</span><br><span class="line">  parentRefs:</span><br><span class="line">  - group: <span class="string">&quot;&quot;</span></span><br><span class="line">    kind: Service</span><br><span class="line">    name: backend-v1</span><br><span class="line">    port: 80</span><br><span class="line">  rules:</span><br><span class="line">  - backendRefs:</span><br><span class="line">    - group: <span class="string">&quot;&quot;</span></span><br><span class="line">      kind: Service</span><br><span class="line">      name: backend-alt</span><br><span class="line">      port: 80</span><br><span class="line">      weight: 1</span><br><span class="line">    matches:</span><br><span class="line">    - path:</span><br><span class="line">        <span class="built_in">type</span>: PathPrefix</span><br><span class="line">        value: /</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>接下来测试路由：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec deploy/sleep -- curl -s backend-v1:80/</span></span><br><span class="line">backend-alt</span><br></pre></td></tr></table></figure>
+<p>可以看到，通过 HTTPRoute 成功将集群内发往 <code>backend-v1</code> 的流量重定向到 <code>backend-alt</code>。</p>
+<h3 id="场景-2服务间流量分割测试"><a class="markdownIt-Anchor" href="#场景-2服务间流量分割测试"></a> 场景 2：服务间流量分割测试</h3>
+<p>接下来测试使用 HTTPRoute 实现服务间流量按权重分配（金丝雀发布场景）。</p>
+<p>使用如下配置文件 <code>manifests/gamma/backend-service.yaml</code> 创建父 Service：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">backend</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">backend-placeholder</span>   <span class="comment"># 无实际 Pod，仅作为路由入口</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<p>使用如下配置文件 <code>manifests/gamma/httproute-mesh-split.yaml</code> 来通过 HTTPRoute 实现流量分割：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">mesh-route-split</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend</span>              <span class="comment"># 父 Service</span></span><br><span class="line">    <span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line">    <span class="attr">group:</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">  <span class="attr">hostnames:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;backend.default.svc.cluster.local&quot;</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-v1</span>         <span class="comment"># 80% 流量到 v1</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">      <span class="attr">weight:</span> <span class="number">80</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-v2</span>         <span class="comment"># 20% 流量到 v2</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">      <span class="attr">weight:</span> <span class="number">20</span></span><br></pre></td></tr></table></figure>
+<p><strong>概念说明</strong>:</p>
+<ul>
+<li>
+<p><strong>weight</strong>: 流量权重比例</p>
+<ul>
+<li>权重是相对值，实际比例为 <code>weight/(总weight)</code></li>
+<li>80:20 表示 80% 流量到 backend-v1，20% 到 backend-v2</li>
+</ul>
+</li>
+<li>
+<p><strong>流量分割应用场景</strong>:</p>
+<ul>
+<li>金丝雀发布：新版本先接收少量流量验证</li>
+<li>A/B 测试：不同版本接收不同流量比例</li>
+<li>蓝绿部署：快速切换流量比例</li>
+</ul>
+</li>
+</ul>
+<p>应用这两个配置：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f manifests/gamma/backend-service.yaml</span><br><span class="line">kubectl apply -f manifests/gamma/httproute-mesh-split.yaml</span><br></pre></td></tr></table></figure>
+<p>同样可以通过如下命令查看路由状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kubectl get httproute mesh-route-split -o yaml</span><br></pre></td></tr></table></figure>
+<p>接下来实际测试，判断流量是否按预期分配：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># for i in &#123;1..20&#125;; do kubectl exec deploy/sleep -- curl -s backend:80/; done | sort | uniq -c</span></span><br><span class="line">     17 backend-v1</span><br><span class="line">      3 backend-v2</span><br></pre></td></tr></table></figure>
+<h3 id="场景-3header-匹配路由测试"><a class="markdownIt-Anchor" href="#场景-3header-匹配路由测试"></a> 场景 3：Header 匹配路由测试</h3>
+<p>接下来测试基于 HTTP Header 的路由匹配（版本选择场景）。首先同样创建创建一个父 Service，配置文件 <code>manifests/gamma/backend-header-service.yaml</code> 如下：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">backend-header</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">selector:</span></span><br><span class="line">    <span class="attr">app:</span> <span class="string">backend-header-placeholder</span></span><br><span class="line">  <span class="attr">ports:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">    <span class="attr">targetPort:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<p>创建如下基于 Header 的 HTTPRoute 配置文件 <code>manifests/gamma/httproute-mesh-header.yaml</code>：</p>
+<figure class="highlight yml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">apiVersion:</span> <span class="string">gateway.networking.k8s.io/v1</span></span><br><span class="line"><span class="attr">kind:</span> <span class="string">HTTPRoute</span></span><br><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">mesh-route-header</span></span><br><span class="line"><span class="attr">spec:</span></span><br><span class="line">  <span class="attr">parentRefs:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-header</span></span><br><span class="line">    <span class="attr">kind:</span> <span class="string">Service</span></span><br><span class="line">    <span class="attr">group:</span> <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">  <span class="attr">hostnames:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="string">&quot;backend-header.default.svc.cluster.local&quot;</span></span><br><span class="line">  <span class="attr">rules:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">matches:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">headers:</span></span><br><span class="line">      <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">x-version</span></span><br><span class="line">        <span class="attr">type:</span> <span class="string">Exact</span></span><br><span class="line">        <span class="attr">value:</span> <span class="string">v2</span></span><br><span class="line">    <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-v2</span>       <span class="comment"># 带 x-version: v2 header → backend-v2</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">backendRefs:</span></span><br><span class="line">    <span class="bullet">-</span> <span class="attr">name:</span> <span class="string">backend-v1</span>       <span class="comment"># 无匹配 header → backend-v1</span></span><br><span class="line">      <span class="attr">port:</span> <span class="number">80</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>
+<p><strong>headers 匹配</strong>: 基于 HTTP Header 进行路由</p>
+<ul>
+<li><code>type: Exact</code>: Header 值精确匹配</li>
+<li><code>type: RegularExpression</code>: Header 值正则匹配</li>
+</ul>
+</li>
+<li>
+<p><strong>匹配逻辑</strong>:</p>
+<ul>
+<li>规则 1: 带有 <code>x-version: v2</code> header → 路由到 backend-v2</li>
+<li>规则 2 (默认): 无匹配 header → 路由到 backend-v1</li>
+</ul>
+</li>
+<li>
+<p><strong>应用场景</strong>:</p>
+<ul>
+<li>内部测试：开发人员带特定 header 访问新版本</li>
+<li>灰度发布：特定用户群体访问新版本</li>
+<li>多租户：不同 header 路由到不同租户服务</li>
+</ul>
+</li>
+</ul>
+<p>应用配置：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">kubectl apply -f manifests/gamma/backend-header-service.yaml</span><br><span class="line">kubectl apply -f manifests/gamma/httproute-mesh-header.yaml</span><br></pre></td></tr></table></figure>
+<p>实际测试路由：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kubectl exec deploy/sleep -- curl -s backend-header:80/</span></span><br><span class="line">backend-v1</span><br><span class="line"><span class="comment">## kubectl exec deploy/sleep -- curl -s -H &quot;x-version: v2&quot; backend-header:80/</span></span><br><span class="line">backend-v2</span><br></pre></td></tr></table></figure>
+<p>可以看到基于 Header 的路由匹配成功。</p>
+<h2 id="流程总结"><a class="markdownIt-Anchor" href="#流程总结"></a> 流程总结</h2>
+<p>通过上面的几个测试场景，我们展示了如何基于 Istio 来实现 k8s 的 GAMMA，直接通过 Gateway API 定义路由规则，从而实现服务间流量管理。下图概要展示了流程总结：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────────────────────┐</span><br><span class="line">│                         GAMMA 配置流程                                        │</span><br><span class="line">│                                                                              │</span><br><span class="line">│  ┌─────────────────┐                                                         │</span><br><span class="line">│  │  用户创建资源    │                                                         │</span><br><span class="line">│  │  HTTPRoute      │                                                         │</span><br><span class="line">│  │  (parentRefs:   │                                                         │</span><br><span class="line">│  │   Service)      │                                                         │</span><br><span class="line">│  └────────┬────────┘                                                         │</span><br><span class="line">│           │                                                                  │</span><br><span class="line">│           ▼                                                                  │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────────────┐  │</span><br><span class="line">│  │                         Istiod (控制面)                                │  │</span><br><span class="line">│  │                                                                        │  │</span><br><span class="line">│  │  1. 监听 Kubernetes API Server                                         │  │</span><br><span class="line">│  │     - Watch HTTPRoute (关注 Service parentRefs)                        │  │</span><br><span class="line">│  │                                                                        │  │</span><br><span class="line">│  │  2. 翻译 HTTPRoute → Envoy 配置                                         │  │</span><br><span class="line">│  │     - parentRefs.Service → 监听器入口                                   │  │</span><br><span class="line">│  │     - hostnames → VirtualHost                                          │  │</span><br><span class="line">│  │     - backendRefs → Cluster + Endpoint                                 │  │</span><br><span class="line">│  │     - weight → 负载均衡权重                                             │  │</span><br><span class="line">│  │     - headers → 路由匹配规则                                            │  │</span><br><span class="line">│  │                                                                        │  │</span><br><span class="line">│  │  3. 通过 xDS 下发配置                                                    │  │</span><br><span class="line">│  │     - xDS API: LDS/RDS/CDS/EDS                                         │  │</span><br><span class="line">│  │     - 配置同步到所有 Sidecar                                            │  │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────────────┘  │</span><br><span class="line">│           │                                                                  │</span><br><span class="line">│           ▼                                                                  │</span><br><span class="line">│  ┌───────────────────────────────────────────────────────────────────────┐  │</span><br><span class="line">│  │                     Envoy Sidecar (数据面)                              │  │</span><br><span class="line">│  │                                                                        │  │</span><br><span class="line">│  │  ┌─────────────────────────────────────────────────────────────────┐  │  │</span><br><span class="line">│  │  │  配置生效                                                         │  │  │</span><br><span class="line">│  │  │  - 拦截发往 parentRefs.Service 的请求                             │  │  │</span><br><span class="line">│  │  │  - 根据 HTTPRoute 规则路由                                         │  │  │</span><br><span class="line">│  │  │  - 负载均衡到 backendRefs                                          │  │  │</span><br><span class="line">│  │  └─────────────────────────────────────────────────────────────────┘  │  │</span><br><span class="line">│  └───────────────────────────────────────────────────────────────────────┘  │</span><br><span class="line">└─────────────────────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<ul>
+<li>GAMMA 实现采用 Service 作为 parentRefs</li>
+<li>Istiod 监听所有 HTTPRoute，过滤出 parentRefs.kind=Service 的路由</li>
+<li>对于每个 Service parentRefs，Istiod 在 Envoy 中配置拦截该 Service 的流量</li>
+<li>流量被拦截后，根据 HTTPRoute 规则进行路由决策</li>
+<li>最终转发到 backendRefs 指定的服务</li>
+</ul>
+<p>另外我们可以通过 <code>istioctl proxy-status</code> 命令来查看 Sidecar 的配置状态。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们通过部署 Istio 来实际测试了 k8s 的 GAMMA 功能，并通过 Gateway API 来定义 HTTPRoute 实现集群内服务间流量（东西相流量）管理，以进一步加深对 k8s Gateway API 的理解。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/k8s/" rel="tag"># k8s</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/04/28/go-clean-template/" rel="next" title="go-clean-template 源码分析">
+      go-clean-template 源码分析 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#istio-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> Istio 简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#istio-%E9%83%A8%E7%BD%B2"><span class="nav-number">2.</span> <span class="nav-text"> Istio 部署</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#istio-%E5%AE%89%E8%A3%85"><span class="nav-number">2.1.</span> <span class="nav-text"> Istio 安装</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%AF%E7%94%A8-sidecar-%E8%87%AA%E5%8A%A8%E6%B3%A8%E5%85%A5"><span class="nav-number">2.2.</span> <span class="nav-text"> 启用 Sidecar 自动注入</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BA%94%E7%94%A8%E6%B5%8B%E8%AF%95"><span class="nav-number">3.</span> <span class="nav-text"> 应用测试</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%83%A8%E7%BD%B2%E6%B5%8B%E8%AF%95%E5%BA%94%E7%94%A8"><span class="nav-number">3.1.</span> <span class="nav-text"> 部署测试应用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF-1%E5%9F%BA%E7%A1%80-mesh-httproute-%E6%B5%8B%E8%AF%95"><span class="nav-number">3.2.</span> <span class="nav-text"> 场景 1：基础 Mesh HTTPRoute 测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF-2%E6%9C%8D%E5%8A%A1%E9%97%B4%E6%B5%81%E9%87%8F%E5%88%86%E5%89%B2%E6%B5%8B%E8%AF%95"><span class="nav-number">3.3.</span> <span class="nav-text"> 场景 2：服务间流量分割测试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%BA%E6%99%AF-3header-%E5%8C%B9%E9%85%8D%E8%B7%AF%E7%94%B1%E6%B5%8B%E8%AF%95"><span class="nav-number">3.4.</span> <span class="nav-text"> 场景 3：Header 匹配路由测试</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B5%81%E7%A8%8B%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text"> 流程总结</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">248</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
