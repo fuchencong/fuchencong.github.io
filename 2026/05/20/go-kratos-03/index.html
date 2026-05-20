@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章我们继续分析 kratos CLI 命令行工具的实现。我们将首先介绍 kratos CLI 工具的用法，之后再从源码层面分析其实现原理。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="kratos 源码分析 03：kratos CLI">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/05/20/go-kratos-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章我们继续分析 kratos CLI 命令行工具的实现。我们将首先介绍 kratos CLI 工具的用法，之后再从源码层面分析其实现原理。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-05-20T15:09:36.000Z">
+<meta property="article:modified_time" content="2026-05-20T15:13:17.452Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/05/20/go-kratos-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>kratos 源码分析 03：kratos CLI | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/05/20/go-kratos-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          kratos 源码分析 03：kratos CLI
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-05-20 23:09:36" itemprop="dateCreated datePublished" datetime="2026-05-20T23:09:36+08:00">2026-05-20</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章我们继续分析 <a target="_blank" rel="noopener" href="https://go-kratos.dev/zh-cn/docs/getting-started/usage/">kratos CLI</a> 命令行工具的实现。我们将首先介绍 kratos CLI 工具的用法，之后再从源码层面分析其实现原理。</p>
+<span id="more"></span>
+<h2 id="kratos-cli-概览"><a class="markdownIt-Anchor" href="#kratos-cli-概览"></a> kratos CLI 概览</h2>
+<p>kratos CLI 是基于 <a target="_blank" rel="noopener" href="https://github.com/spf13/cobra">cobra</a> 框架构建的命令行工具，用于项目脚手架生成、Proto 文件管理和代码生成，用于简化 kratos 微服务的开发流程。</p>
+<p>kratos CLI 共提供 5 个顶级命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">kratos (root)</span><br><span class="line">├── new          创建项目</span><br><span class="line">├── proto        Proto 文件操作</span><br><span class="line">│   ├── add      添加 Proto 模板</span><br><span class="line">│   ├── client   生成客户端代码</span><br><span class="line">│   └── server   生成服务端实现</span><br><span class="line">├── upgrade      升级工具</span><br><span class="line">├── changelog    查看变更日志</span><br><span class="line">└── run          运行项目</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>命令</th>
+<th>简述</th>
+<th>示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kratos new</code></td>
+<td>创建服务模板项目</td>
+<td><code>kratos new helloworld</code></td>
+</tr>
+<tr>
+<td><code>kratos proto</code></td>
+<td>Proto 文件生成（含 3 个子命令）</td>
+<td><code>kratos proto add user/v1/user.proto</code></td>
+</tr>
+<tr>
+<td><code>kratos upgrade</code></td>
+<td>升级 kratos 相关工具</td>
+<td><code>kratos upgrade</code></td>
+</tr>
+<tr>
+<td><code>kratos changelog</code></td>
+<td>查看 kratos 版本变更日志</td>
+<td><code>kratos changelog dev</code></td>
+</tr>
+<tr>
+<td><code>kratos run</code></td>
+<td>运行项目</td>
+<td><code>kratos run</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="kratos-new"><a class="markdownIt-Anchor" href="#kratos-new"></a> <code>kratos new</code></h3>
+<p><code>kratos new</code> 用于基于远程模板仓库创建新的微服务项目，基本用法如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kratos new &lt;项目名称&gt;</span><br></pre></td></tr></table></figure>
+<p><strong>支持的 Flags：</strong></p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>缩写</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--repo-url</code></td>
+<td><code>-r</code></td>
+<td><code>https://github.com/go-kratos/kratos-layout.git</code></td>
+<td>模板仓库地址</td>
+</tr>
+<tr>
+<td><code>--branch</code></td>
+<td><code>-b</code></td>
+<td>空（默认分支）</td>
+<td>仓库分支</td>
+</tr>
+<tr>
+<td><code>--timeout</code></td>
+<td><code>-t</code></td>
+<td><code>60s</code></td>
+<td>超时时间</td>
+</tr>
+<tr>
+<td><code>--nomod</code></td>
+<td>-</td>
+<td><code>false</code></td>
+<td>保留现有 go.mod（用于在单体仓库中添加子服务）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>环境变量：</strong></p>
+<table>
+<thead>
+<tr>
+<th>变量名</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KRATOS_LAYOUT_REPO</code></td>
+<td>自定义模板仓库地址，优先于默认值</td>
+</tr>
+</tbody>
+</table>
+<p>该命令默认使用我们上篇文章介绍的 <a target="_blank" rel="noopener" href="https://fuchencong.com/2026/05/17/go-kratos-02/">kratos-layout</a> 模版来创建项目。这里特别注意其两种创建模式：</p>
+<ul>
+<li><strong>普通模式</strong>（默认）：创建独立项目，生成新的 <code>go.mod</code>，模板中 <code>cmd/server</code> 会被重命名为 <code>cmd/&lt;项目名&gt;</code></li>
+<li><strong><code>--nomod</code> 模式</strong>：在现有项目中添加子服务，共用同一个 <code>go.mod</code>，模板中的 <code>api</code> 路径会根据子服务的相对位置进行调整</li>
+</ul>
+<h3 id="kratos-proto"><a class="markdownIt-Anchor" href="#kratos-proto"></a> <code>kratos proto</code></h3>
+<p><code>kratos proto</code> 用于管理 Proto 文件及生成代码，包含三个子命令。</p>
+<h4 id="kratos-proto-add"><a class="markdownIt-Anchor" href="#kratos-proto-add"></a> <code>kratos proto add</code></h4>
+<p><code>kratos proto add</code> 用于快速生成一个标准 CRUD 风格的 Proto API 文件。基本用法：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kratos proto add &lt;路径/文件名.proto&gt;</span><br></pre></td></tr></table></figure>
+<p>例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kratos proto add api/helloworld/v1/demo.proto</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># more api/helloworld/v1/demo.proto</span></span><br><span class="line">syntax = <span class="string">&quot;proto3&quot;</span>;</span><br><span class="line"></span><br><span class="line">package api.helloworld.v1;</span><br><span class="line"></span><br><span class="line">option go_package = <span class="string">&quot;cli-demo/api/helloworld/v1;v1&quot;</span>;</span><br><span class="line">option java_multiple_files = <span class="literal">true</span>;</span><br><span class="line">option java_package = <span class="string">&quot;api.helloworld.v1&quot;</span>;</span><br><span class="line"></span><br><span class="line">service Demo &#123;</span><br><span class="line">        rpc CreateDemo (CreateDemoRequest) returns (CreateDemoReply);</span><br><span class="line">        rpc UpdateDemo (UpdateDemoRequest) returns (UpdateDemoReply);</span><br><span class="line">        rpc DeleteDemo (DeleteDemoRequest) returns (DeleteDemoReply);</span><br><span class="line">        rpc GetDemo (GetDemoRequest) returns (GetDemoReply);</span><br><span class="line">        rpc ListDemo (ListDemoRequest) returns (ListDemoReply);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">message CreateDemoRequest &#123;&#125;</span><br><span class="line">message CreateDemoReply &#123;&#125;</span><br><span class="line"></span><br><span class="line">message UpdateDemoRequest &#123;&#125;</span><br><span class="line">message UpdateDemoReply &#123;&#125;</span><br><span class="line">......</span><br></pre></td></tr></table></figure>
+<h4 id="kratos-proto-client"><a class="markdownIt-Anchor" href="#kratos-proto-client"></a> <code>kratos proto client</code></h4>
+<p><code>kratos proto client</code> 用于调用 <code>protoc</code> 及其插件，从 <code>.proto</code> 文件编译生成全部相关代码（Protobuf 消息类型、gRPC 服务端/客户端、HTTP 服务端/客户端、错误码、OpenAPI 文档等）。虽然命令名为 <code>client</code>，但实际生成的代码并不局限于客户端，而是涵盖了 proto 编译的全部产物。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kratos proto client &lt;proto文件或目录&gt;</span><br></pre></td></tr></table></figure>
+<p>支持的 Flags：</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>缩写</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--proto_path</code></td>
+<td><code>-p</code></td>
+<td><code>./third_party</code></td>
+<td>Proto 搜索路径</td>
+</tr>
+</tbody>
+</table>
+<p>环境变量：</p>
+<table>
+<thead>
+<tr>
+<th>变量名</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KRATOS_PROTO_PATH</code></td>
+<td>自定义 Proto 搜索路径</td>
+</tr>
+</tbody>
+</table>
+<p>例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kratos proto client api/helloworld/v1/greeter.proto</span></span><br></pre></td></tr></table></figure>
+<p>该命令会自动调用以下 protoc 插件生成代码（注意 http 代码只会在 proto 文件中声明了 http 时才会生成）：</p>
+<table>
+<thead>
+<tr>
+<th>插件</th>
+<th>生成内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>protoc-gen-go</code></td>
+<td>Go Protobuf 消息类型（<code>.pb.go</code>）</td>
+</tr>
+<tr>
+<td><code>protoc-gen-go-grpc</code></td>
+<td>gRPC 客户端/服务端代码（<code>_grpc.pb.go</code>）</td>
+</tr>
+<tr>
+<td><code>protoc-gen-go-http</code></td>
+<td>Kratos HTTP 客户端代码（<code>_http.pb.go</code>）</td>
+</tr>
+<tr>
+<td><code>protoc-gen-go-errors</code></td>
+<td>Kratos 错误代码（<code>_errors.pb.go</code>）</td>
+</tr>
+<tr>
+<td><code>protoc-gen-openapi</code></td>
+<td>OpenAPI/Swagger 文档（<code>.openapi.yaml</code>）</td>
+</tr>
+</tbody>
+</table>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># ls -l api/helloworld/v1/greeter*</span></span><br><span class="line">-rw-r--r-- 1 root root 4368 May 19 12:03 api/helloworld/v1/greeter_grpc.pb.go</span><br><span class="line">-rw-r--r-- 1 root root 2296 May 19 12:03 api/helloworld/v1/greeter_http.pb.go</span><br><span class="line">-rw-r--r-- 1 root root 8073 May 19 12:03 api/helloworld/v1/greeter.pb.go</span><br><span class="line">-rw-r--r-- 1 root root  676 May 19 11:52 api/helloworld/v1/greeter.proto</span><br><span class="line"></span><br><span class="line"><span class="comment"># ls -l openapi.yaml</span></span><br><span class="line">-rw-r--r-- 1 root root 3039 May 19 12:03 openapi.yaml</span><br></pre></td></tr></table></figure>
+<p>如果检测到 proto 文件中 <code>import &quot;validate/validate.proto&quot;</code>，还会自动添加 <code>--validate_out</code> 插件。如果缺少必要的 protoc 插件，命令会自动执行 <code>kratos upgrade</code> 进行安装。</p>
+<h4 id="kratos-proto-server"><a class="markdownIt-Anchor" href="#kratos-proto-server"></a> <code>kratos proto server</code></h4>
+<p><code>kratos proto server</code> 用于根据 <code>.proto</code> 文件中的 service 定义，来生成 Go 服务端实现骨架代码。基本用法如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kratos proto server &lt;proto文件&gt; --target-dir=&lt;目标目录&gt;</span><br></pre></td></tr></table></figure>
+<p>支持的 Flags：</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>缩写</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--target-dir</code></td>
+<td><code>-t</code></td>
+<td><code>internal/service</code></td>
+<td>生成文件的目标目录</td>
+</tr>
+</tbody>
+</table>
+<p>例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kratos proto server api/helloworld/v1/greeter.proto</span></span><br><span class="line"><span class="comment"># 生成 internal/service/greeter.go</span></span><br></pre></td></tr></table></figure>
+<h3 id="kratos-upgrade"><a class="markdownIt-Anchor" href="#kratos-upgrade"></a> <code>kratos upgrade</code></h3>
+<p><code>kratos upgrade</code> 用于一键安装/升级 kratos 开发所需的所有工具。该命令会执行 <code>go install</code> 安装以下 6 个工具：</p>
+<ul>
+<li><code>github.com/go-kratos/kratos/cmd/kratos/v2@latest</code> — kratos CLI 本身</li>
+<li><code>google.golang.org/protobuf/cmd/protoc-gen-go@latest</code> — Go protobuf 插件</li>
+<li><code>github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@latest</code> — 错误代码生成插件</li>
+<li><code>google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest</code> — gRPC 插件</li>
+<li><code>github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@latest</code> — HTTP 代码生成插件</li>
+<li><code>github.com/google/gnostic/cmd/protoc-gen-openapi@latest</code> — OpenAPI 插件</li>
+</ul>
+<h3 id="kratos-changelog"><a class="markdownIt-Anchor" href="#kratos-changelog"></a> <code>kratos changelog</code></h3>
+<p><code>kratos changelog</code> 用于查看 kratos 的版本发布信息或开发中的提交记录。基本用法如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kratos changelog [dev | 版本号]</span><br></pre></td></tr></table></figure>
+<ul>
+<li>当使用 <code>dev</code> 参数时，命令会获取自上次发布以来的所有 commit，并按前缀分类输出 Markdown 格式的变更日志</li>
+</ul>
+<p>支持的 Flags：</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>缩写</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--repo-url</code></td>
+<td><code>-r</code></td>
+<td><code>https://github.com/go-kratos/kratos.git</code></td>
+<td>GitHub 仓库地址</td>
+</tr>
+</tbody>
+</table>
+<p>环境变量：</p>
+<table>
+<thead>
+<tr>
+<th>变量名</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KRATOS_REPO</code></td>
+<td>自定义 GitHub 仓库地址</td>
+</tr>
+<tr>
+<td><code>GITHUB_TOKEN</code></td>
+<td>GitHub API Token（可选，用于提高 API 请求限制）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="kratos-run"><a class="markdownIt-Anchor" href="#kratos-run"></a> <code>kratos run</code></h3>
+<p><code>kratos run</code> 用于快速运行 kratos 项目，自动查找 <code>cmd/</code> 目录下的服务入口。</p>
+<ul>
+<li>如果需要传递参数给要运行的程序本身，用 <code>--</code> 分隔</li>
+<li>如果 <code>cmd/</code> 下只有一个子目录，则自动选择运行；如果有多个子目录，会弹出交互式选择界面</li>
+</ul>
+<p>支持的 Flags：</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>缩写</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--work</code></td>
+<td><code>-w</code></td>
+<td>空</td>
+<td>目标工作目录</td>
+</tr>
+</tbody>
+</table>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># kratos run</span></span><br><span class="line">2026/05/19 22:21:24 maxprocs: Leaving GOMAXPROCS=4: CPU quota undefined</span><br><span class="line">DEBUG msg=config loaded: config.yaml format: yaml</span><br><span class="line">INFO ts=2026-05-19T22:21:24+08:00 <span class="built_in">caller</span>=http/server.go:330 service.id=OPS-3430 service.name= service.version= trace.id= span.id= msg=[HTTP] server listening on: [::]:8000</span><br><span class="line">INFO ts=2026-05-19T22:21:24+08:00 <span class="built_in">caller</span>=grpc/server.go:231 service.id=OPS-3430 service.name= service.version= trace.id= span.id= msg=[gRPC] server listening on: [::]:9000</span><br></pre></td></tr></table></figure>
+<h2 id="整体架构"><a class="markdownIt-Anchor" href="#整体架构"></a> 整体架构</h2>
+<h3 id="目录结构"><a class="markdownIt-Anchor" href="#目录结构"></a> 目录结构</h3>
+<p>kratos CLI 的源码位于 <code>cmd/kratos/</code> 目录下，整体目录结构如下所示：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">cmd/kratos/</span><br><span class="line">├── main.<span class="keyword">go</span>                          # 入口，注册所有命令</span><br><span class="line">├── version.<span class="keyword">go</span>                       # 版本号定义</span><br><span class="line">└── internal/</span><br><span class="line">    ├── project/                     # kratos <span class="built_in">new</span> 命令</span><br><span class="line">    │   ├── project.<span class="keyword">go</span>               # 命令定义、参数解析、流程控制</span><br><span class="line">    │   ├── <span class="built_in">new</span>.<span class="keyword">go</span>                   # 独立项目创建</span><br><span class="line">    │   └── add.<span class="keyword">go</span>                   # 单体仓库子服务添加</span><br><span class="line">    ├── proto/                       # kratos proto 命令</span><br><span class="line">    │   ├── proto.<span class="keyword">go</span>                 # 父命令定义</span><br><span class="line">    │   ├── add/                     # kratos proto add 子命令</span><br><span class="line">    │   │   ├── add.<span class="keyword">go</span>               # 命令定义与参数解析</span><br><span class="line">    │   │   ├── proto.<span class="keyword">go</span>             # Proto 结构体与 Generate 方法</span><br><span class="line">    │   │   └── template.<span class="keyword">go</span>          # Proto 文件模板</span><br><span class="line">    │   ├── client/                  # kratos proto client 子命令</span><br><span class="line">    │   │   └── client.<span class="keyword">go</span>            # protoc 命令构建与执行</span><br><span class="line">    │   └── server/                  # kratos proto server 子命令</span><br><span class="line">    │       ├── server.<span class="keyword">go</span>            # proto 文件解析与代码生成</span><br><span class="line">    │       └── template.<span class="keyword">go</span>          # Go 服务端模板</span><br><span class="line">    ├── upgrade/                     # kratos upgrade 命令</span><br><span class="line">    │   └── upgrade.<span class="keyword">go</span>               # <span class="keyword">go</span> install 批量安装</span><br><span class="line">    ├── change/                      # kratos changelog 命令</span><br><span class="line">    │   ├── change.<span class="keyword">go</span>                # 命令定义与参数解析</span><br><span class="line">    │   └── get.<span class="keyword">go</span>                   # GitHub API 交互与解析</span><br><span class="line">    ├── run/                         # kratos run 命令</span><br><span class="line">    │   └── run.<span class="keyword">go</span>                   # cmd/ 目录查找与 <span class="keyword">go</span> run</span><br><span class="line">    └── base/                        # 公共工具包</span><br><span class="line">        ├── path.<span class="keyword">go</span>                  # 路径与文件操作：kratosHome、copyDir、copyFile、Tree</span><br><span class="line">        ├── repo.<span class="keyword">go</span>                  # Git 仓库管理：Repo 结构体（Git 仓库管理）</span><br><span class="line">        ├── mod.<span class="keyword">go</span>                   # Go Module 操作：ModulePath、ModuleVersion、KratosMod</span><br><span class="line">        ├── install.<span class="keyword">go</span>               # 工具安装：GoInstall</span><br><span class="line">        └── vcs_url.<span class="keyword">go</span>               # VCS URL 解析：ParseVCSUrl（URL 解析）</span><br></pre></td></tr></table></figure>
+<h3 id="分层注册"><a class="markdownIt-Anchor" href="#分层注册"></a> 分层注册</h3>
+<p>入口文件 <code>cmd/kratos/main.go</code> 使用 cobra 框架定义根命令并注册子命令：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> rootCmd = &amp;cobra.Command&#123;</span><br><span class="line">    Use:     <span class="string">&quot;kratos&quot;</span>,</span><br><span class="line">    Short:   <span class="string">&quot;Kratos: An elegant toolkit for Go microservices.&quot;</span>,</span><br><span class="line">    Long:    <span class="string">`Kratos: An elegant toolkit for Go microservices.`</span>,</span><br><span class="line">    Version: release,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    rootCmd.AddCommand(project.CmdNew)</span><br><span class="line">    rootCmd.AddCommand(proto.CmdProto)</span><br><span class="line">    rootCmd.AddCommand(upgrade.CmdUpgrade)</span><br><span class="line">    rootCmd.AddCommand(change.CmdChange)</span><br><span class="line">    rootCmd.AddCommand(run.CmdRun)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := rootCmd.Execute(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatal(err)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>命令注册采用<strong>分层结构</strong>：</p>
+<ol>
+<li><strong>根级别</strong>（<code>main.go</code> 的 <code>init()</code>）：通过 <code>rootCmd.AddCommand(...)</code> 注册 5 个顶级命令</li>
+<li><strong>嵌套命令</strong>（如 <code>proto</code>）：在 <code>proto.go</code> 的 <code>init()</code> 中注册子命令</li>
+</ol>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// cmd/kratos/internal/proto/proto.go</span></span><br><span class="line"><span class="keyword">var</span> CmdProto = &amp;cobra.Command&#123;</span><br><span class="line">    Use:   <span class="string">&quot;proto&quot;</span>,</span><br><span class="line">    Short: <span class="string">&quot;Generate the proto files&quot;</span>,</span><br><span class="line">    Long:  <span class="string">&quot;Generate the proto files.&quot;</span>,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    CmdProto.AddCommand(add.CmdAdd)</span><br><span class="line">    CmdProto.AddCommand(client.CmdClient)</span><br><span class="line">    CmdProto.AddCommand(server.CmdServer)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个命令的 Flags 在各自包的 <code>init()</code> 函数中注册。例如 <code>kratos new</code> 的 Flags 定义在 <code>project.go</code> 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">if</span> repoURL = os.Getenv(<span class="string">&quot;KRATOS_LAYOUT_REPO&quot;</span>); repoURL == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        repoURL = <span class="string">&quot;https://github.com/go-kratos/kratos-layout.git&quot;</span></span><br><span class="line">    &#125;</span><br><span class="line">    timeout = <span class="string">&quot;60s&quot;</span></span><br><span class="line">    CmdNew.Flags().StringVarP(&amp;repoURL, <span class="string">&quot;repo-url&quot;</span>, <span class="string">&quot;r&quot;</span>, repoURL, <span class="string">&quot;layout repo&quot;</span>)</span><br><span class="line">    CmdNew.Flags().StringVarP(&amp;branch, <span class="string">&quot;branch&quot;</span>, <span class="string">&quot;b&quot;</span>, branch, <span class="string">&quot;repo branch&quot;</span>)</span><br><span class="line">    CmdNew.Flags().StringVarP(&amp;timeout, <span class="string">&quot;timeout&quot;</span>, <span class="string">&quot;t&quot;</span>, timeout, <span class="string">&quot;time out&quot;</span>)</span><br><span class="line">    CmdNew.Flags().BoolVarP(&amp;nomod, <span class="string">&quot;nomod&quot;</span>, <span class="string">&quot;&quot;</span>, nomod, <span class="string">&quot;retain go mod&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>接下来我们详细分析每个命令的实现。</p>
+<h2 id="kratos-new-实现"><a class="markdownIt-Anchor" href="#kratos-new-实现"></a> <code>kratos new</code> 实现</h2>
+<p><code>kratos new</code> 是 kratos CLI 中最复杂的命令，核心逻辑分为两个分支：<strong>独立项目创建</strong>（<code>Project.New()</code>）和<strong>单体仓库子服务添加</strong>（<code>Project.Add()</code>）。该命令的整体实现流程如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">用户输入 kratos new helloworld</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">解析 <span class="built_in">timeout</span> → 创建带超时的 context</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">获取项目名称（参数或交互式输入）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">processProjectParams() 处理项目路径</span><br><span class="line">（支持 ~、相对路径、绝对路径）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  ┌─── nomod? ───┐</span><br><span class="line">  │              │</span><br><span class="line">  No             Yes</span><br><span class="line">  │              │</span><br><span class="line">  ▼              ▼</span><br><span class="line">Project.New()   查找 go.mod 根目录</span><br><span class="line">                │</span><br><span class="line">                ▼</span><br><span class="line">                计算相对路径和 module 名</span><br><span class="line">                │</span><br><span class="line">                ▼</span><br><span class="line">                Project.Add()</span><br></pre></td></tr></table></figure>
+<h3 id="独立项目创建"><a class="markdownIt-Anchor" href="#独立项目创建"></a> 独立项目创建</h3>
+<p><code>Project.New()</code> 定义在 <code>cmd/kratos/internal/project/new.go</code>，流程如下：</p>
+<ol>
+<li><strong>检查目标目录</strong>：如果目录已存在，询问用户是否覆盖</li>
+<li><strong>创建 Repo 对象</strong>：从模板仓库 URL 创建 <code>base.Repo</code> 实例</li>
+<li><strong>复制模板</strong>：调用 <code>repo.CopyTo()</code> 克隆模板仓库到缓存，然后复制到目标目录，同时替换 Go module 名称</li>
+<li><strong>重命名 cmd/server</strong>：将 <code>cmd/server</code> 重命名为 <code>cmd/&lt;项目名&gt;</code></li>
+<li><strong>显示文件树</strong>：调用 <code>base.Tree()</code> 展示所有创建的文件</li>
+<li><strong>输出后续步骤</strong>：打印 <code>cd</code>、<code>go generate</code>、<code>go build</code>、运行等命令</li>
+</ol>
+<h3 id="单体仓库子服务添加"><a class="markdownIt-Anchor" href="#单体仓库子服务添加"></a> 单体仓库子服务添加</h3>
+<p><code>Project.Add()</code> 定义在 <code>cmd/kratos/internal/project/add.go</code>，与 <code>New()</code> 的主要区别是：</p>
+<ol>
+<li>忽略更多文件（<code>api</code>、<code>go.mod</code>、<code>go.sum</code>、<code>third_party</code>、<code>README.md</code> 等）</li>
+<li>使用 <code>CopyToV2()</code> 替代 <code>CopyTo()</code>，支持额外的字符串替换</li>
+<li>子服务不会拥有独立的 <code>api/</code>，，让子服务指向根项目共享的 <code>api/</code> 目录</li>
+</ol>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">pkgPath = fmt.Sprintf(<span class="string">&quot;%s/%s&quot;</span>, mod, pkgPath)</span><br><span class="line">err := repo.CopyToV2(ctx, to, pkgPath, repoAddIgnores,</span><br><span class="line">    []<span class="type">string</span>&#123;filepath.Join(p.Path, <span class="string">&quot;api&quot;</span>), <span class="string">&quot;api&quot;</span>&#125;)</span><br></pre></td></tr></table></figure>
+<p><code>CopyToV2()</code> 相比 <code>CopyTo()</code> 多了一个 <code>replaces</code> 参数，用于额外的字符串替换对。这里将 <code>&#123;子服务路径&#125;/api</code> 替换为 <code>api</code>，确保 import 路径正确。</p>
+<p>这种 Add 方式执行的操作还是有点复杂，以下用一个具体场景逐步拆解假设目录结构如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">/home/user/my-monorepo/        # projectRoot</span><br><span class="line">├── go.mod                     # module github.com/myorg/my-monorepo</span><br><span class="line">└── services/</span><br><span class="line">    └── order/                 # 已有服务</span><br></pre></td></tr></table></figure>
+<p>用户在 <code>/home/user/my-monorepo/services/</code> 下执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kratos new user --nomod</span><br></pre></td></tr></table></figure>
+<p><strong>第 1 步：获取初始值</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">wd = os.Getwd()           <span class="comment">// &quot;/home/user/my-monorepo/services&quot;</span></span><br><span class="line">name = <span class="string">&quot;user&quot;</span></span><br></pre></td></tr></table></figure>
+<p><strong>第 2 步：<code>processProjectParams(&quot;user&quot;, wd)</code></strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// &quot;user&quot; 是相对路径，先转为绝对路径</span></span><br><span class="line">_projectDir = filepath.Abs(<span class="string">&quot;user&quot;</span>)  <span class="comment">// &quot;/home/user/my-monorepo/services/user&quot;</span></span><br><span class="line"><span class="keyword">return</span> filepath.Base(_projectDir), filepath.Dir(_projectDir)</span><br><span class="line"><span class="comment">// projectName = &quot;user&quot;</span></span><br><span class="line"><span class="comment">// workingDir  = &quot;/home/user/my-monorepo/services&quot;</span></span><br></pre></td></tr></table></figure>
+<p><strong>第 3 步：<code>projectRoot = getgomodProjectRoot(workingDir)</code></strong></p>
+<p>从 <code>/home/user/my-monorepo/services</code> 向上查找 <code>go.mod</code>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">/home/user/my-monorepo/services  → 无 go.mod → 继续</span><br><span class="line">/home/user/my-monorepo           → 有 go.mod → 停止</span><br></pre></td></tr></table></figure>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">projectRoot = &quot;/home/user/my-monorepo&quot;</span><br></pre></td></tr></table></figure>
+<p><strong>第 4 步：<code>packagePath</code> — 新服务相对于项目根的路径</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">packagePath = filepath.Rel(projectRoot, filepath.Join(workingDir, projectName))</span><br><span class="line"><span class="comment">// = filepath.Rel(&quot;/home/user/my-monorepo&quot;, &quot;/home/user/my-monorepo/services/user&quot;)</span></span><br><span class="line"><span class="comment">// = &quot;services/user&quot;</span></span><br></pre></td></tr></table></figure>
+<p><strong>第 5 步：<code>mod</code> — 从 go.mod 读取 module 名</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">mod = base.ModulePath(<span class="string">&quot;/home/user/my-monorepo/go.mod&quot;</span>)</span><br><span class="line"><span class="comment">// = &quot;github.com/myorg/my-monorepo&quot;</span></span><br></pre></td></tr></table></figure>
+<p><strong>第 6 步：<code>p.Path</code> — 服务的相对路径（用于 api 路径替换）</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">p.Path = filepath.Join(</span><br><span class="line">    strings.TrimPrefix(workingDir, projectRoot+<span class="string">&quot;/&quot;</span>),  <span class="comment">// &quot;services&quot;</span></span><br><span class="line">    p.Name,                                            <span class="comment">// &quot;user&quot;</span></span><br><span class="line">)</span><br><span class="line"><span class="comment">// = &quot;services/user&quot;</span></span><br></pre></td></tr></table></figure>
+<p><code>TrimPrefix</code> 把 <code>workingDir</code> 中 <code>projectRoot+&quot;/&quot;</code> 的部分去掉，得到当前工作目录相对于项目根的相对路径，再拼接项目名。</p>
+<p><strong>第 7 步：<code>p.Add()</code> 中的 <code>pkgPath</code> 变换</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">pkgPath = fmt.Sprintf(<span class="string">&quot;%s/%s&quot;</span>, mod, pkgPath)</span><br><span class="line"><span class="comment">// = &quot;github.com/myorg/my-monorepo/services/user&quot;</span></span><br></pre></td></tr></table></figure>
+<p>这是新服务在 Go module 中的<strong>完整 import 路径</strong>，将作为 <code>CopyToV2</code> 中替换模板 module 名的目标值。</p>
+<p><strong>第 8 步：<code>CopyToV2</code> 的替换对</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">replaces = []<span class="type">string</span>&#123;</span><br><span class="line">    原始module名,                                          pkgPath,</span><br><span class="line">    filepath.Join(p.Path, <span class="string">&quot;api&quot;</span>),                         <span class="string">&quot;api&quot;</span>,</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// = []string&#123;</span></span><br><span class="line">    <span class="string">&quot;github.com/go-kratos/kratos-layout&quot;</span>,                 <span class="string">&quot;github.com/myorg/my-monorepo/services/user&quot;</span>,</span><br><span class="line">    <span class="string">&quot;services/user/api&quot;</span>,                                   <span class="string">&quot;api&quot;</span>,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>经过 <code>copyDir</code> → <code>copyFile</code>，所有文件中的字符串替换为：</p>
+<table>
+<thead>
+<tr>
+<th>替换</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>github.com/go-kratos/kratos-layout</code> → <code>github.com/myorg/my-monorepo/services/user</code></td>
+<td>module 路径替换</td>
+</tr>
+<tr>
+<td><code>services/user/api</code> → <code>api</code></td>
+<td>api 路径回正</td>
+</tr>
+</tbody>
+</table>
+<p>第二个替换的原因：模板中的 import 路径是 <code>github.com/go-kratos/kratos-layout/api</code>，经过第一步替换后变成 <code>github.com/myorg/my-monorepo/services/user/api</code>。但在单体仓库中，<code>api</code> 目录被忽略了（在 <code>repoAddIgnores</code> 中），子服务不会拥有独立的 <code>api/</code>，所以需要将 import 中的 <code>&#123;子服务路径&#125;/api</code> 替换回 <code>api</code>，让子服务指向根项目共享的 <code>api/</code> 目录。</p>
+<h3 id="模板仓库缓存机制"><a class="markdownIt-Anchor" href="#模板仓库缓存机制"></a> 模板仓库缓存机制</h3>
+<p>kratos CLI 的项目创建采用<strong>远程仓库克隆 + 本地缓存</strong>的方式，而非本地内嵌模板。核心实现在 <code>cmd/kratos/internal/base/repo.go</code> 中。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Repo <span class="keyword">struct</span> &#123;</span><br><span class="line">    url    <span class="type">string</span>  <span class="comment">// 模板仓库 URL</span></span><br><span class="line">    home   <span class="type">string</span>  <span class="comment">// 缓存目录</span></span><br><span class="line">    branch <span class="type">string</span>  <span class="comment">// 仓库分支</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>NewRepo()</code> 构造函数计算缓存路径</li>
+<li><code>repoDir()</code> 函数从 URL 中提取缓存子目录</li>
+<li><code>Path()</code> 方法返回完整的缓存路径</li>
+</ul>
+<p>例如 <code>https://github.com/go-kratos/kratos-layout.git</code> 的缓存路径为：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"># ls  ~/.kratos/repo/github.com/go-kratos/kratos-layout@main</span><br><span class="line">api  cmd  configs  Dockerfile  go.mod  go.sum  internal  LICENSE  Makefile  openapi.yaml  README.md  third_party</span><br></pre></td></tr></table></figure>
+<p><code>Clone()</code> 用于从远程仓库 clone 或者 pull：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *Repo)</span></span> Clone(ctx context.Context) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> _, err := os.Stat(r.Path()); !os.IsNotExist(err) &#123;</span><br><span class="line">        <span class="keyword">return</span> r.Pull(ctx)  <span class="comment">// 缓存已存在，执行 git pull 更新</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 首次克隆</span></span><br><span class="line">    <span class="keyword">var</span> cmd *exec.Cmd</span><br><span class="line">    <span class="keyword">if</span> r.branch == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        cmd = exec.CommandContext(ctx, <span class="string">&quot;git&quot;</span>, <span class="string">&quot;clone&quot;</span>, r.url, r.Path())</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        cmd = exec.CommandContext(ctx, <span class="string">&quot;git&quot;</span>, <span class="string">&quot;clone&quot;</span>, <span class="string">&quot;-b&quot;</span>, r.branch, r.url, r.Path())</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="复制与模块名替换"><a class="markdownIt-Anchor" href="#复制与模块名替换"></a> 复制与模块名替换</h3>
+<p><code>CopyTo()</code> 方法完成从缓存到目标目录的复制，同时替换 Go module 名称：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *Repo)</span></span> CopyTo(ctx context.Context, to <span class="type">string</span>, modPath <span class="type">string</span>, ignores []<span class="type">string</span>) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := r.Clone(ctx); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    mod, err := ModulePath(filepath.Join(r.Path(), <span class="string">&quot;go.mod&quot;</span>))</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> copyDir(r.Path(), to, []<span class="type">string</span>&#123;mod, modPath&#125;, ignores)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>copyDir()</code> 函数（定义在 <code>base/path.go</code>）递归复制目录，对所有文件执行字符串替换（：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">copyDir</span><span class="params">(src, dst <span class="type">string</span>, replaces, ignores []<span class="type">string</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">for</span> _, fd := <span class="keyword">range</span> fds &#123;</span><br><span class="line">        <span class="keyword">if</span> hasSets(fd.Name(), ignores) &#123;</span><br><span class="line">            <span class="keyword">continue</span>  <span class="comment">// 跳过忽略列表中的文件/目录</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> fd.IsDir() &#123;</span><br><span class="line">            e = copyDir(srcfp, dstfp, replaces, ignores)  <span class="comment">// 递归</span></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            e = copyFile(srcfp, dstfp, replaces)  <span class="comment">// 复制文件</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>copyFile()</code> 在复制文件时执行全量字符串替换</li>
+<li><code>replaces</code> 是一个扁平的 <code>[old1, new1, old2, new2, ...]</code> 序列。奇数索引为旧值，偶数索引为新值</li>
+<li>正是通过这种方式简单的方式——将模板中的原始 module 名（如 <code>github.com/go-kratos/kratos-layout</code>）替换为用户的项目名（如 <code>github.com/myorg/helloworld</code>），影响所有文件</li>
+</ul>
+<h2 id="kratos-proto-实现"><a class="markdownIt-Anchor" href="#kratos-proto-实现"></a> <code>kratos proto</code> 实现</h2>
+<h3 id="kratos-proto-add-2"><a class="markdownIt-Anchor" href="#kratos-proto-add-2"></a> <code>kratos proto add</code></h3>
+<p><code>kratos proto add</code> 的实现在 <code>cmd/kratos/internal/proto/add/</code> 目录下。其中的一些关键函数：</p>
+<ul>
+<li><code>add.go</code> 的 <code>run()</code> 函数解析用户输入的路径，提取出各组成部分，包括文件名、包名等</li>
+<li><code>goPackage()</code> 函数生成 <code>option go_package</code> 的值
+<ul>
+<li>它读取当前项目的 <code>go.mod</code> 文件获取 module 名称，然后拼接为 <code>&#123;module&#125;/&#123;path&#125;;&#123;lastSegment&#125;</code> 的格式</li>
+<li>例如 <code>go.mod</code> 中 module 为 <code>github.com/myorg/myproject</code>，路径为 <code>user/v1</code>，则生成 <code>github.com/myorg/myproject/user/v1;v1</code>。</li>
+</ul>
+</li>
+</ul>
+<ul>
+<li><code>serviceName()</code> 函数将 proto 文件名转为大驼峰服务名
+<ul>
+<li>例如 <code>user.proto</code> → <code>User</code>，<code>hello_world.proto</code> → <code>HelloWorld</code></li>
+</ul>
+</li>
+</ul>
+<p><code>template.go</code> 定义了 proto 文件模板，使用 Go 标准库 <code>text/template</code> 渲染，模板生成 5 个标准 CRUD RPC 方法和 10 个空消息体（Request/Reply 对）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> protoTemplate = <span class="string">`</span></span><br><span class="line"><span class="string">syntax = &quot;proto3&quot;;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">package &#123;&#123;.Package&#125;&#125;;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">option go_package = &quot;&#123;&#123;.GoPackage&#125;&#125;&quot;;</span></span><br><span class="line"><span class="string">option java_multiple_files = true;</span></span><br><span class="line"><span class="string">option java_package = &quot;&#123;&#123;.JavaPackage&#125;&#125;&quot;;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">service &#123;&#123;.Service&#125;&#125; &#123;</span></span><br><span class="line"><span class="string">    rpc Create&#123;&#123;.Service&#125;&#125; (Create&#123;&#123;.Service&#125;&#125;Request) returns (Create&#123;&#123;.Service&#125;&#125;Reply);</span></span><br><span class="line"><span class="string">    rpc Update&#123;&#123;.Service&#125;&#125; (Update&#123;&#123;.Service&#125;&#125;Request) returns (Update&#123;&#123;.Service&#125;&#125;Reply);</span></span><br><span class="line"><span class="string">    rpc Delete&#123;&#123;.Service&#125;&#125; (Delete&#123;&#123;.Service&#125;&#125;Request) returns (Delete&#123;&#123;.Service&#125;&#125;Reply);</span></span><br><span class="line"><span class="string">    rpc Get&#123;&#123;.Service&#125;&#125; (Get&#123;&#123;.Service&#125;&#125;Request) returns (Get&#123;&#123;.Service&#125;&#125;Reply);</span></span><br><span class="line"><span class="string">    rpc List&#123;&#123;.Service&#125;&#125; (List&#123;&#123;.Service&#125;&#125;Request) returns (List&#123;&#123;.Service&#125;&#125;Reply);</span></span><br><span class="line"><span class="string">&#125;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">message Create&#123;&#123;.Service&#125;&#125;Request &#123;&#125;</span></span><br><span class="line"><span class="string">message Create&#123;&#123;.Service&#125;&#125;Reply &#123;&#125;</span></span><br><span class="line"><span class="string">// ...</span></span><br></pre></td></tr></table></figure>
+<p>最后 <code>proto.go</code> 的 <code>Generate()</code> 方法创建目录并将模板渲染后的内容写入新生成的 proto 文件中。</p>
+<h3 id="kratos-proto-client-2"><a class="markdownIt-Anchor" href="#kratos-proto-client-2"></a> <code>kratos proto client</code></h3>
+<p><code>kratos proto client</code> 的实现在 <code>cmd/kratos/internal/proto/client/client.go</code>，它的核心是构建 <code>protoc</code> 命令行并作为其作为子进程执行。虽然命令名为 <code>client</code>，但它实际上会调用所有 protoc 插件，对 proto 文件进行编译并生成产物（包括服务端和客户端代码）。<br />
+该命令的总体实现流程如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line">用户输入 kratos proto client helloworld.proto</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">检查 protoc 插件是否存在</span><br><span class="line">（protoc-gen-go, protoc-gen-go-grpc, ...）</span><br><span class="line">        │</span><br><span class="line">   ┌────┴────┐</span><br><span class="line">   存在      不存在</span><br><span class="line">   │         │</span><br><span class="line">   │         ▼</span><br><span class="line">   │    自动执行 kratos upgrade</span><br><span class="line">   │         │</span><br><span class="line">   └────┬────┘</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  ┌─── 输入类型 ───┐</span><br><span class="line">  │                │</span><br><span class="line">  .proto文件       目录</span><br><span class="line">  │                │</span><br><span class="line">  ▼                ▼</span><br><span class="line">generate()      walk() 递归扫描</span><br><span class="line">                  （跳过 third_party/）</span><br><span class="line">                  │</span><br><span class="line">                  ▼</span><br><span class="line">              generate()</span><br></pre></td></tr></table></figure>
+<p><code>generate()</code> 函数是该命令的核心，它构建完整的 <code>protoc</code> 命令行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">generate</span><span class="params">(proto <span class="type">string</span>, args []<span class="type">string</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    input := []<span class="type">string</span>&#123;</span><br><span class="line">        <span class="string">&quot;--proto_path=.&quot;</span>,               <span class="comment">// 当前目录</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 用户的 proto_path（默认 ./third_party）</span></span><br><span class="line">    <span class="keyword">if</span> pathExists(protoPath) &#123;</span><br><span class="line">        input = <span class="built_in">append</span>(input, <span class="string">&quot;--proto_path=&quot;</span>+protoPath)</span><br><span class="line">    &#125;</span><br><span class="line">    inputExt := []<span class="type">string</span>&#123;</span><br><span class="line">        <span class="string">&quot;--proto_path=&quot;</span> + base.KratosMod(),                        <span class="comment">// kratos 模块路径</span></span><br><span class="line">        <span class="string">&quot;--proto_path=&quot;</span> + filepath.Join(base.KratosMod(), <span class="string">&quot;third_party&quot;</span>),  <span class="comment">// kratos third_party</span></span><br><span class="line">        <span class="string">&quot;--go_out=paths=source_relative:.&quot;</span>,          <span class="comment">// Go protobuf 代码</span></span><br><span class="line">        <span class="string">&quot;--go-grpc_out=paths=source_relative:.&quot;</span>,     <span class="comment">// gRPC 代码</span></span><br><span class="line">        <span class="string">&quot;--go-http_out=paths=source_relative:.&quot;</span>,     <span class="comment">// HTTP 代码</span></span><br><span class="line">        <span class="string">&quot;--go-errors_out=paths=source_relative:.&quot;</span>,   <span class="comment">// 错误代码</span></span><br><span class="line">        <span class="string">&quot;--openapi_out=paths=source_relative:.&quot;</span>,     <span class="comment">// OpenAPI 文档</span></span><br><span class="line">    &#125;</span><br><span class="line">    input = <span class="built_in">append</span>(input, inputExt...)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 检测 validate.proto 的引用</span></span><br><span class="line">    protoBytes, err := os.ReadFile(proto)</span><br><span class="line">    <span class="keyword">if</span> ok, _ := regexp.Match(<span class="string">`\n[^/]*(import)\s+&quot;validate/validate.proto&quot;`</span>, protoBytes); ok &#123;</span><br><span class="line">        input = <span class="built_in">append</span>(input, <span class="string">&quot;--validate_out=lang=go,paths=source_relative:.&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    input = <span class="built_in">append</span>(input, proto)  <span class="comment">// proto 文件</span></span><br><span class="line">    <span class="comment">// 添加用户额外参数</span></span><br><span class="line">    <span class="keyword">for</span> _, a := <span class="keyword">range</span> args &#123;</span><br><span class="line">        <span class="keyword">if</span> strings.HasPrefix(a, <span class="string">&quot;-&quot;</span>) &#123;</span><br><span class="line">            input = <span class="built_in">append</span>(input, a)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    fd := exec.Command(<span class="string">&quot;protoc&quot;</span>, input...)</span><br><span class="line">    fd.Stdout = os.Stdout</span><br><span class="line">    fd.Stderr = os.Stderr</span><br><span class="line">    fd.Dir = <span class="string">&quot;.&quot;</span></span><br><span class="line">    <span class="keyword">return</span> fd.Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong><code>--proto_path</code> 层次</strong>：<code>当前目录</code> → <code>用户 third_party</code> → <code>Kratos 模块路径</code> → <code>Kratos third_party</code>，按优先级从高到低</li>
+<li><strong><code>paths=source_relative</code></strong>：输出文件与 proto 文件保持相对路径一致，生成在同级目录</li>
+<li><strong><code>base.KratosMod()</code></strong>：返回 kratos 模块在 Go mod cache 中的绝对路径（如 <code>/root/go/pkg/mod/github.com/go-kratos/kratos/v2@v2.7.2</code>），让 protoc 能找到 kratos 提供的 proto 定义</li>
+</ul>
+<p><code>KratosMod()</code> 定义在 <code>base/mod.go</code>，用于定位 kratos 模块在 Go mod cache 中的路径：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">KratosMod</span><span class="params">()</span></span> <span class="type">string</span> &#123;</span><br><span class="line">    <span class="comment">// 获取 GOMODCACHE 路径</span></span><br><span class="line">    cacheOut, _ := exec.Command(<span class="string">&quot;go&quot;</span>, <span class="string">&quot;env&quot;</span>, <span class="string">&quot;GOMODCACHE&quot;</span>).Output()</span><br><span class="line">    cachePath := strings.Trim(<span class="type">string</span>(cacheOut), <span class="string">&quot;\n&quot;</span>)</span><br><span class="line">    <span class="comment">// 备用：从 GOPATH 推导</span></span><br><span class="line">    pathOut, _ := exec.Command(<span class="string">&quot;go&quot;</span>, <span class="string">&quot;env&quot;</span>, <span class="string">&quot;GOPATH&quot;</span>).Output()</span><br><span class="line">    gopath := strings.Trim(<span class="type">string</span>(pathOut), <span class="string">&quot;\n&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> cachePath == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        cachePath = filepath.Join(gopath, <span class="string">&quot;pkg&quot;</span>, <span class="string">&quot;mod&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 获取 kratos 版本号</span></span><br><span class="line">    <span class="keyword">if</span> path, err := ModuleVersion(<span class="string">&quot;github.com/go-kratos/kratos/v2&quot;</span>); err == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> filepath.Join(cachePath, path)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// GOPATH 模式（旧方式）</span></span><br><span class="line">    <span class="keyword">return</span> filepath.Join(gopath, <span class="string">&quot;src&quot;</span>, <span class="string">&quot;github.com&quot;</span>, <span class="string">&quot;go-kratos&quot;</span>, <span class="string">&quot;kratos&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>ModuleVersion()</code> 通过 <code>go mod graph</code> 命令获取 kratos 的依赖版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ModuleVersion</span><span class="params">(path <span class="type">string</span>)</span></span> (<span class="type">string</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    fd := exec.Command(<span class="string">&quot;go&quot;</span>, <span class="string">&quot;mod&quot;</span>, <span class="string">&quot;graph&quot;</span>)</span><br><span class="line">    ...</span><br><span class="line">    <span class="comment">// 找到 &quot;github.com/go-kratos/kratos/v2@v2.7.2&quot; 这样的行</span></span><br><span class="line">    <span class="keyword">if</span> strings.Contains(str, path+<span class="string">&quot;@&quot;</span>) &amp;&amp; i != <span class="number">-1</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> path + str[i:], <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最终路径形如：<code>/root/go/pkg/mod/github.com/go-kratos/kratos/v2@v2.7.2</code>。该路径下包含 kratos 提供的 proto 文件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">kratos/v2@v2.7.2/</span><br><span class="line">├── api/metadata/metadata.proto        ← import <span class="string">&quot;api/metadata/metadata.proto&quot;</span></span><br><span class="line">└── third_party/</span><br><span class="line">    ├── google/api/annotations.proto   ← import <span class="string">&quot;google/api/annotations.proto&quot;</span></span><br><span class="line">    ├── validate/validate.proto        ← import <span class="string">&quot;validate/validate.proto&quot;</span></span><br><span class="line">    └── errors/errors.proto            ← import <span class="string">&quot;errors/errors.proto&quot;</span></span><br></pre></td></tr></table></figure>
+<p>这里解释再解释下 <code>--proto_path</code> 的作用。由于 proto 文件中可能引用其他 proto 文件，而 protoc 需要通过 --proto_path 知道去哪里找这些 import。具体来说有四层 --proto_path，每层解决不同的 import 需求：</p>
+<ul>
+<li><code>--proto_path=.</code>：找项目自身的 proto</li>
+<li><code>--proto_path=./third_party</code>：找项目自定义的第三方 proto</li>
+<li><code>--proto_path=&#123;KratosMod&#125;</code>： 找 kratos 自身的 proto。例如业务代码如果使用 kratos 的 metadata 服务，就需要这样查找</li>
+<li><code>--proto_path=&#123;KratosMod&#125;/third_party</code>：找 kratos 内置的第三方 proto</li>
+</ul>
+<h3 id="kratos-proto-server-2"><a class="markdownIt-Anchor" href="#kratos-proto-server-2"></a> kratos proto server</h3>
+<p><code>kratos proto server</code> 的实现在 <code>cmd/kratos/internal/proto/server/</code>，与 <code>proto client</code> 不同，它<strong>不使用 protoc</strong>，而是直接使用 <code>github.com/emicklei/proto</code> 库解析 proto 文件，然后用 Go 模板生成服务端代码。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">用户输入 kratos proto server api/helloworld/v1/greeter.proto</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">读取并解析 proto 文件（emicklei/proto 解析器）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">proto.Walk() 遍历定义</span><br><span class="line">  ├── 提取 go_package 选项</span><br><span class="line">  └── 提取 Service 和 RPC 方法定义</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">确定每个 RPC 的流类型（unary/client-stream/server-stream/bidi-stream）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">渲染 Go 模板，生成服务端骨架代码</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">写入 internal/service/&lt;service&gt;.go</span><br></pre></td></tr></table></figure>
+<p><code>getMethodType()</code> 根据 <code>StreamsRequest</code> 和 <code>StreamsReturns</code> 两个布尔值判断 RPC 方法类型：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getMethodType</span><span class="params">(streamsRequest, streamsReturns <span class="type">bool</span>)</span></span> MethodType &#123;</span><br><span class="line">    <span class="keyword">if</span> !streamsRequest &amp;&amp; !streamsReturns &#123;</span><br><span class="line">        <span class="keyword">return</span> unaryType          <span class="comment">// 1: 普通 RPC</span></span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> streamsRequest &amp;&amp; streamsReturns &#123;</span><br><span class="line">        <span class="keyword">return</span> twoWayStreamsType  <span class="comment">// 2: 双向流</span></span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> streamsRequest &#123;</span><br><span class="line">        <span class="keyword">return</span> requestStreamsType <span class="comment">// 3: 客户端流</span></span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> streamsReturns &#123;</span><br><span class="line">        <span class="keyword">return</span> returnsStreamsType <span class="comment">// 4: 服务端流</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> unaryType</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>template.go</code> 定义了服务端代码模板，针对四种方法类型生成不同的方法签名：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> serviceTemplate = <span class="string">`</span></span><br><span class="line"><span class="string">package service</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">import (</span></span><br><span class="line"><span class="string">    &#123;&#123;- if .UseContext &#125;&#125;</span></span><br><span class="line"><span class="string">    &quot;context&quot;</span></span><br><span class="line"><span class="string">    &#123;&#123;- end &#125;&#125;</span></span><br><span class="line"><span class="string">    &#123;&#123;- if .UseIO &#125;&#125;</span></span><br><span class="line"><span class="string">    &quot;io&quot;</span></span><br><span class="line"><span class="string">    &#123;&#123;- end &#125;&#125;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">    pb &quot;&#123;&#123; .Package &#125;&#125;&quot;</span></span><br><span class="line"><span class="string">    &#123;&#123;- if .GoogleEmpty &#125;&#125;</span></span><br><span class="line"><span class="string">    &quot;google.golang.org/protobuf/types/known/emptypb&quot;</span></span><br><span class="line"><span class="string">    &#123;&#123;- end &#125;&#125;</span></span><br><span class="line"><span class="string">)</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">type &#123;&#123; .Service &#125;&#125;Service struct &#123;</span></span><br><span class="line"><span class="string">    pb.Unimplemented&#123;&#123; .Service &#125;&#125;Server</span></span><br><span class="line"><span class="string">&#125;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">func New&#123;&#123; .Service &#125;&#125;Service() *&#123;&#123; .Service &#125;&#125;Service &#123;</span></span><br><span class="line"><span class="string">    return &amp;&#123;&#123; .Service &#125;&#125;Service&#123;&#125;</span></span><br><span class="line"><span class="string">&#125;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">&#123;&#123; range .Methods &#125;&#125;</span></span><br><span class="line"><span class="string">&#123;&#123;- if eq .Type 1 &#125;&#125;</span></span><br><span class="line"><span class="string">// Unary: func (s *XxxService) Method(ctx context.Context, req *pb.Req) (*pb.Reply, error)</span></span><br><span class="line"><span class="string">&#123;&#123;- else if eq .Type 2 &#125;&#125;</span></span><br><span class="line"><span class="string">// 双向流: func (s *XxxService) Method(conn pb.Xxx_MethodServer) error</span></span><br><span class="line"><span class="string">&#123;&#123;- else if eq .Type 3 &#125;&#125;</span></span><br><span class="line"><span class="string">// 客户端流: func (s *XxxService) Method(conn pb.Xxx_MethodServer) error</span></span><br><span class="line"><span class="string">&#123;&#123;- else if eq .Type 4 &#125;&#125;</span></span><br><span class="line"><span class="string">// 服务端流: func (s *XxxService) Method(req *pb.Req, conn pb.Xxx_MethodServer) error</span></span><br><span class="line"><span class="string">&#123;&#123;- end &#125;&#125;</span></span><br><span class="line"><span class="string">&#123;&#123;- end &#125;&#125;</span></span><br><span class="line"><span class="string">`</span></span><br></pre></td></tr></table></figure>
+<p>模板的智能之处在于：</p>
+<ol>
+<li><strong>按需导入</strong>：只有在存在 unary 方法时才导入 <code>context</code>，只有在存在流式方法时才导入 <code>io</code></li>
+<li><strong>Empty 类型处理</strong>：如果请求或返回类型是 <code>google.protobuf.Empty</code>，则使用 <code>emptypb.Empty</code> 替代</li>
+<li><strong>流式方法骨架</strong>：自动生成 <code>Recv</code>/<code>Send</code>/<code>SendAndClose</code> 的循环骨架代码</li>
+</ol>
+<h2 id="kratos-upgrade-实现"><a class="markdownIt-Anchor" href="#kratos-upgrade-实现"></a> <code>kratos upgrade</code> 实现</h2>
+<p><code>kratos upgrade</code> 的实现非常简洁，在 <code>cmd/kratos/internal/upgrade/upgrade.go</code> 中，直接调用 <code>base.GoInstall()</code> 安装 6 个工具</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Run</span><span class="params">(_ *cobra.Command, _ []<span class="type">string</span>)</span></span> &#123;</span><br><span class="line">    err := base.GoInstall(</span><br><span class="line">        <span class="string">&quot;github.com/go-kratos/kratos/cmd/kratos/v2@latest&quot;</span>,</span><br><span class="line">        <span class="string">&quot;github.com/go-kratos/kratos/cmd/protoc-gen-go-http/v2@latest&quot;</span>,</span><br><span class="line">        <span class="string">&quot;github.com/go-kratos/kratos/cmd/protoc-gen-go-errors/v2@latest&quot;</span>,</span><br><span class="line">        <span class="string">&quot;google.golang.org/protobuf/cmd/protoc-gen-go@latest&quot;</span>,</span><br><span class="line">        <span class="string">&quot;google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest&quot;</span>,</span><br><span class="line">        <span class="string">&quot;github.com/google/gnostic/cmd/protoc-gen-openapi@latest&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    ...</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>GoInstall()</code> 定义在 <code>base/install.go</code>，逐个执行 <code>go install</code> 命令。</p>
+<h2 id="kratos-changelog-实现"><a class="markdownIt-Anchor" href="#kratos-changelog-实现"></a> <code>kratos changelog</code> 实现</h2>
+<p><code>kratos changelog</code> 的实现在 <code>cmd/kratos/internal/change/</code> 目录下，通过 GitHub REST API 获取版本信息。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">用户输入 kratos changelog [dev | 版本号]</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">ParseGithubURL() 解析 owner 和 repo</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  ┌─── version ───┐</span><br><span class="line">  │               │</span><br><span class="line">  <span class="string">&quot;dev&quot;</span>           其他/默认<span class="string">&quot;latest&quot;</span></span><br><span class="line">  │               │</span><br><span class="line">  ▼               ▼</span><br><span class="line">GetCommitsInfo()  GetReleaseInfo()</span><br><span class="line">│                 │</span><br><span class="line">│ 获取最新 release │ 获取指定版本的</span><br><span class="line">│ 的发布时间       │ 发布信息</span><br><span class="line">│                 │</span><br><span class="line">│ 分页获取该时间   │</span><br><span class="line">│ 之后的所有 commit│</span><br><span class="line">│                 │</span><br><span class="line">▼                 ▼</span><br><span class="line">ParseCommitsInfo() ParseReleaseInfo()</span><br><span class="line">│                 │</span><br><span class="line">│ 按 commit 前缀  │ 输出 Author、</span><br><span class="line">│ 分类输出 Markdown│ Date、URL、Body</span><br><span class="line">└────────┬────────┘</span><br><span class="line">         │</span><br><span class="line">         ▼</span><br><span class="line">      输出到终端</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>GithubAPI</code> 结构体封装了与 GitHub API 的交互：
+<ul>
+<li><code>GetReleaseInfo</code>：获取 Release 信息</li>
+<li><code>GetCommitsInfo</code>：获取 Commit 信息，dev 模式</li>
+</ul>
+</li>
+<li><code>ParseCommitsInfo()</code> 将 commit 按前缀分类并输出 Markdown 格式</li>
+<li></li>
+</ul>
+<h2 id="kratos-run-实现"><a class="markdownIt-Anchor" href="#kratos-run-实现"></a> kratos run 实现</h2>
+<p><code>kratos run</code> 的实现在 <code>cmd/kratos/internal/run/run.go</code>，核心逻辑是自动查找 <code>cmd/</code> 目录下的服务入口并执行 <code>go run</code>。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">用户输入 kratos run [-- -conf ./configs]</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">splitArgs() 分隔命令参数和程序参数</span><br><span class="line">（以 -- 为分隔符）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  ┌─── 指定了目录? ───┐</span><br><span class="line">  │                   │</span><br><span class="line">  Yes                 No</span><br><span class="line">  │                   │</span><br><span class="line">  │                   ▼</span><br><span class="line">  │              findCMD() 查找 cmd/ 子目录</span><br><span class="line">  │                   │</span><br><span class="line">  │           ┌─── 找到几个? ───┐</span><br><span class="line">  │           │                 │</span><br><span class="line">  │           0个    1个       多个</span><br><span class="line">  │           │      │         │</span><br><span class="line">  │           报错  直接使用  交互式选择</span><br><span class="line">  │           │      │         │</span><br><span class="line">  └───────────┴──────┴─────────┘</span><br><span class="line">                   │</span><br><span class="line">                   ▼</span><br><span class="line">           go run &lt;<span class="built_in">dir</span>&gt; &lt;programArgs...&gt;</span><br></pre></td></tr></table></figure>
+<p><code>findCMD()</code> 函数递归查找当前目录下的 <code>cmd/</code> 子目录，返回的 <code>map[string]string</code> 中：</p>
+<ul>
+<li>key 是相对路径（如 <code>cmd/kratos-demo</code>），用于交互式选择</li>
+<li>value 是绝对路径（如 <code>/home/user/project/cmd/kratos-demo</code>），用于 <code>go run</code></li>
+</ul>
+<h2 id="第三方库"><a class="markdownIt-Anchor" href="#第三方库"></a> 第三方库</h2>
+<p>最后，简单总结下 kratos CLI 使用了以下直接依赖的第三方库：</p>
+<table>
+<thead>
+<tr>
+<th>库</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a target="_blank" rel="noopener" href="https://github.com/spf13/cobra">github.com/spf13/cobra</a></td>
+<td>命令行框架，定义命令、子命令、Flags 等</td>
+</tr>
+<tr>
+<td><a target="_blank" rel="noopener" href="https://github.com/AlecAivazis/survey">github.com/AlecAivazis/survey/v2</a></td>
+<td>交互式终端输入，用于项目名输入、覆盖确认、目录选择等</td>
+</tr>
+<tr>
+<td><a target="_blank" rel="noopener" href="https://github.com/emicklei/proto">github.com/emicklei/proto</a></td>
+<td>Proto 文件解析器，用于 <code>kratos proto server</code> 解析 service/RPC 定义</td>
+</tr>
+<tr>
+<td><a target="_blank" rel="noopener" href="https://github.com/fatih/color">github.com/fatih/color</a></td>
+<td>终端彩色输出，用于 <code>CREATED</code>、项目名等高亮显示</td>
+</tr>
+<tr>
+<td><a target="_blank" rel="noopener" href="https://pkg.go.dev/golang.org/x/mod/modfile">golang.org/x/mod/modfile</a></td>
+<td>解析 <code>go.mod</code> 文件，提取 module 名称</td>
+</tr>
+<tr>
+<td><a target="_blank" rel="noopener" href="https://pkg.go.dev/golang.org/x/text/cases">golang.org/x/text/cases</a></td>
+<td>大小写转换，用于蛇形命名转大驼峰（如 <code>hello_world</code> → <code>HelloWorld</code>）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>在这篇文章中，我们详细分析了 kratos CLI 命令行工具的实现原理。我们重点解析了它如何将一个 GitHub 仓库作为模板，并通过模板渲染、Go 模块替换等操作，最终生成一个真实的用户项目。此外，我们还学习了如何根据 Proto 文件生成样本代码，包括调用 protoc 插件生成 Go 代码，以及解析 proto 文件来自动化生成服务骨架代码。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/05/17/go-kratos-02/" rel="next" title="kratos 源码分析 02：kratos-layout 模板项目">
+      kratos 源码分析 02：kratos-layout 模板项目 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-cli-%E6%A6%82%E8%A7%88"><span class="nav-number">1.</span> <span class="nav-text"> kratos CLI 概览</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-new"><span class="nav-number">1.1.</span> <span class="nav-text"> kratos new</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-proto"><span class="nav-number">1.2.</span> <span class="nav-text"> kratos proto</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#kratos-proto-add"><span class="nav-number">1.2.1.</span> <span class="nav-text"> kratos proto add</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#kratos-proto-client"><span class="nav-number">1.2.2.</span> <span class="nav-text"> kratos proto client</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#kratos-proto-server"><span class="nav-number">1.2.3.</span> <span class="nav-text"> kratos proto server</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-upgrade"><span class="nav-number">1.3.</span> <span class="nav-text"> kratos upgrade</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-changelog"><span class="nav-number">1.4.</span> <span class="nav-text"> kratos changelog</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-run"><span class="nav-number">1.5.</span> <span class="nav-text"> kratos run</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> 整体架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84"><span class="nav-number">2.1.</span> <span class="nav-text"> 目录结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%B1%82%E6%B3%A8%E5%86%8C"><span class="nav-number">2.2.</span> <span class="nav-text"> 分层注册</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-new-%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.</span> <span class="nav-text"> kratos new 实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8B%AC%E7%AB%8B%E9%A1%B9%E7%9B%AE%E5%88%9B%E5%BB%BA"><span class="nav-number">3.1.</span> <span class="nav-text"> 独立项目创建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8D%95%E4%BD%93%E4%BB%93%E5%BA%93%E5%AD%90%E6%9C%8D%E5%8A%A1%E6%B7%BB%E5%8A%A0"><span class="nav-number">3.2.</span> <span class="nav-text"> 单体仓库子服务添加</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E6%9D%BF%E4%BB%93%E5%BA%93%E7%BC%93%E5%AD%98%E6%9C%BA%E5%88%B6"><span class="nav-number">3.3.</span> <span class="nav-text"> 模板仓库缓存机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%8D%E5%88%B6%E4%B8%8E%E6%A8%A1%E5%9D%97%E5%90%8D%E6%9B%BF%E6%8D%A2"><span class="nav-number">3.4.</span> <span class="nav-text"> 复制与模块名替换</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-proto-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.</span> <span class="nav-text"> kratos proto 实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-proto-add-2"><span class="nav-number">4.1.</span> <span class="nav-text"> kratos proto add</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-proto-client-2"><span class="nav-number">4.2.</span> <span class="nav-text"> kratos proto client</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kratos-proto-server-2"><span class="nav-number">4.3.</span> <span class="nav-text"> kratos proto server</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-upgrade-%E5%AE%9E%E7%8E%B0"><span class="nav-number">5.</span> <span class="nav-text"> kratos upgrade 实现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-changelog-%E5%AE%9E%E7%8E%B0"><span class="nav-number">6.</span> <span class="nav-text"> kratos changelog 实现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-run-%E5%AE%9E%E7%8E%B0"><span class="nav-number">7.</span> <span class="nav-text"> kratos run 实现</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E6%96%B9%E5%BA%93"><span class="nav-number">8.</span> <span class="nav-text"> 第三方库</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">251</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">34</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
