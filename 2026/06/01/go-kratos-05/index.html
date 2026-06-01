@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇文章我们分析了 kratos 的配置模块，了解了配置的加载、合并和热更新机制。这篇文章我们将分析 kratos 的 App 模块，它是整个微服务应用的生命周期管理器，负责服务的启动、停止、注册和注销。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Kratos 源码分析（五）：App 应用生命周期管理实现详解">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/06/01/go-kratos-05/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇文章我们分析了 kratos 的配置模块，了解了配置的加载、合并和热更新机制。这篇文章我们将分析 kratos 的 App 模块，它是整个微服务应用的生命周期管理器，负责服务的启动、停止、注册和注销。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-06-01T15:17:44.000Z">
+<meta property="article:modified_time" content="2026-06-01T15:21:06.764Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/01/go-kratos-05/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Kratos 源码分析（五）：App 应用生命周期管理实现详解 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/01/go-kratos-05/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Kratos 源码分析（五）：App 应用生命周期管理实现详解
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-06-01 23:17:44" itemprop="dateCreated datePublished" datetime="2026-06-01T23:17:44+08:00">2026-06-01</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://fuchencong.com/2026/05/25/go-kratos-04/">上一篇文章</a>我们分析了 kratos 的配置模块，了解了配置的加载、合并和热更新机制。这篇文章我们将分析 kratos 的 App 模块，它是整个微服务应用的生命周期管理器，负责服务的启动、停止、注册和注销。</p>
+<span id="more"></span>
+<h2 id="app-模块概览"><a class="markdownIt-Anchor" href="#app-模块概览"></a> App 模块概览</h2>
+<p>App 模块（<code>github.com/go-kratos/kratos/v2</code>）是 kratos 微服务应用的核心入口，它承担了以下职责：</p>
+<ul>
+<li><strong>生命周期管理</strong>：统一管理 Transport Server（HTTP、gRPC）的启动和停止</li>
+<li><strong>服务注册与发现</strong>：在服务启动时注册，停止时注销</li>
+<li><strong>信号处理</strong>：监听系统信号（SIGTERM、SIGQUIT、SIGINT），实现优雅停机</li>
+<li><strong>生命周期钩子</strong>：提供 BeforeStart/AfterStart/BeforeStop/AfterStop 四个钩子</li>
+<li><strong>应用信息传播</strong>：通过 Context 传递应用元信息（ID、Name、Version 等）</li>
+</ul>
+<h2 id="kratos-layout-中的-app-使用"><a class="markdownIt-Anchor" href="#kratos-layout-中的-app-使用"></a> kratos-layout 中的 App 使用</h2>
+<h3 id="创建-app"><a class="markdownIt-Anchor" href="#创建-app"></a> 创建 App</h3>
+<p>在 kratos-layout 创建的项目中，App 的创建位于 <code>cmd/kratos-demo/main.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;os&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;kratos-demo/internal/conf&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2/config&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2/config/file&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2/log&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2/middleware/tracing&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2/transport/grpc&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/go-kratos/kratos/v2/transport/http&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> (</span><br><span class="line">	Name    <span class="type">string</span></span><br><span class="line">	Version <span class="type">string</span></span><br><span class="line">	flagconf <span class="type">string</span></span><br><span class="line">	id, _ = os.Hostname()</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newApp</span><span class="params">(logger log.Logger, gs *grpc.Server, hs *http.Server)</span></span> *kratos.App &#123;</span><br><span class="line">	<span class="keyword">return</span> kratos.New(</span><br><span class="line">		kratos.ID(id),</span><br><span class="line">		kratos.Name(Name),</span><br><span class="line">		kratos.Version(Version),</span><br><span class="line">		kratos.Metadata(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span>&#123;&#125;),</span><br><span class="line">		kratos.Logger(logger),</span><br><span class="line">		kratos.Server(gs, hs),</span><br><span class="line">	)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>可以看到，App 的创建使用了选项模式，通过 <code>kratos.ID</code>、<code>kratos.Name</code>、<code>kratos.Server</code> 等函数配置应用。其中：</p>
+<ul>
+<li><code>ID</code>：使用主机名作为实例 ID</li>
+<li><code>Name</code> / <code>Version</code>：通过编译时 <code>-ldflags</code> 注入</li>
+<li><code>Server</code>：注册 HTTP 和 gRPC 两个 Transport Server</li>
+</ul>
+<h3 id="运行-app"><a class="markdownIt-Anchor" href="#运行-app"></a> 运行 App</h3>
+<p>在 <code>main</code> 函数中，配置加载完成后，通过 <code>app.Run()</code> 启动应用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    ......</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 4. 依赖注入创建 App</span></span><br><span class="line">	app, cleanup, err := wireApp(bc.Server, bc.Data, logger)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="built_in">panic</span>(err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">defer</span> cleanup()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 5. 启动并阻塞，等待停止信号</span></span><br><span class="line">	<span class="keyword">if</span> err := app.Run(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="built_in">panic</span>(err)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>app.Run()</code> 会阻塞当前 goroutine，直到收到停止信号。</p>
+<h3 id="server-的创建"><a class="markdownIt-Anchor" href="#server-的创建"></a> Server 的创建</h3>
+<p>HTTP 和 gRPC Server 在 <code>internal/server/</code> 下创建。如下展示了 GRPC server 的创建：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/server/grpc.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewGRPCServer</span><span class="params">(c *conf.Server, greeter *service.GreeterService, logger log.Logger)</span></span> *grpc.Server &#123;</span><br><span class="line">	<span class="keyword">var</span> opts = []grpc.ServerOption&#123;</span><br><span class="line">		grpc.Middleware(recovery.Recovery()),</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> c.Grpc.Addr != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		opts = <span class="built_in">append</span>(opts, grpc.Address(c.Grpc.Addr))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> c.Grpc.Timeout != <span class="literal">nil</span> &#123;</span><br><span class="line">		opts = <span class="built_in">append</span>(opts, grpc.Timeout(c.Grpc.Timeout.AsDuration()))</span><br><span class="line">	&#125;</span><br><span class="line">	srv := grpc.NewServer(opts...)</span><br><span class="line">	v1.RegisterGreeterServer(srv, greeter)</span><br><span class="line">	<span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些 Server 实现了 <code>transport.Server</code> 接口，可以被 App 统一管理。</p>
+<h3 id="使用流程图"><a class="markdownIt-Anchor" href="#使用流程图"></a> 使用流程图</h3>
+<p>如下简单总结了 App 的使用流程：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">main()</span><br><span class="line">  ├─ <span class="number">1.</span> 初始化 Logger</span><br><span class="line">  ├─ <span class="number">2.</span> 加载配置（config.Load + config.Scan）</span><br><span class="line">  ├─ <span class="number">3.</span> Wire 依赖注入 → 创建 Server + App</span><br><span class="line">  └─ <span class="number">4.</span> app.Run() → 阻塞，等待停止信号</span><br></pre></td></tr></table></figure>
+<h2 id="核心接口设计"><a class="markdownIt-Anchor" href="#核心接口设计"></a> 核心接口设计</h2>
+<h3 id="appinfo-接口"><a class="markdownIt-Anchor" href="#appinfo-接口"></a> AppInfo 接口</h3>
+<p><code>AppInfo</code> 定义了应用元信息的访问接口，通过 Context 传播给下游：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// app.go</span></span><br><span class="line"><span class="keyword">type</span> AppInfo <span class="keyword">interface</span> &#123;</span><br><span class="line">	ID() <span class="type">string</span></span><br><span class="line">	Name() <span class="type">string</span></span><br><span class="line">	Version() <span class="type">string</span></span><br><span class="line">	Metadata() <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span></span><br><span class="line">	Endpoint() []<span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="transportserver-接口"><a class="markdownIt-Anchor" href="#transportserver-接口"></a> transport.Server 接口</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/transport.go</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">interface</span> &#123;</span><br><span class="line">	Start(context.Context) <span class="type">error</span></span><br><span class="line">	Stop(context.Context) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>目前有两种实现：<code>http.Server</code> 和 <code>grpc.Server</code>。</p>
+<h3 id="transportendpointer-接口"><a class="markdownIt-Anchor" href="#transportendpointer-接口"></a> transport.Endpointer 接口</h3>
+<p><code>Endpointer</code> 用于获取服务的 Endpoint 地址：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/transport.go</span></span><br><span class="line"><span class="keyword">type</span> Endpointer <span class="keyword">interface</span> &#123;</span><br><span class="line">	Endpoint() (*url.URL, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>http.Server</code> 和 <code>grpc.Server</code> 都实现了此接口，App 在构建服务实例时会通过此接口自动收集 Endpoint。</p>
+<h3 id="registryregistrar-接口"><a class="markdownIt-Anchor" href="#registryregistrar-接口"></a> registry.Registrar 接口</h3>
+<p><code>Registrar</code> 是服务注册器的抽象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// registry/registry.go</span></span><br><span class="line"><span class="keyword">type</span> Registrar <span class="keyword">interface</span> &#123;</span><br><span class="line">	Register(ctx context.Context, service *ServiceInstance) <span class="type">error</span></span><br><span class="line">	Deregister(ctx context.Context, service *ServiceInstance) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>ServiceInstance</code> 表示一个服务实例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// registry/registry.go</span></span><br><span class="line"><span class="keyword">type</span> ServiceInstance <span class="keyword">struct</span> &#123;</span><br><span class="line">	ID        <span class="type">string</span>            <span class="string">`json:&quot;id&quot;`</span></span><br><span class="line">	Name      <span class="type">string</span>            <span class="string">`json:&quot;name&quot;`</span></span><br><span class="line">	Version   <span class="type">string</span>            <span class="string">`json:&quot;version&quot;`</span></span><br><span class="line">	Metadata  <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span> <span class="string">`json:&quot;metadata&quot;`</span></span><br><span class="line">	Endpoints []<span class="type">string</span>          <span class="string">`json:&quot;endpoints&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="接口关系图"><a class="markdownIt-Anchor" href="#接口关系图"></a> 接口关系图</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">App (生命周期管理器)</span><br><span class="line">  ├── 持有 ──→ transport.Server (传输层服务器)</span><br><span class="line">  │                ├─ http.Server</span><br><span class="line">  │                └─ grpc.Server</span><br><span class="line">  │           两者均实现 Endpointer 接口</span><br><span class="line">  │</span><br><span class="line">  ├── 持有 ──→ registry.Registrar (服务注册器)</span><br><span class="line">  │                └─ Register / Deregister</span><br><span class="line">  │</span><br><span class="line">  ├── 实现 ──→ AppInfo (应用元信息)</span><br><span class="line">  │                └─ ID / Name / Version / Metadata / Endpoint</span><br><span class="line">  │</span><br><span class="line">  └── Context 传播 AppInfo 给下游</span><br></pre></td></tr></table></figure>
+<h2 id="app-结构体与选项"><a class="markdownIt-Anchor" href="#app-结构体与选项"></a> App 结构体与选项</h2>
+<h3 id="app-结构体"><a class="markdownIt-Anchor" href="#app-结构体"></a> App 结构体</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// app.go</span></span><br><span class="line"><span class="keyword">type</span> App <span class="keyword">struct</span> &#123;</span><br><span class="line">	opts     options                <span class="comment">// 应用选项</span></span><br><span class="line">	ctx      context.Context        <span class="comment">// 可取消的 context</span></span><br><span class="line">	cancel   context.CancelFunc     <span class="comment">// 取消函数</span></span><br><span class="line">	mu       sync.Mutex             <span class="comment">// 保护 instance 的互斥锁</span></span><br><span class="line">	instance *registry.ServiceInstance  <span class="comment">// 服务实例</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>字段的作用：</p>
+<ul>
+<li><code>opts</code>：存储所有配置项，通过选项模式设置</li>
+<li><code>ctx</code> / <code>cancel</code>：用于控制所有 Server 的生命周期，调用 <code>cancel()</code> 会触发所有 Server 停止</li>
+<li><code>mu</code>：保护 <code>instance</code> 字段的并发访问</li>
+<li><code>instance</code>：当前服务实例，用于服务注册和注销</li>
+</ul>
+<h3 id="options-结构体"><a class="markdownIt-Anchor" href="#options-结构体"></a> options 结构体</h3>
+<p>所有选项均采用选项模式，<code>Option</code> 类型定义为：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Option <span class="function"><span class="keyword">func</span><span class="params">(o *options)</span></span></span><br></pre></td></tr></table></figure>
+<p><code>options</code> 结构体存储所有选项值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// options.go</span></span><br><span class="line"><span class="keyword">type</span> options <span class="keyword">struct</span> &#123;</span><br><span class="line">	id       <span class="type">string</span></span><br><span class="line">	name     <span class="type">string</span></span><br><span class="line">	version  <span class="type">string</span></span><br><span class="line">	metadata <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span></span><br><span class="line">	endpoints []*url.URL</span><br><span class="line"></span><br><span class="line">	ctx  context.Context</span><br><span class="line">	sigs []os.Signal</span><br><span class="line"></span><br><span class="line">	logger log.Logger</span><br><span class="line"></span><br><span class="line">	registrar        registry.Registrar</span><br><span class="line">	registrarTimeout time.Duration</span><br><span class="line">	stopTimeout      time.Duration</span><br><span class="line"></span><br><span class="line">	servers []transport.Server</span><br><span class="line"></span><br><span class="line">	beforeStart []<span class="function"><span class="keyword">func</span><span class="params">(context.Context)</span></span> <span class="type">error</span></span><br><span class="line">	beforeStop  []<span class="function"><span class="keyword">func</span><span class="params">(context.Context)</span></span> <span class="type">error</span></span><br><span class="line">	afterStart  []<span class="function"><span class="keyword">func</span><span class="params">(context.Context)</span></span> <span class="type">error</span></span><br><span class="line">	afterStop   []<span class="function"><span class="keyword">func</span><span class="params">(context.Context)</span></span> <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>选项函数</th>
+<th>说明</th>
+<th>默认值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ID(id)</code></td>
+<td>服务实例 ID</td>
+<td>UUID</td>
+</tr>
+<tr>
+<td><code>Name(name)</code></td>
+<td>服务名称</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>Version(version)</code></td>
+<td>服务版本</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>Metadata(md)</code></td>
+<td>服务元数据</td>
+<td>nil</td>
+</tr>
+<tr>
+<td><code>Endpoint(endpoints...)</code></td>
+<td>服务端点</td>
+<td>从 Server 自动获取</td>
+</tr>
+<tr>
+<td><code>Context(ctx)</code></td>
+<td>基础 Context</td>
+<td><code>context.Background()</code></td>
+</tr>
+<tr>
+<td><code>Logger(logger)</code></td>
+<td>日志器</td>
+<td>nil</td>
+</tr>
+<tr>
+<td><code>Server(srv...)</code></td>
+<td>Transport Server 列表</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>Signal(sigs...)</code></td>
+<td>监听的系统信号</td>
+<td><code>[SIGTERM, SIGQUIT, SIGINT]</code></td>
+</tr>
+<tr>
+<td><code>Registrar(r)</code></td>
+<td>服务注册器</td>
+<td>nil</td>
+</tr>
+<tr>
+<td><code>RegistrarTimeout(t)</code></td>
+<td>注册超时时间</td>
+<td>10s</td>
+</tr>
+<tr>
+<td><code>StopTimeout(t)</code></td>
+<td>停止超时时间</td>
+<td>0（无超时）</td>
+</tr>
+<tr>
+<td><code>BeforeStart(fn)</code></td>
+<td>启动前钩子</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>AfterStart(fn)</code></td>
+<td>启动后钩子</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>BeforeStop(fn)</code></td>
+<td>停止前钩子</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>AfterStop(fn)</code></td>
+<td>停止后钩子</td>
+<td>空</td>
+</tr>
+</tbody>
+</table>
+<h3 id="创建-app-实例"><a class="markdownIt-Anchor" href="#创建-app-实例"></a> 创建 App 实例</h3>
+<p>如下展示了如何创建 App 实例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// app.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(opts ...Option)</span></span> *App &#123;</span><br><span class="line">	o := options&#123;</span><br><span class="line">		ctx:              context.Background(),</span><br><span class="line">		sigs:             []os.Signal&#123;syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT&#125;,</span><br><span class="line">		registrarTimeout: <span class="number">10</span> * time.Second,</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 自动生成 UUID 作为 ID</span></span><br><span class="line">	<span class="keyword">if</span> id, err := uuid.NewUUID(); err == <span class="literal">nil</span> &#123;</span><br><span class="line">		o.id = id.String()</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 应用用户选项</span></span><br><span class="line">	<span class="keyword">for</span> _, opt := <span class="keyword">range</span> opts &#123;</span><br><span class="line">		opt(&amp;o)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 设置全局 Logger</span></span><br><span class="line">	<span class="keyword">if</span> o.logger != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.SetLogger(o.logger)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 创建可取消的 Context</span></span><br><span class="line">	ctx, cancel := context.WithCancel(o.ctx)</span><br><span class="line">	<span class="keyword">return</span> &amp;App&#123;</span><br><span class="line">		ctx:    ctx,</span><br><span class="line">		cancel: cancel,</span><br><span class="line">		opts:   o,</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>值得注意的是，如果用户通过 <code>kratos.Logger(logger)</code> 传入了自定义 Logger，<code>New</code> 函数会调用 <code>log.SetLogger(o.logger)</code> 将其设置为全局 Logger。这意味着 kratos 的全局日志函数（<code>log.Info</code>、<code>log.Error</code> 等）都会使用这个 Logger。</p>
+<h2 id="run-方法启动流程"><a class="markdownIt-Anchor" href="#run-方法启动流程"></a> Run 方法：启动流程</h2>
+<p><code>Run</code> 是 App 最核心的方法，负责启动所有 Server 并阻塞等待停止信号。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// app.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *App)</span></span> Run() <span class="type">error</span> &#123;</span><br><span class="line">	<span class="comment">// 1. 构建服务实例</span></span><br><span class="line">	instance, err := a.buildInstance()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> err</span><br><span class="line">	&#125;</span><br><span class="line">	a.mu.Lock()</span><br><span class="line">	a.instance = instance</span><br><span class="line">	a.mu.Unlock()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 2. 创建携带 AppInfo 的 Context</span></span><br><span class="line">	sctx := NewContext(a.ctx, a)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 3. 创建 errgroup</span></span><br><span class="line">	eg, ctx := errgroup.WithContext(sctx)</span><br><span class="line">	wg := sync.WaitGroup&#123;&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 4. 执行 BeforeStart 钩子</span></span><br><span class="line">	<span class="keyword">for</span> _, fn := <span class="keyword">range</span> a.opts.beforeStart &#123;</span><br><span class="line">		<span class="keyword">if</span> err = fn(sctx); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> err</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 5. 启动所有 Server</span></span><br><span class="line">	octx := NewContext(a.opts.ctx, a)</span><br><span class="line">	<span class="keyword">for</span> _, srv := <span class="keyword">range</span> a.opts.servers &#123;</span><br><span class="line">		server := srv</span><br><span class="line">		<span class="comment">// goroutine: 等待 ctx 取消后停止 Server</span></span><br><span class="line">		eg.Go(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">			&lt;-ctx.Done()</span><br><span class="line">			stopCtx := context.WithoutCancel(octx)</span><br><span class="line">			<span class="keyword">if</span> a.opts.stopTimeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">				<span class="keyword">var</span> cancel context.CancelFunc</span><br><span class="line">				stopCtx, cancel = context.WithTimeout(stopCtx, a.opts.stopTimeout)</span><br><span class="line">				<span class="keyword">defer</span> cancel()</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">return</span> server.Stop(stopCtx)</span><br><span class="line">		&#125;)</span><br><span class="line">		wg.Add(<span class="number">1</span>)</span><br><span class="line">		<span class="comment">// goroutine: 启动 Server</span></span><br><span class="line">		eg.Go(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">			wg.Done()</span><br><span class="line">			<span class="keyword">return</span> server.Start(octx)</span><br><span class="line">		&#125;)</span><br><span class="line">	&#125;</span><br><span class="line">	wg.Wait()</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 6. 服务注册</span></span><br><span class="line">	<span class="keyword">if</span> a.opts.registrar != <span class="literal">nil</span> &#123;</span><br><span class="line">		rctx, rcancel := context.WithTimeout(ctx, a.opts.registrarTimeout)</span><br><span class="line">		<span class="keyword">defer</span> rcancel()</span><br><span class="line">		<span class="keyword">if</span> err = a.opts.registrar.Register(rctx, instance); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> err</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 7. 执行 AfterStart 钩子</span></span><br><span class="line">	<span class="keyword">for</span> _, fn := <span class="keyword">range</span> a.opts.afterStart &#123;</span><br><span class="line">		<span class="keyword">if</span> err = fn(sctx); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> err</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 8. 监听系统信号</span></span><br><span class="line">	c := <span class="built_in">make</span>(<span class="keyword">chan</span> os.Signal, <span class="number">1</span>)</span><br><span class="line">	signal.Notify(c, a.opts.sigs...)</span><br><span class="line">	eg.Go(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">		<span class="keyword">select</span> &#123;</span><br><span class="line">		<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">		<span class="keyword">case</span> &lt;-c:</span><br><span class="line">			<span class="keyword">return</span> a.Stop()</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 9. 等待所有 goroutine 完成</span></span><br><span class="line">	<span class="keyword">if</span> err = eg.Wait(); err != <span class="literal">nil</span> &amp;&amp; !errors.Is(err, context.Canceled) &#123;</span><br><span class="line">		<span class="keyword">return</span> err</span><br><span class="line">	&#125;</span><br><span class="line">	err = <span class="literal">nil</span></span><br><span class="line"></span><br><span class="line">	<span class="comment">// 10. 执行 AfterStop 钩子</span></span><br><span class="line">	<span class="keyword">for</span> _, fn := <span class="keyword">range</span> a.opts.afterStop &#123;</span><br><span class="line">		err = fn(sctx)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如下总结了 Run 的核心流程：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">Run()</span><br><span class="line">  ├─ <span class="number">1.</span> buildInstance()        构建服务实例</span><br><span class="line">  ├─ <span class="number">2.</span> NewContext()            创建携带 AppInfo 的 Context</span><br><span class="line">  ├─ <span class="number">3.</span> errgroup.WithContext()  创建并发控制组</span><br><span class="line">  ├─ <span class="number">4.</span> BeforeStart 钩子        启动前回调</span><br><span class="line">  ├─ <span class="number">5.</span> 启动所有 Server          每个 Server 两个 goroutine</span><br><span class="line">  │     ├─ goroutine A: Start(octx)      启动服务</span><br><span class="line">  │     └─ goroutine B: &lt;-ctx.Done() → Stop(stopCtx)  等待停止信号后优雅关闭</span><br><span class="line">  ├─ <span class="number">6.</span> wg.Wait()               确保所有 Server 已开始启动</span><br><span class="line">  ├─ <span class="number">7.</span> Registrar.Register()    服务注册</span><br><span class="line">  ├─ <span class="number">8.</span> AfterStart 钩子          启动后回调</span><br><span class="line">  ├─ <span class="number">9.</span> 监听系统信号             SIGTERM/SIGQUIT/SIGINT</span><br><span class="line">  ├─ <span class="number">10.</span> eg.Wait()              等待所有 goroutine 完成</span><br><span class="line">  └─ <span class="number">11.</span> AfterStop 钩子          停止后回调</span><br></pre></td></tr></table></figure>
+<h3 id="关键设计server-启动与停止的并发控制"><a class="markdownIt-Anchor" href="#关键设计server-启动与停止的并发控制"></a> 关键设计：Server 启动与停止的并发控制</h3>
+<p>对每个 Server，<code>Run</code> 启动了两个 goroutine：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// goroutine 1: 等待 ctx 取消后停止 Server</span></span><br><span class="line">eg.Go(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	&lt;-ctx.Done()                    <span class="comment">// 阻塞等待取消信号</span></span><br><span class="line">	stopCtx := context.WithoutCancel(octx)  <span class="comment">// 即使父 ctx 取消，stopCtx 仍有效</span></span><br><span class="line">	<span class="keyword">if</span> a.opts.stopTimeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">var</span> cancel context.CancelFunc</span><br><span class="line">		stopCtx, cancel = context.WithTimeout(stopCtx, a.opts.stopTimeout)</span><br><span class="line">		<span class="keyword">defer</span> cancel()</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> server.Stop(stopCtx)     <span class="comment">// 优雅停止</span></span><br><span class="line">&#125;)</span><br><span class="line"></span><br><span class="line"><span class="comment">// goroutine 2: 启动 Server</span></span><br><span class="line">wg.Add(<span class="number">1</span>)</span><br><span class="line">eg.Go(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	wg.Done()                       <span class="comment">// 标记已开始启动</span></span><br><span class="line">	<span class="keyword">return</span> server.Start(octx)       <span class="comment">// 启动服务（通常阻塞）</span></span><br><span class="line">&#125;)</span><br><span class="line">wg.Wait()                           <span class="comment">// 等待所有 Server 的 wg.Done() 执行</span></span><br></pre></td></tr></table></figure>
+<p>这里有几个精妙的设计：</p>
+<p><strong>1. <code>wg.Wait()</code> 确保注册在启动之后</strong></p>
+<p><code>wg.Wait()</code> 会阻塞到所有 Server 的 <code>wg.Done()</code> 执行完毕，即所有 Server 都已进入 <code>Start</code> 方法。这保证了服务注册（步骤 7）一定发生在 Server 启动之后，避免出现 <code>服务已注册但 Server 还没启动</code> 的窗口期。</p>
+<p><strong>2. <code>context.WithoutCancel</code> 保证停止上下文有效</strong></p>
+<p>当 <code>Stop()</code> 被调用时，<code>cancel()</code> 会导致 <code>ctx.Done()</code> 触发。但在停止 Server 时，<code>server.Stop(stopCtx)</code> 仍然需要一个有效的 Context 来执行清理逻辑（如等待正在处理的请求完成）。<code>context.WithoutCancel(octx)</code> 创建了一个不会被父 Context 取消影响的 Context，确保停止逻辑可以正常执行。</p>
+<p><strong>3. <code>stopTimeout</code> 控制优雅停机时限</strong></p>
+<p>如果设置了 <code>stopTimeout</code>，停止操作会在超时后强制终止，避免因某些请求处理时间过长而无限期阻塞。</p>
+<h3 id="errgroup-的作用"><a class="markdownIt-Anchor" href="#errgroup-的作用"></a> errgroup 的作用</h3>
+<p><code>errgroup.WithContext</code> 是 <code>golang.org/x/sync/errgroup</code> 提供的并发控制工具，可以看作 <code>sync.WaitGroup</code> 的增强版：</p>
+<ul>
+<li><strong>错误传播</strong>：任何一个 goroutine 返回错误，<code>eg.Wait()</code> 都会返回该错误</li>
+<li><strong>自动取消</strong>：当一个 goroutine 出错时，通过 <code>ctx</code> 通知其他 goroutine 退出</li>
+<li><strong>简化代码</strong>：无需手动管理 <code>Add</code>/<code>Done</code>/<code>Wait</code> 计数器</li>
+</ul>
+<p>在 App 中，errgroup 管理了三类 goroutine：</p>
+<ol>
+<li>每个 Server 的启动 goroutine</li>
+<li>每个 Server 的停止 goroutine</li>
+<li>信号监听 goroutine</li>
+</ol>
+<p>任何一方出错，都会触发其他 goroutine 退出。</p>
+<h2 id="stop-方法优雅停机"><a class="markdownIt-Anchor" href="#stop-方法优雅停机"></a> Stop 方法：优雅停机</h2>
+<p>如下展示了 Stop 方法的核心实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// app.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *App)</span></span> Stop() (err <span class="type">error</span>) &#123;</span><br><span class="line">	sctx := NewContext(a.ctx, a)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 1. 执行 BeforeStop 钩子</span></span><br><span class="line">	<span class="keyword">for</span> _, fn := <span class="keyword">range</span> a.opts.beforeStop &#123;</span><br><span class="line">		err = fn(sctx)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 2. 服务注销</span></span><br><span class="line">	a.mu.Lock()</span><br><span class="line">	instance := a.instance</span><br><span class="line">	a.mu.Unlock()</span><br><span class="line">	<span class="keyword">if</span> a.opts.registrar != <span class="literal">nil</span> &amp;&amp; instance != <span class="literal">nil</span> &#123;</span><br><span class="line">		ctx, cancel := context.WithTimeout(NewContext(a.ctx, a), a.opts.registrarTimeout)</span><br><span class="line">		<span class="keyword">defer</span> cancel()</span><br><span class="line">		<span class="keyword">if</span> err = a.opts.registrar.Deregister(ctx, instance); err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> err</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 3. 取消 Context（触发所有 Server 停止）</span></span><br><span class="line">	<span class="keyword">if</span> a.cancel != <span class="literal">nil</span> &#123;</span><br><span class="line">		a.cancel()</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>整个停机流程图可以简化为：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Stop()</span><br><span class="line">  ├─ 1. BeforeStop 钩子      停止前回调</span><br><span class="line">  ├─ 2. Registrar.Deregister()  服务注销（先注销，再停止）</span><br><span class="line">  └─ 3. cancel()               取消 Context</span><br><span class="line">        └─ 触发所有 Server 的 &lt;-ctx.Done()</span><br><span class="line">           └─ 调用 server.Stop(stopCtx)  优雅停止</span><br></pre></td></tr></table></figure>
+<p><code>Stop()</code> 先执行 <code>Deregister</code>，再调用 <code>cancel()</code> 触发 Server 停止。这个顺序很重要：先从注册中心注销，使得新的请求不再路由到本实例，然后再优雅地处理完已有的请求后停止。如果反过来，先停止 Server 再注销，会导致注册中心仍然认为本实例可用，但实际已经无法处理请求。</p>
+<p>如下则展示了 App 的完整生命周期时序：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">                  ┌─────────── Run() ───────────┐</span><br><span class="line">                  │                              │</span><br><span class="line">BeforeStart ──→ Start Servers ──→ Register ──→ AfterStart</span><br><span class="line">                                                   │</span><br><span class="line">                                             等待信号/Stop()</span><br><span class="line">                                                   │</span><br><span class="line">                                             BeforeStop</span><br><span class="line">                                                   │</span><br><span class="line">                                             Deregister</span><br><span class="line">                                                   │</span><br><span class="line">                                             cancel() ──→ Stop Servers</span><br><span class="line">                                                   │</span><br><span class="line">                                             AfterStop</span><br></pre></td></tr></table></figure>
+<h2 id="部分实现细节"><a class="markdownIt-Anchor" href="#部分实现细节"></a> 部分实现细节</h2>
+<p>接下来我们再来深入分析其中一些重点流程的实现细节：</p>
+<h3 id="构建服务实例"><a class="markdownIt-Anchor" href="#构建服务实例"></a> 构建服务实例</h3>
+<p><code>buildInstance</code> 方法构建用于注册的 <code>ServiceInstance</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// app.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *App)</span></span> buildInstance() (*registry.ServiceInstance, <span class="type">error</span>) &#123;</span><br><span class="line">	endpoints := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(a.opts.endpoints))</span><br><span class="line">	<span class="comment">// 1. 使用用户指定的 Endpoint</span></span><br><span class="line">	<span class="keyword">for</span> _, e := <span class="keyword">range</span> a.opts.endpoints &#123;</span><br><span class="line">		endpoints = <span class="built_in">append</span>(endpoints, e.String())</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 2. 如果没有指定，从 Server 自动获取</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(endpoints) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">for</span> _, srv := <span class="keyword">range</span> a.opts.servers &#123;</span><br><span class="line">			<span class="keyword">if</span> r, ok := srv.(transport.Endpointer); ok &#123;</span><br><span class="line">				e, err := r.Endpoint()</span><br><span class="line">				<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">					<span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">				&#125;</span><br><span class="line">				endpoints = <span class="built_in">append</span>(endpoints, e.String())</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 3. 创建服务实例</span></span><br><span class="line">	<span class="keyword">return</span> &amp;registry.ServiceInstance&#123;</span><br><span class="line">		ID:        a.opts.id,</span><br><span class="line">		Name:      a.opts.name,</span><br><span class="line">		Version:   a.opts.version,</span><br><span class="line">		Metadata:  a.opts.metadata,</span><br><span class="line">		Endpoints: endpoints,</span><br><span class="line">	&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Endpoint 的获取有两个来源：</p>
+<ol>
+<li><strong>用户显式指定</strong>：通过 <code>kratos.Endpoint(url)</code> 选项设置</li>
+<li><strong>从 Server 自动获取</strong>：如果 Server 实现了 <code>transport.Endpointer</code> 接口，自动调用 <code>Endpoint()</code> 方法</li>
+</ol>
+<h3 id="context-传播-appinfo"><a class="markdownIt-Anchor" href="#context-传播-appinfo"></a> Context 传播 AppInfo</h3>
+<p>App 通过 Context 将自身信息传播给下游：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">/ app.<span class="keyword">go</span></span><br><span class="line"><span class="keyword">type</span> appKey <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewContext</span><span class="params">(ctx context.Context, s AppInfo)</span></span> context.Context &#123;</span><br><span class="line">	<span class="keyword">return</span> context.WithValue(ctx, appKey&#123;&#125;, s)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FromContext</span><span class="params">(ctx context.Context)</span></span> (s AppInfo, ok <span class="type">bool</span>) &#123;</span><br><span class="line">	s, ok = ctx.Value(appKey&#123;&#125;).(AppInfo)</span><br><span class="line">	<span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>appKey</code> 是一个空结构体类型，用作 Context 的 key。这是 Go 中标准的&quot;私有键&quot;模式：</p>
+<ul>
+<li><strong>类型安全</strong>：<code>appKey</code> 是包内私有类型，外部包无法创建相同类型的 key，避免 key 冲突</li>
+<li><strong>零内存占用</strong>：<code>struct&#123;&#125;</code> 不占用内存空间</li>
+<li><strong>值相等</strong>：两个 <code>appKey&#123;&#125;</code> 实例在 <code>==</code> 比较时是相等的，满足 <code>context.Value</code> 的 key 查找要求</li>
+</ul>
+<p><strong>使用示例：</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 在中间件或 Handler 中获取应用信息</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">someHandler</span><span class="params">(ctx context.Context)</span></span> &#123;</span><br><span class="line">	<span class="keyword">if</span> appInfo, ok := kratos.FromContext(ctx); ok &#123;</span><br><span class="line">		fmt.Printf(<span class="string">&quot;Service: %s, ID: %s\n&quot;</span>, appInfo.Name(), appInfo.ID())</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们分析了 Kratos 应用框架的核心组件 <code>App</code> 的实现，包括其生命周期管理、服务注册注销以及优雅停机等关键功能：</p>
+<ul>
+<li>App 将多个 Transport Server 的启停逻辑统一管理，应用层只需关注 <code>Run()</code> 和 <code>Stop()</code></li>
+<li>通过 <code>Option</code> 函数灵活配置 App，与 config 模块保持一致的设计风格</li>
+<li>利用 <code>context.WithValue</code> 传播 AppInfo，下游可按需获取</li>
+</ul>
+<p>通过深入理解这些内部机制，我们可以更好地掌握如何构建和管理自己的微服务应用。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/05/28/cuda-programming-01/" rel="next" title="CUDA 编程-基础与实践 01：GPU 硬件与 CUDA 程序开发工具">
+      CUDA 编程-基础与实践 01：GPU 硬件与 CUDA 程序开发工具 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#app-%E6%A8%A1%E5%9D%97%E6%A6%82%E8%A7%88"><span class="nav-number">1.</span> <span class="nav-text"> App 模块概览</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-layout-%E4%B8%AD%E7%9A%84-app-%E4%BD%BF%E7%94%A8"><span class="nav-number">2.</span> <span class="nav-text"> kratos-layout 中的 App 使用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-app"><span class="nav-number">2.1.</span> <span class="nav-text"> 创建 App</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C-app"><span class="nav-number">2.2.</span> <span class="nav-text"> 运行 App</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#server-%E7%9A%84%E5%88%9B%E5%BB%BA"><span class="nav-number">2.3.</span> <span class="nav-text"> Server 的创建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E6%B5%81%E7%A8%8B%E5%9B%BE"><span class="nav-number">2.4.</span> <span class="nav-text"> 使用流程图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%8E%A5%E5%8F%A3%E8%AE%BE%E8%AE%A1"><span class="nav-number">3.</span> <span class="nav-text"> 核心接口设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#appinfo-%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.1.</span> <span class="nav-text"> AppInfo 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#transportserver-%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.2.</span> <span class="nav-text"> transport.Server 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#transportendpointer-%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.3.</span> <span class="nav-text"> transport.Endpointer 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#registryregistrar-%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.4.</span> <span class="nav-text"> registry.Registrar 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3%E5%85%B3%E7%B3%BB%E5%9B%BE"><span class="nav-number">3.5.</span> <span class="nav-text"> 接口关系图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#app-%E7%BB%93%E6%9E%84%E4%BD%93%E4%B8%8E%E9%80%89%E9%A1%B9"><span class="nav-number">4.</span> <span class="nav-text"> App 结构体与选项</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#app-%E7%BB%93%E6%9E%84%E4%BD%93"><span class="nav-number">4.1.</span> <span class="nav-text"> App 结构体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#options-%E7%BB%93%E6%9E%84%E4%BD%93"><span class="nav-number">4.2.</span> <span class="nav-text"> options 结构体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-app-%E5%AE%9E%E4%BE%8B"><span class="nav-number">4.3.</span> <span class="nav-text"> 创建 App 实例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#run-%E6%96%B9%E6%B3%95%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B"><span class="nav-number">5.</span> <span class="nav-text"> Run 方法：启动流程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B3%E9%94%AE%E8%AE%BE%E8%AE%A1server-%E5%90%AF%E5%8A%A8%E4%B8%8E%E5%81%9C%E6%AD%A2%E7%9A%84%E5%B9%B6%E5%8F%91%E6%8E%A7%E5%88%B6"><span class="nav-number">5.1.</span> <span class="nav-text"> 关键设计：Server 启动与停止的并发控制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#errgroup-%E7%9A%84%E4%BD%9C%E7%94%A8"><span class="nav-number">5.2.</span> <span class="nav-text"> errgroup 的作用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#stop-%E6%96%B9%E6%B3%95%E4%BC%98%E9%9B%85%E5%81%9C%E6%9C%BA"><span class="nav-number">6.</span> <span class="nav-text"> Stop 方法：优雅停机</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%83%A8%E5%88%86%E5%AE%9E%E7%8E%B0%E7%BB%86%E8%8A%82"><span class="nav-number">7.</span> <span class="nav-text"> 部分实现细节</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9E%84%E5%BB%BA%E6%9C%8D%E5%8A%A1%E5%AE%9E%E4%BE%8B"><span class="nav-number">7.1.</span> <span class="nav-text"> 构建服务实例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#context-%E4%BC%A0%E6%92%AD-appinfo"><span class="nav-number">7.2.</span> <span class="nav-text"> Context 传播 AppInfo</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">8.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">256</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
