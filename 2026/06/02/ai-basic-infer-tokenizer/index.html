@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="本文使用 Hugging Face Transformers 库和 Qwen3-0.6B 模型，通过实际代码来深入理解大语言模型（LLM）中的 Tokenizer、BPE 分词、特殊 Token、Chat Template 等核心概念。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="理解 LLM 的 Tokenizer">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/06/02/ai-basic-infer-tokenizer/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="本文使用 Hugging Face Transformers 库和 Qwen3-0.6B 模型，通过实际代码来深入理解大语言模型（LLM）中的 Tokenizer、BPE 分词、特殊 Token、Chat Template 等核心概念。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-06-02T08:55:50.000Z">
+<meta property="article:modified_time" content="2026-06-02T08:57:04.175Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="AI">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/02/ai-basic-infer-tokenizer/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>理解 LLM 的 Tokenizer | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/02/ai-basic-infer-tokenizer/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          理解 LLM 的 Tokenizer
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-06-02 16:55:50" itemprop="dateCreated datePublished" datetime="2026-06-02T16:55:50+08:00">2026-06-02</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/AI/" itemprop="url" rel="index"><span itemprop="name">AI</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>本文使用 Hugging Face Transformers 库和 Qwen3-0.6B 模型，通过实际代码来深入理解大语言模型（LLM）中的 Tokenizer、BPE 分词、特殊 Token、Chat Template 等核心概念。</p>
+<span id="more"></span>
+<h2 id="1-为什么需要-tokenizer"><a class="markdownIt-Anchor" href="#1-为什么需要-tokenizer"></a> 1. 为什么需要 Tokenizer？</h2>
+<p><strong>大语言模型（LLM）本质上是一个巨大的数学概率模型，它看不懂文字，只能处理数字（向量）</strong>。Tokenizer 的核心任务，就是把我们输入的自然语言文本，切分并转换成模型能听得懂的数字序列。Tokenizer 会建立一本词表（Vocabulary），给每个常见字、词或者符号编上号（Token ID）：</p>
+<ul>
+<li><strong>编码（Encode）</strong>：把人类可读的文本 → 一串数字 ID</li>
+<li><strong>解码（Decode）</strong>：把数字 ID → 人类可读的文本</li>
+</ul>
+<p>没有 Tokenizer，你无法把自然语言的 <code>你好</code> 喂给模型，也无法把模型输出的数字变成你能读懂的文字。</p>
+<h3 id="基本概念"><a class="markdownIt-Anchor" href="#基本概念"></a> 基本概念</h3>
+<h4 id="文本text"><a class="markdownIt-Anchor" href="#文本text"></a> 文本（Text）</h4>
+<p>文本（Text）是人类世界的语言，是人类日常交流所使用的原始字符串。它可以是一个词、一个句子、一篇文章，甚至是一整本书。特点：</p>
+<ul>
+<li>人类友好： 充满语义、逻辑、情感和标点符号。</li>
+<li>计算机不友好： 文本长度不固定，且直接看文字，计算机无法进行加减乘除等数学运算。</li>
+</ul>
+<h4 id="词元token"><a class="markdownIt-Anchor" href="#词元token"></a> 词元（Token）</h4>
+<p>词元（Token）则是文本被 Tokenizer（分词器）切分之后的语义碎片。<strong>Token 是模型处理语言时的最小语义单元</strong>。它的特点是：</p>
+<ul>
+<li>承上启下： 它是文本到数字的中间过渡状态。</li>
+<li><strong>不一定是单词</strong>：在英文中，一个 Token 可能是完整单词（如 cool），也可能是前缀或子词（如 un、helpful）；在中文中，它可能是一个词，也可能是不是一个合法的汉字</li>
+<li>带有特殊标记：很多模型的分词器会用特殊符号来标记 Token 的空间结构</li>
+</ul>
+<p><strong>Token 不是自然语言的 <code>词</code>，也不是&quot;字&quot;。它是分词算法拆分出的最小单位</strong>。一个 token 可能是：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>例子</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>完整词</td>
+<td><code>Hello</code>, <code>the</code>, <code>is</code></td>
+<td>高频词直接作为 token</td>
+</tr>
+<tr>
+<td>子词（subword）</td>
+<td><code>un</code>, <code>belie</code>, <code>vable</code></td>
+<td>低频词被拆成多个子词 token</td>
+</tr>
+<tr>
+<td>单字符</td>
+<td><code>a</code>, <code>Z</code></td>
+<td>极罕见的字符</td>
+</tr>
+<tr>
+<td>字节级编码</td>
+<td><code>ä½łå¥½</code></td>
+<td>byte-level BPE 对 UTF-8 字节的特殊编码</td>
+</tr>
+<tr>
+<td>特殊标记</td>
+<td>&lt;|im_start|&gt;, &lt;|im_end|&gt;</td>
+<td>用于标记对话结构</td>
+</tr>
+</tbody>
+</table>
+<h4 id="词表vocabulary"><a class="markdownIt-Anchor" href="#词表vocabulary"></a> 词表（Vocabulary）</h4>
+<p>词表（Vocabulary）就是模型 <code>认识</code> 的所有词元（Token）的字典，是所有合法 token 的集合，每个 token 有一个唯一数字 ID。词表大小会影响模型 embedding 的大小。从下文的 Demo 可以看出，Qwen3-0.6B 的词表大小是 <code>151643</code>。</p>
+<h4 id="词元-idtoken-id"><a class="markdownIt-Anchor" href="#词元-idtoken-id"></a> 词元 ID（Token ID）</h4>
+<p>词元 ID（Token ID）则是计算机世界的数学代号，它是 Token 在模型的词表（Vocabulary）中所对应的整数索引（Index）：</p>
+<ul>
+<li>每一个唯一的 Token 字符串，在字典里都有一个唯一固定的整数编号。大模型内部所有的矩阵乘法和概率计算，最初都是基于这些数字开始的</li>
+<li>数字无实际语义： ID 本身的大小（比如数字 100 和数字 10000）没有任何高低贵贱之分，只是普通的字典页码。<strong>真正的语义是通过后面的 Embedding（嵌入向量）学到的</strong></li>
+</ul>
+<h3 id="tokenizer-的工作流程"><a class="markdownIt-Anchor" href="#tokenizer-的工作流程"></a> Tokenizer 的工作流程</h3>
+<p>从高层次来看，Tokenizer 的工作并不是孤立的，它是人类世界与大模型神经网络之间的 <code>安检通道</code> 和 <code>翻译桥梁</code>。我们可以把完整流程分为 输入（Encode） 和 输出（Decode） 两个宏观方向。</p>
+<p>对于文本输入到模型（Encoding 流程）：</p>
+<ul>
+<li>规范化 (Normalization)：统一大小写（有些模型需要）、将繁体转简体、标准化各种奇怪的标点符号或隐形空格</li>
+<li>预切分 (Pre-tokenization)：给出一个粗略的切分边界，通常是按空格和标点切分</li>
+<li>子词切分 (Subword Tokenization)：核心步骤，根据模型自带的词表算法，把上一步切开的词进一步细化，得到 Token 列表</li>
+<li>编码 + 特殊 token：对照词表，把这些 Token 字符串变成数字 ID，同时添加特殊 Token</li>
+</ul>
+<p>对于模型输出到人类（Decoding 流程）：</p>
+<ul>
+<li>ID 查表：把数字 ID 映射回 Token</li>
+<li>拼接与清理（Stream Decoding）：Tokenizer 将其换回人类可读的文字，顺便清理掉不再需要的特殊符号</li>
+<li>渲染输出：最后输出人类可读的文字</li>
+</ul>
+<h3 id="demo基本分词操作"><a class="markdownIt-Anchor" href="#demo基本分词操作"></a> Demo：基本分词操作</h3>
+<p>接下来我们通过一个实际 Demo 来了解 Tokenizer 的基本用法，对分词操作有个直观的认识：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="string">Demo 1: Basic Tokenization</span></span><br><span class="line"><span class="string">Demonstrates core Tokenizer functionality: converting text to tokens and IDs</span></span><br><span class="line"><span class="string">&quot;&quot;&quot;</span></span><br><span class="line"><span class="keyword">from</span> transformers <span class="keyword">import</span> AutoTokenizer</span><br><span class="line"></span><br><span class="line">MODEL_NAME = <span class="string">&quot;Qwen/Qwen3-0.6B&quot;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">section</span>(<span class="params">title</span>):</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;\n&quot;</span> + <span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line">    <span class="built_in">print</span>(title)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)</span><br><span class="line"></span><br><span class="line">section(<span class="string">&quot;1. Tokenizer Basic Info&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Vocab size: <span class="subst">&#123;tokenizer.vocab_size&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Model max length: <span class="subst">&#123;tokenizer.model_max_length&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Pad token: <span class="subst">&#123;tokenizer.pad_token&#125;</span> (id=<span class="subst">&#123;tokenizer.pad_token_id&#125;</span>)&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;EOS token: <span class="subst">&#123;tokenizer.eos_token&#125;</span> (id=<span class="subst">&#123;tokenizer.eos_token_id&#125;</span>)&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;UNK token: <span class="subst">&#123;tokenizer.unk_token&#125;</span> (id=<span class="subst">&#123;tokenizer.unk_token_id&#125;</span>)&quot;</span>)</span><br><span class="line"></span><br><span class="line">section(<span class="string">&quot;2. Text -&gt; Token IDs (Encoding)&quot;</span>)</span><br><span class="line">text = <span class="string">&quot;Hello, world! How are you?&quot;</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Original text: <span class="subst">&#123;text&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">encoded = tokenizer.encode(text, add_special_tokens=<span class="literal">False</span>)</span><br><span class="line">tokens = tokenizer.tokenize(text)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Token IDs: <span class="subst">&#123;encoded&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Token strings: <span class="subst">&#123;tokens&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;(add_special_tokens=False ensures encode() and tokenize() produce the same tokens)&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;\nToken-to-ID mapping:&quot;</span>)</span><br><span class="line"><span class="keyword">for</span> token, token_id <span class="keyword">in</span> <span class="built_in">zip</span>(tokens, encoded):</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  &#x27;<span class="subst">&#123;token&#125;</span>&#x27; -&gt; <span class="subst">&#123;token_id&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line">section(<span class="string">&quot;3. Token IDs -&gt; Text (Decoding)&quot;</span>)</span><br><span class="line">decoded = tokenizer.decode(encoded)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Decoded result: <span class="subst">&#123;decoded&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;\nProgressive decoding (watch tokens merge):&quot;</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="built_in">len</span>(encoded)):</span><br><span class="line">    partial = tokenizer.decode(encoded[:i+<span class="number">1</span>])</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;  IDs[:<span class="subst">&#123;i+<span class="number">1</span>&#125;</span>] = <span class="subst">&#123;encoded[:i+<span class="number">1</span>]&#125;</span> -&gt; &#x27;<span class="subst">&#123;partial&#125;</span>&#x27;&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>运行结果：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line">python 01_basic_tokenization.py</span><br><span class="line"></span><br><span class="line">============================================================</span><br><span class="line">1. Tokenizer Basic Info</span><br><span class="line">============================================================</span><br><span class="line">Vocab size: 151643</span><br><span class="line">Model max length: 131072</span><br><span class="line">Pad token: &lt;|endoftext|&gt; (<span class="built_in">id</span>=151643)</span><br><span class="line">EOS token: &lt;|im_end|&gt; (<span class="built_in">id</span>=151645)</span><br><span class="line">UNK token: None (<span class="built_in">id</span>=None)</span><br><span class="line"></span><br><span class="line">============================================================</span><br><span class="line">2. Text -&gt; Token IDs (Encoding)</span><br><span class="line">============================================================</span><br><span class="line">Original text: Hello, world! How are you?</span><br><span class="line">Token IDs: [9707, 11, 1879, 0, 2585, 525, 498, 30]</span><br><span class="line">Token strings: [<span class="string">&#x27;Hello&#x27;</span>, <span class="string">&#x27;,&#x27;</span>, <span class="string">&#x27;Ġworld&#x27;</span>, <span class="string">&#x27;!&#x27;</span>, <span class="string">&#x27;ĠHow&#x27;</span>, <span class="string">&#x27;Ġare&#x27;</span>, <span class="string">&#x27;Ġyou&#x27;</span>, <span class="string">&#x27;?&#x27;</span>]</span><br><span class="line">(add_special_tokens=False ensures encode() and tokenize() produce the same tokens)</span><br><span class="line"></span><br><span class="line">Token-to-ID mapping:</span><br><span class="line">  <span class="string">&#x27;Hello&#x27;</span> -&gt; 9707</span><br><span class="line">  <span class="string">&#x27;,&#x27;</span> -&gt; 11</span><br><span class="line">  <span class="string">&#x27;Ġworld&#x27;</span> -&gt; 1879</span><br><span class="line">  <span class="string">&#x27;!&#x27;</span> -&gt; 0</span><br><span class="line">  <span class="string">&#x27;ĠHow&#x27;</span> -&gt; 2585</span><br><span class="line">  <span class="string">&#x27;Ġare&#x27;</span> -&gt; 525</span><br><span class="line">  <span class="string">&#x27;Ġyou&#x27;</span> -&gt; 498</span><br><span class="line">  <span class="string">&#x27;?&#x27;</span> -&gt; 30</span><br><span class="line"></span><br><span class="line">============================================================</span><br><span class="line">3. Token IDs -&gt; Text (Decoding)</span><br><span class="line">============================================================</span><br><span class="line">Decoded result: Hello, world! How are you?</span><br><span class="line"></span><br><span class="line">Progressive decoding (watch tokens merge):</span><br><span class="line">  IDs[:1] = [9707] -&gt; <span class="string">&#x27;Hello&#x27;</span></span><br><span class="line">  IDs[:2] = [9707, 11] -&gt; <span class="string">&#x27;Hello,&#x27;</span></span><br><span class="line">  IDs[:3] = [9707, 11, 1879] -&gt; <span class="string">&#x27;Hello, world&#x27;</span></span><br><span class="line">  IDs[:4] = [9707, 11, 1879, 0] -&gt; <span class="string">&#x27;Hello, world!&#x27;</span></span><br><span class="line">  IDs[:5] = [9707, 11, 1879, 0, 2585] -&gt; <span class="string">&#x27;Hello, world! How&#x27;</span></span><br><span class="line">  IDs[:6] = [9707, 11, 1879, 0, 2585, 525] -&gt; <span class="string">&#x27;Hello, world! How are&#x27;</span></span><br><span class="line">  IDs[:7] = [9707, 11, 1879, 0, 2585, 525, 498] -&gt; <span class="string">&#x27;Hello, world! How are you&#x27;</span></span><br><span class="line">  IDs[:8] = [9707, 11, 1879, 0, 2585, 525, 498, 30] -&gt; <span class="string">&#x27;Hello, world! How are you?&#x27;</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>通过 Hugging Face 的 <code>AutoTokenizer</code> 自动去下载或加载本地的 Qwen（通义千问）分词器配置文件。</li>
+<li><code>tokenizer.vocab_size</code> 用于查看词表大小</li>
+<li><code>tokenizer.model_max_length</code> 用于查看模型能够支持的最大上下文长度，这里是 128k。上下文是输入（Prompt）和输出（Response）的总和</li>
+<li><code>tokenizer.pad_token_id</code>：使用 <code>&lt;|endoftext|&gt;</code> 作为 Pad Token</li>
+<li><code>tokenizer.eos_token</code>：使用 <code>&lt;|im_end|&gt;</code> 来标识聊天结束</li>
+</ul>
+<p>我们也可以通过 <code>tokenizer.convert_ids_to_tokens()</code> 来将 id 转换为 token，使用 <code>tokenizer.get_vocab()</code> 获取整个词表</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.convert_ids_to_tokens(<span class="number">0</span>)</span><br><span class="line"><span class="string">&#x27;!&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.convert_ids_to_tokens(<span class="number">11</span>)</span><br><span class="line"><span class="string">&#x27;,&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.convert_ids_to_tokens(<span class="number">9707</span>)</span><br><span class="line"><span class="string">&#x27;Hello&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.get_vocab()[<span class="string">&#x27;Hello&#x27;</span>]</span><br><span class="line"><span class="number">9707</span></span><br></pre></td></tr></table></figure>
+<h2 id="分词算法"><a class="markdownIt-Anchor" href="#分词算法"></a> 分词算法</h2>
+<p>大模型每次处理或生成文本时，都是以 Token 为单位计费和消耗算力的。<strong>词表的大小直接决定了模型吃进一段话时，要把这段话切得多碎</strong>：</p>
+<ul>
+<li>
+<p>词表太小：如果词表过小，模型遇到复杂词汇时就需要将其进行拆分成多个 Token，这导致文本对应的 Token 序列变得极其漫长。因为大模型的 Attention（注意力机制）计算复杂度与序列长度的平方成正比，序列越长，模型不仅运行越慢，能容纳的上下文窗口（Context Window）也会缩水</p>
+</li>
+<li>
+<p>词表太大：大模型的入口 Embedding 层和出口（LM Head 输出层）的大小是直接与词表大小（Vocab Size）挂钩的。这两层的矩阵面积等于：<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext>词表大小</mtext><mo>×</mo><mtext>模型维度</mtext></mrow><annotation encoding="application/x-tex">\text{词表大小} \times \text{模型维度}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.76666em;vertical-align:-0.08333em;"></span><span class="mord text"><span class="mord cjk_fallback">词表大小</span></span><span class="mspace" style="margin-right:0.2222222222222222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222222222222222em;"></span></span><span class="base"><span class="strut" style="height:0.68333em;vertical-align:0em;"></span><span class="mord text"><span class="mord cjk_fallback">模型维度</span></span></span></span></span>。如果词表过大，会导致模型 Embedding 层和输出层参数会显著增加</p>
+</li>
+</ul>
+<p>工程上一般取中间平衡点：兼顾序列长度、模型体积与语义表达。目前在整个大模型和自然语言处理（NLP）领域，主流的子词分词算法有：BPE、WordPiece、Unigram。它们出现的初衷，都是为了解决传统分词 <code>词表太大</code> 或 <code>未知词（UNK）太多</code> 的痛点。但它们的解题思路和数学逻辑截然不同。</p>
+<h3 id="bpe-byte-pair-encoding双核字节编码"><a class="markdownIt-Anchor" href="#bpe-byte-pair-encoding双核字节编码"></a> BPE (Byte-Pair Encoding，双核字节编码)</h3>
+<p>BPE 最初是一种数据压缩算法，后来被引入到 NLP 分词中。它的逻辑非常像堆乐高积木：一开始手里全是零散的小方块，谁跟谁经常挨在一起，就把它们粘成一个稍大一点的组合积木。</p>
+<p>工作流程：</p>
+<ul>
+<li>初始化：把训练集里的所有文本拆成最基础的单个字符，这些字符组成初始词表</li>
+<li>统计频率： 统计语料库中，哪两个相邻的 Token 同时出现的次数最多（频率最高）</li>
+<li>合并： 把这个最高频的 <code>双子星组合</code> 合并成一个新的 Token，并塞进词表</li>
+<li>循环： 重复步骤 2 和 3，直到词表大小达到了你预设的上限（比如 5 万或 15 万）</li>
+</ul>
+<p>该算法存在一种变体 Byte-level BPE (BBPE)，连字符都不作为基础了，直接把文本转成 UTF-8 字节（Byte）。基础词表里雷打不动先躺着 0~255 这 256 个字节代号。因为世界万物皆可转字节，所以它彻底消除了 UNK（未知词）。</p>
+<p>这就是 BPE 算法的精妙之处在于：</p>
+<ul>
+<li>常用词保持完整：高频出现的单词经过几次迭代直接变成一个 Token，保证了模型的计算效率</li>
+<li>罕见词拆成碎片：不常用的词也能被拆成基础碎片的组合，保证了模型不会遇到不认识的词</li>
+</ul>
+<h3 id="wordpiece-算法基于最大概率合并"><a class="markdownIt-Anchor" href="#wordpiece-算法基于最大概率合并"></a> WordPiece 算法（基于最大概率合并）</h3>
+<p>WordPiece 的整体流程和 BPE 非常像，也是从单个字符开始，一步步把高频的片段合并成大词元。但它在决定“合并哪两个碎片”时，引入了更高级的统计语言模型概率：</p>
+<ul>
+<li>BPE 只看两个片段在一起出现的绝对次数：这会导致像 of the、in the 这种本身基数就大的词被强行合并</li>
+<li>WordPiece 看的是：合并这两个词，对整体语言模型的互信息（Mutual Information）提升有多大。如果两个词各自出现的概率很高，但凑在一起的概率并没有显著飙升，那么其 Score 就会很低。相反，如果两个词单独出现概率一般，但合在一起的概率却很高，算法就会优先合并它们</li>
+</ul>
+<h3 id="unigram-算法"><a class="markdownIt-Anchor" href="#unigram-算法"></a> Unigram 算法</h3>
+<p>Unigram 算法与前两种（BPE 和 WordPiece）的思路完全不同。BPE 和 WordPiece 是自底向上地从小字符开始合并，而 Unigram 是自顶向下地从一个庞大的初始词汇表里，不断删掉 <code>贡献不大</code> 的子词。它的核心逻辑很简单，就两步：</p>
+<ul>
+<li>评估每个人（子词）的不可或缺性：具体来说，就是计算删除某个子词后，模型解释整个语料库的损失会增加多少</li>
+<li>留下骨干，裁掉冗余：一轮评估完成后，算法会给所有子词的重要性排序，一次性裁掉那些排名靠后、对效率影响最小的子词</li>
+</ul>
+<p>不断重复这个 <code>评估-裁员</code> 的过程，直到团队规模精简到我们设定的目标大小。</p>
+<h3 id="查看模型的分词算法"><a class="markdownIt-Anchor" href="#查看模型的分词算法"></a> 查看模型的分词算法</h3>
+<p>我们可以使用如下示例代码查看模型所使用的分词算法信息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="built_in">type</span>(tokenizer)</span><br><span class="line">&lt;<span class="keyword">class</span> <span class="string">&#x27;transformers.models.qwen2.tokenization_qwen2.Qwen2Tokenizer&#x27;</span>&gt;</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.backend_tokenizer.model</span><br><span class="line">BPE(dropout=<span class="literal">None</span>, unk_token=<span class="literal">None</span>, continuing_subword_prefix=<span class="string">&quot;&quot;</span>, end_of_word_suffix=<span class="string">&quot;&quot;</span>, fuse_unk=<span class="literal">False</span>, byte_fallback=<span class="literal">False</span>, ignore_merges=<span class="literal">False</span>, vocab=&#123;<span class="string">&quot;!&quot;</span>:<span class="number">0</span>, <span class="string">&quot;&quot;&quot;:1, &quot;#&quot;:2, &quot;$&quot;:3, &quot;%&quot;:4, &quot;&amp;&quot;:5, &quot;&#x27;&quot;:6, &quot;(&quot;:7, &quot;)&quot;:8, &quot;*&quot;:9, &quot;+&quot;:10, &quot;,&quot;:11, &quot;-&quot;:12, &quot;.&quot;:13, &quot;/&quot;:14, &quot;0&quot;:15, &quot;1&quot;:16, &quot;2&quot;:17, &quot;3&quot;:18, &quot;4&quot;:19, &quot;5&quot;:20, &quot;6&quot;:21, &quot;7&quot;:22, &quot;8&quot;:23, &quot;9&quot;:24, &quot;:&quot;:25, &quot;;&quot;:26, &quot;&lt;&quot;:27, &quot;=&quot;:28, &quot;&gt;&quot;:29, &quot;?&quot;:30, &quot;@&quot;:31, &quot;A&quot;:32, &quot;B&quot;:33, &quot;C&quot;:34, &quot;D&quot;:35, &quot;E&quot;:36, &quot;F&quot;:37, &quot;G&quot;:38, &quot;H&quot;:39, &quot;I&quot;:40, &quot;J&quot;:41, &quot;K&quot;:42, &quot;L&quot;:43, &quot;M&quot;:44, &quot;N&quot;:45, &quot;O&quot;:46, &quot;P&quot;:47, &quot;Q&quot;:48, &quot;R&quot;:49, &quot;S&quot;:50, &quot;T&quot;:51, &quot;U&quot;:52, &quot;V&quot;:53, &quot;W&quot;:54, &quot;X&quot;:55, &quot;Y&quot;:56, &quot;Z&quot;:57, &quot;[&quot;:58, &quot;\&quot;:59, &quot;]&quot;:60, &quot;^&quot;:61, &quot;_&quot;:62, &quot;`&quot;:63, &quot;a&quot;:64, &quot;b&quot;:65, &quot;c&quot;:66, &quot;d&quot;:67, &quot;e&quot;:68, &quot;f&quot;:69, &quot;g&quot;:70, &quot;h&quot;:71, &quot;i&quot;:72, &quot;j&quot;:73, &quot;k&quot;:74, &quot;l&quot;:75, &quot;m&quot;:76, &quot;n&quot;:77, &quot;o&quot;:78, &quot;p&quot;:79, &quot;q&quot;:80, &quot;r&quot;:81, &quot;s&quot;:82, &quot;t&quot;:83, &quot;u&quot;:84, &quot;v&quot;:85, &quot;w&quot;:86, &quot;x&quot;:87, &quot;y&quot;:88, &quot;z&quot;:89, &quot;&#123;&quot;:90, &quot;|&quot;:91, &quot;&#125;&quot;:92, &quot;~&quot;:93, &quot;¡&quot;:94, &quot;¢&quot;:95, &quot;£&quot;:96, &quot;¤&quot;:97, &quot;¥&quot;:98, ...&#125;, merges=[(&quot;Ġ&quot;, &quot;Ġ&quot;), (&quot;ĠĠ&quot;, &quot;ĠĠ&quot;), (&quot;i&quot;, &quot;n&quot;), (&quot;Ġ&quot;, &quot;t&quot;), (&quot;ĠĠĠĠ&quot;, &quot;ĠĠĠĠ&quot;), (&quot;e&quot;, &quot;r&quot;), (&quot;ĠĠ&quot;, &quot;Ġ&quot;), (&quot;o&quot;, &quot;n&quot;), (&quot;Ġ&quot;, &quot;a&quot;), (&quot;r&quot;, &quot;e&quot;), (&quot;a&quot;, &quot;t&quot;), (&quot;s&quot;, &quot;t&quot;), (&quot;e&quot;, &quot;n&quot;), (&quot;o&quot;, &quot;r&quot;), (&quot;Ġt&quot;, &quot;h&quot;), (&quot;Ċ&quot;, &quot;Ċ&quot;), (&quot;Ġ&quot;, &quot;c&quot;), (&quot;l&quot;, &quot;e&quot;), (&quot;Ġ&quot;, &quot;s&quot;), (&quot;i&quot;, &quot;t&quot;), (&quot;a&quot;, &quot;n&quot;), (&quot;a&quot;, &quot;r&quot;), (&quot;a&quot;, &quot;l&quot;), (&quot;Ġth&quot;, &quot;e&quot;), (&quot;;&quot;, &quot;Ċ&quot;), (&quot;Ġ&quot;, &quot;p&quot;), (&quot;Ġ&quot;, &quot;f&quot;), (&quot;o&quot;, &quot;u&quot;), (&quot;Ġ&quot;, &quot;=&quot;), (&quot;i&quot;, &quot;s&quot;), (&quot;ĠĠĠĠ&quot;, &quot;ĠĠĠ&quot;), (&quot;in&quot;, &quot;g&quot;), (&quot;e&quot;, &quot;s&quot;), (&quot;Ġ&quot;, &quot;w&quot;), (&quot;i&quot;, &quot;on&quot;), (&quot;e&quot;, &quot;d&quot;), (&quot;i&quot;, &quot;c&quot;), (&quot;Ġ&quot;, &quot;b&quot;), (&quot;Ġ&quot;, &quot;d&quot;), (&quot;e&quot;, &quot;t&quot;), (&quot;Ġ&quot;, &quot;m&quot;), (&quot;Ġ&quot;, &quot;o&quot;), (&quot;ĉ&quot;, &quot;ĉ&quot;), (&quot;r&quot;, &quot;o&quot;), (&quot;a&quot;, &quot;s&quot;), (&quot;e&quot;, &quot;l&quot;), (&quot;c&quot;, &quot;t&quot;), (&quot;n&quot;, &quot;d&quot;), (&quot;Ġ&quot;, &quot;in&quot;), (&quot;Ġ&quot;, &quot;h&quot;), (&quot;en&quot;, &quot;t&quot;), (&quot;i&quot;, &quot;d&quot;), (&quot;Ġ&quot;, &quot;n&quot;), (&quot;a&quot;, &quot;m&quot;), (&quot;ĠĠĠĠĠĠĠĠ&quot;, &quot;ĠĠĠ&quot;), (&quot;Ġt&quot;, &quot;o&quot;), (&quot;Ġ&quot;, &quot;re&quot;), (&quot;-&quot;, &quot;-&quot;), (&quot;Ġ&quot;, &quot;&#123;&quot;), (&quot;Ġo&quot;, &quot;f&quot;), (&quot;o&quot;, &quot;m&quot;), (&quot;)&quot;, &quot;;Ċ&quot;), (&quot;i&quot;, &quot;m&quot;), (&quot;č&quot;, &quot;Ċ&quot;), (&quot;Ġ&quot;, &quot;(&quot;), (&quot;i&quot;, &quot;l&quot;), (&quot;/&quot;, &quot;/&quot;), (&quot;Ġa&quot;, &quot;nd&quot;), (&quot;u&quot;, &quot;r&quot;), (&quot;s&quot;, &quot;e&quot;), (&quot;Ġ&quot;, &quot;l&quot;), (&quot;e&quot;, &quot;x&quot;), (&quot;Ġ&quot;, &quot;S&quot;), (&quot;a&quot;, &quot;d&quot;), (&quot;Ġ&quot;, &quot;&quot;&quot;</span>), (<span class="string">&quot;c&quot;</span>, <span class="string">&quot;h&quot;</span>), (<span class="string">&quot;u&quot;</span>, <span class="string">&quot;t&quot;</span>), (<span class="string">&quot;i&quot;</span>, <span class="string">&quot;f&quot;</span>), (<span class="string">&quot;*&quot;</span>, <span class="string">&quot;*&quot;</span>), (<span class="string">&quot;Ġ&quot;</span>, <span class="string">&quot;&#125;&quot;</span>), (<span class="string">&quot;e&quot;</span>, <span class="string">&quot;m&quot;</span>), (<span class="string">&quot;o&quot;</span>, <span class="string">&quot;l&quot;</span>), (<span class="string">&quot;ĠĠĠĠĠĠĠĠ&quot;</span>, <span class="string">&quot;ĠĠĠĠĠĠĠĠ&quot;</span>), (<span class="string">&quot;t&quot;</span>, <span class="string">&quot;h&quot;</span>), (<span class="string">&quot;)&quot;</span>, <span class="string">&quot;Ċ&quot;</span>), (<span class="string">&quot;Ġ&#123;&quot;</span>, <span class="string">&quot;Ċ&quot;</span>), (<span class="string">&quot;Ġ&quot;</span>, <span class="string">&quot;g&quot;</span>), (<span class="string">&quot;i&quot;</span>, <span class="string">&quot;g&quot;</span>), (<span class="string">&quot;i&quot;</span>, <span class="string">&quot;v&quot;</span>), (<span class="string">&quot;,&quot;</span>, <span class="string">&quot;Ċ&quot;</span>), (<span class="string">&quot;c&quot;</span>, <span class="string">&quot;e&quot;</span>), (<span class="string">&quot;o&quot;</span>, <span class="string">&quot;d&quot;</span>), (<span class="string">&quot;Ġ&quot;</span>, <span class="string">&quot;v&quot;</span>), (<span class="string">&quot;at&quot;</span>, <span class="string">&quot;e&quot;</span>), (<span class="string">&quot;Ġ&quot;</span>, <span class="string">&quot;T&quot;</span>), (<span class="string">&quot;a&quot;</span>, <span class="string">&quot;g&quot;</span>), (<span class="string">&quot;a&quot;</span>, <span class="string">&quot;y&quot;</span>), (<span class="string">&quot;Ġ&quot;</span>, <span class="string">&quot;*&quot;</span>), (<span class="string">&quot;o&quot;</span>, <span class="string">&quot;t&quot;</span>), ...])</span><br></pre></td></tr></table></figure>
+<h3 id="从模型文件中查看分词配置"><a class="markdownIt-Anchor" href="#从模型文件中查看分词配置"></a> 从模型文件中查看分词配置</h3>
+<p>我们可以从模型文件的 <a target="_blank" rel="noopener" href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/tokenizer_config.json">tokenizer_config.json</a> 获取所使用的分词器类，这里是 <code>Qwen2Tokenizer</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">......</span><br><span class="line"><span class="string">&quot;eos_token&quot;</span>: <span class="string">&quot;&lt;|im_end|&gt;&quot;</span>,</span><br><span class="line"><span class="string">&quot;errors&quot;</span>: <span class="string">&quot;replace&quot;</span>,</span><br><span class="line"><span class="string">&quot;model_max_length&quot;</span>: 131072,</span><br><span class="line"><span class="string">&quot;pad_token&quot;</span>: <span class="string">&quot;&lt;|endoftext|&gt;&quot;</span>,</span><br><span class="line"><span class="string">&quot;split_special_tokens&quot;</span>: <span class="literal">false</span>,</span><br><span class="line"><span class="string">&quot;tokenizer_class&quot;</span>: <span class="string">&quot;Qwen2Tokenizer&quot;</span>,</span><br><span class="line"><span class="string">&quot;unk_token&quot;</span>: null</span><br></pre></td></tr></table></figure>
+<p>模型的 <a target="_blank" rel="noopener" href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/tokenizer.json">tokenizer.json</a> 则是 tokenizer 的完整定义文件。这个 JSON 文件包含了 tokenizer 运行所需的全部信息，不需要任何 Python 代码就能重建 tokenizer。它的结构如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">  <span class="string">&quot;model&quot;</span>: &#123;</span><br><span class="line">    <span class="string">&quot;type&quot;</span>: <span class="string">&quot;BPE&quot;</span>,</span><br><span class="line">    <span class="string">&quot;vocab&quot;</span>: &#123;<span class="string">&quot;!&quot;</span>: <span class="number">0</span>, <span class="string">&quot;,&quot;</span>: <span class="number">11</span>, <span class="string">&quot;Hello&quot;</span>: <span class="number">9707</span>, ...&#125;,  // token -&gt; ID 映射</span><br><span class="line">    <span class="string">&quot;merges&quot;</span>: [[<span class="string">&quot;Ġ&quot;</span>, <span class="string">&quot;Ġ&quot;</span>], [<span class="string">&quot;i&quot;</span>, <span class="string">&quot;n&quot;</span>], ...]            // BPE 合并规则（按优先级排序）</span><br><span class="line">  &#125;,</span><br><span class="line">  <span class="string">&quot;normalizer&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;NFC&quot;</span>&#125;,                       // 文本标准化</span><br><span class="line">  <span class="string">&quot;pre_tokenizer&quot;</span>: &#123;                                    // 分词前的切分规则</span><br><span class="line">    <span class="string">&quot;type&quot;</span>: <span class="string">&quot;Sequence&quot;</span>,</span><br><span class="line">    <span class="string">&quot;pretokenizers&quot;</span>: [</span><br><span class="line">      &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;Split&quot;</span>, <span class="string">&quot;pattern&quot;</span>: &#123;<span class="string">&quot;Regex&quot;</span>: <span class="string">&quot;...&quot;</span>&#125;&#125;,   // 正则切分</span><br><span class="line">      &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;ByteLevel&quot;</span>&#125;                             // 转字节</span><br><span class="line">    ]</span><br><span class="line">  &#125;,</span><br><span class="line">  <span class="string">&quot;decoder&quot;</span>: &#123;<span class="string">&quot;type&quot;</span>: <span class="string">&quot;ByteLevel&quot;</span>&#125;,                     // 解码方式</span><br><span class="line">  <span class="string">&quot;added_tokens&quot;</span>: [                                     // 特殊 token</span><br><span class="line">    &#123;<span class="string">&quot;id&quot;</span>: <span class="number">151643</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;&lt;|endoftext|&gt;&quot;</span>, <span class="string">&quot;special&quot;</span>: true&#125;,</span><br><span class="line">    &#123;<span class="string">&quot;id&quot;</span>: <span class="number">151644</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;&lt;|im_start|&gt;&quot;</span>, <span class="string">&quot;special&quot;</span>: true&#125;,</span><br><span class="line">    &#123;<span class="string">&quot;id&quot;</span>: <span class="number">151645</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;&lt;|im_end|&gt;&quot;</span>, <span class="string">&quot;special&quot;</span>: true&#125;</span><br><span class="line">    ......</span><br><span class="line">  ]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个字段的作用：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>model.vocab</td>
+<td>151643 个 token 到 ID 的映射，即词表</td>
+</tr>
+<tr>
+<td>model.merges</td>
+<td>151387 条 BPE 合并规则，按优先级排列</td>
+</tr>
+<tr>
+<td>normalizer</td>
+<td>分词前先做 Unicode 标准化（NFC）</td>
+</tr>
+<tr>
+<td>pre_tokenizer</td>
+<td>先正则切分、再转字节，决定分词粒度</td>
+</tr>
+<tr>
+<td>decoder</td>
+<td>编码还原为文本的逆过程</td>
+</tr>
+<tr>
+<td>added_tokens</td>
+<td>特殊 token，不在 BPE 词表内，额外插入</td>
+</tr>
+</tbody>
+</table>
+<p><code>tokenizer.json</code> 是 tokenizer 的 <code>配方</code>。HuggingFace 的 <a target="_blank" rel="noopener" href="https://github.com/huggingface/tokenizers">tokenizers 库</a>（Rust 编写）读取这个 JSON 就能构建完整的 tokenizer，不需要任何 Python 逻辑。Qwen2Tokenizer 这个 Python 类只是在 tokenizers.Tokenizer 外面包了一层易用的 API。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">AutoTokenizer.from_pretrained(<span class="string">&quot;Qwen/Qwen3-0.6B&quot;</span>)</span><br><span class="line">  1. 读 tokenizer_config.json → 确定 Python 类 (Qwen2Tokenizer)</span><br><span class="line">  2. 创建 Qwen2Tokenizer 实例</span><br><span class="line">  3. 读 tokenizer.json → 加载到 backend_tokenizer (Rust 层)</span><br><span class="line">  4. 读 tokenizer_config.json → 设置 chat_template、pad_token、eos_token 等 Python 层属性</span><br></pre></td></tr></table></figure>
+<p>所以：</p>
+<ul>
+<li>tokenizer.json 定义 <code>怎么分词</code>（Rust 层，算法+词表+合并规则）</li>
+<li>tokenizer_config.json 定义 <code>怎么用这个 tokenizer</code>（Python 层，类名+chat_template+特殊token声明）</li>
+</ul>
+<h2 id="聊天模版"><a class="markdownIt-Anchor" href="#聊天模版"></a> 聊天模版</h2>
+<p>大模型（LLM）其实是个纯文本续写机器，它根本不知道什么是 <code>用户</code>、什么是 <code>AI</code>。为了让模型明白这是一场对话，安全地分清谁说了什么，训练时会使用特殊的控制标记（Special Tokens）把对话包装成一段特定格式的纯文本。聊天模版<code>Chat Template</code> 的作用是：</p>
+<blockquote>
+<p><strong>把结构化的多轮对话消息 → 格式化为一个扁平的文本字符串 → 再 tokenize 喂给模型</strong></p>
+</blockquote>
+<p>不同模型的训练数据使用不同的对话格式，所以它们的 <code>Chat Template</code> 也不同。用错了 template，模型的表现会大幅下降。<code>Chat Template</code> 把每个模型独特的拼接规则写成一段 Jinja2 脚本，存在分词器（Tokenizer）里。你只需要给它标准的数据结构，它自动帮你拼好。</p>
+<p>从模型文件的 <a target="_blank" rel="noopener" href="https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/tokenizer_config.json">tokenizer_config.json</a> <code>chat_template</code> 配置里可以看到 <code>Qwen3-0.6B</code> 所使用的聊天模版 。或者通过 transformers 库，我们可以直接查看模型的 <code>Chat Template</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span><span class="keyword">from</span> transformers <span class="keyword">import</span> AutoTokenizer</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>MODEL_NAME = <span class="string">&quot;Qwen/Qwen3-0.6B&quot;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.chat_template</span><br><span class="line"><span class="string">&#x27;&#123;%- if tools %&#125;\n    &#123;&#123;- \&#x27;&lt;|im_start|&gt;system\\n\&#x27; &#125;&#125;\n    &#123;%- if messages[0].role == \&#x27;system\&#x27; %&#125;\n        &#123;&#123;- messages[0].content + \&#x27;\\n\\n\&#x27; &#125;&#125;\n    &#123;%- endif %&#125;\n    &#123;&#123;- &quot;# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within &lt;tools&gt;&lt;/tools&gt; XML tags:\\n&lt;tools&gt;&quot; &#125;&#125;\n    &#123;%- for tool in tools %&#125;\n</span></span><br><span class="line"><span class="string">......</span></span><br></pre></td></tr></table></figure>
+<p>我们可以使用 <code>apply_chat_template()</code> 方法查看渲染后的实际文本内容：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&gt;&gt;&gt; </span>messages = [</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;你好，请介绍一下你自己&quot;</span>&#125;</span><br><span class="line"><span class="meta">... </span>]</span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.apply_chat_template(messages, tokenize=<span class="literal">False</span>, add_generation_prompt=<span class="literal">True</span>)</span><br><span class="line"><span class="string">&#x27;&lt;|im_start|&gt;user\n你好，请介绍一下你自己&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n&#x27;</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>messages = [</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;1+1等于几？&quot;</span>&#125;,</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;assistant&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;1+1等于2。&quot;</span>&#125;,</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;那2+2呢？&quot;</span>&#125;,</span><br><span class="line"><span class="meta">... </span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.apply_chat_template(messages, tokenize=<span class="literal">False</span>, add_generation_prompt=<span class="literal">True</span>)</span><br><span class="line"><span class="string">&#x27;&lt;|im_start|&gt;user\n1+1等于几？&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n1+1等于2。&lt;|im_end|&gt;\n&lt;|im_start|&gt;user\n那2+2呢？&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>messages_with_system = [</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;system&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;你是一个有帮助的AI助手，请用中文回答。&quot;</span>&#125;,</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;什么是量子计算？&quot;</span>&#125;,</span><br><span class="line"><span class="meta">... </span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.apply_chat_template(</span><br><span class="line"><span class="meta">... </span>    messages_with_system, tokenize=<span class="literal">False</span>, add_generation_prompt=<span class="literal">True</span></span><br><span class="line"><span class="meta">... </span>)</span><br><span class="line"><span class="string">&#x27;&lt;|im_start|&gt;system\n你是一个有帮助的AI助手，请用中文回答。&lt;|im_end|&gt;\n&lt;|im_start|&gt;user\n什么是量子计算？&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>messages_thinking = [</span><br><span class="line"><span class="meta">... </span>    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;计算 17 * 23&quot;</span>&#125;,</span><br><span class="line"><span class="meta">... </span>]</span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.apply_chat_template(</span><br><span class="line"><span class="meta">... </span>    messages_thinking,</span><br><span class="line"><span class="meta">... </span>    tokenize=<span class="literal">False</span>,</span><br><span class="line"><span class="meta">... </span>    add_generation_prompt=<span class="literal">True</span>,</span><br><span class="line"><span class="meta">... </span>    enable_thinking=<span class="literal">False</span>,</span><br><span class="line"><span class="meta">... </span>)</span><br><span class="line"><span class="string">&#x27;&lt;|im_start|&gt;user\n计算 17 * 23&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n&lt;think&gt;\n\n&lt;/think&gt;\n\n&#x27;</span></span><br><span class="line"><span class="meta">&gt;&gt;&gt; </span>tokenizer.apply_chat_template(</span><br><span class="line"><span class="meta">... </span>    messages_thinking,</span><br><span class="line"><span class="meta">... </span>    tokenize=<span class="literal">False</span>,</span><br><span class="line"><span class="meta">... </span>    add_generation_prompt=<span class="literal">True</span>,</span><br><span class="line"><span class="meta">... </span>    enable_thinking=<span class="literal">True</span>,</span><br><span class="line"><span class="meta">... </span>)</span><br><span class="line"><span class="string">&#x27;&lt;|im_start|&gt;user\n计算 17 * 23&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n&#x27;</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>add_generation_prompt=True 在末尾添加助手前缀，引导模型开始生成</li>
+<li>如果 enable_thinking=True（或默认未定义）：<code>模型会正常走 &lt;think&gt; 流程</code>，边思考边输出，最后再给答案</li>
+<li>如果 enable_thinking=False：模板通过提前闭合标签，<code>欺骗</code>并强行制止了大模型的思考行为，让其直接输出结果</li>
+</ul>
+<h2 id="端到端推理测试"><a class="markdownIt-Anchor" href="#端到端推理测试"></a> 端到端推理测试</h2>
+<p>最后我们来通过实际一个端到端推理测试实例，来看下整个推理过程是如何一步一步完成的：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> torch</span><br><span class="line"><span class="keyword">from</span> transformers <span class="keyword">import</span> AutoTokenizer, AutoModelForCausalLM</span><br><span class="line"></span><br><span class="line">MODEL_NAME = <span class="string">&quot;Qwen/Qwen3-0.6B&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;加载模型和 tokenizer...&quot;</span>)</span><br><span class="line">tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)</span><br><span class="line">model = AutoModelForCausalLM.from_pretrained(</span><br><span class="line">    MODEL_NAME,</span><br><span class="line">    torch_dtype=torch.float16,</span><br><span class="line">    device_map=<span class="string">&quot;auto&quot;</span>,</span><br><span class="line">)</span><br><span class="line">model.<span class="built_in">eval</span>()</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;加载完成!&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;\n&quot;</span> + <span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;1. 完整推理流程 (逐步拆解)&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&quot;=&quot;</span> * <span class="number">60</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 1: 构建对话</span></span><br><span class="line">messages = [</span><br><span class="line">    &#123;<span class="string">&quot;role&quot;</span>: <span class="string">&quot;user&quot;</span>, <span class="string">&quot;content&quot;</span>: <span class="string">&quot;请用一句话介绍什么是人工智能&quot;</span>&#125;</span><br><span class="line">]</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;Step 1 - 用户输入: <span class="subst">&#123;messages[<span class="number">0</span>][<span class="string">&#x27;content&#x27;</span>]&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 2: 应用 chat template</span></span><br><span class="line">text = tokenizer.apply_chat_template(</span><br><span class="line">    messages, tokenize=<span class="literal">False</span>, add_generation_prompt=<span class="literal">True</span></span><br><span class="line">)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;\nStep 2 - Chat Template 格式化:&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  <span class="subst">&#123;<span class="built_in">repr</span>(text)&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 3: Tokenize</span></span><br><span class="line">inputs = tokenizer(text, return_tensors=<span class="string">&quot;pt&quot;</span>).to(model.device)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;\nStep 3 - Tokenize:&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  input_ids shape: <span class="subst">&#123;inputs[<span class="string">&#x27;input_ids&#x27;</span>].shape&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  input_ids: <span class="subst">&#123;inputs[<span class="string">&#x27;input_ids&#x27;</span>].tolist()[<span class="number">0</span>]&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  token 数: <span class="subst">&#123;inputs[<span class="string">&#x27;input_ids&#x27;</span>].shape[<span class="number">1</span>]&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 4: 模型前向推理</span></span><br><span class="line"><span class="keyword">with</span> torch.no_grad():</span><br><span class="line">    outputs = model.generate(</span><br><span class="line">        **inputs,</span><br><span class="line">        max_new_tokens=<span class="number">1000</span>,</span><br><span class="line">        do_sample=<span class="literal">False</span>,</span><br><span class="line">        temperature=<span class="literal">None</span>,</span><br><span class="line">        top_p=<span class="literal">None</span>,</span><br><span class="line">    )</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;\nStep 4 - 模型生成:&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  输出 ids shape: <span class="subst">&#123;outputs.shape&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  输出 ids: <span class="subst">&#123;outputs.tolist()[<span class="number">0</span>]&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment"># Step 5: 解码</span></span><br><span class="line">generated_ids = outputs[<span class="number">0</span>][inputs[<span class="string">&#x27;input_ids&#x27;</span>].shape[<span class="number">1</span>]:]</span><br><span class="line">generated_text = tokenizer.decode(generated_ids, skip_special_tokens=<span class="literal">True</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;\nStep 5 - 解码生成部分:&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  生成 token 数: <span class="subst">&#123;<span class="built_in">len</span>(generated_ids)&#125;</span>&quot;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&quot;  生成文本: <span class="subst">&#123;generated_text&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>运行结果如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">============================================================</span><br><span class="line">1. 完整推理流程 (逐步拆解)</span><br><span class="line">============================================================</span><br><span class="line">Step 1 - 用户输入: 请用一句话介绍什么是人工智能</span><br><span class="line"></span><br><span class="line">Step 2 - Chat Template 格式化:</span><br><span class="line">  <span class="string">&#x27;&lt;|im_start|&gt;user\n请用一句话介绍什么是人工智能&lt;|im_end|&gt;\n&lt;|im_start|&gt;assistant\n&#x27;</span></span><br><span class="line"></span><br><span class="line">Step 3 - Tokenize:</span><br><span class="line">  input_ids shape: torch.Size([1, 14])</span><br><span class="line">  input_ids: [151644, 872, 198, 14880, 11622, 105321, 100157, 106582, 104455, 151645, 198, 151644, 77091, 198]</span><br><span class="line">  token 数: 14</span><br><span class="line">The following generation flags are not valid and may be ignored: [<span class="string">&#x27;top_k&#x27;</span>]. Set `TRANSFORMERS_VERBOSITY=info` <span class="keyword">for</span> more details.</span><br><span class="line"></span><br><span class="line">Step 4 - 模型生成:</span><br><span class="line">  输出 ids shape: torch.Size([1, 223])</span><br><span class="line">  输出 ids: [151644, 872, 198, 14880, 11622, 105321, 100157, 106582, 104455, 151645, 198, 151644, 77091, 198, 151667, 198, 99692, 3837, 20002, 104029, 11622, 105321, 100157, 106582, 104455, 1773, 101140, 3837, 35946, 85106, 60610, 20002, 104378, 102021, 1773, 99650, 87267, 101219, 100134, 99896, 101290, 3837, 100631, 85106, 101098, 99794, 15469, 9370, 91282, 1773, 20002, 87267, 80443, 101319, 102193, 3837, 99999, 85106, 110485, 30858, 34187, 9370, 104136, 3407, 104326, 3837, 35946, 49828, 101118, 20002, 87267, 9370, 114246, 100354, 1773, 99650, 87267, 99880, 99794, 15469, 105166, 91282, 3837, 100631, 99172, 81167, 99283, 32664, 15469, 108894, 64471, 88991, 1773, 101886, 3837, 102104, 85106, 102188, 100136, 116336, 86744, 100272, 3407, 101889, 3837, 35946, 85106, 103944, 109949, 100166, 88991, 3837, 27369, 100011, 1773, 99730, 100630, 15469, 104867, 101290, 3837, 101912, 20074, 54542, 5373, 100134, 99788, 3837, 101034, 99892, 100650, 1773, 91572, 3837, 101153, 37029, 99878, 116925, 106071, 3837, 100662, 113113, 32108, 3407, 104019, 101071, 107189, 119256, 88683, 105427, 3837, 103944, 105321, 101447, 110485, 1773, 87267, 85106, 101921, 11622, 99689, 3837, 101912, 2073, 100168, 72448, 854, 56006, 2073, 104455, 854, 33126, 101536, 3837, 100631, 2073, 100842, 100134, 854, 33126, 102188, 1773, 100161, 3837, 81167, 109949, 110205, 3837, 80443, 117206, 32100, 8997, 151668, 271, 104455, 9909, 15469, 7552, 104442, 67338, 107018, 33108, 20074, 54542, 3837, 32555, 104564, 100006, 75117, 85106, 103971, 100168, 108530, 3837, 29524, 100134, 5373, 113272, 5373, 102041, 49567, 1773, 151645]</span><br><span class="line"></span><br><span class="line">Step 5 - 解码生成部分:</span><br><span class="line">  生成 token 数: 209</span><br><span class="line">  生成文本: &lt;think&gt;</span><br><span class="line">好的，用户让我用一句话介绍什么是人工智能。首先，我需要确定用户的需求是什么。他们可能是在学习基础概念，或者需要快速了解AI的定义。用户可能没有太多背景，所以需要简洁明了的解释。</span><br><span class="line"></span><br><span class="line">接下来，我得考虑用户可能的深层需求。他们可能希望了解AI的基本定义，或者想确认自己对AI的理解是否正确。因此，回答需要准确且通俗易懂。</span><br><span class="line"></span><br><span class="line">然后，我需要确保句子结构正确，信息全面。应该包括AI的核心概念，比如数据处理、学习能力，以及应用领域。同时，避免使用专业术语过多，保持口语化。</span><br><span class="line"></span><br><span class="line">还要检查是否有冗余的信息，确保一句话足够简洁。可能需要调整用词，比如“智能系统”比“人工智能”更常见，或者“自主学习”更准确。最后，确认句子流畅，没有语法错误。</span><br><span class="line">&lt;/think&gt;</span><br><span class="line"></span><br><span class="line">人工智能（AI）是指通过算法和数据处理，使计算机能够执行需要人类智能的任务，如学习、推理、决策等。</span><br></pre></td></tr></table></figure>
+<p>整个示例的代码还是非常简单，唯一值得注意的代码就是 <code>generated_ids = outputs[0][inputs['input_ids'].shape[1]:]</code>，它的作用是：把大模型输出的完整 Token 序列进行 <code>切片</code>，切掉前面的 <code>问题（Input）</code>，只保留模型新生成的 <code>回答（Output）</code>：</p>
+<ul>
+<li>大模型（AutoRegressive LM）的推理逻辑是文字续写，模型返回的 outputs 并不是纯粹的答案，而是 <code>原始问题  + 答案</code></li>
+<li>如果不做切片直接解码，打印出来的文本就会包含原始问题，显得非常冗余</li>
+</ul>
+<p>另外需要注意，解码时需要通过 <code>skip_special_tokens=True</code> 来跳过特殊 token。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章结合可实际运行的 Demo，帮助我们直观且深入地理解 LLM 分词器的核心原理，掌握了 token、各种分词算法以及 Chat Template 等关键知识点，为我们进一步理解 LLM 的工作原理打下了基础。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/AI/" rel="tag"># AI</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/01/go-kratos-05/" rel="next" title="Kratos 源码分析（五）：App 应用生命周期管理实现详解">
+      Kratos 源码分析（五）：App 应用生命周期管理实现详解 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#1-%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-tokenizer"><span class="nav-number">1.</span> <span class="nav-text"> 1. 为什么需要 Tokenizer？</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E6%A6%82%E5%BF%B5"><span class="nav-number">1.1.</span> <span class="nav-text"> 基本概念</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%96%87%E6%9C%ACtext"><span class="nav-number">1.1.1.</span> <span class="nav-text"> 文本（Text）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%AF%8D%E5%85%83token"><span class="nav-number">1.1.2.</span> <span class="nav-text"> 词元（Token）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%AF%8D%E8%A1%A8vocabulary"><span class="nav-number">1.1.3.</span> <span class="nav-text"> 词表（Vocabulary）</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%AF%8D%E5%85%83-idtoken-id"><span class="nav-number">1.1.4.</span> <span class="nav-text"> 词元 ID（Token ID）</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#tokenizer-%E7%9A%84%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.2.</span> <span class="nav-text"> Tokenizer 的工作流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#demo%E5%9F%BA%E6%9C%AC%E5%88%86%E8%AF%8D%E6%93%8D%E4%BD%9C"><span class="nav-number">1.3.</span> <span class="nav-text"> Demo：基本分词操作</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%86%E8%AF%8D%E7%AE%97%E6%B3%95"><span class="nav-number">2.</span> <span class="nav-text"> 分词算法</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#bpe-byte-pair-encoding%E5%8F%8C%E6%A0%B8%E5%AD%97%E8%8A%82%E7%BC%96%E7%A0%81"><span class="nav-number">2.1.</span> <span class="nav-text"> BPE (Byte-Pair Encoding，双核字节编码)</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#wordpiece-%E7%AE%97%E6%B3%95%E5%9F%BA%E4%BA%8E%E6%9C%80%E5%A4%A7%E6%A6%82%E7%8E%87%E5%90%88%E5%B9%B6"><span class="nav-number">2.2.</span> <span class="nav-text"> WordPiece 算法（基于最大概率合并）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#unigram-%E7%AE%97%E6%B3%95"><span class="nav-number">2.3.</span> <span class="nav-text"> Unigram 算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E7%9C%8B%E6%A8%A1%E5%9E%8B%E7%9A%84%E5%88%86%E8%AF%8D%E7%AE%97%E6%B3%95"><span class="nav-number">2.4.</span> <span class="nav-text"> 查看模型的分词算法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E%E6%A8%A1%E5%9E%8B%E6%96%87%E4%BB%B6%E4%B8%AD%E6%9F%A5%E7%9C%8B%E5%88%86%E8%AF%8D%E9%85%8D%E7%BD%AE"><span class="nav-number">2.5.</span> <span class="nav-text"> 从模型文件中查看分词配置</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%81%8A%E5%A4%A9%E6%A8%A1%E7%89%88"><span class="nav-number">3.</span> <span class="nav-text"> 聊天模版</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%8E%A8%E7%90%86%E6%B5%8B%E8%AF%95"><span class="nav-number">4.</span> <span class="nav-text"> 端到端推理测试</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">257</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">36</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
