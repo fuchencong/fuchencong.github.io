@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇文章 我们分析了 kratos 的 App 模块，了解了应用的生命周期管理机制。App 管理的核心对象之一就是 Transport Server，这篇文章我们将深入分析 gRPC Transport 层的实现原理，理解一个 gRPC 请求从进入到业务处理的完整链路。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Kratos 源码分析（六）：gRPC Transport（1）">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/06/03/go-kratos-06/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇文章 我们分析了 kratos 的 App 模块，了解了应用的生命周期管理机制。App 管理的核心对象之一就是 Transport Server，这篇文章我们将深入分析 gRPC Transport 层的实现原理，理解一个 gRPC 请求从进入到业务处理的完整链路。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-06-03T15:17:44.000Z">
+<meta property="article:modified_time" content="2026-06-11T14:56:15.302Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/03/go-kratos-06/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Kratos 源码分析（六）：gRPC Transport（1） | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/03/go-kratos-06/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Kratos 源码分析（六）：gRPC Transport（1）
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-06-03 23:17:44" itemprop="dateCreated datePublished" datetime="2026-06-03T23:17:44+08:00">2026-06-03</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://fuchencong.com/2026/06/01/go-kratos-05/">上一篇文章</a> 我们分析了 kratos 的 App 模块，了解了应用的生命周期管理机制。App 管理的核心对象之一就是 Transport Server，这篇文章我们将深入分析 gRPC Transport 层的实现原理，理解一个 gRPC 请求从进入到业务处理的完整链路。</p>
+<span id="more"></span>
+<h2 id="transport-层总体设计"><a class="markdownIt-Anchor" href="#transport-层总体设计"></a> Transport 层总体设计</h2>
+<p>kratos 的 Transport 层是对底层通信协议的抽象，目前支持 HTTP 和 gRPC 两种协议。整个 Transport 层的设计围绕以下几个核心接口展开：</p>
+<h3 id="transportserver-接口"><a class="markdownIt-Anchor" href="#transportserver-接口"></a> transport.Server 接口</h3>
+<p>所有 Transport 服务器都必须实现 <code>transport.Server</code> 接口，App 通过它统一管理生命周期：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/transport.go</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">interface</span> &#123;</span><br><span class="line">	Start(context.Context) <span class="type">error</span></span><br><span class="line">	Stop(context.Context) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="transportendpointer-接口"><a class="markdownIt-Anchor" href="#transportendpointer-接口"></a> transport.Endpointer 接口</h3>
+<p><code>transport.Endpointer</code> 接口用于获取服务的 Endpoint 地址，App 在构建服务实例时通过此接口自动收集 Server 的 Endpoint 地址</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/transport.go</span></span><br><span class="line"><span class="keyword">type</span> Endpointer <span class="keyword">interface</span> &#123;</span><br><span class="line">	Endpoint() (*url.URL, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="transporttransporter-接口"><a class="markdownIt-Anchor" href="#transporttransporter-接口"></a> transport.Transporter 接口</h3>
+<p><code>Transporter</code> 是 Transport 层的核心上下文接口，<strong>它携带了一次请求的传输层信息</strong>，通过 Context 在中间件和业务逻辑之间传播：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Transporter <span class="keyword">interface</span> &#123;</span><br><span class="line">	Kind() Kind                <span class="comment">// 协议类型：&quot;grpc&quot; 或 &quot;http&quot;</span></span><br><span class="line">	Endpoint() <span class="type">string</span>          <span class="comment">// 服务端点，如 &quot;grpc://127.0.0.1:9000&quot;</span></span><br><span class="line">	Operation() <span class="type">string</span>         <span class="comment">// 方法全名，如 &quot;/helloworld.v1.Greeter/SayHello&quot;</span></span><br><span class="line">	RequestHeader() Header     <span class="comment">// 请求头</span></span><br><span class="line">	ReplyHeader() Header       <span class="comment">// 响应头</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="middlewaremiddleware-接口"><a class="markdownIt-Anchor" href="#middlewaremiddleware-接口"></a> middleware.Middleware 接口</h3>
+<p>kratos 的中间件是 Transport 无关的，HTTP 和 gRPC 共用同一套中间件定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// middleware/middleware.go</span></span><br><span class="line"><span class="keyword">type</span> Handler <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any)</span></span> (any, <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Middleware <span class="function"><span class="keyword">func</span><span class="params">(Handler)</span></span> Handler</span><br></pre></td></tr></table></figure>
+<h3 id="接口关系图"><a class="markdownIt-Anchor" href="#接口关系图"></a> 接口关系图</h3>
+<p>下图简单总结了各个接口之间的关系：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">transport.Server          生命周期接口（App 管理）</span><br><span class="line">  ├─ http.Server          HTTP 服务器实现</span><br><span class="line">  └─ grpc.Server          gRPC 服务器实现</span><br><span class="line">       ├─ 实现 transport.Server      → Start / Stop</span><br><span class="line">       ├─ 实现 transport.Endpointer  → Endpoint</span><br><span class="line">       ├─ 内嵌 *grpc.Server          → 原生 gRPC 能力</span><br><span class="line">       └─ 持有 matcher.Matcher       → 中间件选择器</span><br><span class="line"></span><br><span class="line">transport.Transporter     请求上下文接口（每次请求创建）</span><br><span class="line">  ├─ grpc.Transport       gRPC 请求的传输信息</span><br><span class="line">  └─ http.Transport       HTTP 请求的传输信息</span><br><span class="line"></span><br><span class="line">middleware.Middleware      中间件定义（Transport 无关）</span><br><span class="line">  └─ 通过 interceptor 桥接到 gRPC / HTTP</span><br></pre></td></tr></table></figure>
+<h2 id="原生-grpc-server-开发"><a class="markdownIt-Anchor" href="#原生-grpc-server-开发"></a> 原生 gRPC Server 开发</h2>
+<p>在分析 kratos gRPC Transport 之前，我们需要先理解：如果不使用 kratos，用原生 gRPC 库开发一个服务需要做哪些事情？这能帮我们看清哪些是 protoc 自动生成的、哪些是框架完成的、哪些是业务需要补全的。</p>
+<h3 id="定义-proto-文件"><a class="markdownIt-Anchor" href="#定义-proto-文件"></a> 定义 Proto 文件</h3>
+<p>一切从 Proto 文件开始，这部分无论用不用 kratos 都是一样的：</p>
+<figure class="highlight protobuf"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// api/helloworld/v1/greeter.proto</span></span><br><span class="line">syntax = <span class="string">&quot;proto3&quot;</span>;</span><br><span class="line"><span class="keyword">package</span> helloworld.v1;</span><br><span class="line"></span><br><span class="line"><span class="keyword">option</span> go_package = <span class="string">&quot;native-grpc-demo/api/helloworld/v1;v1&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">service </span><span class="title class_">Greeter</span> &#123;</span><br><span class="line">  <span class="function"><span class="keyword">rpc</span> SayHello (HelloRequest) <span class="keyword">returns</span> (HelloReply) </span>&#123;&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">HelloRequest</span> &#123;</span><br><span class="line">  <span class="type">string</span> name = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">HelloReply</span> &#123;</span><br><span class="line">  <span class="type">string</span> message = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="protoc-生成代码"><a class="markdownIt-Anchor" href="#protoc-生成代码"></a> protoc 生成代码</h3>
+<p>执行 <code>protoc</code> 命令后，会生成两个文件：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">protoc --go_out=. --go_opt=paths=source_relative \</span><br><span class="line">      --go-grpc_out=. --go-grpc_opt=paths=source_relative \</span><br><span class="line">      api/helloworld/v1/greeter.proto</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>生成工具</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>greeter.pb.go</code></td>
+<td>protoc-gen-go</td>
+<td>消息类型 HelloRequest、HelloReply 的序列化/反序列化代码</td>
+</tr>
+<tr>
+<td><code>greeter_grpc.pb.go</code></td>
+<td>protoc-gen-go-grpc</td>
+<td>服务接口 GreeterServer、客户端 GreeterClient、注册函数 RegisterGreeterServer、处理器 _Greeter_SayHello_Handler</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>greeter_grpc.pb.go</code> 是重点</strong>，它包含以下关键内容：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 服务接口 —— 你必须实现这个接口</span></span><br><span class="line"><span class="keyword">type</span> GreeterServer <span class="keyword">interface</span> &#123;</span><br><span class="line">    SayHello(context.Context, *HelloRequest) (*HelloReply, <span class="type">error</span>)</span><br><span class="line">    mustEmbedUnimplementedGreeterServer()</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 前向兼容结构体 —— 嵌入即可获得默认实现</span></span><br><span class="line"><span class="keyword">type</span> UnimplementedGreeterServer <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(UnimplementedGreeterServer)</span></span> SayHello(context.Context, *HelloRequest) (*HelloReply, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, status.Error(codes.Unimplemented, <span class="string">&quot;method SayHello not implemented&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 3. 注册函数 —— 将你的实现注册到 gRPC Server</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RegisterGreeterServer</span><span class="params">(s grpc.ServiceRegistrar, srv GreeterServer)</span></span> &#123;</span><br><span class="line">    s.RegisterService(&amp;Greeter_ServiceDesc, srv)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 4. 方法处理器 —— gRPC 内部调用链的关键节点</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> _<span class="title">Greeter_SayHello_Handler</span><span class="params">(srv <span class="keyword">interface</span>&#123;&#125;, ctx context.Context,</span></span></span><br><span class="line"><span class="params"><span class="function">    dec <span class="keyword">func</span>(<span class="keyword">interface</span>&#123;&#125;)</span></span> <span class="type">error</span>, interceptor grpc.UnaryServerInterceptor) (<span class="keyword">interface</span>&#123;&#125;, <span class="type">error</span>) &#123;</span><br><span class="line">    in := <span class="built_in">new</span>(HelloRequest)</span><br><span class="line">    <span class="keyword">if</span> err := dec(in); err != <span class="literal">nil</span> &#123;        <span class="comment">// 解码请求</span></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> interceptor == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> srv.(GreeterServer).SayHello(ctx, in)  <span class="comment">// 无拦截器，直接调用</span></span><br><span class="line">    &#125;</span><br><span class="line">    info := &amp;grpc.UnaryServerInfo&#123;</span><br><span class="line">        Server:     srv,</span><br><span class="line">        FullMethod: <span class="string">&quot;/helloworld.v1.Greeter/SayHello&quot;</span>,</span><br><span class="line">    &#125;</span><br><span class="line">    handler := <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req <span class="keyword">interface</span>&#123;&#125;)</span></span> (<span class="keyword">interface</span>&#123;&#125;, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> srv.(GreeterServer).SayHello(ctx, req.(*HelloRequest))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> interceptor(ctx, in, info, handler)  <span class="comment">// 有拦截器，走拦截器链</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 5. 服务描述符 —— 描述服务名和方法列表</span></span><br><span class="line"><span class="keyword">var</span> Greeter_ServiceDesc = grpc.ServiceDesc&#123;</span><br><span class="line">    ServiceName: <span class="string">&quot;helloworld.v1.Greeter&quot;</span>,</span><br><span class="line">    HandlerType: (*GreeterServer)(<span class="literal">nil</span>),</span><br><span class="line">    Methods: []grpc.MethodDesc&#123;</span><br><span class="line">        &#123;MethodName: <span class="string">&quot;SayHello&quot;</span>, Handler: _Greeter_SayHello_Handler&#125;,</span><br><span class="line">    &#125;,</span><br><span class="line">    Streams: []grpc.StreamDesc&#123;&#125;,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="业务开发"><a class="markdownIt-Anchor" href="#业务开发"></a> 业务开发</h3>
+<p>接下来开发整个 grpc 服务的实现，包括实现 <code>GreeterServer</code> 接口以提供 grpc 服务接口的实现，创建真实的 gRPC Server 并启动等等。如下是一个参考实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// main.go —— 原生 gRPC Server</span></span><br><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;context&quot;</span></span><br><span class="line">    <span class="string">&quot;fmt&quot;</span></span><br><span class="line">    <span class="string">&quot;log&quot;</span></span><br><span class="line">    <span class="string">&quot;net&quot;</span></span><br><span class="line">    <span class="string">&quot;os&quot;</span></span><br><span class="line">    <span class="string">&quot;os/signal&quot;</span></span><br><span class="line">    <span class="string">&quot;syscall&quot;</span></span><br><span class="line"></span><br><span class="line">    pb <span class="string">&quot;native-grpc-demo/api/helloworld/v1&quot;</span></span><br><span class="line">    <span class="string">&quot;google.golang.org/grpc&quot;</span></span><br><span class="line">    <span class="string">&quot;google.golang.org/grpc/health&quot;</span></span><br><span class="line">    <span class="string">&quot;google.golang.org/grpc/health/grpc_health_v1&quot;</span></span><br><span class="line">    <span class="string">&quot;google.golang.org/grpc/reflection&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment">// ========== 第一部分：业务实现（必须手写）==========</span></span><br><span class="line"><span class="keyword">type</span> GreeterService <span class="keyword">struct</span> &#123;</span><br><span class="line">    pb.UnimplementedGreeterServer    <span class="comment">// 嵌入以获得前向兼容</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *GreeterService)</span></span> SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;pb.HelloReply&#123;Message: <span class="string">&quot;Hello &quot;</span> + in.Name&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// ========== 第二部分：基础设施代码（kratos 帮你完成了这些）==========</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="comment">// 1. 创建 TCP Listener（手动）</span></span><br><span class="line">    lis, err := net.Listen(<span class="string">&quot;tcp&quot;</span>, <span class="string">&quot;:9000&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        log.Fatalf(<span class="string">&quot;failed to listen: %v&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 创建 gRPC Server（手动）</span></span><br><span class="line">    server := grpc.NewServer()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 注册业务服务（手动）</span></span><br><span class="line">    pb.RegisterGreeterServer(server, &amp;GreeterService&#123;&#125;)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 注册健康检查（手动，kratos 自动注册）</span></span><br><span class="line">    healthServer := health.NewServer()</span><br><span class="line">    grpc_health_v1.RegisterHealthServer(server, healthServer)</span><br><span class="line">    healthServer.Resume()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 5. 注册反射服务（手动，kratos 自动注册）</span></span><br><span class="line">    reflection.Register(server)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 6. 启动服务（手动，kratos App.Run 封装了这些）</span></span><br><span class="line">    fmt.Println(<span class="string">&quot;gRPC server listening on :9000&quot;</span>)</span><br><span class="line">    <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> err := server.Serve(lis); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Fatalf(<span class="string">&quot;failed to serve: %v&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 7. 信号处理（手动，kratos App.Run 封装了这些）</span></span><br><span class="line">    sigCh := <span class="built_in">make</span>(<span class="keyword">chan</span> os.Signal, <span class="number">1</span>)</span><br><span class="line">    signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGINT)</span><br><span class="line">    &lt;-sigCh</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 8. 优雅停机（手动，kratos App.Stop 封装了这些）</span></span><br><span class="line">    server.GracefulStop()</span><br><span class="line">    fmt.Println(<span class="string">&quot;Server stopped&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>总结一下，开发一个 gRPC Server 需要完成以下核心工作：</p>
+<ol>
+<li><strong>定义 Proto 文件</strong>：编写 <code>.proto</code> 文件，定义服务接口和消息类型</li>
+<li><strong>生成代码</strong>：执行 <code>protoc</code> 生成消息类型的序列化代码和服务接口代码</li>
+<li><strong>实现服务接口</strong>：嵌入 <code>UnimplementedXxxServer</code>，实现业务方法（如 <code>SayHello</code>）</li>
+<li><strong>创建 gRPC Server</strong>：<code>grpc.NewServer()</code> 创建服务器实例</li>
+<li><strong>注册服务</strong>：调用 <code>RegisterXxxServer</code> 将业务实现注册到 Server</li>
+<li><strong>注册辅助服务</strong>：健康检查、反射服务等</li>
+<li><strong>监听与启动</strong>：创建 TCP Listener，调用 <code>server.Serve(lis)</code> 启动服务</li>
+<li><strong>信号处理与优雅停机</strong>：监听系统信号，调用 <code>server.GracefulStop()</code> 优雅停机</li>
+</ol>
+<p>如果需要添加中间件功能，需要手动实现拦截器并注册到 gRPC 服务中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 实现拦截器</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">timeoutInterceptor</span><span class="params">(timeout time.Duration)</span></span> grpc.UnaryServerInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any,</span></span></span><br><span class="line"><span class="params"><span class="function">        info *grpc.UnaryServerInfo, handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        ctx, cancel := context.WithTimeout(ctx, timeout)</span><br><span class="line">        <span class="keyword">defer</span> cancel()</span><br><span class="line">        <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 注册到 gRPC 服务器</span></span><br><span class="line">grpcServer := grpc.NewServer(</span><br><span class="line">    grpc.UnaryInterceptor(timeoutInterceptor(<span class="number">10</span>*time.Second)),</span><br><span class="line">    <span class="comment">// 多个拦截器需要使用 grpc.ChainUnaryInterceptor</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<h2 id="kratos-layout-中的-grpc-使用"><a class="markdownIt-Anchor" href="#kratos-layout-中的-grpc-使用"></a> kratos-layout 中的 gRPC 使用</h2>
+<p>之前文章我们已经详细分析过 <a target="_blank" rel="noopener" href="https://fuchencong.com/2026/05/17/go-kratos-02/">kratos-layout</a> 以及 [Kratos-CLI] 的用法。这一小节我们来重点分析下 <code>kratos-layout</code> 项目中是如何使用 gRPC Server 的。</p>
+<h3 id="proto-定义"><a class="markdownIt-Anchor" href="#proto-定义"></a> Proto 定义</h3>
+<p>在 kratos-layout 项目中，服务接口通过 Protobuf 定义，位于 <code>api/helloworld/v1/greeter.proto</code>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">syntax = &quot;proto3&quot;;</span><br><span class="line">package helloworld.v1;</span><br><span class="line"></span><br><span class="line">import &quot;google/api/annotations.proto&quot;;</span><br><span class="line"></span><br><span class="line">option go_package = &quot;kratos-demo/api/helloworld/v1;v1&quot;;</span><br><span class="line"></span><br><span class="line">service Greeter &#123;</span><br><span class="line">  rpc SayHello (HelloRequest) returns (HelloReply) &#123;</span><br><span class="line">    option (google.api.http) = &#123;</span><br><span class="line">      get: &quot;/helloworld/&#123;name&#125;&quot;</span><br><span class="line">    &#125;;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">message HelloRequest &#123;</span><br><span class="line">  string name = 1;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">message HelloReply &#123;</span><br><span class="line">  string message = 1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="生成的-grpc-注册代码"><a class="markdownIt-Anchor" href="#生成的-grpc-注册代码"></a> 生成的 gRPC 注册代码</h3>
+<p>执行 <code>kratos proto client</code> 后，会生成以下文件：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>生成工具</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>greeter.pb.go</code></td>
+<td>protoc-gen-go</td>
+<td>Protobuf 消息类型（HelloRequest、HelloReply）</td>
+</tr>
+<tr>
+<td><code>greeter_grpc.pb.go</code></td>
+<td>protoc-gen-go-grpc</td>
+<td>gRPC 服务接口（GreeterServer、RegisterGreeterServer）</td>
+</tr>
+<tr>
+<td><code>greeter_http.pb.go</code></td>
+<td>protoc-gen-go-http</td>
+<td>HTTP 服务接口和路由注册（GreeterHTTPServer、RegisterGreeterHTTPServer）</td>
+</tr>
+</tbody>
+</table>
+<p><code>greeter_grpc.pb.go</code> 是由 <code>protoc-gen-go-grpc</code> 自动生成的，其内容和上面 <code>原生 gRPC Server 开发</code> 示例中的代码一致。</p>
+<p><strong>业务代码需要补全的部分：</strong></p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>internal/service/greeter.go</code></td>
+<td>实现 <code>GreeterServer</code> 接口，编写业务逻辑</td>
+</tr>
+<tr>
+<td><code>internal/server/grpc.go</code></td>
+<td>创建 gRPC Server，注册服务和中间件</td>
+</tr>
+<tr>
+<td><code>internal/server/http.go</code></td>
+<td>创建 HTTP Server，注册服务和中间件</td>
+</tr>
+</tbody>
+</table>
+<h3 id="业务实现"><a class="markdownIt-Anchor" href="#业务实现"></a> 业务实现</h3>
+<p><strong>Service 层</strong>（<code>internal/service/greeter.go</code>）——实现 <code>GreeterServer</code> 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> GreeterService <span class="keyword">struct</span> &#123;</span><br><span class="line">	v1.UnimplementedGreeterServer    <span class="comment">// 嵌入未实现结构体，保证前向兼容</span></span><br><span class="line">	uc *biz.GreeterUsecase           <span class="comment">// 业务逻辑层</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *GreeterService)</span></span> SayHello(ctx context.Context, in *v1.HelloRequest) (*v1.HelloReply, <span class="type">error</span>) &#123;</span><br><span class="line">	g, err := s.uc.CreateGreeter(ctx, &amp;biz.Greeter&#123;Hello: in.Name&#125;)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> &amp;v1.HelloReply&#123;Message: <span class="string">&quot;Hello &quot;</span> + g.Hello&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>Server 层</strong>（<code>internal/server/grpc.go</code>）——创建 gRPC Server 并注册服务：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewGRPCServer</span><span class="params">(c *conf.Server, greeter *service.GreeterService, logger log.Logger)</span></span> *grpc.Server &#123;</span><br><span class="line">	<span class="keyword">var</span> opts = []grpc.ServerOption&#123;</span><br><span class="line">		grpc.Middleware(recovery.Recovery()),   <span class="comment">// 注册中间件</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> c.Grpc.Addr != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		opts = <span class="built_in">append</span>(opts, grpc.Address(c.Grpc.Addr))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> c.Grpc.Timeout != <span class="literal">nil</span> &#123;</span><br><span class="line">		opts = <span class="built_in">append</span>(opts, grpc.Timeout(c.Grpc.Timeout.AsDuration()))</span><br><span class="line">	&#125;</span><br><span class="line">	srv := grpc.NewServer(opts...)</span><br><span class="line">	v1.RegisterGreeterServer(srv, greeter)   <span class="comment">// 注册 gRPC 服务</span></span><br><span class="line">	<span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="请求处理流程图"><a class="markdownIt-Anchor" href="#请求处理流程图"></a> 请求处理流程图</h3>
+<p>下面总结下 gRPC 请求的处理流程：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">gRPC 请求到达</span><br><span class="line">  │</span><br><span class="line">  ▼</span><br><span class="line">原生 gRPC Server 接收请求</span><br><span class="line">  │</span><br><span class="line">  ▼</span><br><span class="line">Greeter_ServiceDesc 定位到 _Greeter_SayHello_Handler</span><br><span class="line">  │</span><br><span class="line">  ▼</span><br><span class="line">_Greeter_SayHello_Handler 调用 kratos 注册的 UnaryInterceptor</span><br><span class="line">  │</span><br><span class="line">  ▼</span><br><span class="line">unaryServerInterceptor（kratos 的桥接拦截器）</span><br><span class="line">  ├─ 1. 合并 Context（ic.Merge）</span><br><span class="line">  ├─ 2. 创建 Transport（携带 operation、header 等信息）</span><br><span class="line">  ├─ 3. 设置超时</span><br><span class="line">  ├─ 4. 匹配中间件并执行 middleware.Chain</span><br><span class="line">  │     └─ recovery.Recovery → ... → 最终 handler</span><br><span class="line">  └─ 5. 返回响应</span><br><span class="line">  │</span><br><span class="line">  ▼</span><br><span class="line">GreeterService.SayHello（业务逻辑）</span><br></pre></td></tr></table></figure>
+<p>这里需要注意，在 <code>greeter_grpc.pb.go</code> 中的实现的 <code>_Greeter_SayHello_Handler</code> 中， <code>interceptor</code> 是 gRPC 原生的 <code>UnaryServerInterceptor</code>，而 kratos 的中间件是 <code>middleware.Middleware</code>，两者之间需要桥接，这就是 kratos <code>interceptor.go</code> 的工作，后面会介绍。</p>
+<h3 id="代码分层总览"><a class="markdownIt-Anchor" href="#代码分层总览"></a> 代码分层总览</h3>
+<p>通过上面的分析，我们可以清晰地看到一个 gRPC 服务从定义到运行，每一层各完成了哪些工作：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────┐</span><br><span class="line">│  开发者手写                                                   │</span><br><span class="line">│  ├── greeter.proto                                           │</span><br><span class="line">│  │     定义消息类型（HelloRequest、HelloReply）和 RPC 方法       │</span><br><span class="line">│  │                                                           │</span><br><span class="line">│  ├── internal/service/greeter.go                             │</span><br><span class="line">│  │     实现 GreeterServer 接口，编写业务逻辑（SayHello）         │</span><br><span class="line">│  │                                                           │</span><br><span class="line">│  └── internal/server/grpc.go                                 │</span><br><span class="line">│        创建 kratos grpc.Server、配置选项、注册服务和中间件        │</span><br><span class="line">├─────────────────────────────────────────────────────────────┤</span><br><span class="line">│  protoc 自动生成                                              │</span><br><span class="line">│  ├── greeter.pb.go                                           │</span><br><span class="line">│  │     消息类型的序列化/反序列化（HelloRequest、HelloReply）       │</span><br><span class="line">│  │                                                           │</span><br><span class="line">│  ├── greeter_grpc.pb.go                                      │</span><br><span class="line">│  │     GreeterServer 接口（方法签名）                            │</span><br><span class="line">│  │     UnimplementedGreeterServer（前向兼容）                    │</span><br><span class="line">│  │     RegisterGreeterServer（注册函数）                        │</span><br><span class="line">│  │     _Greeter_SayHello_Handler（方法处理器）                   │</span><br><span class="line">│  │     Greeter_ServiceDesc（服务描述符）                         │</span><br><span class="line">│  │                                                           │</span><br><span class="line">│  └── greeter_http.pb.go                                      │</span><br><span class="line">│        GreeterHTTPServer 接口和路由注册                          │</span><br><span class="line">├─────────────────────────────────────────────────────────────┤</span><br><span class="line">│  grpc-go 库提供                                               │</span><br><span class="line">│  ├── grpc.Server            TCP 监听、连接管理、请求分发          │</span><br><span class="line">│  ├── grpc.UnaryServerInterceptor   拦截器机制                   │</span><br><span class="line">│  ├── grpc.ServiceRegistrar  服务注册抽象                        │</span><br><span class="line">│  ├── grpc.ServiceDesc       服务描述符（由protoc生成后传入）      │</span><br><span class="line">│  ├── 编解码（protobuf/json）  消息的序列化与反序列化               │</span><br><span class="line">│  └── 健康检查、反射等标准服务                                    │</span><br><span class="line">├─────────────────────────────────────────────────────────────┤</span><br><span class="line">│  kratos 框架完成                                               │</span><br><span class="line">│  ├── grpc.NewServer()                创建 Server 并注册内部服务  │</span><br><span class="line">│  ├── server.Start()                  启动服务（监听 + 健康检查）  │</span><br><span class="line">│  ├── server.Stop()                   优雅停机（含超时强制停止）    │</span><br><span class="line">│  ├── unaryServerInterceptor          拦截器桥接（gRPC → kratos） │</span><br><span class="line">│  ├── middleware.Middleware            统一的中间件定义与执行链     │</span><br><span class="line">│  ├── matcher.Matcher                 选择性中间件匹配             │</span><br><span class="line">│  ├── ic.Merge                        Context 合并                │</span><br><span class="line">│  ├── Transport 注入                   注入传输信息到 Context       │</span><br><span class="line">│  ├── 超时控制                         自动设置请求超时             │</span><br><span class="line">│  ├── 健康检查 / 反射 / Admin          自动注册内部服务            │</span><br><span class="line">│  ├── JSON Codec                      默认使用 JSON 编解码         │</span><br><span class="line">│  └── App 生命周期管理                 信号处理、服务注册/注销       │</span><br><span class="line">└─────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<h2 id="grpc-server-实现"><a class="markdownIt-Anchor" href="#grpc-server-实现"></a> gRPC Server 实现</h2>
+<h3 id="server-结构体"><a class="markdownIt-Anchor" href="#server-结构体"></a> Server 结构体</h3>
+<p>如下是 kratos 中 gRPC Server 的结构体定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/server.go</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">	*grpc.Server                      <span class="comment">// 嵌入原生 gRPC Server</span></span><br><span class="line">	baseCtx           context.Context</span><br><span class="line">	tlsConf           *tls.Config</span><br><span class="line">	lis               net.Listener</span><br><span class="line">	err               <span class="type">error</span></span><br><span class="line">	network           <span class="type">string</span></span><br><span class="line">	address           <span class="type">string</span></span><br><span class="line">	endpoint          *url.URL</span><br><span class="line">	timeout           time.Duration</span><br><span class="line">	middleware        matcher.Matcher      <span class="comment">// Unary 中间件选择器</span></span><br><span class="line">	streamMiddleware  matcher.Matcher      <span class="comment">// Stream 中间件选择器</span></span><br><span class="line">	unaryInts         []grpc.UnaryServerInterceptor</span><br><span class="line">	streamInts        []grpc.StreamServerInterceptor</span><br><span class="line">	grpcOpts          []grpc.ServerOption</span><br><span class="line">	health            *health.Server</span><br><span class="line">	customHealth      <span class="type">bool</span></span><br><span class="line">	metadata          *apimd.Server</span><br><span class="line">	adminClean        <span class="function"><span class="keyword">func</span><span class="params">()</span></span></span><br><span class="line">	disableReflection <span class="type">bool</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Server 嵌入了 <code>*grpc.Server</code>，因此它既是 kratos 的 <code>transport.Server</code>，也是标准的 gRPC 服务器。所有原生 gRPC 功能（服务注册、反射、健康检查等）都直接可用。</p>
+<h3 id="创建-server"><a class="markdownIt-Anchor" href="#创建-server"></a> 创建 Server</h3>
+<p><code>NewServer()</code> 负责 gRPC Server 的创建：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServer</span><span class="params">(opts ...ServerOption)</span></span> *Server &#123;</span><br><span class="line">	srv := &amp;Server&#123;</span><br><span class="line">		baseCtx:          context.Background(),</span><br><span class="line">		network:          <span class="string">&quot;tcp&quot;</span>,</span><br><span class="line">		address:          <span class="string">&quot;:0&quot;</span>,</span><br><span class="line">		timeout:          <span class="number">1</span> * time.Second,</span><br><span class="line">		health:           health.NewServer(),</span><br><span class="line">		middleware:       matcher.New(),</span><br><span class="line">		streamMiddleware: matcher.New(),</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 应用选项</span></span><br><span class="line">	<span class="keyword">for</span> _, o := <span class="keyword">range</span> opts &#123;</span><br><span class="line">		o(srv)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 构建拦截器链：kratos 拦截器始终在最前面</span></span><br><span class="line">	unaryInts := []grpc.UnaryServerInterceptor&#123;</span><br><span class="line">		srv.unaryServerInterceptor(),     <span class="comment">// kratos 桥接拦截器</span></span><br><span class="line">	&#125;</span><br><span class="line">	streamInts := []grpc.StreamServerInterceptor&#123;</span><br><span class="line">		srv.streamServerInterceptor(),    <span class="comment">// kratos 桥接拦截器</span></span><br><span class="line">	&#125;</span><br><span class="line">	<span class="comment">// 用户自定义的 gRPC 拦截器追加在后面</span></span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(srv.unaryInts) &gt; <span class="number">0</span> &#123;</span><br><span class="line">		unaryInts = <span class="built_in">append</span>(unaryInts, srv.unaryInts...)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(srv.streamInts) &gt; <span class="number">0</span> &#123;</span><br><span class="line">		streamInts = <span class="built_in">append</span>(streamInts, srv.streamInts...)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	grpcOpts := []grpc.ServerOption&#123;</span><br><span class="line">		grpc.ChainUnaryInterceptor(unaryInts...),</span><br><span class="line">		grpc.ChainStreamInterceptor(streamInts...),</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> srv.tlsConf != <span class="literal">nil</span> &#123;</span><br><span class="line">		grpcOpts = <span class="built_in">append</span>(grpcOpts, grpc.Creds(credentials.NewTLS(srv.tlsConf)))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> <span class="built_in">len</span>(srv.grpcOpts) &gt; <span class="number">0</span> &#123;</span><br><span class="line">		grpcOpts = <span class="built_in">append</span>(grpcOpts, srv.grpcOpts...)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 创建原生 gRPC Server</span></span><br><span class="line">	srv.Server = grpc.NewServer(grpcOpts...)</span><br><span class="line"></span><br><span class="line">	<span class="comment">// 注册内部服务</span></span><br><span class="line">	srv.metadata = apimd.NewServer(srv.Server)</span><br><span class="line">	<span class="keyword">if</span> !srv.customHealth &#123;</span><br><span class="line">		grpc_health_v1.RegisterHealthServer(srv.Server, srv.health)</span><br><span class="line">	&#125;</span><br><span class="line">	apimd.RegisterMetadataServer(srv.Server, srv.metadata)</span><br><span class="line">	<span class="keyword">if</span> !srv.disableReflection &#123;</span><br><span class="line">		reflection.Register(srv.Server)</span><br><span class="line">	&#125;</span><br><span class="line">	srv.adminClean, _ = admin.Register(srv.Server)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>关键设计：</strong></p>
+<ol>
+<li><strong>拦截器顺序</strong>：kratos 的桥接拦截器始终在链的最前面，确保所有请求都经过 kratos 的中间件处理</li>
+<li><strong>内部服务注册</strong>：默认注册了健康检查（<code>grpc_health_v1</code>）、元数据服务和反射服务</li>
+<li><strong>中间件选择器</strong>：使用 <code>matcher.New()</code> 创建，支持按 operation 精确匹配和前缀通配</li>
+</ol>
+<p>gRPC Server 默认注册的内部服务有：</p>
+<table>
+<thead>
+<tr>
+<th>服务</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>grpc_health_v1</code></td>
+<td>gRPC 标准健康检查协议</td>
+</tr>
+<tr>
+<td><code>apimd.Metadata</code></td>
+<td>kratos 元数据服务</td>
+</tr>
+<tr>
+<td><code>reflection</code></td>
+<td>gRPC 反射服务（可用 grpcurl 探测）</td>
+</tr>
+<tr>
+<td><code>admin</code></td>
+<td>gRPC admin 服务</td>
+</tr>
+</tbody>
+</table>
+<h3 id="server-选项"><a class="markdownIt-Anchor" href="#server-选项"></a> Server 选项</h3>
+<p>``NewServer()` 同样通过选项模式来配置 Server，其支持如下配置选项：</p>
+<table>
+<thead>
+<tr>
+<th>选项函数</th>
+<th>说明</th>
+<th>默认值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Network(network)</code></td>
+<td>网络类型</td>
+<td><code>&quot;tcp&quot;</code></td>
+</tr>
+<tr>
+<td><code>Address(addr)</code></td>
+<td>监听地址</td>
+<td><code>&quot;:0&quot;</code></td>
+</tr>
+<tr>
+<td><code>Endpoint(url)</code></td>
+<td>服务端点</td>
+<td>自动从 Listener 获取</td>
+</tr>
+<tr>
+<td><code>Timeout(d)</code></td>
+<td>请求超时</td>
+<td><code>1s</code></td>
+</tr>
+<tr>
+<td><code>Middleware(m...)</code></td>
+<td>注册中间件</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>StreamMiddleware(m...)</code></td>
+<td>Stream 中间件</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>TLSConfig(c)</code></td>
+<td>TLS 配置</td>
+<td>nil</td>
+</tr>
+<tr>
+<td><code>Listener(lis)</code></td>
+<td>自定义 Listener</td>
+<td>自动创建</td>
+</tr>
+<tr>
+<td><code>UnaryInterceptor(in...)</code></td>
+<td>gRPC Unary 拦截器</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>StreamInterceptor(in...)</code></td>
+<td>gRPC Stream 拦截器</td>
+<td>空</td>
+</tr>
+<tr>
+<td><code>CustomHealth()</code></td>
+<td>自定义健康检查</td>
+<td>false</td>
+</tr>
+<tr>
+<td><code>DisableReflection()</code></td>
+<td>禁用反射</td>
+<td>false</td>
+</tr>
+<tr>
+<td><code>Options(opts...)</code></td>
+<td>原生 gRPC 选项</td>
+<td>空</td>
+</tr>
+</tbody>
+</table>
+<h3 id="启动与停止"><a class="markdownIt-Anchor" href="#启动与停止"></a> 启动与停止</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Start(ctx context.Context) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> err := s.listenAndEndpoint(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> s.err</span><br><span class="line">	&#125;</span><br><span class="line">	s.baseCtx = ctx</span><br><span class="line">	log.Infof(<span class="string">&quot;[gRPC] server listening on: %s&quot;</span>, s.lis.Addr().String())</span><br><span class="line">	s.health.Resume()        <span class="comment">// 健康检查设为 Serving</span></span><br><span class="line">	<span class="keyword">return</span> s.Serve(s.lis)    <span class="comment">// 阻塞</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Stop(ctx context.Context) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> s.adminClean != <span class="literal">nil</span> &#123;</span><br><span class="line">		s.adminClean()</span><br><span class="line">	&#125;</span><br><span class="line">	s.health.Shutdown()      <span class="comment">// 健康检查设为 NotServing</span></span><br><span class="line"></span><br><span class="line">	done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span><br><span class="line">	<span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">		<span class="keyword">defer</span> <span class="built_in">close</span>(done)</span><br><span class="line">		log.Info(<span class="string">&quot;[gRPC] server stopping&quot;</span>)</span><br><span class="line">		s.GracefulStop()     <span class="comment">// 优雅停止</span></span><br><span class="line">	&#125;()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-done:             <span class="comment">// 优雅停止完成</span></span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():       <span class="comment">// 超时，强制停止</span></span><br><span class="line">		log.Warn(<span class="string">&quot;[gRPC] server couldn&#x27;t stop gracefully in time, doing force stop&quot;</span>)</span><br><span class="line">		s.Server.Stop()</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Stop()</code> 方法先调用 <code>GracefulStop()</code> 优雅停止（等待正在处理的请求完成），但如果 Context 超时（由 App 的 <code>stopTimeout</code> 控制），则调用 <code>Stop</code> 强制停止。这保证了应用不会因为个别长请求而无限期阻塞。</p>
+<h2 id="endpoint-构建"><a class="markdownIt-Anchor" href="#endpoint-构建"></a> Endpoint 构建</h2>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> listenAndEndpoint() <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">if</span> s.lis == <span class="literal">nil</span> &#123;</span><br><span class="line">		lis, err := net.Listen(s.network, s.address)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			s.err = err</span><br><span class="line">			<span class="keyword">return</span> err</span><br><span class="line">		&#125;</span><br><span class="line">		s.lis = lis</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> s.endpoint == <span class="literal">nil</span> &#123;</span><br><span class="line">		addr, err := host.Extract(s.address, s.lis)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			s.err = err</span><br><span class="line">			<span class="keyword">return</span> err</span><br><span class="line">		&#125;</span><br><span class="line">		s.endpoint = endpoint.NewEndpoint(endpoint.Scheme(<span class="string">&quot;grpc&quot;</span>, s.tlsConf != <span class="literal">nil</span>), addr)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> s.err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Endpoint 的构建分两步：</p>
+<ol>
+<li><strong>创建 Listener</strong>：如果未提供自定义 Listener，则根据 network 和 address 创建</li>
+<li><strong>生成 Endpoint URL</strong>：格式如 <code>grpc://192.168.1.100:9000</code>，地址通过 <code>host.Extract</code> 自动提取（处理 <code>0.0.0.0</code> 等特殊情况，能够自动选择真实的的本机 IP 地址、端口返回）</li>
+</ol>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们介绍了 kratos gRPC Server 的关键设计，首先分析了开发一个原生 gRPC Server 的步骤，之后以 <code>kratos-layout</code> 为例，展示了 kratos 框架下开发 gRPC 服务的基本流程以及各个组件的职责，最后介绍了 kratos gRPC Server 结构定义、启动与停止逻辑等细节。</p>
+<p>下一篇文章我们将继续深入 kratos gRPC Server 的实现细节，包括拦截器/中间件、编解码等实现原理。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/10/sast-bearer-intro/" rel="prev" title="Bearer SAST 工具快速入门">
+      <i class="fa fa-chevron-left"></i> Bearer SAST 工具快速入门
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/02/ai-basic-infer-tokenizer/" rel="next" title="理解 LLM 的 Tokenizer">
+      理解 LLM 的 Tokenizer <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#transport-%E5%B1%82%E6%80%BB%E4%BD%93%E8%AE%BE%E8%AE%A1"><span class="nav-number">1.</span> <span class="nav-text"> Transport 层总体设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#transportserver-%E6%8E%A5%E5%8F%A3"><span class="nav-number">1.1.</span> <span class="nav-text"> transport.Server 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#transportendpointer-%E6%8E%A5%E5%8F%A3"><span class="nav-number">1.2.</span> <span class="nav-text"> transport.Endpointer 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#transporttransporter-%E6%8E%A5%E5%8F%A3"><span class="nav-number">1.3.</span> <span class="nav-text"> transport.Transporter 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#middlewaremiddleware-%E6%8E%A5%E5%8F%A3"><span class="nav-number">1.4.</span> <span class="nav-text"> middleware.Middleware 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3%E5%85%B3%E7%B3%BB%E5%9B%BE"><span class="nav-number">1.5.</span> <span class="nav-text"> 接口关系图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8E%9F%E7%94%9F-grpc-server-%E5%BC%80%E5%8F%91"><span class="nav-number">2.</span> <span class="nav-text"> 原生 gRPC Server 开发</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9A%E4%B9%89-proto-%E6%96%87%E4%BB%B6"><span class="nav-number">2.1.</span> <span class="nav-text"> 定义 Proto 文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#protoc-%E7%94%9F%E6%88%90%E4%BB%A3%E7%A0%81"><span class="nav-number">2.2.</span> <span class="nav-text"> protoc 生成代码</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E5%BC%80%E5%8F%91"><span class="nav-number">2.3.</span> <span class="nav-text"> 业务开发</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-layout-%E4%B8%AD%E7%9A%84-grpc-%E4%BD%BF%E7%94%A8"><span class="nav-number">3.</span> <span class="nav-text"> kratos-layout 中的 gRPC 使用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#proto-%E5%AE%9A%E4%B9%89"><span class="nav-number">3.1.</span> <span class="nav-text"> Proto 定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E7%9A%84-grpc-%E6%B3%A8%E5%86%8C%E4%BB%A3%E7%A0%81"><span class="nav-number">3.2.</span> <span class="nav-text"> 生成的 gRPC 注册代码</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.3.</span> <span class="nav-text"> 业务实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B%E5%9B%BE"><span class="nav-number">3.4.</span> <span class="nav-text"> 请求处理流程图</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E5%B1%82%E6%80%BB%E8%A7%88"><span class="nav-number">3.5.</span> <span class="nav-text"> 代码分层总览</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#grpc-server-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.</span> <span class="nav-text"> gRPC Server 实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#server-%E7%BB%93%E6%9E%84%E4%BD%93"><span class="nav-number">4.1.</span> <span class="nav-text"> Server 结构体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-server"><span class="nav-number">4.2.</span> <span class="nav-text"> 创建 Server</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#server-%E9%80%89%E9%A1%B9"><span class="nav-number">4.3.</span> <span class="nav-text"> Server 选项</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8%E4%B8%8E%E5%81%9C%E6%AD%A2"><span class="nav-number">4.4.</span> <span class="nav-text"> 启动与停止</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#endpoint-%E6%9E%84%E5%BB%BA"><span class="nav-number">5.</span> <span class="nav-text"> Endpoint 构建</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">260</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
