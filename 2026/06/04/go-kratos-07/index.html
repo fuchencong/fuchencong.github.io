@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇文章 我们介绍了 kratos gRPC Server 的整体设计、创建流程、启动与停止逻辑等。这篇文章我们将深入 gRPC Transport Server 剩余的实现细节，包括拦截器桥接机制、中间件选择器、编解码器、Transport 上下文等实现。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Kratos 源码分析（七）：gRPC Transport（2）">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/06/04/go-kratos-07/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇文章 我们介绍了 kratos gRPC Server 的整体设计、创建流程、启动与停止逻辑等。这篇文章我们将深入 gRPC Transport Server 剩余的实现细节，包括拦截器桥接机制、中间件选择器、编解码器、Transport 上下文等实现。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-06-04T15:12:23.000Z">
+<meta property="article:modified_time" content="2026-06-14T15:13:11.446Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/04/go-kratos-07/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Kratos 源码分析（七）：gRPC Transport（2） | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/04/go-kratos-07/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Kratos 源码分析（七）：gRPC Transport（2）
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-06-04 23:12:23" itemprop="dateCreated datePublished" datetime="2026-06-04T23:12:23+08:00">2026-06-04</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://fuchencong.com/2026/06/01/go-kratos-06/">上一篇文章</a> 我们介绍了 kratos gRPC Server 的整体设计、创建流程、启动与停止逻辑等。这篇文章我们将深入 gRPC Transport Server 剩余的实现细节，包括拦截器桥接机制、中间件选择器、编解码器、Transport 上下文等实现。</p>
+<span id="more"></span>
+<h2 id="kratos-中间件体系"><a class="markdownIt-Anchor" href="#kratos-中间件体系"></a> kratos 中间件体系</h2>
+<p>在微服务开发中，每个请求在到达业务逻辑之前，往往需要经过一系列通用处理：记录日志、鉴权认证、限流熔断、panic 恢复、请求追踪等等。这些逻辑与具体业务无关，但几乎所有请求都需要。如果每个业务方法都手动写一遍这些逻辑，代码会大量重复且难以维护。中间件就是用来解决这个问题的：<strong>它把这些通用逻辑抽象出来，以 <code>层层包裹</code> 的方式套在业务 Handler 外面，业务代码只需关注自己的逻辑即可</strong>。</p>
+<p>kratos 同时支持 HTTP 和 gRPC 两种协议，两种协议各自有自己的拦截器机制，如果每种协议都用各自的拦截器来写这些逻辑，同一功能就要实现两遍。kratos 的做法是：<strong>定义一套协议无关的中间件接口，让同一套中间件代码既能用于 HTTP，也能用于 gRPC，再通过各自的桥接层适配到具体协议</strong>。</p>
+<p>kratos 的中间件定义在 <code>middleware/middleware.go</code> 中，非常简洁：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// middleware/middleware.go</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// Handler defines the handler invoked by Middleware.</span></span><br><span class="line"><span class="keyword">type</span> Handler <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any)</span></span> (any, <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// Middleware is HTTP/gRPC transport middleware.</span></span><br><span class="line"><span class="keyword">type</span> Middleware <span class="function"><span class="keyword">func</span><span class="params">(Handler)</span></span> Handler</span><br></pre></td></tr></table></figure>
+<p>有两个核心类型：</p>
+<ul>
+<li><strong><code>Handler</code></strong>：一个函数签名 <code>func(ctx context.Context, req any) (any, error)</code>，接收请求上下文和请求体，返回响应和错误</li>
+<li><strong><code>Middleware</code></strong>：一个函数签名 <code>func(Handler) Handler</code>，接收一个 Handler，返回一个新的 Handler</li>
+</ul>
+<p>这是一个经典的<strong>洋葱模型</strong>设计。每个中间件包装一个 Handler，形成层层嵌套的调用链。例如，一个 recovery 中间件可能这样实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Recovery</span><span class="params">()</span></span> middleware.Middleware &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(handler middleware.Handler)</span></span> middleware.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">            <span class="comment">// 外层：在调用前添加 recover</span></span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                <span class="keyword">if</span> r := <span class="built_in">recover</span>(); r != <span class="literal">nil</span> &#123;</span><br><span class="line">                    <span class="comment">// 处理 panic</span></span><br><span class="line">                &#125;</span><br><span class="line">            &#125;()</span><br><span class="line">            <span class="comment">// 调用下一个 handler</span></span><br><span class="line">            <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这种设计使得中间件与传输协议无关：同一个 <code>middleware.Middleware</code> 可以同时用于 HTTP 和 gRPC。</p>
+<h3 id="middlewarechain链式组合"><a class="markdownIt-Anchor" href="#middlewarechain链式组合"></a> middleware.Chain：链式组合</h3>
+<p>多个中间件需要串联执行，<code>middleware.Chain</code> 负责完成这个组合：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// middleware/middleware.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Chain</span><span class="params">(m ...Middleware)</span></span> Middleware &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next Handler)</span></span> Handler &#123;</span><br><span class="line">        <span class="keyword">for</span> i := <span class="built_in">len</span>(m) - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">            next = m[i](next)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> next</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Chain</code> 从后向前依次包装 handler，确保中间件的执行顺序与注册顺序一致。例如 <code>Chain(A, B, C)</code> 生成的链为 <code>A(B(C(handler)))</code>，执行顺序是 <code>A → B → C → handler → C返回 → B返回 → A返回</code>。</p>
+<h3 id="中间件选择器matchermatcher"><a class="markdownIt-Anchor" href="#中间件选择器matchermatcher"></a> 中间件选择器：matcher.Matcher</h3>
+<p>kratos 不仅支持全局中间件，还支持按方法名选择性注册中间件。这是通过 <code>matcher.Matcher</code> 实现的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/matcher/middleware.go</span></span><br><span class="line"><span class="keyword">type</span> Matcher <span class="keyword">interface</span> &#123;</span><br><span class="line">    Use(ms ...middleware.Middleware)</span><br><span class="line">    Add(selector <span class="type">string</span>, ms ...middleware.Middleware)</span><br><span class="line">    Match(operation <span class="type">string</span>) []middleware.Middleware</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> matcher <span class="keyword">struct</span> &#123;</span><br><span class="line">    prefix   []<span class="type">string</span>                        <span class="comment">// 前缀通配符列表</span></span><br><span class="line">    defaults []middleware.Middleware           <span class="comment">// 默认中间件（Use 注册的）</span></span><br><span class="line">    matches  <span class="keyword">map</span>[<span class="type">string</span>][]middleware.Middleware <span class="comment">// 精确或前缀匹配的中间件</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>三个方法的含义：</p>
+<ul>
+<li><strong><code>Use(ms...)</code></strong>：设置默认中间件，所有请求都会执行</li>
+<li><strong><code>Add(selector, ms...)</code></strong>：添加选择性中间件，selector 支持精确匹配和前缀通配（<code>*</code> 结尾）</li>
+<li><strong><code>Match(operation)</code></strong>：根据 operation 匹配并返回中间件列表</li>
+</ul>
+<p><code>Add</code> 方法在添加时，会将 <code>*</code> 结尾的 selector 去掉尾部的 <code>*</code>，存入 <code>prefix</code> 列表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *matcher)</span></span> Add(selector <span class="type">string</span>, ms ...middleware.Middleware) &#123;</span><br><span class="line">    <span class="keyword">if</span> strings.HasSuffix(selector, <span class="string">&quot;*&quot;</span>) &#123;</span><br><span class="line">        selector = strings.TrimSuffix(selector, <span class="string">&quot;*&quot;</span>)</span><br><span class="line">        m.prefix = <span class="built_in">append</span>(m.prefix, selector)</span><br><span class="line">        <span class="comment">// 按长度从长到短排序，确保更具体的前缀优先匹配</span></span><br><span class="line">        sort.Slice(m.prefix, <span class="function"><span class="keyword">func</span><span class="params">(i, j <span class="type">int</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> m.prefix[i] &gt; m.prefix[j]</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">    m.matches[selector] = ms</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Match</code> 方法的匹配逻辑是：先加入默认中间件，再尝试精确匹配，最后尝试前缀匹配：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *matcher)</span></span> Match(operation <span class="type">string</span>) []middleware.Middleware &#123;</span><br><span class="line">    ms := <span class="built_in">make</span>([]middleware.Middleware, <span class="number">0</span>, <span class="built_in">len</span>(m.defaults))</span><br><span class="line">    <span class="comment">// 1. 总是包含默认中间件</span></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(m.defaults) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        ms = <span class="built_in">append</span>(ms, m.defaults...)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 2. 精确匹配</span></span><br><span class="line">    <span class="keyword">if</span> next, ok := m.matches[operation]; ok &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="built_in">append</span>(ms, next...)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 3. 前缀匹配（按前缀长度从长到短）</span></span><br><span class="line">    <span class="keyword">for</span> _, prefix := <span class="keyword">range</span> m.prefix &#123;</span><br><span class="line">        <span class="keyword">if</span> strings.HasPrefix(operation, prefix) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="built_in">append</span>(ms, m.matches[prefix]...)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> ms</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="grpcserver-对-matcher-的使用"><a class="markdownIt-Anchor" href="#grpcserver-对-matcher-的使用"></a> grpc.Server 对 Matcher 的使用</h3>
+<p>kratos 的 <code>grpc.Server</code> 结构体持有两个 <code>matcher.Matcher</code> 实例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    *grpc.Server</span><br><span class="line">    middleware       matcher.Matcher    <span class="comment">// Unary 中间件选择器</span></span><br><span class="line">    streamMiddleware matcher.Matcher    <span class="comment">// Stream 中间件选择器</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>创建 Server 时通过 <code>Middleware()</code> 选项注册的中间件，是通过调用 <code>matcher.Use</code> 实现的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Middleware</span><span class="params">(m ...middleware.Middleware)</span></span> ServerOption &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(s *Server)</span></span> &#123;</span><br><span class="line">        s.middleware.Use(m...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Server.Use</code> 的内部则直接调用了 <code>matcher.Add</code></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Use(selector <span class="type">string</span>, m ...middleware.Middleware) &#123;</span><br><span class="line">    s.middleware.Add(selector, m...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>即 <strong><code>Matcher</code> 是 Server Middleware 的底层存储和匹配引擎</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>Server 层 API</th>
+<th>底层调用</th>
+<th>对应 Matcher 方法</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Middleware(m...)</code></td>
+<td><code>s.middleware.Use(m...)</code></td>
+<td><code>Matcher.Use</code></td>
+<td>注册默认中间件，所有请求都执行</td>
+</tr>
+<tr>
+<td><code>Use(selector, m...)</code></td>
+<td><code>s.middleware.Add(selector, m...)</code></td>
+<td><code>Matcher.Add</code></td>
+<td>注册选择性中间件，按 selector 匹配</td>
+</tr>
+</tbody>
+</table>
+<p>举个例子，假设按照如下方式配置了 Server：</p>
+<table>
+<thead>
+<tr>
+<th>调用</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>srv.Middleware(recovery.Recovery())</code></td>
+<td>通过选项注册，设置默认中间件</td>
+</tr>
+<tr>
+<td><code>srv.Use(&quot;/*&quot;, validate.Validator())</code></td>
+<td>前缀通配，匹配所有 operation</td>
+</tr>
+<tr>
+<td><code>srv.Use(&quot;/helloworld.v1.Greeter/*&quot;, auth.Check())</code></td>
+<td>前缀通配，匹配 Greeter 服务的所有方法</td>
+</tr>
+<tr>
+<td><code>srv.Use(&quot;/helloworld.v1.Greeter/SayHello&quot;, rate.Limit())</code></td>
+<td>精确匹配，只匹配 SayHello 方法</td>
+</tr>
+</tbody>
+</table>
+<p>当请求 <code>/helloworld.v1.Greeter/SayHello</code> 时：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">defaults: [recovery]                          ← Use 注册的默认中间件</span><br><span class="line">精确匹配: /helloworld.v1.Greeter/SayHello → [rate]  ← 命中精确匹配</span><br><span class="line">最终结果: [recovery, rate]</span><br></pre></td></tr></table></figure>
+<p>当请求 <code>/helloworld.v1.Greeter/AnotherMethod</code> 时：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">defaults: [recovery]                          ← Use 注册的默认中间件</span><br><span class="line">精确匹配: 未命中</span><br><span class="line">前缀匹配: /helloworld.v1.Greeter/ → [auth]    ← 命中前缀匹配</span><br><span class="line">最终结果: [recovery, auth]</span><br></pre></td></tr></table></figure>
+<h2 id="拦截器桥接"><a class="markdownIt-Anchor" href="#拦截器桥接"></a> 拦截器桥接</h2>
+<p>上一篇文章我们提到，gRPC 原生的拦截器类型是 <code>grpc.UnaryServerInterceptor</code>，而 kratos 的中间件类型是 <code>middleware.Middleware</code>，两者之间需要桥接。这正是 <code>interceptor.go</code> 的工作。</p>
+<h3 id="grpc-拦截器简介"><a class="markdownIt-Anchor" href="#grpc-拦截器简介"></a> gRPC 拦截器简介</h3>
+<p>gRPC 拦截器就是 gRPC 框架提供的请求拦截机制，类似 HTTP 中间件，在请求到达业务 handler 之前/之后执行通用逻辑。拦截器d的典型用途：日志、认证、限流、超时控制等。</p>
+<p>gRPC 拦截器分为两类：</p>
+<ul>
+<li>Unary 拦截器（普通请求）：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+<ul>
+<li>Stream 拦截器（流式请求）：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span><span class="params">(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler)</span></span> <span class="type">error</span></span><br></pre></td></tr></table></figure>
+<p>通过如下方式注册 gRPC 拦截器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 单个</span></span><br><span class="line">grpc.NewServer(grpc.UnaryInterceptor(myInterceptor))</span><br><span class="line"></span><br><span class="line"><span class="comment">// 多个链式</span></span><br><span class="line">grpc.NewServer(grpc.ChainUnaryInterceptor(interceptor1, interceptor2, interceptor3))</span><br></pre></td></tr></table></figure>
+<p>执行顺序类似洋葱模型：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">interceptor1 → interceptor2 → interceptor3 → handler → interceptor3返回 → interceptor2返回 → interceptor1返回</span><br></pre></td></tr></table></figure>
+<h3 id="为什么需要桥接"><a class="markdownIt-Anchor" href="#为什么需要桥接"></a> 为什么需要桥接</h3>
+<p>现在我们看到了问题的本质：kratos 的中间件和 gRPC 的拦截器是两套完全不同的签名：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// gRPC UnaryServerInterceptor —— gRPC 框架的拦截器格式</span></span><br><span class="line"><span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>)</span><br><span class="line"></span><br><span class="line"><span class="comment">// middleware.Middleware —— kratos 的中间件格式</span></span><br><span class="line"><span class="function"><span class="keyword">func</span><span class="params">(Handler)</span></span> Handler</span><br><span class="line"><span class="comment">// 其中 Handler = func(ctx context.Context, req any) (any, error)</span></span><br></pre></td></tr></table></figure>
+<p>gRPC 框架只认自己的 <code>UnaryServerInterceptor</code>，它会在请求到达时调用这个拦截器，传入方法信息和最终业务 handler；而 kratos 的中间件是洋葱模型，只认 <code>Handler → Handler</code> 的包装模式。两者接口不兼容，不能直接互相替代。</p>
+<p>因此需要一个<strong>桥接层</strong>——<strong>它本身实现 gRPC 的 <code>UnaryServerInterceptor</code> 接口，在内部将请求转换为 kratos 中间件能理解的 <code>Handler</code> 链来执行</strong>。</p>
+<h3 id="unary-桥接拦截器"><a class="markdownIt-Anchor" href="#unary-桥接拦截器"></a> Unary 桥接拦截器</h3>
+<p>Unary gRPC（一元 gRPC） 是 gRPC 中最简单、最常见的一种通信模式。简单来说，它就像我们平时最熟悉的 <code>传统 HTTP 请求-响应（Request-Response）</code> 模式：客户端发送一个请求，服务器返回一个响应。它的工作流程可以简化为：</p>
+<ul>
+<li>客户端发起请求： 客户端调用一个 gRPC 方法，发送单个请求消息给服务器，然后等待。</li>
+<li>服务器处理： 服务器接收到这个请求，执行相应的业务逻辑（比如查询数据库、处理数据）。</li>
+<li>服务器返回响应： 服务器发送单个响应消息回客户端，并附带状态码（如成功、报错）和可选的元数据。</li>
+</ul>
+<p>当一个 Unary RPC 请求到达 kratos gRPC Server 时，执行链如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">gRPC 请求 → grpc.Server → _Greeter_SayHello_Handler → unaryServerInterceptor → kratos middleware chain → 业务 handler</span><br></pre></td></tr></table></figure>
+<p><strong><code>unaryServerInterceptor</code> 是整条链的关键枢纽</strong>。在 kratos 的 <code>NewServer()</code> 中，它是通过拦截器链构建并传给 <code>grpc.NewServer</code> 的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServer</span><span class="params">(opts ...ServerOption)</span></span> *Server &#123;</span><br><span class="line">    srv := &amp;Server&#123;...&#125;</span><br><span class="line">    <span class="keyword">for</span> _, o := <span class="keyword">range</span> opts &#123;</span><br><span class="line">        o(srv)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 1. kratos 桥接拦截器始终在最前面</span></span><br><span class="line">    unaryInts := []grpc.UnaryServerInterceptor&#123;</span><br><span class="line">        srv.unaryServerInterceptor(),      <span class="comment">// ← 这里</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 2. 用户自定义拦截器追加在后面</span></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(srv.unaryInts) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        unaryInts = <span class="built_in">append</span>(unaryInts, srv.unaryInts...)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 通过 grpc.ChainUnaryInterceptor 传入 grpc.NewServer</span></span><br><span class="line">    grpcOpts := []grpc.ServerOption&#123;</span><br><span class="line">        grpc.ChainUnaryInterceptor(unaryInts...),</span><br><span class="line">        grpc.ChainStreamInterceptor(streamInts...),</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    srv.Server = grpc.NewServer(grpcOpts...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>这样每个 gRPC 请求到达时，都会先经过 kratos 的桥接拦截器，再经过用户自定义的拦截器，最终到达业务 handler</strong>。</p>
+<h4 id="unaryserverinterceptor-实现"><a class="markdownIt-Anchor" href="#unaryserverinterceptor-实现"></a> unaryServerInterceptor 实现</h4>
+<p>让我们看看 kratos 的 <code>unaryServerInterceptor</code> 的实现，它的核心就是返回一个原生的<br />
+gRPC <code>UnaryServerInterceptor</code>，并在内部完成 kratos 的 Middleware 逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/interceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> unaryServerInterceptor() grpc.UnaryServerInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="comment">// 1. 合并 Context：将 baseCtx 的值合并到请求 ctx 中</span></span><br><span class="line">        ctx, cancel := ic.Merge(ctx, s.baseCtx)</span><br><span class="line">        <span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 2. 提取 gRPC metadata 作为请求头</span></span><br><span class="line">        md, _ := grpcmd.FromIncomingContext(ctx)</span><br><span class="line">        replyHeader := grpcmd.MD&#123;&#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 3. 创建 Transport 对象，携带本次请求的传输层信息</span></span><br><span class="line">        tr := &amp;Transport&#123;</span><br><span class="line">            operation:   info.FullMethod,</span><br><span class="line">            reqHeader:   headerCarrier(md),</span><br><span class="line">            replyHeader: headerCarrier(replyHeader),</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> s.endpoint != <span class="literal">nil</span> &#123;</span><br><span class="line">            tr.endpoint = s.endpoint.String()</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 4. 将 Transport 注入到 Context 中</span></span><br><span class="line">        ctx = transport.NewServerContext(ctx, tr)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 5. 设置超时</span></span><br><span class="line">        <span class="keyword">if</span> s.timeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">            ctx, cancel = context.WithTimeout(ctx, s.timeout)</span><br><span class="line">            <span class="keyword">defer</span> cancel()</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 6. 构建最终的业务 handler</span></span><br><span class="line">        h := <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 7. 匹配中间件并构建中间件链</span></span><br><span class="line">        <span class="keyword">if</span> next := s.middleware.Match(tr.Operation()); <span class="built_in">len</span>(next) &gt; <span class="number">0</span> &#123;</span><br><span class="line">            h = middleware.Chain(next...)(h)</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 8. 执行中间件链</span></span><br><span class="line">        reply, err := h(ctx, req)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 9. 将响应头写回 gRPC metadata</span></span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(replyHeader) &gt; <span class="number">0</span> &#123;</span><br><span class="line">            _ = grpc.SetHeader(ctx, replyHeader)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> reply, err</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>从代码来看，<code>unaryServerInterceptor</code> 作为 gRPC 拦截器被调用时，完成了以下工作：</p>
+<ol>
+<li><strong>Context 合并</strong> — <code>ic.Merge(ctx, s.baseCtx)</code>：将请求 Context 和应用级 Context 合并，让请求能访问应用级值</li>
+<li><strong>Transport 注入</strong> — 创建 <code>Transport</code> 对象（携带 operation、endpoint、header），通过 <code>transport.NewServerContext</code> 写入 Context</li>
+<li><strong>超时控制</strong> — <code>context.WithTimeout(ctx, s.timeout)</code>：为请求设置默认超时</li>
+<li><strong>中间件匹配</strong> — <code>s.middleware.Match(operation)</code>：根据方法名匹配应该执行的中间件</li>
+<li><strong>中间件链执行</strong> — <code>middleware.Chain(matched...)(h)</code>：将匹配到的中间件串联执行</li>
+<li><strong>响应头写回</strong> — 将中间件通过 <code>tr.ReplyHeader().Set(...)</code> 设置的头写回 gRPC</li>
+</ol>
+<p>核心是第 4 和第 5 步：桥接拦截器把 gRPC 传入的 <code>handler</code> 包装成 kratos 的 <code>Handler</code>，然后通过 <code>middleware.Chain</code> 让 kratos 中间件链包裹这个 <code>Handler</code>，从而让 kratos 中间件能在 gRPC 的请求处理链中正常工作。</p>
+<h4 id="context-合并icmerge"><a class="markdownIt-Anchor" href="#context-合并icmerge"></a> Context 合并：ic.Merge</h4>
+<p><code>ic.Merge</code> 的作用是将两个 Context 合并为一个。为什么要合并？因为 <code>baseCtx</code> 是在 Server 启动时由 <code>App</code> 创建的，携带了应用级别的值（如日志、服务实例信息等），而请求的 <code>ctx</code> 来自 gRPC 框架，只携带了请求级别的值。合并后，业务代码可以从一个 Context 中同时访问两种值。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/context/context.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Merge</span><span class="params">(parent1, parent2 context.Context)</span></span> (context.Context, context.CancelFunc) &#123;</span><br><span class="line">    mc := &amp;mergeCtx&#123;</span><br><span class="line">        parent1:  parent1,    <span class="comment">// 请求 ctx</span></span><br><span class="line">        parent2:  parent2,    <span class="comment">// baseCtx</span></span><br><span class="line">        done:     <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;),</span><br><span class="line">        cancelCh: <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;),</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 如果任一父 Context 已取消，直接完成</span></span><br><span class="line">    <span class="keyword">select</span> &#123;</span><br><span class="line">    <span class="keyword">case</span> &lt;-parent1.Done():</span><br><span class="line">        _ = mc.finish(parent1.Err())</span><br><span class="line">    <span class="keyword">case</span> &lt;-parent2.Done():</span><br><span class="line">        _ = mc.finish(parent2.Err())</span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="keyword">go</span> mc.wait()           <span class="comment">// 否则异步等待</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> mc, mc.cancel</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>mergeCtx</code> 实现了 <code>context.Context</code> 接口，其核心逻辑是：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Done()</code></td>
+<td>返回合并后的 done channel，任一父 Context 取消则关闭</td>
+</tr>
+<tr>
+<td><code>Err()</code></td>
+<td>返回先完成的父 Context 的错误</td>
+</tr>
+<tr>
+<td><code>Deadline()</code></td>
+<td>返回两个父 Context 中更早的截止时间</td>
+</tr>
+<tr>
+<td><code>Value(key)</code></td>
+<td><strong>先查 parent1，不存在则查 parent2</strong>，实现了值的合并查找</td>
+</tr>
+</tbody>
+</table>
+<p>这意味着 <code>Value</code> 查找是有优先级的：请求 Context 中的值优先，baseCtx 的值作为后备。</p>
+<h3 id="stream-桥接拦截器"><a class="markdownIt-Anchor" href="#stream-桥接拦截器"></a> Stream 桥接拦截器</h3>
+<p>相比于 unary gRPC 这种普通一元调用（单次请求 → 单次响应），stream gRPC 允许客户端与服务端进行双向流式通信（多次请求 → 多次响应），具体来说，stream gRPC 有以下几种类型：</p>
+<ul>
+<li>服务端流（Server Stream）：客户端发1 次请求，服务端持续返回多条数据流。适用于消息推送、日志实时输出、大数据分批返回、进度条实时上报等场景</li>
+<li>客户端流（Client Stream）：客户端持续发送多条数据流，服务端最后返回1 次响应。适用于大文件分片上传、批量数据入库、批量日志上报等场景</li>
+<li>双向流（Bidirectional Stream）：双方同时持续互发数据流，互不阻塞。适用于实时聊天、IM 对话等场景</li>
+</ul>
+<p>这三种通信方式统一叫做 <code>gRPC Stream</code> / <code>流式 gRPC</code>。Stream RPC 的拦截器桥接比 Unary 更复杂，因为 Stream 是长连接，涉及多次 <code>SendMsg</code> 和 <code>RecvMsg</code> 调用。</p>
+<p>Stream 桥接拦截器的实现位于 <code>streamServerInterceptor</code> 方法中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/interceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> streamServerInterceptor() grpc.StreamServerInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="comment">// 1～3：与 unary 相同的 Context 合并、Transport 注入</span></span><br><span class="line">        ctx, cancel := ic.Merge(ss.Context(), s.baseCtx)</span><br><span class="line">        <span class="keyword">defer</span> cancel()</span><br><span class="line">        md, _ := grpcmd.FromIncomingContext(ctx)</span><br><span class="line">        replyHeader := grpcmd.MD&#123;&#125;</span><br><span class="line">        ctx = transport.NewServerContext(ctx, &amp;Transport&#123;</span><br><span class="line">            endpoint:    s.endpoint.String(),</span><br><span class="line">            operation:   info.FullMethod,</span><br><span class="line">            reqHeader:   headerCarrier(md),</span><br><span class="line">            replyHeader: headerCarrier(replyHeader),</span><br><span class="line">        &#125;)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 4：构建空的中间件链用于初始化匹配</span></span><br><span class="line">        h := <span class="function"><span class="keyword">func</span><span class="params">(_ context.Context, _ any)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> handler(srv, ss), <span class="literal">nil</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> next := s.streamMiddleware.Match(info.FullMethod); <span class="built_in">len</span>(next) &gt; <span class="number">0</span> &#123;</span><br><span class="line">            middleware.Chain(next...)(h)</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 5：将原始 Stream 替换为 wrappedStream，注入自定义 Context</span></span><br><span class="line">        ctx = context.WithValue(ctx, stream&#123;</span><br><span class="line">            ServerStream:     ss,</span><br><span class="line">            streamMiddleware: s.streamMiddleware,</span><br><span class="line">        &#125;, ss)</span><br><span class="line">        ws := NewWrappedStream(ctx, ss, s.streamMiddleware)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 6：使用 wrappedStream 执行 Stream handler</span></span><br><span class="line">        err := handler(srv, ws)</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(replyHeader) &gt; <span class="number">0</span> &#123;</span><br><span class="line">            _ = grpc.SetHeader(ctx, replyHeader)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="wrappedstream"><a class="markdownIt-Anchor" href="#wrappedstream"></a> wrappedStream</h4>
+<p>对于 Stream RPC，中间件需要在每一次 <code>SendMsg</code> 和 <code>RecvMsg</code> 时执行，而不仅仅是在流开始时。kratos 通过 <code>wrappedStream</code> 实现这一点：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> wrappedStream <span class="keyword">struct</span> &#123;</span><br><span class="line">    grpc.ServerStream</span><br><span class="line">    ctx        context.Context</span><br><span class="line">    middleware matcher.Matcher</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(w *wrappedStream)</span></span> Context() context.Context &#123;</span><br><span class="line">    <span class="keyword">return</span> w.ctx    <span class="comment">// 返回注入了 Transport 的自定义 Context</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(w *wrappedStream)</span></span> SendMsg(m any) <span class="type">error</span> &#123;</span><br><span class="line">    h := <span class="function"><span class="keyword">func</span><span class="params">(_ context.Context, req any)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> req, w.ServerStream.SendMsg(m)</span><br><span class="line">    &#125;</span><br><span class="line">    info, ok := transport.FromServerContext(w.ctx)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;transport value stored in ctx returns: %v&quot;</span>, ok)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> next := w.middleware.Match(info.Operation()); <span class="built_in">len</span>(next) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        h = middleware.Chain(next...)(h)</span><br><span class="line">    &#125;</span><br><span class="line">    _, err := h(w.ctx, m)</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(w *wrappedStream)</span></span> RecvMsg(m any) <span class="type">error</span> &#123;</span><br><span class="line">    h := <span class="function"><span class="keyword">func</span><span class="params">(_ context.Context, req any)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> req, w.ServerStream.RecvMsg(m)</span><br><span class="line">    &#125;</span><br><span class="line">    info, ok := transport.FromServerContext(w.ctx)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;transport value stored in ctx returns: %v&quot;</span>, ok)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> next := w.middleware.Match(info.Operation()); <span class="built_in">len</span>(next) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        h = middleware.Chain(next...)(h)</span><br><span class="line">    &#125;</span><br><span class="line">    _, err := h(w.ctx, m)</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>wrappedStream</code> 包装了原生的 <code>grpc.ServerStream</code>，重写了三个关键方法：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Context()</code></td>
+<td>返回注入了 Transport 信息的自定义 Context</td>
+</tr>
+<tr>
+<td><code>SendMsg(m)</code></td>
+<td>在每次发送消息时执行中间件链</td>
+</tr>
+<tr>
+<td><code>RecvMsg(m)</code></td>
+<td>在每次接收消息时执行中间件链</td>
+</tr>
+</tbody>
+</table>
+<p>这样，Stream RPC 的中间件可以对每一个消息进行拦截处理（如日志、限流等），而不是只在整个流的开始和结束时执行。</p>
+<h2 id="transport-上下文"><a class="markdownIt-Anchor" href="#transport-上下文"></a> Transport 上下文</h2>
+<h3 id="transport-结构体"><a class="markdownIt-Anchor" href="#transport-结构体"></a> Transport 结构体</h3>
+<p><code>Transport</code> 是 gRPC Transport 层的核心数据载体，每个请求都会创建一个：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/transport.go</span></span><br><span class="line"><span class="keyword">type</span> Transport <span class="keyword">struct</span> &#123;</span><br><span class="line">    endpoint    <span class="type">string</span>           <span class="comment">// 服务端点，如 &quot;grpc://127.0.0.1:9000&quot;</span></span><br><span class="line">    operation   <span class="type">string</span>           <span class="comment">// 方法全名，如 &quot;/helloworld.v1.Greeter/SayHello&quot;</span></span><br><span class="line">    reqHeader   headerCarrier    <span class="comment">// 请求头（读取 gRPC metadata）</span></span><br><span class="line">    replyHeader headerCarrier    <span class="comment">// 响应头（写入 gRPC metadata）</span></span><br><span class="line">    nodeFilters []selector.NodeFilter <span class="comment">// 客户端节点过滤器</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Transport</code> 实现了 <code>transport.Transporter</code> 接口的所有方法：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>返回值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Kind()</code></td>
+<td><code>transport.KindGRPC</code></td>
+<td>协议类型标识</td>
+</tr>
+<tr>
+<td><code>Endpoint()</code></td>
+<td><code>string</code></td>
+<td>服务端点</td>
+</tr>
+<tr>
+<td><code>Operation()</code></td>
+<td><code>string</code></td>
+<td>方法全名</td>
+</tr>
+<tr>
+<td><code>RequestHeader()</code></td>
+<td><code>transport.Header</code></td>
+<td>请求头</td>
+</tr>
+<tr>
+<td><code>ReplyHeader()</code></td>
+<td><code>transport.Header</code></td>
+<td>响应头（仅服务端有效）</td>
+</tr>
+<tr>
+<td><code>NodeFilters()</code></td>
+<td><code>[]selector.NodeFilter</code></td>
+<td>客户端节点过滤器</td>
+</tr>
+</tbody>
+</table>
+<h3 id="headercarriergrpc-metadata-适配器"><a class="markdownIt-Anchor" href="#headercarriergrpc-metadata-适配器"></a> headerCarrier：gRPC Metadata 适配器</h3>
+<p><code>headerCarrier</code> 是 <code>metadata.MD</code> 的类型别名，实现了 <code>transport.Header</code> 接口，将 gRPC 的 metadata 适配为 kratos 统一的 Header 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> headerCarrier metadata.MD</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(mc headerCarrier)</span></span> Get(key <span class="type">string</span>) <span class="type">string</span> &#123;</span><br><span class="line">    vals := metadata.MD(mc).Get(key)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(vals) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> vals[<span class="number">0</span>]</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;&quot;</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(mc headerCarrier)</span></span> Set(key <span class="type">string</span>, value <span class="type">string</span>) &#123;</span><br><span class="line">    metadata.MD(mc).Set(key, value)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(mc headerCarrier)</span></span> Add(key <span class="type">string</span>, value <span class="type">string</span>) &#123;</span><br><span class="line">    metadata.MD(mc).Append(key, value)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(mc headerCarrier)</span></span> Keys() []<span class="type">string</span> &#123;</span><br><span class="line">    keys := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(mc))</span><br><span class="line">    <span class="keyword">for</span> k := <span class="keyword">range</span> metadata.MD(mc) &#123;</span><br><span class="line">        keys = <span class="built_in">append</span>(keys, k)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> keys</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(mc headerCarrier)</span></span> Values(key <span class="type">string</span>) []<span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> metadata.MD(mc).Get(key)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有一个关键设计：在 <code>unaryServerInterceptor</code> 中，请求头和响应头使用不同的 <a target="_blank" rel="noopener" href="http://metadata.MD">metadata.MD</a> 实例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">md, _ := grpcmd.FromIncomingContext(ctx)         <span class="comment">// 请求头：从 gRPC incoming metadata 读取</span></span><br><span class="line">replyHeader := grpcmd.MD&#123;&#125;                       <span class="comment">// 响应头：新建空的 metadata.MD</span></span><br><span class="line">tr := &amp;Transport&#123;</span><br><span class="line">    reqHeader:   headerCarrier(md),               <span class="comment">// 只读，读取客户端发送的 metadata</span></span><br><span class="line">    replyHeader: headerCarrier(replyHeader),        <span class="comment">// 可写，中间件可以设置响应头</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">// ... 执行中间件链后 ...</span></span><br><span class="line"><span class="keyword">if</span> <span class="built_in">len</span>(replyHeader) &gt; <span class="number">0</span> &#123;</span><br><span class="line">    _ = grpc.SetHeader(ctx, replyHeader)           <span class="comment">// 将响应头写回 gRPC</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这样中间件就可以通过 <code>tr.ReplyHeader().Set(&quot;key&quot;, &quot;value&quot;)</code> 设置响应头，这些头最终会被写回 gRPC 响应。</p>
+<h3 id="context-传播"><a class="markdownIt-Anchor" href="#context-传播"></a> Context 传播</h3>
+<p>Transport 通过 Context 在中间件和业务逻辑之间传播：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 注入（服务端）</span></span><br><span class="line">ctx = transport.NewServerContext(ctx, tr)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 提取（业务代码中）</span></span><br><span class="line">tr, ok := transport.FromServerContext(ctx)</span><br></pre></td></tr></table></figure>
+<p><code>NewServerContext</code> 和 <code>FromServerContext</code> 的实现非常简单，使用了 Go 的 <code>context.WithValue</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/transport.go</span></span><br><span class="line"><span class="keyword">type</span> serverTransportKey <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServerContext</span><span class="params">(ctx context.Context, tr Transporter)</span></span> context.Context &#123;</span><br><span class="line">    <span class="keyword">return</span> context.WithValue(ctx, serverTransportKey&#123;&#125;, tr)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FromServerContext</span><span class="params">(ctx context.Context)</span></span> (tr Transporter, ok <span class="type">bool</span>) &#123;</span><br><span class="line">    tr, ok = ctx.Value(serverTransportKey&#123;&#125;).(Transporter)</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>业务代码中的典型用法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *GreeterService)</span></span> SayHello(ctx context.Context, in *v1.HelloRequest) (*v1.HelloReply, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 获取 Transport 信息</span></span><br><span class="line">    <span class="keyword">if</span> tr, ok := transport.FromServerContext(ctx); ok &#123;</span><br><span class="line">        <span class="comment">// 读取请求头</span></span><br><span class="line">        reqID := tr.RequestHeader().Get(<span class="string">&quot;x-request-id&quot;</span>)</span><br><span class="line">        <span class="comment">// 设置响应头</span></span><br><span class="line">        tr.ReplyHeader().Set(<span class="string">&quot;x-response-id&quot;</span>, <span class="string">&quot;xxx&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="编解码器json-codec"><a class="markdownIt-Anchor" href="#编解码器json-codec"></a> 编解码器：JSON Codec</h2>
+<p>gRPC 默认使用 protobuf 编解码，但 kratos 选择使用 JSON 作为默认编解码格式。这是因为 kratos 同时支持 HTTP 和 gRPC 协议，HTTP 协议通常使用 JSON 格式，为了保持一致性，gRPC 也默认使用 JSON。</p>
+<p>所以不要认为 gRPC 只能使用 Protobuf 作为序列化协议（默认是 Protobuf），gRPC 设计目标就是可替换编码：只要实现统一编解码接口，就能换成 JSON、FlatBuffers、自定义二进制等。在 <code>google.golang.org/grpc/encoding 包中</code>，定义了Codec 接口，所有编解码器都要实现它。</p>
+<h3 id="codec-实现"><a class="markdownIt-Anchor" href="#codec-实现"></a> Codec 实现</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// transport/grpc/codec.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    encoding.RegisterCodec(codec&#123;&#125;)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> codec <span class="keyword">struct</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(codec)</span></span> Marshal(v any) ([]<span class="type">byte</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    vv, ok := v.(proto.Message)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;failed to marshal, message is %T, want proto.Message&quot;</span>, v)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> enc.GetCodec(json.Name).Marshal(vv)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(codec)</span></span> Unmarshal(data []<span class="type">byte</span>, v any) <span class="type">error</span> &#123;</span><br><span class="line">    vv, ok := v.(proto.Message)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;failed to unmarshal, message is %T, want proto.Message&quot;</span>, v)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> enc.GetCodec(json.Name).Unmarshal(data, vv)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(codec)</span></span> Name() <span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> json.Name    <span class="comment">// &quot;json&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>关键设计点：</p>
+<ol>
+<li><strong>注册时机</strong>：通过 <code>init()</code> 函数自动注册，确保在 gRPC Server 启动前可用</li>
+<li><strong>类型断言</strong>：编解码前先断言 <code>proto.Message</code>，确保只处理 protobuf 消息</li>
+<li><strong>委托模式</strong>：实际的编解码委托给 kratos 的 <code>json</code> codec（<code>enc.GetCodec(json.Name)</code>），而不是直接使用标准库的 <code>encoding/json</code></li>
+<li>当 gRPC 收到 <code>Content-Type: application/grpc+json</code> 的请求时，会使用这个 JSON codec 来解码请求体。服务端根据靠 json 这个 subtype 来查找 codec 实现</li>
+</ol>
+<p>委托给 <code>enc.GetCodec(json.Name)</code> 而非直接使用 <code>encoding/json</code> 的原因是，kratos 的 json codec 支持protobuf 的规范化 JSON 编码（如 <code>Struct</code>、<code>Any</code> 等 Well-Known Types）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">kratos json codec</span><br><span class="line">  └─ enc.GetCodec(<span class="string">&quot;json&quot;</span>)</span><br><span class="line">       └─ github.com/<span class="keyword">go</span>-kratos/kratos/v2/encoding/json</span><br><span class="line">            └─ protojson.MarshalOptions&#123;Multiline: <span class="literal">false</span>, EmitUnpopulated: <span class="literal">true</span>&#125;</span><br><span class="line">                 └─ google.golang.org/protobuf/encoding/protojson</span><br></pre></td></tr></table></figure>
+<p>这意味着 kratos gRPC 服务可以正确处理 protobuf 的 Well-Known Types（如 <code>google.protobuf.Struct</code>、<code>google.protobuf.Any</code> 等），而不仅仅是简单的 protobuf 消息。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们详细介绍了 kratos 的 gRPC Server 的中间件体系、桥接拦截器实现、Transport 上下文、编解码器等关键设计。通过这些设计，可以在 kratos 中快速实现实现一个可扩展、高效的 gRPC 服务。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/10/sast-bearer-intro/" rel="prev" title="Bearer SAST 工具快速入门">
+      <i class="fa fa-chevron-left"></i> Bearer SAST 工具快速入门
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/03/go-kratos-06/" rel="next" title="Kratos 源码分析（六）：gRPC Transport（1）">
+      Kratos 源码分析（六）：gRPC Transport（1） <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-%E4%B8%AD%E9%97%B4%E4%BB%B6%E4%BD%93%E7%B3%BB"><span class="nav-number">1.</span> <span class="nav-text"> kratos 中间件体系</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#middlewarechain%E9%93%BE%E5%BC%8F%E7%BB%84%E5%90%88"><span class="nav-number">1.1.</span> <span class="nav-text"> middleware.Chain：链式组合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E9%80%89%E6%8B%A9%E5%99%A8matchermatcher"><span class="nav-number">1.2.</span> <span class="nav-text"> 中间件选择器：matcher.Matcher</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#grpcserver-%E5%AF%B9-matcher-%E7%9A%84%E4%BD%BF%E7%94%A8"><span class="nav-number">1.3.</span> <span class="nav-text"> grpc.Server 对 Matcher 的使用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8B%A6%E6%88%AA%E5%99%A8%E6%A1%A5%E6%8E%A5"><span class="nav-number">2.</span> <span class="nav-text"> 拦截器桥接</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#grpc-%E6%8B%A6%E6%88%AA%E5%99%A8%E7%AE%80%E4%BB%8B"><span class="nav-number">2.1.</span> <span class="nav-text"> gRPC 拦截器简介</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81%E6%A1%A5%E6%8E%A5"><span class="nav-number">2.2.</span> <span class="nav-text"> 为什么需要桥接</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#unary-%E6%A1%A5%E6%8E%A5%E6%8B%A6%E6%88%AA%E5%99%A8"><span class="nav-number">2.3.</span> <span class="nav-text"> Unary 桥接拦截器</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#unaryserverinterceptor-%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.3.1.</span> <span class="nav-text"> unaryServerInterceptor 实现</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#context-%E5%90%88%E5%B9%B6icmerge"><span class="nav-number">2.3.2.</span> <span class="nav-text"> Context 合并：ic.Merge</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#stream-%E6%A1%A5%E6%8E%A5%E6%8B%A6%E6%88%AA%E5%99%A8"><span class="nav-number">2.4.</span> <span class="nav-text"> Stream 桥接拦截器</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#wrappedstream"><span class="nav-number">2.4.1.</span> <span class="nav-text"> wrappedStream</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#transport-%E4%B8%8A%E4%B8%8B%E6%96%87"><span class="nav-number">3.</span> <span class="nav-text"> Transport 上下文</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#transport-%E7%BB%93%E6%9E%84%E4%BD%93"><span class="nav-number">3.1.</span> <span class="nav-text"> Transport 结构体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#headercarriergrpc-metadata-%E9%80%82%E9%85%8D%E5%99%A8"><span class="nav-number">3.2.</span> <span class="nav-text"> headerCarrier：gRPC Metadata 适配器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#context-%E4%BC%A0%E6%92%AD"><span class="nav-number">3.3.</span> <span class="nav-text"> Context 传播</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BC%96%E8%A7%A3%E7%A0%81%E5%99%A8json-codec"><span class="nav-number">4.</span> <span class="nav-text"> 编解码器：JSON Codec</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#codec-%E5%AE%9E%E7%8E%B0"><span class="nav-number">4.1.</span> <span class="nav-text"> Codec 实现</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">261</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
