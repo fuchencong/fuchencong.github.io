@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前几篇文章我们已经详细分析了 kratos gRPC Transport 的实现原理，这篇文章我们将回到服务端，开始分析 kratos 的另一条核心传输链路：HTTP Transport。本文会先介绍 HTTP Transport 的整体设计，再深入 HTTP Server 的创建流程、路由注册、Filter 与 Middleware 的分层关系，以及一次 HTTP 请求在 kratos 中的完整">
+<meta property="og:type" content="article">
+<meta property="og:title" content="kratos 源码分析 09：HTTP Transport（1）">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/06/06/go-kratos-09/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="前几篇文章我们已经详细分析了 kratos gRPC Transport 的实现原理，这篇文章我们将回到服务端，开始分析 kratos 的另一条核心传输链路：HTTP Transport。本文会先介绍 HTTP Transport 的整体设计，再深入 HTTP Server 的创建流程、路由注册、Filter 与 Middleware 的分层关系，以及一次 HTTP 请求在 kratos 中的完整">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-06-06T14:47:40.000Z">
+<meta property="article:modified_time" content="2026-06-29T14:50:02.826Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/06/go-kratos-09/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>kratos 源码分析 09：HTTP Transport（1） | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/06/06/go-kratos-09/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          kratos 源码分析 09：HTTP Transport（1）
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-06-06 22:47:40" itemprop="dateCreated datePublished" datetime="2026-06-06T22:47:40+08:00">2026-06-06</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>前几篇文章我们已经详细分析了 kratos gRPC Transport 的实现原理，这篇文章我们将回到服务端，开始分析 kratos 的另一条核心传输链路：HTTP Transport。本文会先介绍 HTTP Transport 的整体设计，再深入 HTTP Server 的创建流程、路由注册、Filter 与 Middleware 的分层关系，以及一次 HTTP 请求在 kratos 中的完整处理链路。</p>
+<span id="more"></span>
+<h2 id="kratos-的-http-transport"><a class="markdownIt-Anchor" href="#kratos-的-http-transport"></a> Kratos 的 HTTP Transport</h2>
+<p>Go 标准库已经提供了非常成熟的 <code>net/http</code>，很多 Web 框架也都是基于它构建的。那么 kratos 为什么还需要再封装一层 HTTP Transport？直接使用 <code>http.Server</code>、<code>http.ServeMux</code> 不行吗？<strong>标准库解决的是 HTTP 协议处理问题，而 kratos 需要解决的是微服务框架中的统一传输抽象问题</strong>。</p>
+<p>在一个微服务框架中，HTTP Server 不只是监听端口、匹配路由、调用 Handler，它还需要和框架的其他能力协同工作：</p>
+<table>
+<thead>
+<tr>
+<th>需求</th>
+<th>原生 <code>net/http</code></th>
+<th>kratos HTTP Transport 提供的能力</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>生命周期管理</strong></td>
+<td>需要手动启动和关闭 <code>http.Server</code></td>
+<td>实现 <code>transport.Server</code>，由 <code>kratos.App</code> 统一启动和停止</td>
+</tr>
+<tr>
+<td><strong>服务注册端点</strong></td>
+<td>需要自己计算监听地址</td>
+<td>实现 <code>transport.Endpointer</code>，自动生成可注册的 endpoint</td>
+</tr>
+<tr>
+<td><strong>中间件复用</strong></td>
+<td>只能使用 <code>func(http.Handler) http.Handler</code></td>
+<td>同时支持 HTTP Filter 和协议无关的 <code>middleware.Middleware</code></td>
+</tr>
+<tr>
+<td><strong>请求上下文传播</strong></td>
+<td><code>*http.Request.Context()</code> 只包含基础信息</td>
+<td>注入 <code>transport.Transporter</code>，中间件和业务层可读取传输信息</td>
+</tr>
+<tr>
+<td><strong>统一编解码</strong></td>
+<td>每个 Handler 自己解析请求和写响应</td>
+<td>提供统一的 RequestDecoder、ResponseEncoder、ErrorEncoder</td>
+</tr>
+<tr>
+<td><strong>路由分组</strong></td>
+<td>标准库能力较弱</td>
+<td>基于 gorilla/mux 提供路径参数、方法匹配、分组 Filter</td>
+</tr>
+</tbody>
+</table>
+<p>所以 kratos HTTP Transport 的核心目标不是替代 <code>net/http</code>，而是把 <code>net/http</code> 包装成符合 kratos 框架模型的 Transport Server：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">原生 HTTP Server：</span><br><span class="line">  net.Listen → http.Server.Serve → mux 匹配路由 → http.Handler</span><br><span class="line"></span><br><span class="line">Kratos HTTP Server：</span><br><span class="line">  kratos.App 管理生命周期</span><br><span class="line">  → HTTP Server 实现 transport.Server / Endpointer</span><br><span class="line">  → Filter 处理 HTTP 层逻辑</span><br><span class="line">  → Transport 注入请求上下文</span><br><span class="line">  → Middleware 处理协议无关逻辑</span><br><span class="line">  → HandlerFunc 处理业务逻辑</span><br></pre></td></tr></table></figure>
+<p>这里有一个重要区别：<strong>HTTP Filter 和 kratos Middleware 是两套不同层次的机制</strong>。</p>
+<ul>
+<li><code>FilterFunc</code> 面向 HTTP 协议本身，签名是 <code>func(http.Handler) http.Handler</code></li>
+<li><code>middleware.Middleware</code> 面向 kratos 统一传输抽象，签名是 <code>func(middleware.Handler) middleware.Handler</code></li>
+</ul>
+<p>前者更适合处理 CORS、静态文件、HTTP Header、Rewrite 等 HTTP 专属逻辑；后者更适合处理 tracing、logging、recovery、auth、metrics 等 HTTP/gRPC 都能复用的通用逻辑。</p>
+<h2 id="http-transport-整体架构"><a class="markdownIt-Anchor" href="#http-transport-整体架构"></a> HTTP Transport 整体架构</h2>
+<p>kratos HTTP Transport 的核心代码位于 <code>transport/http</code> 目录下，主要由以下几个部分组成：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server.go</code></td>
+<td>HTTP Server 的创建、配置、启动停止、Transport 注入</td>
+</tr>
+<tr>
+<td><code>router.go</code></td>
+<td>路由分组、方法注册、HandlerFunc 适配</td>
+</tr>
+<tr>
+<td><code>filter.go</code></td>
+<td>HTTP Filter 定义与链式组合</td>
+</tr>
+<tr>
+<td><code>context.go</code></td>
+<td>HTTP Context 封装，请求绑定、响应返回、中间件匹配</td>
+</tr>
+<tr>
+<td><code>transport.go</code></td>
+<td>HTTP Transport 上下文，实现 <code>transport.Transporter</code></td>
+</tr>
+<tr>
+<td><code>codec.go</code></td>
+<td>请求解码、响应编码、错误编码</td>
+</tr>
+</tbody>
+</table>
+<p>整体结构可以简化为三层：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────────┐</span><br><span class="line">│                    用户代码层                                  │</span><br><span class="line">│  srv := http.NewServer(...)                                  │</span><br><span class="line">│  route := srv.Route(&quot;/api&quot;)                                  │</span><br><span class="line">│  route.GET(&quot;/users/&#123;id&#125;&quot;, handler)                          │</span><br><span class="line">├─────────────────────────────────────────────────────────────┤</span><br><span class="line">│                   kratos HTTP 封装层                          │</span><br><span class="line">│  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐ │</span><br><span class="line">│  │   Server     │ │    Router    │ │ Context / Transport  │ │</span><br><span class="line">│  │ 生命周期管理  │ │ 路由注册分组  │ │ 请求上下文与编解码     │ │</span><br><span class="line">│  └──────────────┘ └──────────────┘ └──────────────────────┘ │</span><br><span class="line">│  ┌──────────────┐ ┌────────────────────────────────────────┐ │</span><br><span class="line">│  │    Filter    │ │ middleware.Middleware                  │ │</span><br><span class="line">│  │ HTTP 层包装   │ │ 协议无关中间件                          │ │</span><br><span class="line">│  └──────────────┘ └────────────────────────────────────────┘ │</span><br><span class="line">├─────────────────────────────────────────────────────────────┤</span><br><span class="line">│                   Go HTTP 原生层                              │</span><br><span class="line">│  net.Listener / http.Server / gorilla.mux / http.Handler     │</span><br><span class="line">└─────────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<p>几个核心对象之间的关系如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">kratos.App</span><br><span class="line">  └─ transport.Server</span><br><span class="line">       └─ http.Server（kratos 封装）</span><br><span class="line">            ├─ 内嵌 *net/http.Server</span><br><span class="line">            ├─ 持有 *mux.Router</span><br><span class="line">            ├─ 持有 HTTP Filter 链</span><br><span class="line">            ├─ 持有 matcher.Matcher（kratos Middleware 匹配器）</span><br><span class="line">            ├─ 实现 Start / Stop</span><br><span class="line">            ├─ 实现 Endpoint</span><br><span class="line">            └─ 实现 ServeHTTP</span><br><span class="line"></span><br><span class="line">Router</span><br><span class="line">  ├─ 保存 prefix</span><br><span class="line">  ├─ 保存分组 filters</span><br><span class="line">  └─ 将 HandlerFunc 适配为 http.Handler 后注册到 mux.Router</span><br><span class="line"></span><br><span class="line">Transport</span><br><span class="line">  ├─ 实现 transport.Transporter</span><br><span class="line">  ├─ 保存 request / response</span><br><span class="line">  ├─ 保存 request header / reply header</span><br><span class="line">  └─ 通过 context 传递给中间件和业务逻辑</span><br></pre></td></tr></table></figure>
+<p>从设计上看，kratos 并没有重新实现 HTTP 协议栈，而是复用了 Go 标准库和 gorilla/mux：</p>
+<ul>
+<li>底层监听、连接管理、请求解析由 <code>net/http</code> 完成</li>
+<li>路由匹配、路径模板、路径参数由 <code>gorilla/mux</code> 完成</li>
+<li>生命周期、endpoint、统一 Transport 上下文、中间件桥接由 kratos 完成</li>
+</ul>
+<p>这也是 kratos Transport 层的一贯思路：<strong>尽量复用成熟协议库，只在框架边界处做统一抽象和能力注入</strong>。</p>
+<h2 id="server-创建流程"><a class="markdownIt-Anchor" href="#server-创建流程"></a> Server 创建流程</h2>
+<p>HTTP Server 的入口函数是 <code>transport/http/server.go</code> 中的 <code>NewServer</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServer</span><span class="params">(opts ...ServerOption)</span></span> *Server &#123;</span><br><span class="line">    srv := &amp;Server&#123;</span><br><span class="line">        network:     <span class="string">&quot;tcp&quot;</span>,</span><br><span class="line">        address:     <span class="string">&quot;:0&quot;</span>,</span><br><span class="line">        timeout:     <span class="number">1</span> * time.Second,</span><br><span class="line">        middleware:  matcher.New(),</span><br><span class="line">        decVars:     DefaultRequestVars,</span><br><span class="line">        decQuery:    DefaultRequestQuery,</span><br><span class="line">        decBody:     DefaultRequestDecoder,</span><br><span class="line">        enc:         DefaultResponseEncoder,</span><br><span class="line">        ene:         DefaultErrorEncoder,</span><br><span class="line">        strictSlash: <span class="literal">true</span>,</span><br><span class="line">        router:      mux.NewRouter(),</span><br><span class="line">    &#125;</span><br><span class="line">    srv.router.NotFoundHandler = http.DefaultServeMux</span><br><span class="line">    srv.router.MethodNotAllowedHandler = http.DefaultServeMux</span><br><span class="line">    <span class="keyword">for</span> _, o := <span class="keyword">range</span> opts &#123;</span><br><span class="line">        o(srv)</span><br><span class="line">    &#125;</span><br><span class="line">    srv.router.StrictSlash(srv.strictSlash)</span><br><span class="line">    srv.router.Use(srv.filter())</span><br><span class="line">    srv.Server = &amp;http.Server&#123;</span><br><span class="line">        Handler:   FilterChain(srv.filters...)(srv.router),</span><br><span class="line">        TLSConfig: srv.tlsConf,</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> srv</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="第一步创建-kratos-server-对象"><a class="markdownIt-Anchor" href="#第一步创建-kratos-server-对象"></a> 第一步：创建 kratos Server 对象</h3>
+<p><code>Server</code> 结构体定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    *http.Server</span><br><span class="line">    lis         net.Listener</span><br><span class="line">    tlsConf     *tls.Config</span><br><span class="line">    endpoint    *url.URL</span><br><span class="line">    err         <span class="type">error</span></span><br><span class="line">    network     <span class="type">string</span></span><br><span class="line">    address     <span class="type">string</span></span><br><span class="line">    timeout     time.Duration</span><br><span class="line">    filters     []FilterFunc</span><br><span class="line">    middleware  matcher.Matcher</span><br><span class="line">    decVars     DecodeRequestFunc</span><br><span class="line">    decQuery    DecodeRequestFunc</span><br><span class="line">    decBody     DecodeRequestFunc</span><br><span class="line">    enc         EncodeResponseFunc</span><br><span class="line">    ene         EncodeErrorFunc</span><br><span class="line">    strictSlash <span class="type">bool</span></span><br><span class="line">    router      *mux.Router</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它内嵌了标准库的 <code>*http.Server</code>，同时额外保存 kratos 需要的状态：</p>
+<ul>
+<li><code>lis</code>：底层监听器</li>
+<li><code>endpoint</code>：用于服务注册的地址</li>
+<li><code>filters</code>：HTTP Filter 链</li>
+<li><code>middleware</code>：kratos 中间件匹配器</li>
+<li><code>decVars</code> / <code>decQuery</code> / <code>decBody</code>：请求解码函数</li>
+<li><code>enc</code> / <code>ene</code>：响应和错误编码函数</li>
+<li><code>router</code>：底层 gorilla/mux 路由器</li>
+</ul>
+<p>文件顶部还有三个接口断言：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> (</span><br><span class="line">    _ transport.Server     = (*Server)(<span class="literal">nil</span>)</span><br><span class="line">    _ transport.Endpointer = (*Server)(<span class="literal">nil</span>)</span><br><span class="line">    _ http.Handler         = (*Server)(<span class="literal">nil</span>)</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这说明 kratos HTTP Server 同时扮演三个角色：</p>
+<ol>
+<li>对 <code>kratos.App</code> 来说，它是一个可启动、可停止的 <code>transport.Server</code></li>
+<li>对服务注册来说，它是一个可以返回 endpoint 的 <code>transport.Endpointer</code></li>
+<li>对标准库来说，它本身也是一个 <code>http.Handler</code></li>
+</ol>
+<h3 id="第二步设置默认值"><a class="markdownIt-Anchor" href="#第二步设置默认值"></a> 第二步：设置默认值</h3>
+<p><code>NewServer</code> 中给 HTTP Server 设置了一组默认值：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>默认值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>network</code></td>
+<td><code>&quot;tcp&quot;</code></td>
+<td>默认使用 TCP 网络</td>
+</tr>
+<tr>
+<td><code>address</code></td>
+<td><code>&quot;:0&quot;</code></td>
+<td>默认随机端口</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td><code>1s</code></td>
+<td>每个请求默认超时时间</td>
+</tr>
+<tr>
+<td><code>middleware</code></td>
+<td><code>matcher.New()</code></td>
+<td>创建中间件匹配器</td>
+</tr>
+<tr>
+<td><code>decVars</code></td>
+<td><code>DefaultRequestVars</code></td>
+<td>默认路径参数解码器</td>
+</tr>
+<tr>
+<td><code>decQuery</code></td>
+<td><code>DefaultRequestQuery</code></td>
+<td>默认 query 解码器</td>
+</tr>
+<tr>
+<td><code>decBody</code></td>
+<td><code>DefaultRequestDecoder</code></td>
+<td>默认 body 解码器</td>
+</tr>
+<tr>
+<td><code>enc</code></td>
+<td><code>DefaultResponseEncoder</code></td>
+<td>默认响应编码器</td>
+</tr>
+<tr>
+<td><code>ene</code></td>
+<td><code>DefaultErrorEncoder</code></td>
+<td>默认错误编码器</td>
+</tr>
+<tr>
+<td><code>strictSlash</code></td>
+<td><code>true</code></td>
+<td>启用 mux StrictSlash</td>
+</tr>
+<tr>
+<td><code>router</code></td>
+<td><code>mux.NewRouter()</code></td>
+<td>创建 gorilla/mux 路由器</td>
+</tr>
+</tbody>
+</table>
+<p>其中 <code>address: &quot;:0&quot;</code> 表示如果用户不显式指定地址，系统会自动分配一个可用端口。这对测试场景很友好，但实际服务通常会通过配置指定固定端口。</p>
+<h3 id="第三步应用-serveroption"><a class="markdownIt-Anchor" href="#第三步应用-serveroption"></a> 第三步：应用 ServerOption</h3>
+<p>和 kratos 其他模块一样，HTTP Server 也使用选项模式配置：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ServerOption <span class="function"><span class="keyword">func</span><span class="params">(*Server)</span></span></span><br></pre></td></tr></table></figure>
+<p>用户传入的每个 option 都会修改 <code>Server</code> 对象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, o := <span class="keyword">range</span> opts &#123;</span><br><span class="line">    o(srv)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">srv := http.NewServer(</span><br><span class="line">    http.Address(<span class="string">&quot;:8000&quot;</span>),</span><br><span class="line">    http.Timeout(<span class="number">2</span>*time.Second),</span><br><span class="line">    http.Middleware(</span><br><span class="line">        tracing.Server(),</span><br><span class="line">        recovery.Recovery(),</span><br><span class="line">    ),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这会把监听地址改为 <code>:8000</code>，请求超时时间改为 2 秒，并注册一组 kratos 协议无关中间件。</p>
+<h3 id="第四步注册-kratos-内部-filter"><a class="markdownIt-Anchor" href="#第四步注册-kratos-内部-filter"></a> 第四步：注册 kratos 内部 filter</h3>
+<p><code>NewServer</code> 中有一行非常关键：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">srv.router.Use(srv.filter())</span><br></pre></td></tr></table></figure>
+<ul>
+<li>这里的 <code>srv.filter()</code> 是 kratos 注入 Transport 上下文的内部中间件</li>
+<li>它注册到 gorilla/mux 上，会在路由匹配之后、业务 Handler 执行之前运行</li>
+<li>gorilla/mux 的 <code>router.Use()</code> 是注册 <code>gorilla/mux</code> 的全局中间件，给当前路由下所有匹配的请求统一前置处理逻辑</li>
+</ul>
+<p>它的核心职责包括：</p>
+<ol>
+<li>为每个请求创建带超时的 context</li>
+<li>获取当前路由的 path template，例如 <code>/users/&#123;id&#125;</code></li>
+<li>创建 <code>http.Transport</code> 对象</li>
+<li>将 Transport 写入 server context</li>
+<li>用新的 request context 替换原请求</li>
+</ol>
+<h3 id="第五步创建标准库-httpserver"><a class="markdownIt-Anchor" href="#第五步创建标准库-httpserver"></a> 第五步：创建标准库 http.Server</h3>
+<p>最后，kratos 创建真正的标准库 <code>http.Server</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">srv.Server = &amp;http.Server&#123;</span><br><span class="line">    Handler:   FilterChain(srv.filters...)(srv.router),</span><br><span class="line">    TLSConfig: srv.tlsConf,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里最关键的是这一行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Handler: FilterChain(srv.filters...)(srv.router)</span><br></pre></td></tr></table></figure>
+<p>它看起来有点绕，因为这里连续调用了两次函数。我们可以把它拆开看。首先，<code>FilterChain(srv.filters...)</code> 会返回一个 <code>FilterFunc</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> FilterFunc <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FilterChain</span><span class="params">(filters ...FilterFunc)</span></span> FilterFunc &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">for</span> i := <span class="built_in">len</span>(filters) - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">            next = filters[i](next)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> next</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>所以 <code>chain := FilterChain(srv.filters...)</code> 得到的是一个函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler</span><br></pre></td></tr></table></figure>
+<p>第二步再把 <code>srv.router</code> 传进去：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">handler := chain(srv.router)</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>srv.router</code> 是 <code>*mux.Router</code>，而 <code>gorilla/mux.Router</code> 实现了标准库的 <code>http.Handler</code> 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Handler <span class="keyword">interface</span> &#123;</span><br><span class="line">    ServeHTTP(ResponseWriter, *Request)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因此 <code>srv.router</code> 可以作为最内层的 <code>next http.Handler</code> 传给 Filter 链。最终得到的 <code>handler</code> 仍然是一个 <code>http.Handler</code>，可以赋值给标准库 <code>http.Server.Handler</code>。</p>
+<p>如果把这行代码完全展开，大致等价于：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">chain := FilterChain(srv.filters...)</span><br><span class="line">wrappedRouter := chain(srv.router)</span><br><span class="line"></span><br><span class="line">srv.Server = &amp;http.Server&#123;</span><br><span class="line">    Handler:   wrappedRouter,</span><br><span class="line">    TLSConfig: srv.tlsConf,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>请求进来时，执行顺序就是：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">A 进入</span><br><span class="line">  B 进入</span><br><span class="line">    C 进入</span><br><span class="line">      srv.router.ServeHTTP</span><br><span class="line">    C 返回</span><br><span class="line">  B 返回</span><br><span class="line">A 返回</span><br></pre></td></tr></table></figure>
+<p>这就是典型的 HTTP 洋葱模型。每个 Filter 都可以在调用 <code>next.ServeHTTP(w, r)</code> 之前做前置处理，也可以在调用之后做后置处理。</p>
+<p>因此 HTTP 请求进入后的第一层并不是 mux 路由，而是全局 HTTP Filter 链：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">HTTP 请求</span><br><span class="line">  → 全局 FilterChain(srv.filters...)</span><br><span class="line">  → mux.Router</span><br><span class="line">  → srv.filter() 注入 Transport</span><br><span class="line">  → 业务 Handler</span><br></pre></td></tr></table></figure>
+<p>这解释了为什么 kratos 同时需要 <code>Filter</code> 和 <code>Middleware</code>：<code>Filter</code> 更靠近 HTTP 原生层，包裹的是 <code>http.Handler</code>；<code>Middleware</code> 更靠近 kratos 业务调用层，包裹的是 <code>middleware.Handler</code>。</p>
+<h2 id="serveroption-配置项"><a class="markdownIt-Anchor" href="#serveroption-配置项"></a> ServerOption 配置项</h2>
+<p>HTTP Server 提供了较多配置项，可以按职责分成几类。</p>
+<h3 id="监听与端点配置"><a class="markdownIt-Anchor" href="#监听与端点配置"></a> 监听与端点配置</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Network</span><span class="params">(network <span class="type">string</span>)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Address</span><span class="params">(addr <span class="type">string</span>)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Endpoint</span><span class="params">(endpoint *url.URL)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Listener</span><span class="params">(lis net.Listener)</span></span> ServerOption</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>Network</code> 指定监听网络，默认是 <code>tcp</code></li>
+<li><code>Address</code> 指定监听地址，例如 <code>:8000</code></li>
+<li><code>Endpoint</code> 直接指定服务注册使用的 endpoint</li>
+<li><code>Listener</code> 允许外部传入已经创建好的 <code>net.Listener</code></li>
+</ul>
+<p>大多数业务项目只需要使用 <code>Address</code>。<code>Endpoint</code> 和 <code>Listener</code> 更多用于测试、自定义监听器、或者服务注册地址和监听地址不一致的场景。</p>
+<h3 id="请求超时与-tls"><a class="markdownIt-Anchor" href="#请求超时与-tls"></a> 请求超时与 TLS</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Timeout</span><span class="params">(timeout time.Duration)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TLSConfig</span><span class="params">(c *tls.Config)</span></span> ServerOption</span><br></pre></td></tr></table></figure>
+<p><code>Timeout</code> 控制每个请求的 context 超时时间。它不是 <code>http.Server</code> 的 <code>ReadTimeout</code> 或 <code>WriteTimeout</code>，而是在 kratos 内部 filter 中通过 <code>context.WithTimeout</code> 创建请求上下文：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> s.timeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">    ctx, cancel = context.WithTimeout(req.Context(), s.timeout)</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    ctx, cancel = context.WithCancel(req.Context())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这意味着业务逻辑和 kratos 中间件可以通过 <code>ctx.Done()</code> 感知请求超时。</p>
+<p>而 <code>TLSConfig</code> 则决定 Server 启动时调用 <code>Serve</code> 还是 <code>ServeTLS</code>。</p>
+<h3 id="filter-与-middleware"><a class="markdownIt-Anchor" href="#filter-与-middleware"></a> Filter 与 Middleware</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Filter</span><span class="params">(filters ...FilterFunc)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Middleware</span><span class="params">(m ...middleware.Middleware)</span></span> ServerOption</span><br></pre></td></tr></table></figure>
+<p>这两个选项很容易混淆，但它们处在不同层级。</p>
+<p><code>Filter</code> 保存到 <code>s.filters</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Filter</span><span class="params">(filters ...FilterFunc)</span></span> ServerOption &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(o *Server)</span></span> &#123;</span><br><span class="line">        o.filters = filters</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最终用于包裹整个 <code>mux.Router</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Handler: FilterChain(srv.filters...)(srv.router)</span><br></pre></td></tr></table></figure>
+<p><code>Middleware</code> 保存到 <code>s.middleware</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Middleware</span><span class="params">(m ...middleware.Middleware)</span></span> ServerOption &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(o *Server)</span></span> &#123;</span><br><span class="line">        o.middleware.Use(m...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它不会直接包裹 <code>http.Handler</code>，而是在 <code>Context.Middleware</code> 中根据 operation 匹配并组合：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> middleware.Chain(c.router.srv.middleware.Match(tr.Operation())...)(h)</span><br></pre></td></tr></table></figure>
+<p>简单来说：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>签名</th>
+<th>作用对象</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FilterFunc</code></td>
+<td><code>func(http.Handler) http.Handler</code></td>
+<td>HTTP Handler</td>
+<td>CORS、静态资源、Header、Redirect</td>
+</tr>
+<tr>
+<td><code>middleware.Middleware</code></td>
+<td><code>func(middleware.Handler) middleware.Handler</code></td>
+<td>kratos Handler</td>
+<td>tracing、logging、recovery、auth、metrics</td>
+</tr>
+</tbody>
+</table>
+<h3 id="编解码配置"><a class="markdownIt-Anchor" href="#编解码配置"></a> 编解码配置</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RequestVarsDecoder</span><span class="params">(dec DecodeRequestFunc)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RequestQueryDecoder</span><span class="params">(dec DecodeRequestFunc)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RequestDecoder</span><span class="params">(dec DecodeRequestFunc)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ResponseEncoder</span><span class="params">(en EncodeResponseFunc)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ErrorEncoder</span><span class="params">(en EncodeErrorFunc)</span></span> ServerOption</span><br></pre></td></tr></table></figure>
+<p>这些 option 控制 HTTP 请求和响应如何被转换：</p>
+<ul>
+<li><code>RequestVarsDecoder</code>：路径参数解码，例如 <code>/users/&#123;id&#125;</code> 中的 <code>id</code></li>
+<li><code>RequestQueryDecoder</code>：query 参数解码，例如 <code>?page=1</code></li>
+<li><code>RequestDecoder</code>：body 解码，例如 JSON 请求体</li>
+<li><code>ResponseEncoder</code>：正常响应编码</li>
+<li><code>ErrorEncoder</code>：错误响应编码</li>
+</ul>
+<p>在手写路由时，业务 Handler 可以通过 <code>Context.Bind</code>、<code>Context.BindVars</code>、<code>Context.BindQuery</code> 使用这些解码器；在 protoc 生成的 HTTP 代码中，也会使用这些能力完成请求绑定。</p>
+<h3 id="路由行为配置"><a class="markdownIt-Anchor" href="#路由行为配置"></a> 路由行为配置</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">StrictSlash</span><span class="params">(strictSlash <span class="type">bool</span>)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">PathPrefix</span><span class="params">(prefix <span class="type">string</span>)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NotFoundHandler</span><span class="params">(handler http.Handler)</span></span> ServerOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MethodNotAllowedHandler</span><span class="params">(handler http.Handler)</span></span> ServerOption</span><br></pre></td></tr></table></figure>
+<p>这些 option 本质上是对 gorilla/mux 的配置封装：</p>
+<ul>
+<li><code>StrictSlash</code> 控制 <code>/path</code> 和 <code>/path/</code> 是否自动重定向</li>
+<li><code>PathPrefix</code> 给整个 router 增加统一前缀</li>
+<li><code>NotFoundHandler</code> 自定义 404 处理</li>
+<li><code>MethodNotAllowedHandler</code> 自定义 405 处理</li>
+</ul>
+<h2 id="路由注册机制router-handle-handlefunc"><a class="markdownIt-Anchor" href="#路由注册机制router-handle-handlefunc"></a> 路由注册机制：Router、Handle、HandleFunc</h2>
+<p>HTTP Server 创建完成后，业务代码需要注册路由。kratos 提供了两种层次的注册方式。</p>
+<p><code>Server</code> 暴露了一组接近 <code>net/http</code> 风格的方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Handle(path <span class="type">string</span>, h http.Handler)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> HandlePrefix(prefix <span class="type">string</span>, h http.Handler)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> HandleFunc(path <span class="type">string</span>, h http.HandlerFunc)</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> HandleHeader(key, val <span class="type">string</span>, h http.HandlerFunc)</span><br></pre></td></tr></table></figure>
+<p>这些方法直接操作底层 <code>mux.Router</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> HandleFunc(path <span class="type">string</span>, h http.HandlerFunc) &#123;</span><br><span class="line">    s.router.HandleFunc(path, h)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这种方式适合注册一些非常原生的 HTTP Handler，例如健康检查、静态资源、pprof 等。</p>
+<h3 id="使用-kratos-router-注册-handlerfunc"><a class="markdownIt-Anchor" href="#使用-kratos-router-注册-handlerfunc"></a> 使用 kratos Router 注册 HandlerFunc</h3>
+<p>更常见的方式是先创建 <code>Router</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">r := srv.Route(<span class="string">&quot;/api&quot;</span>)</span><br><span class="line">r.GET(<span class="string">&quot;/users/&#123;id&#125;&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(ctx http.Context)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> req GetUserRequest</span><br><span class="line">    <span class="keyword">if</span> err := ctx.BindVars(&amp;req); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> ctx.JSON(<span class="number">200</span>, &amp;GetUserReply&#123;ID: req.ID&#125;)</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p><code>Server.Route</code> 很简单：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Route(prefix <span class="type">string</span>, filters ...FilterFunc) *Router &#123;</span><br><span class="line">    <span class="keyword">return</span> newRouter(prefix, s, filters...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Router</code> 保存三个字段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Router <span class="keyword">struct</span> &#123;</span><br><span class="line">    prefix  <span class="type">string</span></span><br><span class="line">    srv     *Server</span><br><span class="line">    filters []FilterFunc</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>prefix</code>：当前路由分组前缀</li>
+<li><code>srv</code>：所属的 HTTP Server</li>
+<li><code>filters</code>：当前路由分组上的 HTTP Filter</li>
+</ul>
+<p>Router 支持继续分组：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *Router)</span></span> Group(prefix <span class="type">string</span>, filters ...FilterFunc) *Router &#123;</span><br><span class="line">    <span class="keyword">var</span> newFilters []FilterFunc</span><br><span class="line">    newFilters = <span class="built_in">append</span>(newFilters, r.filters...)</span><br><span class="line">    newFilters = <span class="built_in">append</span>(newFilters, filters...)</span><br><span class="line">    <span class="keyword">return</span> newRouter(path.Join(r.prefix, prefix), r.srv, newFilters...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>这里会把父分组的 filters 和子分组的 filters 合并起来，所以分组 Filter 具备继承关系</strong>。</p>
+<h3 id="routerhandle从-kratos-handlerfunc-到-httphandler"><a class="markdownIt-Anchor" href="#routerhandle从-kratos-handlerfunc-到-httphandler"></a> Router.Handle：从 kratos HandlerFunc 到 http.Handler</h3>
+<p>理解 <code>Router.Handle</code> 之前，要先明确一点：<strong>kratos 的 <code>Router</code> 本身并不直接参与 HTTP 请求分发，它只是一个路由注册辅助对象</strong>。真正接收 HTTP 请求的是标准库 <code>http.Server</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">srv.Server = &amp;http.Server&#123;</span><br><span class="line">    Handler: FilterChain(srv.filters...)(srv.router),</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>srv.router</code> 是底层的 <code>*mux.Router</code>。当请求进入 <code>http.Server</code> 后，最终会调用到：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">srv.router.ServeHTTP(w, req)</span><br></pre></td></tr></table></figure>
+<p>也就是说，HTTP 请求处理链路中真正负责匹配 URL 和 Method 的是 <code>gorilla/mux.Router</code>。kratos 自己定义的 <code>Router</code> 只是保存了 <code>prefix</code>、分组 filters 和 <code>*Server</code> 指针，方便业务代码用更简洁的方式注册路由：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Router <span class="keyword">struct</span> &#123;</span><br><span class="line">    prefix  <span class="type">string</span></span><br><span class="line">    srv     *Server</span><br><span class="line">    filters []FilterFunc</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当我们调用 <code>r.GET(&quot;/users/&#123;id&#125;&quot;, getUserHandler)</code> 实际上等价于：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">r.Handle(http.MethodGet, <span class="string">&quot;/users/&#123;id&#125;&quot;</span>, getUserHandler)</span><br></pre></td></tr></table></figure>
+<p>而 <code>Router.Handle</code> 的核心作用不是 <code>处理请求</code>，而是<strong>在服务启动前把 kratos 风格的 Handler 注册到底层 mux.Router 上</strong>。注册完成后，请求运行时就不再经过 kratos <code>Router</code> 做二次分发，而是由 <code>mux.Router</code> 直接找到之前注册进去的 <code>http.Handler</code>。</p>
+<p>因此，真正完成 <code>组装 Handler 并注册到底层 mux.Router</code> 的公共逻辑，都集中在 <code>Router.Handle</code> 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *Router)</span></span> Handle(method, relativePath <span class="type">string</span>, h HandlerFunc, filters ...FilterFunc) &#123;</span><br><span class="line">    next := http.Handler(http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(res http.ResponseWriter, req *http.Request)</span></span> &#123;</span><br><span class="line">        ctx := &amp;wrapper&#123;router: r&#125;</span><br><span class="line">        ctx.Reset(res, req)</span><br><span class="line">        <span class="keyword">if</span> err := h(ctx); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            r.srv.ene(res, req, err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;))</span><br><span class="line">    next = FilterChain(filters...)(next)</span><br><span class="line">    next = FilterChain(r.filters...)(next)</span><br><span class="line">    r.srv.router.Handle(path.Join(r.prefix, relativePath), next).Methods(method)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段代码是 HTTP Server 路由注册的核心，可以分成四步：</p>
+<ol>
+<li>把 kratos 的 <code>HandlerFunc func(Context) error</code> 包装成标准库 <code>http.Handler</code></li>
+<li>为每次请求创建 <code>wrapper</code>，它实现了 kratos 的 <code>Context</code> 接口</li>
+<li>执行业务 Handler，如果返回 error，则调用 <code>ErrorEncoder</code></li>
+<li>将路由级 Filter、分组级 Filter 包裹到 Handler 外层，再注册到 mux</li>
+</ol>
+<p>kratos 的 <code>HandlerFunc</code> 的定义是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> HandlerFunc <span class="function"><span class="keyword">func</span><span class="params">(Context)</span></span> <span class="type">error</span></span><br></pre></td></tr></table></figure>
+<p>相比标准库的 <code>func(http.ResponseWriter, *http.Request)</code>，这个签名有两个明显变化：</p>
+<ul>
+<li>入参变成了 kratos 封装的 <code>Context</code></li>
+<li>返回值变成了 <code>error</code></li>
+</ul>
+<p>这使得 Handler 可以用更统一的方式处理请求绑定、响应编码和错误返回。</p>
+<h2 id="filter-与-middleware-的分层"><a class="markdownIt-Anchor" href="#filter-与-middleware-的分层"></a> Filter 与 Middleware 的分层</h2>
+<p>前面已经多次提到 Filter 和 Middleware，这里集中梳理一下它们在请求链路中的位置。</p>
+<h3 id="filterhttp-原生-handler-链"><a class="markdownIt-Anchor" href="#filterhttp-原生-handler-链"></a> Filter：HTTP 原生 Handler 链</h3>
+<p><code>FilterFunc</code> 的定义非常简单：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> FilterFunc <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler</span><br></pre></td></tr></table></figure>
+<p>它和 Go 标准库常见的 HTTP middleware 写法完全一致。<code>FilterChain</code> 的实现也和 kratos middleware 的 <code>Chain</code> 类似，都是从后往前包裹：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">FilterChain</span><span class="params">(filters ...FilterFunc)</span></span> FilterFunc &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">for</span> i := <span class="built_in">len</span>(filters) - <span class="number">1</span>; i &gt;= <span class="number">0</span>; i-- &#123;</span><br><span class="line">            next = filters[i](next)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> next</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如果注册：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">http.Filter(A, B, C)</span><br></pre></td></tr></table></figure>
+<p>最终调用顺序是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">A → B → C → next → C 返回 → B 返回 → A 返回</span><br></pre></td></tr></table></figure>
+<p>在 kratos HTTP Server 中，Filter 有三种层级：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>注册位置</th>
+<th>生效范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局 Filter</td>
+<td><code>http.NewServer(http.Filter(...))</code></td>
+<td>整个 mux.Router</td>
+</tr>
+<tr>
+<td>分组 Filter</td>
+<td><code>srv.Route(&quot;/api&quot;, filters...)</code> / <code>Group</code></td>
+<td>当前路由分组</td>
+</tr>
+<tr>
+<td>路由 Filter</td>
+<td><code>r.GET(&quot;/path&quot;, handler, filters...)</code></td>
+<td>单个路由</td>
+</tr>
+</tbody>
+</table>
+<p>它们大致形成这样的包裹关系：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">全局 Filter</span><br><span class="line">  → mux.Router</span><br><span class="line">    → kratos 内部 srv.filter()</span><br><span class="line">      → 分组 Filter</span><br><span class="line">        → 路由 Filter</span><br><span class="line">          → HandlerFunc</span><br></pre></td></tr></table></figure>
+<p>其中全局 Filter 包裹整个 router，分组和路由 Filter 则在 <code>Router.Handle</code> 中包裹具体 Handler。</p>
+<h3 id="middleware协议无关业务链"><a class="markdownIt-Anchor" href="#middleware协议无关业务链"></a> Middleware：协议无关业务链</h3>
+<p><code>middleware.Middleware</code> 是 kratos 的统一中间件抽象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Handler <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any)</span></span> (any, <span class="type">error</span>)</span><br><span class="line"><span class="keyword">type</span> Middleware <span class="function"><span class="keyword">func</span><span class="params">(Handler)</span></span> Handler</span><br></pre></td></tr></table></figure>
+<p>它不依赖 <code>http.ResponseWriter</code>、<code>*http.Request</code>，因此可以同时用于 HTTP 和 gRPC。</p>
+<p>TTP 场景下，<code>Context</code> 提供了一个 <code>Middleware</code> 方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *wrapper)</span></span> Middleware(h middleware.Handler) middleware.Handler &#123;</span><br><span class="line">    <span class="keyword">if</span> tr, ok := transport.FromServerContext(c.req.Context()); ok &#123;</span><br><span class="line">        <span class="keyword">return</span> middleware.Chain(c.router.srv.middleware.Match(tr.Operation())...)(h)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> middleware.Chain(c.router.srv.middleware.Match(c.req.URL.Path)...)(h)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它会从请求 context 中取出 Transport，根据 <code>tr.Operation()</code> 匹配应该生效的 middleware，然后组合成调用链。注意这里的 <code>Operation</code> 在 HTTP Server 中通常是路由模板，例如：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">/users/&#123;id&#125;</span><br></pre></td></tr></table></figure>
+<p>而在 gRPC Server 中则是完整方法名，例如：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">/helloworld.v1.Greeter/SayHello</span><br></pre></td></tr></table></figure>
+<p>这就是 kratos 用 <code>operation</code> 统一 HTTP 和 gRPC 中间件匹配的关键。</p>
+<h3 id="serveruse按-operation-注册-middleware"><a class="markdownIt-Anchor" href="#serveruse按-operation-注册-middleware"></a> Server.Use：按 operation 注册 Middleware</h3>
+<p>HTTP Server 还提供了 <code>Use</code> 方法，可以按 selector 注册中间件：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Use(selector <span class="type">string</span>, m ...middleware.Middleware) &#123;</span><br><span class="line">    s.middleware.Add(selector, m...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>比如可以给某一类路径注册额外中间件：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">srv.Use(<span class="string">&quot;/admin/*&quot;</span>, authMiddleware)</span><br></pre></td></tr></table></figure>
+<p>这样做的好处是：全局中间件和局部中间件都可以使用同一套 matcher 机制，而不是在每个 Handler 中手动判断路径。</p>
+<h2 id="一次-http-请求的完整处理链路"><a class="markdownIt-Anchor" href="#一次-http-请求的完整处理链路"></a> 一次 HTTP 请求的完整处理链路</h2>
+<p>理解完上面的组件后，我们把一次 HTTP 请求串起来看。假设服务这样注册：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">srv := http.NewServer(</span><br><span class="line">    http.Address(<span class="string">&quot;:8000&quot;</span>),</span><br><span class="line">    http.Filter(corsFilter),</span><br><span class="line">    http.Middleware(tracing.Server(), recovery.Recovery()),</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">r := srv.Route(<span class="string">&quot;/api&quot;</span>, groupFilter)</span><br><span class="line">r.GET(<span class="string">&quot;/users/&#123;id&#125;&quot;</span>, getUserHandler, routeFilter)</span><br></pre></td></tr></table></figure>
+<p>当请求 <code>GET /api/users/123</code> 进入时，执行链路大致如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">1. net/http 接收请求</span><br><span class="line">2. 进入全局 corsFilter</span><br><span class="line">3. 进入 gorilla/mux Router</span><br><span class="line">4. mux 匹配 GET /api/users/&#123;id&#125;</span><br><span class="line">5. 执行 kratos 内部 srv.filter()</span><br><span class="line">6. 创建带 timeout 的 context</span><br><span class="line">7. 创建 http.Transport，并写入 server context</span><br><span class="line">8. 执行 groupFilter</span><br><span class="line">9. 执行 routeFilter</span><br><span class="line">10. 创建 wrapper Context</span><br><span class="line">11. 调用 getUserHandler(ctx)</span><br><span class="line">12. 如果 Handler 内部调用 ctx.Middleware(...)，则执行 kratos middleware 链</span><br><span class="line">13. Handler 返回正常响应或 error</span><br><span class="line">14. 正常响应通过 ResponseEncoder 写出</span><br><span class="line">15. error 通过 ErrorEncoder 写出</span><br></pre></td></tr></table></figure>
+<p>其中第 5 到第 7 步由 <code>srv.filter()</code> 完成，是 HTTP Transport 接入 kratos 统一上下文体系的关键。源码如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> filter() mux.MiddlewareFunc &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, req *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="keyword">var</span> (</span><br><span class="line">                ctx    context.Context</span><br><span class="line">                cancel context.CancelFunc</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">if</span> s.timeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">                ctx, cancel = context.WithTimeout(req.Context(), s.timeout)</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                ctx, cancel = context.WithCancel(req.Context())</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">            pathTemplate := req.URL.Path</span><br><span class="line">            <span class="keyword">if</span> route := mux.CurrentRoute(req); route != <span class="literal">nil</span> &#123;</span><br><span class="line">                pathTemplate, _ = route.GetPathTemplate()</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            tr := &amp;Transport&#123;</span><br><span class="line">                operation:    pathTemplate,</span><br><span class="line">                pathTemplate: pathTemplate,</span><br><span class="line">                reqHeader:    headerCarrier(req.Header),</span><br><span class="line">                replyHeader:  headerCarrier(w.Header()),</span><br><span class="line">                request:      req,</span><br><span class="line">                response:     w,</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> s.endpoint != <span class="literal">nil</span> &#123;</span><br><span class="line">                tr.endpoint = s.endpoint.String()</span><br><span class="line">            &#125;</span><br><span class="line">            tr.request = req.WithContext(transport.NewServerContext(ctx, tr))</span><br><span class="line">            next.ServeHTTP(w, tr.request)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段代码有几个关键点。</p>
+<h3 id="创建请求级超时-context"><a class="markdownIt-Anchor" href="#创建请求级超时-context"></a> 创建请求级超时 Context</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> s.timeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">    ctx, cancel = context.WithTimeout(req.Context(), s.timeout)</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    ctx, cancel = context.WithCancel(req.Context())</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">defer</span> cancel()</span><br></pre></td></tr></table></figure>
+<p>每个请求都会得到一个新的 context。默认情况下，请求超时时间是 1 秒。业务逻辑、中间件、下游调用都应该沿用这个 context，这样才能正确响应取消和超时。</p>
+<h3 id="获取路由模板作为-operation"><a class="markdownIt-Anchor" href="#获取路由模板作为-operation"></a> 获取路由模板作为 Operation</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">pathTemplate := req.URL.Path</span><br><span class="line"><span class="keyword">if</span> route := mux.CurrentRoute(req); route != <span class="literal">nil</span> &#123;</span><br><span class="line">    pathTemplate, _ = route.GetPathTemplate()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如果请求路径是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">/api/users/123</span><br></pre></td></tr></table></figure>
+<p>路由模板可能是：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">/api/users/&#123;id&#125;</span><br></pre></td></tr></table></figure>
+<p>kratos 使用模板而不是实际路径作为 <code>operation</code>，这是一个重要设计。否则每个用户 ID 都会变成不同 operation，日志、指标、tracing、中间件匹配都会产生高基数问题。</p>
+<h3 id="创建-http-transport"><a class="markdownIt-Anchor" href="#创建-http-transport"></a> 创建 HTTP Transport</h3>
+<p>HTTP Transport 定义在 <code>transport/http/transport.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Transport <span class="keyword">struct</span> &#123;</span><br><span class="line">    endpoint     <span class="type">string</span></span><br><span class="line">    operation    <span class="type">string</span></span><br><span class="line">    reqHeader    headerCarrier</span><br><span class="line">    replyHeader  headerCarrier</span><br><span class="line">    request      *http.Request</span><br><span class="line">    response     http.ResponseWriter</span><br><span class="line">    pathTemplate <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它实现了通用的 <code>transport.Transporter</code> 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> Kind() transport.Kind &#123;</span><br><span class="line">    <span class="keyword">return</span> transport.KindHTTP</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> Endpoint() <span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> tr.endpoint</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> Operation() <span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> tr.operation</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> RequestHeader() transport.Header &#123;</span><br><span class="line">    <span class="keyword">return</span> tr.reqHeader</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> ReplyHeader() transport.Header &#123;</span><br><span class="line">    <span class="keyword">return</span> tr.replyHeader</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>同时它还扩展了 HTTP 专属能力：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> Request() *http.Request</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> Response() http.ResponseWriter</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(tr *Transport)</span></span> PathTemplate() <span class="type">string</span></span><br></pre></td></tr></table></figure>
+<p>这样，中间件可以只依赖通用 <code>transport.Transporter</code> 读取协议无关信息；确实需要 HTTP 原生对象时，也可以通过 HTTP Transporter 获取 <code>*http.Request</code> 或 <code>http.ResponseWriter</code>。</p>
+<h3 id="写入-server-context"><a class="markdownIt-Anchor" href="#写入-server-context"></a> 写入 Server Context</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">tr.request = req.WithContext(transport.NewServerContext(ctx, tr))</span><br><span class="line">next.ServeHTTP(w, tr.request)</span><br></pre></td></tr></table></figure>
+<p>这一行把 Transport 写入 context，并创建新的 <code>*http.Request</code> 继续向后传递。后续任何代码都可以通过以下方式取出 Transport：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">tr, ok := transport.FromServerContext(ctx)</span><br></pre></td></tr></table></figure>
+<p>这就是 kratos 中间件能够在 HTTP 和 gRPC 中使用同一套接口获取请求信息的基础。</p>
+<h2 id="startstop-生命周期管理"><a class="markdownIt-Anchor" href="#startstop-生命周期管理"></a> Start/Stop 生命周期管理</h2>
+<p>HTTP Server 实现了 <code>transport.Server</code> 接口，因此可以交给 <code>kratos.App</code> 统一管理：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Server <span class="keyword">interface</span> &#123;</span><br><span class="line">    Start(context.Context) <span class="type">error</span></span><br><span class="line">    Stop(context.Context) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="endpoint计算服务注册地址"><a class="markdownIt-Anchor" href="#endpoint计算服务注册地址"></a> Endpoint：计算服务注册地址</h3>
+<p>在启动之前，HTTP Server 需要确定监听地址和 endpoint：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Endpoint() (*url.URL, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> err := s.listenAndEndpoint(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> s.endpoint, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>真正的逻辑在 <code>listenAndEndpoint</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> listenAndEndpoint() <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> s.lis == <span class="literal">nil</span> &#123;</span><br><span class="line">        lis, err := net.Listen(s.network, s.address)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            s.err = err</span><br><span class="line">            <span class="keyword">return</span> err</span><br><span class="line">        &#125;</span><br><span class="line">        s.lis = lis</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> s.endpoint == <span class="literal">nil</span> &#123;</span><br><span class="line">        addr, err := host.Extract(s.address, s.lis)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            s.err = err</span><br><span class="line">            <span class="keyword">return</span> err</span><br><span class="line">        &#125;</span><br><span class="line">        s.endpoint = endpoint.NewEndpoint(endpoint.Scheme(<span class="string">&quot;http&quot;</span>, s.tlsConf != <span class="literal">nil</span>), addr)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> s.err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它做了两件事：</p>
+<ol>
+<li>如果还没有 listener，则调用 <code>net.Listen</code> 创建</li>
+<li>如果还没有 endpoint，则根据监听地址和 TLS 配置生成 endpoint</li>
+</ol>
+<p><code>endpoint.NewEndpoint(endpoint.Scheme(&quot;http&quot;, s.tlsConf != nil), addr)</code> 会根据是否配置 TLS 决定 scheme：</p>
+<ul>
+<li>未配置 TLS：<code>http://host:port</code></li>
+<li>配置 TLS：<code>https://host:port</code></li>
+</ul>
+<p>这个 endpoint 后续会被 <code>kratos.App</code> 收集，并用于服务注册。</p>
+<h3 id="start启动-http-server"><a class="markdownIt-Anchor" href="#start启动-http-server"></a> Start：启动 HTTP Server</h3>
+<p><code>Start</code> 方法如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Start(ctx context.Context) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := s.listenAndEndpoint(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    s.BaseContext = <span class="function"><span class="keyword">func</span><span class="params">(net.Listener)</span></span> context.Context &#123;</span><br><span class="line">        <span class="keyword">return</span> ctx</span><br><span class="line">    &#125;</span><br><span class="line">    log.Infof(<span class="string">&quot;[HTTP] server listening on: %s&quot;</span>, s.lis.Addr().String())</span><br><span class="line">    <span class="keyword">var</span> err <span class="type">error</span></span><br><span class="line">    <span class="keyword">if</span> s.tlsConf != <span class="literal">nil</span> &#123;</span><br><span class="line">        err = s.ServeTLS(s.lis, <span class="string">&quot;&quot;</span>, <span class="string">&quot;&quot;</span>)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        err = s.Serve(s.lis)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> !errors.Is(err, http.ErrServerClosed) &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>启动流程很清晰：</p>
+<ol>
+<li>调用 <code>listenAndEndpoint</code> 确保 listener 和 endpoint 已创建</li>
+<li>设置 <code>BaseContext</code>，让标准库 HTTP Server 的连接上下文继承 App 传入的 context</li>
+<li>根据是否配置 TLS，选择 <code>ServeTLS</code> 或 <code>Serve</code></li>
+<li>如果返回的是 <code>http.ErrServerClosed</code>，说明是正常关闭，不作为错误返回</li>
+</ol>
+<p>这里的 <code>Start</code> 是阻塞方法，因此在 <code>kratos.App</code> 中通常会被放到 goroutine 中启动。App 会统一管理多个 Transport Server，例如同时启动 HTTP 和 gRPC。</p>
+<p>关于 <code>BaseContext</code>，额外解释一下。BaseContext 是 Go 标准库 http.Server 的一个字段，<code>签名为 func(net.Listener) context.Context</code>。它的作用是为每个新连接提供一个基础 context，http.Server 内部会以它为父 context，再派生出每个请求的 *http.Request.Context()。</p>
+<p>默认情况下 http.Server 用 <code>context.Background()</code> 作为新连接的根 context，这意味着即使 App 发起关闭，连接层面也感知不到上层 context 被取消。kratos 在 Start 中做了一行覆盖：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">s.BaseContext = <span class="function"><span class="keyword">func</span><span class="params">(net.Listener)</span></span> context.Context &#123;</span><br><span class="line">    <span class="keyword">return</span> ctx</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的 ctx 就是 kratos.App 传入 Start(ctx) 的那个 context。kratos.App 在 Stop 流程中会取消这个 ctx。因此：</p>
+<ul>
+<li>正常运行时：BaseContext 返回 App 的 ctx，所有 HTTP 连接都从这个 ctx 派生，和 App 生命周期绑定</li>
+<li>关闭时：App 取消 ctx → BaseContext 派生出的所有连接的根 context 也被取消 → 标准库会拒绝新连接、中断空闲长连接 → 配合 Shutdown(ctx) 完成优雅停机</li>
+</ul>
+<p>简单说就是：<strong>把每个 HTTP 连接的根 context 从无主的 Background() 换成 App 的生命周期 context，让 App 的关闭信号能传导到连接层</strong>。</p>
+<h3 id="stop优雅停机"><a class="markdownIt-Anchor" href="#stop优雅停机"></a> Stop：优雅停机</h3>
+<p><code>Stop</code> 方法如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> Stop(ctx context.Context) <span class="type">error</span> &#123;</span><br><span class="line">    log.Info(<span class="string">&quot;[HTTP] server stopping&quot;</span>)</span><br><span class="line">    err := s.Shutdown(ctx)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> ctx.Err() != <span class="literal">nil</span> &#123;</span><br><span class="line">            log.Warn(<span class="string">&quot;[HTTP] server couldn&#x27;t stop gracefully in time, doing force stop&quot;</span>)</span><br><span class="line">            err = s.Close()</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它优先调用标准库的 <code>Shutdown(ctx)</code> 做优雅停机：</p>
+<ul>
+<li>停止接受新连接</li>
+<li>等待已有请求处理完成</li>
+<li>如果 context 超时或取消，则返回错误</li>
+</ul>
+<p>如果优雅停机超时，kratos 会调用 <code>Close()</code> 强制关闭连接。这和 App 生命周期管理配合起来，就形成了完整的服务关闭流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">收到 SIGTERM / SIGINT</span><br><span class="line">  → kratos.App 进入 Stop 流程</span><br><span class="line">  → 调用 HTTP Server.Stop(ctx)</span><br><span class="line">  → http.Server.Shutdown(ctx)</span><br><span class="line">  → 等待请求完成</span><br><span class="line">  → 超时则 Close 强制关闭</span><br></pre></td></tr></table></figure>
+<h2 id="与-grpc-server-的设计对比"><a class="markdownIt-Anchor" href="#与-grpc-server-的设计对比"></a> 与 gRPC Server 的设计对比</h2>
+<p>前面我们已经分析过 kratos gRPC Server。HTTP Server 和 gRPC Server 在设计目标上高度一致，但实现方式不同。</p>
+<h3 id="相同点"><a class="markdownIt-Anchor" href="#相同点"></a> 相同点</h3>
+<table>
+<thead>
+<tr>
+<th>设计点</th>
+<th>HTTP Server</th>
+<th>gRPC Server</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>生命周期</td>
+<td>实现 <code>transport.Server</code></td>
+<td>实现 <code>transport.Server</code></td>
+</tr>
+<tr>
+<td>服务注册</td>
+<td>实现 <code>transport.Endpointer</code></td>
+<td>实现 <code>transport.Endpointer</code></td>
+</tr>
+<tr>
+<td>请求上下文</td>
+<td>注入 HTTP <code>Transport</code></td>
+<td>注入 gRPC <code>Transport</code></td>
+</tr>
+<tr>
+<td>中间件抽象</td>
+<td>使用 <code>middleware.Middleware</code></td>
+<td>使用 <code>middleware.Middleware</code></td>
+</tr>
+<tr>
+<td>Operation</td>
+<td>路由模板，如 <code>/users/&#123;id&#125;</code></td>
+<td>RPC 方法名，如 <code>/pkg.Service/Method</code></td>
+</tr>
+<tr>
+<td>Header 抽象</td>
+<td><code>http.Header</code> 适配为 <code>transport.Header</code></td>
+<td>gRPC metadata 适配为 <code>transport.Header</code></td>
+</tr>
+</tbody>
+</table>
+<p>也就是说，HTTP 和 gRPC 虽然底层协议完全不同，但在 kratos 中都会被统一成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">transport.Transporter</span><br><span class="line">middleware.Handler</span><br><span class="line">middleware.Middleware</span><br></pre></td></tr></table></figure>
+<p>这就是 kratos 中间件可以跨协议复用的原因。</p>
+<h3 id="不同点"><a class="markdownIt-Anchor" href="#不同点"></a> 不同点</h3>
+<table>
+<thead>
+<tr>
+<th>差异点</th>
+<th>HTTP Server</th>
+<th>gRPC Server</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>底层协议库</td>
+<td><code>net/http</code> + <code>gorilla/mux</code></td>
+<td><code>google.golang.org/grpc</code></td>
+</tr>
+<tr>
+<td>扩展机制</td>
+<td><code>http.Handler</code> / Filter</td>
+<td>Unary/Stream Interceptor</td>
+</tr>
+<tr>
+<td>路由来源</td>
+<td>HTTP method + path</td>
+<td>Protobuf service + method</td>
+</tr>
+<tr>
+<td>请求绑定</td>
+<td>path/query/body/form</td>
+<td>protobuf message</td>
+</tr>
+<tr>
+<td>响应编码</td>
+<td>JSON/XML/自定义 codec</td>
+<td>protobuf codec</td>
+</tr>
+<tr>
+<td>Filter 概念</td>
+<td>有 HTTP 专属 Filter</td>
+<td>无对应概念，主要靠 interceptor</td>
+</tr>
+</tbody>
+</table>
+<p>HTTP Server 需要处理更多 HTTP 协议层的细节，比如 path、query、form、Content-Type、ResponseWriter 等；gRPC Server 则更多围绕 protobuf、metadata、interceptor 展开。</p>
+<p>但它们最终都会把请求转换成 kratos 的统一模型：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">请求进入</span><br><span class="line">  → 创建 Transport</span><br><span class="line">  → 写入 Context</span><br><span class="line">  → 匹配 Middleware</span><br><span class="line">  → 调用业务 Handler</span><br><span class="line">  → 编码响应或错误</span><br></pre></td></tr></table></figure>
+<p>这也是 Transport 层存在的意义：屏蔽协议差异，让上层治理能力建立在统一抽象之上。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>本文我们分析了 kratos HTTP Transport 的总体设计和 HTTP Server 的核心实现。其核心是基于标准库 <code>net/http</code>，同时路由使用 <code>gorilla/mux</code>，不重复造 HTTP 协议栈。它把原生 HTTP 请求转换成 kratos 统一的 Transport + Middleware + Context 模型，而让 HTTP 和 gRPC 可以共享同一套生命周期管理、上下文传播和服务治理能力。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/10/sast-bearer-intro/" rel="prev" title="Bearer SAST 工具快速入门">
+      <i class="fa fa-chevron-left"></i> Bearer SAST 工具快速入门
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/05/go-kratos-08/" rel="next" title="Kratos 源码分析 08：gRPC Transport（3）">
+      Kratos 源码分析 08：gRPC Transport（3） <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#kratos-%E7%9A%84-http-transport"><span class="nav-number">1.</span> <span class="nav-text"> Kratos 的 HTTP Transport</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#http-transport-%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> HTTP Transport 整体架构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#server-%E5%88%9B%E5%BB%BA%E6%B5%81%E7%A8%8B"><span class="nav-number">3.</span> <span class="nav-text"> Server 创建流程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E6%AD%A5%E5%88%9B%E5%BB%BA-kratos-server-%E5%AF%B9%E8%B1%A1"><span class="nav-number">3.1.</span> <span class="nav-text"> 第一步：创建 kratos Server 对象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E6%AD%A5%E8%AE%BE%E7%BD%AE%E9%BB%98%E8%AE%A4%E5%80%BC"><span class="nav-number">3.2.</span> <span class="nav-text"> 第二步：设置默认值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E6%AD%A5%E5%BA%94%E7%94%A8-serveroption"><span class="nav-number">3.3.</span> <span class="nav-text"> 第三步：应用 ServerOption</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E5%9B%9B%E6%AD%A5%E6%B3%A8%E5%86%8C-kratos-%E5%86%85%E9%83%A8-filter"><span class="nav-number">3.4.</span> <span class="nav-text"> 第四步：注册 kratos 内部 filter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%BA%94%E6%AD%A5%E5%88%9B%E5%BB%BA%E6%A0%87%E5%87%86%E5%BA%93-httpserver"><span class="nav-number">3.5.</span> <span class="nav-text"> 第五步：创建标准库 http.Server</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#serveroption-%E9%85%8D%E7%BD%AE%E9%A1%B9"><span class="nav-number">4.</span> <span class="nav-text"> ServerOption 配置项</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%91%E5%90%AC%E4%B8%8E%E7%AB%AF%E7%82%B9%E9%85%8D%E7%BD%AE"><span class="nav-number">4.1.</span> <span class="nav-text"> 监听与端点配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E8%B6%85%E6%97%B6%E4%B8%8E-tls"><span class="nav-number">4.2.</span> <span class="nav-text"> 请求超时与 TLS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#filter-%E4%B8%8E-middleware"><span class="nav-number">4.3.</span> <span class="nav-text"> Filter 与 Middleware</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%96%E8%A7%A3%E7%A0%81%E9%85%8D%E7%BD%AE"><span class="nav-number">4.4.</span> <span class="nav-text"> 编解码配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E8%A1%8C%E4%B8%BA%E9%85%8D%E7%BD%AE"><span class="nav-number">4.5.</span> <span class="nav-text"> 路由行为配置</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E6%B3%A8%E5%86%8C%E6%9C%BA%E5%88%B6router-handle-handlefunc"><span class="nav-number">5.</span> <span class="nav-text"> 路由注册机制：Router、Handle、HandleFunc</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-kratos-router-%E6%B3%A8%E5%86%8C-handlerfunc"><span class="nav-number">5.1.</span> <span class="nav-text"> 使用 kratos Router 注册 HandlerFunc</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#routerhandle%E4%BB%8E-kratos-handlerfunc-%E5%88%B0-httphandler"><span class="nav-number">5.2.</span> <span class="nav-text"> Router.Handle：从 kratos HandlerFunc 到 http.Handler</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#filter-%E4%B8%8E-middleware-%E7%9A%84%E5%88%86%E5%B1%82"><span class="nav-number">6.</span> <span class="nav-text"> Filter 与 Middleware 的分层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#filterhttp-%E5%8E%9F%E7%94%9F-handler-%E9%93%BE"><span class="nav-number">6.1.</span> <span class="nav-text"> Filter：HTTP 原生 Handler 链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#middleware%E5%8D%8F%E8%AE%AE%E6%97%A0%E5%85%B3%E4%B8%9A%E5%8A%A1%E9%93%BE"><span class="nav-number">6.2.</span> <span class="nav-text"> Middleware：协议无关业务链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#serveruse%E6%8C%89-operation-%E6%B3%A8%E5%86%8C-middleware"><span class="nav-number">6.3.</span> <span class="nav-text"> Server.Use：按 operation 注册 Middleware</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%AC%A1-http-%E8%AF%B7%E6%B1%82%E7%9A%84%E5%AE%8C%E6%95%B4%E5%A4%84%E7%90%86%E9%93%BE%E8%B7%AF"><span class="nav-number">7.</span> <span class="nav-text"> 一次 HTTP 请求的完整处理链路</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA%E8%AF%B7%E6%B1%82%E7%BA%A7%E8%B6%85%E6%97%B6-context"><span class="nav-number">7.1.</span> <span class="nav-text"> 创建请求级超时 Context</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%8E%B7%E5%8F%96%E8%B7%AF%E7%94%B1%E6%A8%A1%E6%9D%BF%E4%BD%9C%E4%B8%BA-operation"><span class="nav-number">7.2.</span> <span class="nav-text"> 获取路由模板作为 Operation</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-http-transport"><span class="nav-number">7.3.</span> <span class="nav-text"> 创建 HTTP Transport</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%99%E5%85%A5-server-context"><span class="nav-number">7.4.</span> <span class="nav-text"> 写入 Server Context</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#startstop-%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E7%AE%A1%E7%90%86"><span class="nav-number">8.</span> <span class="nav-text"> Start&#x2F;Stop 生命周期管理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#endpoint%E8%AE%A1%E7%AE%97%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8C%E5%9C%B0%E5%9D%80"><span class="nav-number">8.1.</span> <span class="nav-text"> Endpoint：计算服务注册地址</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#start%E5%90%AF%E5%8A%A8-http-server"><span class="nav-number">8.2.</span> <span class="nav-text"> Start：启动 HTTP Server</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#stop%E4%BC%98%E9%9B%85%E5%81%9C%E6%9C%BA"><span class="nav-number">8.3.</span> <span class="nav-text"> Stop：优雅停机</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%8E-grpc-server-%E7%9A%84%E8%AE%BE%E8%AE%A1%E5%AF%B9%E6%AF%94"><span class="nav-number">9.</span> <span class="nav-text"> 与 gRPC Server 的设计对比</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%B8%E5%90%8C%E7%82%B9"><span class="nav-number">9.1.</span> <span class="nav-text"> 相同点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E5%90%8C%E7%82%B9"><span class="nav-number">9.2.</span> <span class="nav-text"> 不同点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">264</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
