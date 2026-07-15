@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Grype 是 Anchore 开源的一款漏洞扫描工具，主要用来扫描容器镜像、文件系统和 SBOM 中的已知漏洞。SBOM（Software Bill of Materials，软件物料清单）是一份描述软件由哪些组件构成的清单，通常会记录依赖包的名称、版本、类型和来源等信息，可以把它理解为软件的 配料表。Grype 会先识别目标中包含的软件包，再将软件包名称、版本、发行版等信息与漏洞数据库进行匹配">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 01：快速使用">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/15/go-grype-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="Grype 是 Anchore 开源的一款漏洞扫描工具，主要用来扫描容器镜像、文件系统和 SBOM 中的已知漏洞。SBOM（Software Bill of Materials，软件物料清单）是一份描述软件由哪些组件构成的清单，通常会记录依赖包的名称、版本、类型和来源等信息，可以把它理解为软件的 配料表。Grype 会先识别目标中包含的软件包，再将软件包名称、版本、发行版等信息与漏洞数据库进行匹配">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-15T12:28:51.000Z">
+<meta property="article:modified_time" content="2026-07-15T12:33:03.590Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/15/go-grype-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 01：快速使用 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/15/go-grype-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 01：快速使用
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-15 20:28:51" itemprop="dateCreated datePublished" datetime="2026-07-15T20:28:51+08:00">2026-07-15</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p><a target="_blank" rel="noopener" href="https://github.com/anchore/grype">Grype</a> 是 Anchore 开源的一款漏洞扫描工具，主要用来扫描容器镜像、文件系统和 SBOM 中的已知漏洞。SBOM（Software Bill of Materials，软件物料清单）是一份描述软件由哪些组件构成的清单，通常会记录依赖包的名称、版本、类型和来源等信息，可以把它理解为软件的 <code>配料表</code>。Grype 会先识别目标中包含的软件包，再将软件包名称、版本、发行版等信息与漏洞数据库进行匹配，最后输出漏洞等级、修复版本、EPSS（Exploit Prediction Scoring System，漏洞利用预测评分系统）、风险分数等信息。</p>
+<span id="more"></span>
+<p>Grype 支持 Alpine、Debian、Ubuntu、RHEL（Red Hat Enterprise Linux，红帽企业 Linux）等常见 Linux 发行版，同时也支持 npm、Maven、Go、Python、Ruby、Rust 等语言生态。对于日常开发来说，可以用它扫描当前项目；对于容器场景，可以直接扫描镜像；如果已经有 Syft、CycloneDX 或 SPDX（Software Package Data Exchange，软件包数据交换格式）格式的 SBOM，也可以跳过软件包发现阶段，直接进行漏洞匹配。</p>
+<h2 id="grype-简介"><a class="markdownIt-Anchor" href="#grype-简介"></a> Grype 简介</h2>
+<p>传统的依赖漏洞检查工具通常只关注某一种语言，例如 <code>npm audit</code> 主要检查 npm 依赖，<code>govulncheck</code> 主要检查 Go 模块。如果一个容器镜像中同时包含 Alpine 系统包、Node.js 依赖和 Go 二进制，就需要多个工具分别处理。</p>
+<p>Grype 的目标是把这些输入统一起来。无论输入的是目录、镜像还是 SBOM，最终都会转换成一组软件包，再根据不同的软件包类型使用对应的版本规则进行漏洞匹配。</p>
+<p>Grype 的核心流程如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">容器镜像 / 文件系统 / SBOM</span><br><span class="line">            │</span><br><span class="line">            ▼</span><br><span class="line">      识别软件包和发行版</span><br><span class="line">            │</span><br><span class="line">            ▼</span><br><span class="line">  获取包名、版本、PURL（Package URL）、CPE（Common Platform Enumeration）等信息</span><br><span class="line">            │</span><br><span class="line">            ▼</span><br><span class="line">       查询 Grype 漏洞数据库</span><br><span class="line">            │</span><br><span class="line">            ▼</span><br><span class="line">  生成漏洞、修复版本和风险信息</span><br></pre></td></tr></table></figure>
+<p>这里需要注意，Grype 做的是<strong>已知组件漏洞匹配</strong>。它不会运行应用程序，也不会主动发送攻击请求，因此它和 DAST（Dynamic Application Security Testing，动态应用安全测试）、端口扫描、Web 漏洞扫描不是一类工具。<strong>一条扫描结果表示 <code>某个软件包版本落在某条漏洞记录的影响范围内</code>，至于漏洞代码在当前业务中是否真的可达，还需要结合代码和运行环境进一步判断</strong>。</p>
+<p>Grype 的核心特性如下：</p>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多种扫描目标</td>
+<td>支持容器镜像、目录、文件、归档、SBOM、PURL 等输入</td>
+</tr>
+<tr>
+<td>多种软件包生态</td>
+<td>支持 apk（Alpine Linux 软件包）、deb（Debian 软件包）、rpm（RPM Package Manager 软件包）、npm、Maven、Go、Python、Ruby 等</td>
+</tr>
+<tr>
+<td>发行版感知</td>
+<td>根据 Alpine、Debian、Ubuntu、RHEL 等发行版的版本规则匹配漏洞</td>
+</tr>
+<tr>
+<td>修复信息</td>
+<td>展示漏洞是否已经修复，以及可以升级到哪个版本</td>
+</tr>
+<tr>
+<td>风险排序</td>
+<td>综合 Severity、CVSS（Common Vulnerability Scoring System，通用漏洞评分系统）、EPSS、KEV（Known Exploited Vulnerabilities，已知被利用漏洞）等信息计算 Risk</td>
+</tr>
+<tr>
+<td>多种输出格式</td>
+<td>支持 table、JSON、SARIF（Static Analysis Results Interchange Format，静态分析结果交换格式）、CycloneDX 和自定义模板</td>
+</tr>
+<tr>
+<td>策略控制</td>
+<td>支持严重级别门禁、ignore 规则和 VEX（Vulnerability Exploitability eXchange，漏洞可利用性交换）文档</td>
+</tr>
+</tbody>
+</table>
+<h2 id="grype-实际使用"><a class="markdownIt-Anchor" href="#grype-实际使用"></a> Grype 实际使用</h2>
+<h3 id="安装-grype"><a class="markdownIt-Anchor" href="#安装-grype"></a> 安装 Grype</h3>
+<p>在 Linux 上，可以使用官方安装脚本：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl -sSfL https://get.anchore.io/grype | sudo sh -s -- -b /usr/local/bin</span><br></pre></td></tr></table></figure>
+<p>安装完成后查看版本：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype version</span><br></pre></td></tr></table></figure>
+<p>第一次扫描时，Grype 会自动下载漏洞数据库。可以通过下面的命令查看数据库状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype db status</span><br></pre></td></tr></table></figure>
+<p>本文实际测试使用的是 Grype <code>v0.115.0</code> 对应代码，内嵌 Syft 版本为 <code>v1.46.0</code>，漏洞数据库 schema 为 <code>v6.1.7</code>。漏洞数据库构建时间为 <code>2026-07-15T06:58:38Z</code>。由于漏洞数据库会持续更新，以后使用相同输入进行扫描时，漏洞数量、EPSS 和 Risk 可能发生变化。</p>
+<h3 id="基础命令速览"><a class="markdownIt-Anchor" href="#基础命令速览"></a> 基础命令速览</h3>
+<p>Grype 最基本的使用方式如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype &lt;扫描目标&gt;</span><br></pre></td></tr></table></figure>
+<p>可以直接扫描当前目录：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:.</span><br></pre></td></tr></table></figure>
+<p>也可以扫描本地 Docker 镜像：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype docker:alpine:3.10.2</span><br></pre></td></tr></table></figure>
+<p>如果本地没有 Docker，也可以直接从镜像仓库读取镜像：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype registry:alpine:3.10.2</span><br></pre></td></tr></table></figure>
+<p>如果已经有 SBOM，可以直接扫描 SBOM：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype sbom:./bom.cdx.json</span><br></pre></td></tr></table></figure>
+<p>Grype 支持的常见目标如下：</p>
+<table>
+<thead>
+<tr>
+<th>目标</th>
+<th>示例</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目录</td>
+<td><code>dir:./my-project</code></td>
+<td>扫描项目目录或解压后的根文件系统</td>
+</tr>
+<tr>
+<td>Docker 镜像</td>
+<td><code>docker:nginx:latest</code></td>
+<td>从本地 Docker daemon 读取镜像</td>
+</tr>
+<tr>
+<td>远程镜像</td>
+<td><code>registry:nginx:latest</code></td>
+<td>直接从镜像仓库读取镜像</td>
+</tr>
+<tr>
+<td>单个文件</td>
+<td><code>file:./app.jar</code></td>
+<td>扫描单个文件或归档</td>
+</tr>
+<tr>
+<td>SBOM</td>
+<td><code>sbom:./sbom.json</code></td>
+<td>扫描已有的 SBOM</td>
+</tr>
+<tr>
+<td>PURL 文件</td>
+<td><code>purl:./packages.txt</code></td>
+<td>扫描逐行保存的 Package URL</td>
+</tr>
+<tr>
+<td>OCI 归档</td>
+<td><code>oci-archive:./image.tar</code></td>
+<td>扫描 OCI（Open Container Initiative，开放容器倡议）格式归档</td>
+</tr>
+</tbody>
+</table>
+<p>也可以省略 <code>dir:</code>、<code>docker:</code> 等前缀，让 Grype 自动判断目标类型。例如：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">grype .</span><br><span class="line">grype alpine:latest</span><br></pre></td></tr></table></figure>
+<p>不过在 CI（Continuous Integration，持续集成）中建议显式指定目标类型，这样命令的含义更清楚，也可以避免本地目录和镜像名称产生歧义。</p>
+<h2 id="示例扫描一个有漏洞的-npm-项目"><a class="markdownIt-Anchor" href="#示例扫描一个有漏洞的-npm-项目"></a> 示例：扫描一个有漏洞的 npm 项目</h2>
+<p>接下来通过一个实际例子，直观感受一下 Grype 的扫描结果。</p>
+<p>我们准备一个简单的 npm 项目，其中包含两个故意保持在旧版本的依赖：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;grype-vulnerable-demo&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1.0.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;private&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;dependencies&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;lodash&quot;</span><span class="punctuation">:</span> <span class="string">&quot;4.17.20&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;minimist&quot;</span><span class="punctuation">:</span> <span class="string">&quot;0.0.8&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>项目的 <code>package-lock.json</code> 同样将 <code>lodash</code> 固定为 <code>4.17.20</code>，将 <code>minimist</code> 固定为 <code>0.0.8</code>。进入项目目录后执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:.</span><br></pre></td></tr></table></figure>
+<p>结果中的漏洞编号主要是 GHSA（GitHub Security Advisory，GitHub 安全公告）编号。</p>
+<p>程序运行结果如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">NAME      INSTALLED  FIXED IN  TYPE  VULNERABILITY        SEVERITY  EPSS          RISK</span><br><span class="line">lodash    4.17.20    4.17.21   npm   GHSA-35jh-r3h4-6jhm  High      22.4% (97th)  16.5</span><br><span class="line">minimist  0.0.8      0.2.4     npm   GHSA-xvch-5gv4-984h  Critical  4.6% (90th)   4.3</span><br><span class="line">lodash    4.17.20    4.17.21   npm   GHSA-29mw-wpgm-hmr9  Medium    7.3% (93rd)   3.8</span><br><span class="line">lodash    4.17.20    4.18.0    npm   GHSA-r5fr-rjxr-66jc  High      1.7% (75th)   1.4</span><br><span class="line">minimist  0.0.8      0.2.1     npm   GHSA-vh95-rmgr-6w4m  Medium    1.9% (77th)   1.0</span><br><span class="line">lodash    4.17.20    4.17.23   npm   GHSA-xxjr-mmjv-4gpg  Medium    1.5% (71st)   0.9</span><br><span class="line">lodash    4.17.20    4.18.0    npm   GHSA-f23m-r3pf-42rh  Medium    0.3% (23rd)   0.2</span><br></pre></td></tr></table></figure>
+<p>从结果中可以看到，Grype 一共发现了 7 条漏洞匹配：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Critical  1</span><br><span class="line">High      2</span><br><span class="line">Medium    4</span><br></pre></td></tr></table></figure>
+<p>表格中各个字段的含义如下：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NAME</td>
+<td>软件包名称</td>
+</tr>
+<tr>
+<td>INSTALLED</td>
+<td>当前安装的版本</td>
+</tr>
+<tr>
+<td>FIXED IN</td>
+<td>漏洞得到修复的版本，为空表示当前数据中没有修复版本</td>
+</tr>
+<tr>
+<td>TYPE</td>
+<td>软件包类型，这里是 npm</td>
+</tr>
+<tr>
+<td>VULNERABILITY</td>
+<td>漏洞或安全公告 ID</td>
+</tr>
+<tr>
+<td>SEVERITY</td>
+<td>漏洞严重级别</td>
+</tr>
+<tr>
+<td>EPSS</td>
+<td>漏洞被利用的概率及其百分位</td>
+</tr>
+<tr>
+<td>RISK</td>
+<td>Grype 计算的综合风险分数</td>
+</tr>
+</tbody>
+</table>
+<p>这个结果有几个值得注意的地方：</p>
+<ul>
+<li>7 条结果并不表示存在 7 个有漏洞的软件包。项目中只有 2 个依赖，但一个软件包可以命中多条漏洞记录。</li>
+<li>同一个软件包的不同漏洞可能有不同的修复版本。<code>lodash 4.17.20</code> 对应的修复版本分别有 <code>4.17.21</code>、<code>4.17.23</code> 和 <code>4.18.0</code>，只升级到第一行显示的版本并不一定能解决全部问题。</li>
+<li>漏洞 ID 不一定是 CVE（Common Vulnerabilities and Exposures，通用漏洞披露）。npm 生态的结果通常优先显示 GHSA。如果希望尽量以 CVE 展示，可以增加 <code>--by-cve</code>。</li>
+<li>默认结果不是简单地按照 Critical、High、Medium 排序，而是按照 Risk 排序，所以 High 漏洞可能出现在 Critical 漏洞之前。</li>
+</ul>
+<h3 id="severity-epss-kev-和-risk"><a class="markdownIt-Anchor" href="#severity-epss-kev-和-risk"></a> Severity、EPSS、KEV 和 Risk</h3>
+<p>在传统漏洞报告中，我们通常只关注 Severity 或 CVSS。Grype 除了显示严重级别，还会显示 EPSS 和 Risk，并可以使用 KEV 数据辅助排序。</p>
+<p>这几个指标的含义如下：</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>回答的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Severity / CVSS</td>
+<td>漏洞被成功利用后，影响有多严重</td>
+</tr>
+<tr>
+<td>EPSS</td>
+<td>漏洞在现实世界中被利用的可能性有多高</td>
+</tr>
+<tr>
+<td>CISA（Cybersecurity and Infrastructure Security Agency，美国网络安全和基础设施安全局）KEV</td>
+<td>漏洞是否已经存在已知的在野利用</td>
+</tr>
+<tr>
+<td>Risk</td>
+<td>Grype 综合威胁信息和严重级别后计算的排序分数</td>
+</tr>
+</tbody>
+</table>
+<p>当前版本的 Risk 计算会综合字符串严重级别、CVSS 和 EPSS。如果漏洞存在于 KEV 中，Grype 会优先采用已经存在利用证据这一事实；如果还涉及已知勒索软件活动，会进一步提高风险修正值。</p>
+<p>来看 npm 示例中的前两条结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">lodash    GHSA-35jh-r3h4-6jhm  High      EPSS 22.4%  Risk 16.5</span><br><span class="line">minimist  GHSA-xvch-5gv4-984h  Critical  EPSS 4.6%   Risk 4.3</span><br></pre></td></tr></table></figure>
+<p>第一条漏洞的严重级别是 High，第二条是 Critical，但第一条的 EPSS 明显更高，所以 Risk 也更高，最终排在第一行。这说明严重级别和现实利用风险是两个不同的维度。</p>
+<p>Grype 支持以下几种常见排序方式：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 综合风险优先，也是默认排序方式</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --sort-by risk</span><br><span class="line"></span><br><span class="line"><span class="comment"># 严重级别优先</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --sort-by severity</span><br><span class="line"></span><br><span class="line"><span class="comment"># EPSS 优先</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --sort-by epss</span><br><span class="line"></span><br><span class="line"><span class="comment"># 已知在野利用优先</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --sort-by kev</span><br><span class="line"></span><br><span class="line"><span class="comment"># 按软件包排序</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --sort-by package</span><br></pre></td></tr></table></figure>
+<p>Risk 适合帮助我们决定“先处理哪一条”，但它并不知道应用是否暴露在公网、漏洞代码是否可达、资产中是否存放敏感数据。因此 Risk 不能完全代替业务风险分析。</p>
+<h3 id="json-输出"><a class="markdownIt-Anchor" href="#json-输出"></a> JSON 输出</h3>
+<p>默认的 table 格式适合在终端中查看。如果要把结果接入 CI、漏洞平台或数据分析流程，通常需要使用 JSON：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. -o json &gt; grype.json</span><br></pre></td></tr></table></figure>
+<p>JSON 中的核心结构如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">matches[]</span><br><span class="line">├── vulnerability     漏洞 ID、严重级别、CVSS、EPSS、KEV、Risk、修复版本</span><br><span class="line">├── artifact          软件包名称、版本、类型、PURL、CPE、发现位置</span><br><span class="line">└── matchDetails      为什么会匹配，以及使用了哪一种 matcher</span><br><span class="line"></span><br><span class="line">source                扫描目标信息</span><br><span class="line">distro                识别出的 Linux 发行版</span><br><span class="line">descriptor.db          漏洞数据库版本和构建时间</span><br><span class="line">ignoredMatches[]      被 ignore 或 VEX 抑制的结果</span><br></pre></td></tr></table></figure>
+<p>例如，可以使用 <code>jq</code> 提取漏洞 ID、软件包、当前版本和修复版本：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">jq -r <span class="string">&#x27;</span></span><br><span class="line"><span class="string">  .matches[] |</span></span><br><span class="line"><span class="string">  [</span></span><br><span class="line"><span class="string">    .vulnerability.id,</span></span><br><span class="line"><span class="string">    .artifact.name,</span></span><br><span class="line"><span class="string">    .artifact.version,</span></span><br><span class="line"><span class="string">    (.vulnerability.fix.versions | join(&quot;,&quot;)),</span></span><br><span class="line"><span class="string">    .vulnerability.severity</span></span><br><span class="line"><span class="string">  ] | @tsv</span></span><br><span class="line"><span class="string">&#x27;</span> grype.json</span><br></pre></td></tr></table></figure>
+<p>输出结果如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">GHSA-35jh-r3h4-6jhm  lodash    4.17.20  4.17.21  High</span><br><span class="line">GHSA-xvch-5gv4-984h  minimist  0.0.8    0.2.4    Critical</span><br><span class="line">GHSA-29mw-wpgm-hmr9  lodash    4.17.20  4.17.21  Medium</span><br><span class="line">GHSA-r5fr-rjxr-66jc  lodash    4.17.20  4.18.0   High</span><br><span class="line">GHSA-vh95-rmgr-6w4m  minimist  0.0.8    0.2.1    Medium</span><br><span class="line">GHSA-xxjr-mmjv-4gpg  lodash    4.17.20  4.17.23  Medium</span><br><span class="line">GHSA-f23m-r3pf-42rh  lodash    4.17.20  4.18.0   Medium</span><br></pre></td></tr></table></figure>
+<p>相比只保存终端表格，JSON 还包含软件包位置、匹配依据和数据库版本等信息，更适合作为后续审计和结果对比的输入。</p>
+<h2 id="示例扫描-cyclonedx-sbom"><a class="markdownIt-Anchor" href="#示例扫描-cyclonedx-sbom"></a> 示例：扫描 CycloneDX SBOM</h2>
+<p>Grype 扫描目录或镜像时，需要先识别其中包含的软件包。如果构建阶段已经生成了 SBOM，就可以直接让 Grype 使用这份软件包清单。</p>
+<p>CycloneDX 是由 OWASP（Open Worldwide Application Security Project，开放全球应用安全项目）维护的一种 BOM（Bill of Materials，物料清单）标准，主要面向软件供应链安全。它可以使用 JSON 或 XML 描述软件组件、版本、哈希、许可证、组件之间的依赖关系以及已知漏洞等信息。SBOM 是软件物料清单这一类数据的统称，CycloneDX 则是描述和交换这类数据的一种具体标准格式。</p>
+<p>下面是一份简化后的 CycloneDX SBOM，其中包含前面使用的两个 npm 组件：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;bomFormat&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CycloneDX&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;specVersion&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1.6&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;components&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;library&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;lodash&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;4.17.20&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;purl&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pkg:npm/lodash@4.17.20&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;library&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;minimist&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;version&quot;</span><span class="punctuation">:</span> <span class="string">&quot;0.0.8&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;purl&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pkg:npm/minimist@0.0.8&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>这几个字段的含义如下：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bomFormat</code></td>
+<td>BOM 使用的标准，这里固定为 <code>CycloneDX</code></td>
+</tr>
+<tr>
+<td><code>specVersion</code></td>
+<td>CycloneDX 规范版本，这里使用 1.6</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>当前 BOM 文档自身的版本号</td>
+</tr>
+<tr>
+<td><code>components</code></td>
+<td>软件包含的组件列表</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>组件类型，例如 application、library、framework 或 container</td>
+</tr>
+<tr>
+<td><code>name</code> / <code>version</code></td>
+<td>组件名称和版本</td>
+</tr>
+<tr>
+<td><code>purl</code></td>
+<td>PURL（Package URL，软件包 URL），用于跨工具标识软件包</td>
+</tr>
+</tbody>
+</table>
+<p>真实的 CycloneDX 文档还可以包含 <code>metadata</code>、<code>dependencies</code>、<code>services</code>、<code>licenses</code>、<code>hashes</code> 和 <code>vulnerabilities</code> 等字段。本例只保留 Grype 完成软件包漏洞匹配所需的核心组件信息。</p>
+<p>执行下面的命令扫描 SBOM：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype sbom:./bom.cdx.json</span><br></pre></td></tr></table></figure>
+<p>程序运行结果同样是 7 条漏洞匹配：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">NAME      INSTALLED  FIXED IN  TYPE  VULNERABILITY        SEVERITY</span><br><span class="line">lodash    4.17.20    4.17.21   npm   GHSA-35jh-r3h4-6jhm  High</span><br><span class="line">minimist  0.0.8      0.2.4     npm   GHSA-xvch-5gv4-984h  Critical</span><br><span class="line">lodash    4.17.20    4.17.21   npm   GHSA-29mw-wpgm-hmr9  Medium</span><br><span class="line">lodash    4.17.20    4.18.0    npm   GHSA-r5fr-rjxr-66jc  High</span><br><span class="line">minimist  0.0.8      0.2.1     npm   GHSA-vh95-rmgr-6w4m  Medium</span><br><span class="line">lodash    4.17.20    4.17.23   npm   GHSA-xxjr-mmjv-4gpg  Medium</span><br><span class="line">lodash    4.17.20    4.18.0    npm   GHSA-f23m-r3pf-42rh  Medium</span><br></pre></td></tr></table></figure>
+<p>从这次结果可以看到，目录扫描和 SBOM 扫描最终识别出了相同的软件包名称、类型和版本，因此得到了相同的漏洞结果。</p>
+<p>不过在真实项目中，两种方式不一定永远一致。例如容器镜像中可能同时存在 OS 包、Go 二进制、Java 归档和多份锁文件，而 SBOM 的内容又取决于生成工具及其配置。如果在生产中采用 SBOM 扫描，应该固定 SBOM 生成工具和配置，并定期对比“直接扫描产物”和“扫描 SBOM”的差异。</p>
+<h2 id="示例扫描容器镜像"><a class="markdownIt-Anchor" href="#示例扫描容器镜像"></a> 示例：扫描容器镜像</h2>
+<p>接下来扫描一个真实的容器镜像。这里选择 <code>alpine:3.10.2</code>，先将镜像拉取到本地：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker pull alpine:3.10.2</span><br></pre></td></tr></table></figure>
+<p>然后使用 Grype 扫描：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype docker:alpine:3.10.2</span><br></pre></td></tr></table></figure>
+<p>Grype 首先给出了 EOL（End of Life，生命周期结束）告警：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">14 packages from EOL distro &quot;alpine 3.10.2&quot; - vulnerability data may be</span><br><span class="line">incomplete or outdated; consider upgrading to a supported version</span><br></pre></td></tr></table></figure>
+<p>这个告警表示 Alpine 3.10.2 已经结束生命周期，意味着该版本的漏洞数据可能不完整，官方也可能不再提供安全更新。对于 EOL 发行版，逐条修复 CVE 通常不是最好的方案，更合理的方式是升级基础镜像。</p>
+<p>完整扫描一共得到 150 条匹配，涉及 8 个软件包，严重级别分布如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Critical   8</span><br><span class="line">High      76</span><br><span class="line">Medium    56</span><br><span class="line">Low       10</span><br></pre></td></tr></table></figure>
+<p>结果中风险较高的部分如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">NAME          INSTALLED  FIXED IN   TYPE  VULNERABILITY   SEVERITY  EPSS          RISK</span><br><span class="line">libcrypto1.1  1.1.1c-r0             apk   CVE-2022-2068   High      96.3% (99th)  79.6</span><br><span class="line">libssl1.1     1.1.1c-r0             apk   CVE-2022-2068   High      96.3% (99th)  79.6</span><br><span class="line">libcrypto1.1  1.1.1c-r0             apk   CVE-2021-3711   Critical  87.8% (99th)  77.5</span><br><span class="line">libssl1.1     1.1.1c-r0             apk   CVE-2021-3711   Critical  87.8% (99th)  77.5</span><br><span class="line">libcrypto1.1  1.1.1c-r0             apk   CVE-2022-1292   High      83.2% (99th)  68.8</span><br><span class="line">libssl1.1     1.1.1c-r0             apk   CVE-2022-1292   High      83.2% (99th)  68.8</span><br><span class="line">libcrypto1.1  1.1.1c-r0             apk   CVE-2022-0778   High      70.6% (99th)  50.0</span><br><span class="line">libssl1.1     1.1.1c-r0             apk   CVE-2022-0778   High      70.6% (99th)  50.0</span><br></pre></td></tr></table></figure>
+<p>为什么 150 条匹配只涉及 8 个软件包？因为一条漏洞可能同时命中多个包。例如 OpenSSL 被 Alpine 拆分为 <code>libcrypto1.1</code> 和 <code>libssl1.1</code>，同一个 CVE 会分别出现在两个包上；同一个包本身也可能受到多条 CVE 影响。因此扫描结果的行数表示“软件包实例与漏洞记录的匹配数量”，不能直接理解成独立漏洞数量。</p>
+<p>本次扫描解析到的镜像信息如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">image ID:</span><br><span class="line">sha256:961769676411f082461f9ef46626dd7a2d1e2b2a38e6a44364bcbecf51e66dd4</span><br><span class="line"></span><br><span class="line">manifest digest:</span><br><span class="line">sha256:f0572185c4e54b3944acd894b5b8abf3db18d9adc28d62995779a09df4bda30b</span><br></pre></td></tr></table></figure>
+<p>镜像 tag 可能被覆盖，digest 则对应具体的镜像内容。在 CI 中最好扫描镜像 digest，并将 digest、SBOM 和扫描报告关联起来，这样才能准确知道报告对应的是哪一个构建产物。</p>
+<h2 id="ci-漏洞门禁"><a class="markdownIt-Anchor" href="#ci-漏洞门禁"></a> CI 漏洞门禁</h2>
+<p>Grype 默认只负责输出报告。即使发现漏洞，只要扫描过程本身成功，命令通常仍然返回 0。如果希望在 CI 中阻止存在高危漏洞的构建，可以使用 <code>--fail-on</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --fail-on high</span><br></pre></td></tr></table></figure>
+<p><code>high</code> 表示只要存在 High 或 Critical 漏洞，就让命令以非零状态结束。支持的严重级别包括：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">negligible</span><br><span class="line">low</span><br><span class="line">medium</span><br><span class="line">high</span><br><span class="line">critical</span><br></pre></td></tr></table></figure>
+<p>如果只希望阻止已经存在修复版本的漏洞，可以结合 <code>--only-fixed</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --fail-on high --only-fixed</span><br></pre></td></tr></table></figure>
+<p>在前面的 npm 项目中运行这条命令，结果如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">NAME      INSTALLED  FIXED IN  TYPE  VULNERABILITY        SEVERITY</span><br><span class="line">lodash    4.17.20    4.17.21   npm   GHSA-35jh-r3h4-6jhm  High</span><br><span class="line">minimist  0.0.8      0.2.4     npm   GHSA-xvch-5gv4-984h  Critical</span><br><span class="line">...</span><br><span class="line"></span><br><span class="line">ERROR discovered vulnerabilities at or above the severity threshold</span><br></pre></td></tr></table></figure>
+<p>查看退出码：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">echo</span> $?</span><br></pre></td></tr></table></figure>
+<p>实际输出为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">2</span><br></pre></td></tr></table></figure>
+<p>这说明 Grype 完成了扫描，但扫描结果没有通过设定的安全策略。CI 可以将退出码 2 识别为漏洞门禁失败，而参数错误、数据库下载失败等其他非零状态应该按照工具执行失败处理。</p>
+<p>需要注意，<code>--only-fixed</code> 只是降低 CI 噪声的一种策略。没有修复版本的漏洞仍然可能需要隔离、缓解或接受风险，因此完整报告中仍然应该保留这些结果。</p>
+<h2 id="输出格式"><a class="markdownIt-Anchor" href="#输出格式"></a> 输出格式</h2>
+<p>Grype 支持以下常见输出格式：</p>
+<table>
+<thead>
+<tr>
+<th>格式</th>
+<th>使用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>table</td>
+<td>终端中快速查看</td>
+</tr>
+<tr>
+<td>json</td>
+<td>自动化分析、结果存档、漏洞平台</td>
+</tr>
+<tr>
+<td>sarif</td>
+<td>GitHub Code Scanning 等 SARIF 消费端</td>
+</tr>
+<tr>
+<td>cyclonedx-json</td>
+<td>CycloneDX 工具链</td>
+</tr>
+<tr>
+<td>template</td>
+<td>使用 Go template 自定义报告</td>
+</tr>
+</tbody>
+</table>
+<p>输出 table：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype docker:alpine:3.10.2 -o table</span><br></pre></td></tr></table></figure>
+<p>输出 JSON：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype docker:alpine:3.10.2 -o json &gt; grype.json</span><br></pre></td></tr></table></figure>
+<p>输出 SARIF：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype docker:alpine:3.10.2 -o sarif &gt; grype.sarif</span><br></pre></td></tr></table></figure>
+<p>在日常使用中，可以在终端查看 table，同时在 CI 中保存 JSON 或 SARIF。只保留终端日志会丢失软件包位置、匹配依据和数据库版本等信息，不方便后续分析。</p>
+<h2 id="漏洞数据库"><a class="markdownIt-Anchor" href="#漏洞数据库"></a> 漏洞数据库</h2>
+<p>Grype 会在扫描前自动检查漏洞数据库。常用数据库命令如下：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看当前数据库状态</span></span><br><span class="line">grype db status</span><br><span class="line"></span><br><span class="line"><span class="comment"># 检查是否存在新数据库</span></span><br><span class="line">grype db check</span><br><span class="line"></span><br><span class="line"><span class="comment"># 更新数据库</span></span><br><span class="line">grype db update</span><br><span class="line"></span><br><span class="line"><span class="comment"># 查看数据库包含的数据提供方</span></span><br><span class="line">grype db providers</span><br></pre></td></tr></table></figure>
+<p>漏洞报告会受到数据库版本影响。同一个镜像在不同日期扫描，可能因为新增漏洞公告、别名关系变化、修复版本更新或 EPSS 更新而得到不同结果。因此需要复现一次扫描时，至少应该记录：</p>
+<ul>
+<li>Grype 版本</li>
+<li>漏洞数据库构建时间</li>
+<li>镜像 digest 或原始 SBOM</li>
+<li>Grype 配置和 ignore/VEX 规则</li>
+<li>原始 JSON 或 SARIF 报告</li>
+</ul>
+<p>完全关闭数据库更新虽然可以让结果暂时保持不变，但也会使扫描结果快速过期。更合理的做法是定期更新数据库，并在报告中记录本次实际使用的数据库信息。</p>
+<h2 id="结果过滤和-vex"><a class="markdownIt-Anchor" href="#结果过滤和-vex"></a> 结果过滤和 VEX</h2>
+<p>当项目中存在较多历史漏洞时，可以使用过滤选项缩小当前关注的范围。</p>
+<p>只显示已经有修复版本的漏洞：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --only-fixed</span><br></pre></td></tr></table></figure>
+<p>只显示尚无修复版本的漏洞：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --only-notfixed</span><br></pre></td></tr></table></figure>
+<p>排除不需要扫描的目录：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --exclude <span class="string">&#x27;./vendor/**&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>尽量使用 CVE 作为漏洞 ID：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --by-cve</span><br></pre></td></tr></table></figure>
+<p>如果产品团队已经通过 VEX 声明某条漏洞不影响当前产品，可以在扫描时传入 VEX 文档：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype sbom:./bom.cdx.json --vex ./openvex.json</span><br></pre></td></tr></table></figure>
+<p>查看被 ignore 或 VEX 抑制的结果：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --show-suppressed</span><br></pre></td></tr></table></figure>
+<p>VEX 和 ignore 的作用是表达已经分析过的例外，而不是为了让报告数字变小。每条例外都应该有明确原因，并在依赖版本、产品结构或运行环境发生变化后重新检查。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章我们学习了 Grype 的基本用法。Grype 可以直接扫描目录、容器镜像和 SBOM，并根据软件包类型、版本和发行版信息匹配已知漏洞。</p>
+<p>通过实际扫描可以看到，Grype 的一行结果表示“软件包与漏洞记录的一次匹配”，并不等于一个独立的软件包或独立漏洞。<code>FIXED IN</code> 可以帮助判断升级目标，Severity、EPSS、KEV 和 Risk 则从不同角度帮助我们确定修复优先级。</p>
+<p>在实际项目中，可以使用 table 在本地查看结果，使用 JSON 或 SARIF 保存完整报告，再通过 <code>--fail-on</code> 将漏洞策略接入 CI。对于已经结束生命周期的发行版，优先升级基础镜像通常比逐条处理漏洞更有效。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/06/11/tree-sitter-intro/" rel="next" title="Tree-sitter 快速入门">
+      Tree-sitter 快速入门 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#grype-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> Grype 简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#grype-%E5%AE%9E%E9%99%85%E4%BD%BF%E7%94%A8"><span class="nav-number">2.</span> <span class="nav-text"> Grype 实际使用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-grype"><span class="nav-number">2.1.</span> <span class="nav-text"> 安装 Grype</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E7%A1%80%E5%91%BD%E4%BB%A4%E9%80%9F%E8%A7%88"><span class="nav-number">2.2.</span> <span class="nav-text"> 基础命令速览</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%E6%89%AB%E6%8F%8F%E4%B8%80%E4%B8%AA%E6%9C%89%E6%BC%8F%E6%B4%9E%E7%9A%84-npm-%E9%A1%B9%E7%9B%AE"><span class="nav-number">3.</span> <span class="nav-text"> 示例：扫描一个有漏洞的 npm 项目</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#severity-epss-kev-%E5%92%8C-risk"><span class="nav-number">3.1.</span> <span class="nav-text"> Severity、EPSS、KEV 和 Risk</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#json-%E8%BE%93%E5%87%BA"><span class="nav-number">3.2.</span> <span class="nav-text"> JSON 输出</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%E6%89%AB%E6%8F%8F-cyclonedx-sbom"><span class="nav-number">4.</span> <span class="nav-text"> 示例：扫描 CycloneDX SBOM</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%E6%89%AB%E6%8F%8F%E5%AE%B9%E5%99%A8%E9%95%9C%E5%83%8F"><span class="nav-number">5.</span> <span class="nav-text"> 示例：扫描容器镜像</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ci-%E6%BC%8F%E6%B4%9E%E9%97%A8%E7%A6%81"><span class="nav-number">6.</span> <span class="nav-text"> CI 漏洞门禁</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E6%A0%BC%E5%BC%8F"><span class="nav-number">7.</span> <span class="nav-text"> 输出格式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%BC%8F%E6%B4%9E%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">8.</span> <span class="nav-text"> 漏洞数据库</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%93%E6%9E%9C%E8%BF%87%E6%BB%A4%E5%92%8C-vex"><span class="nav-number">9.</span> <span class="nav-text"> 结果过滤和 VEX</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">265</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
