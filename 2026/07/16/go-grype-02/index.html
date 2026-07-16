@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇文章介绍了 Grype 的基本用法。这篇文章开始分析 Grype 的源码实现，我们先不深入某一种漏洞如何匹配，而是从程序入口开始，跟踪执行一条扫描命令最后是如何获取漏洞结果的。通过分析扫描命令的执行流程，我们将建立 Grype 的整体调用链，为后续分析配置系统、软件包 Provider、漏洞数据库和 Matcher 打下基础。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 02：整体流程">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/16/go-grype-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇文章介绍了 Grype 的基本用法。这篇文章开始分析 Grype 的源码实现，我们先不深入某一种漏洞如何匹配，而是从程序入口开始，跟踪执行一条扫描命令最后是如何获取漏洞结果的。通过分析扫描命令的执行流程，我们将建立 Grype 的整体调用链，为后续分析配置系统、软件包 Provider、漏洞数据库和 Matcher 打下基础。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-16T06:27:25.000Z">
+<meta property="article:modified_time" content="2026-07-16T06:28:53.426Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/16/go-grype-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 02：整体流程 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/16/go-grype-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 02：整体流程
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-16 14:27:25" itemprop="dateCreated datePublished" datetime="2026-07-16T14:27:25+08:00">2026-07-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>上一篇文章介绍了 Grype 的基本用法。这篇文章开始分析 Grype 的源码实现，我们先不深入某一种漏洞如何匹配，而是从程序入口开始，跟踪执行一条扫描命令最后是如何获取漏洞结果的。通过分析扫描命令的执行流程，我们将建立 Grype 的整体调用链，为后续分析配置系统、软件包 Provider、漏洞数据库和 Matcher 打下基础。</p>
+<span id="more"></span>
+<h2 id="grype-的整体调用链"><a class="markdownIt-Anchor" href="#grype-的整体调用链"></a> Grype 的整体调用链</h2>
+<p>Grype 是一个 CLI（Command-Line Interface，命令行界面）程序，但真正的扫描逻辑并不在 <code>main()</code> 中。<code>main()</code> 负责创建应用，Cobra 负责解析命令，<code>runGrype()</code> 负责组织一次扫描，具体的软件包发现、漏洞匹配和报告输出又分别交给不同模块完成。</p>
+<p>一次目录扫描的核心调用链如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">cmd/grype/main.go</span><br><span class="line">└── main()</span><br><span class="line">    └── cli.Application(...).Run()</span><br><span class="line">        │</span><br><span class="line">        ├── cli.create()</span><br><span class="line">        │   ├── SetupConfig()</span><br><span class="line">        │   ├── clio.New()</span><br><span class="line">        │   └── commands.Root()</span><br><span class="line">        │</span><br><span class="line">        └── Cobra root command RunE</span><br><span class="line">            └── runGrype()</span><br><span class="line">                │</span><br><span class="line">                ├── format.MakeScanResultWriter()</span><br><span class="line">                │</span><br><span class="line">                ├── parallel()</span><br><span class="line">                │   ├── checkForAppUpdate()</span><br><span class="line">                │   ├── grype.LoadVulnerabilityDB()</span><br><span class="line">                │   └── pkg.Provide()</span><br><span class="line">                │</span><br><span class="line">                ├── 创建漏洞可利用性处理器</span><br><span class="line">                ├── VulnerabilityMatcher.FindMatchesContext()</span><br><span class="line">                │   ├── findDBMatches()</span><br><span class="line">                │   ├── findVEXMatches()</span><br><span class="line">                │   └── 检查 --fail-on</span><br><span class="line">                │</span><br><span class="line">                ├── models.NewDocument()</span><br><span class="line">                └── writer.Write()</span><br><span class="line">                    └── Presenter.Present()</span><br></pre></td></tr></table></figure>
+<p>这条调用链可以分成四层：</p>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>主要职责</th>
+<th>核心位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>应用入口</td>
+<td>组装应用信息并启动 CLI</td>
+<td><code>cmd/grype/main.go</code></td>
+</tr>
+<tr>
+<td>命令层</td>
+<td>初始化配置、用户界面（UI，User Interface）、日志和 Cobra 命令</td>
+<td><code>cmd/grype/cli</code></td>
+</tr>
+<tr>
+<td>扫描编排层</td>
+<td>协调数据库、软件包、Matcher 和报告</td>
+<td><code>cmd/grype/cli/commands/root.go</code></td>
+</tr>
+<tr>
+<td>领域实现层</td>
+<td>完成软件包发现、漏洞匹配和结果展示</td>
+<td><code>grype/pkg</code>、<code>grype/matcher</code>、<code>grype/presenter</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="先看实际运行日志"><a class="markdownIt-Anchor" href="#先看实际运行日志"></a> 先看实际运行日志</h3>
+<p>在分析每一层之前，先来看实际扫描提取出的关键日志。源码和日志都使用 <code>DB</code>（Database）指代漏洞数据库：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">[0000] DEBUG gathering packages</span><br><span class="line">[0000] DEBUG loading DB</span><br><span class="line">[0001]  INFO gathered packages packages=3 time=1.086846115s</span><br><span class="line">[0002]  INFO loaded DB status=valid time=2.896080308s</span><br><span class="line">[0002] DEBUG found 5 vulnerabilities package=pkg:npm/lodash@4.17.20</span><br><span class="line">[0002] DEBUG found 2 vulnerabilities package=pkg:npm/minimist@0.0.8</span><br><span class="line">[0002]  INFO found 7 vulnerability matches across 3 packages</span><br><span class="line">[0002]  INFO found vulnerability matches time=11.131427ms</span><br></pre></td></tr></table></figure>
+<p>从这段日志中可以先得到几个结论：</p>
+<ul>
+<li><code>gathering packages</code> 和 <code>loading DB</code> 几乎同时出现，说明软件包收集和数据库加载是并行执行的；</li>
+<li>软件包编目一共得到 3 个包；</li>
+<li>只有 <code>lodash</code> 和 <code>minimist</code> 命中了漏洞；</li>
+<li><code>lodash</code> 产生 5 条 Match，<code>minimist</code> 产生 2 条 Match；</li>
+<li>最终一共得到 7 条漏洞 Match。</li>
+</ul>
+<p>日志中的耗时与机器、缓存和数据库状态有关，重点是各阶段的先后关系和数据数量。</p>
+<p>接下来从 <code>main()</code> 开始，看这些阶段分别对应哪些源码。</p>
+<h2 id="从程序入口进入-rungrype"><a class="markdownIt-Anchor" href="#从程序入口进入-rungrype"></a> 从程序入口进入 runGrype</h2>
+<p>这一层解决的是“谁创建应用、谁接收命令、谁开始扫描”。这里涉及三个连续步骤：<code>main()</code> 创建应用，<code>cli.create()</code> 组装命令，根命令的 <code>RunE</code> 调用 <code>runGrype()</code>。</p>
+<h3 id="main-函数只负责启动应用"><a class="markdownIt-Anchor" href="#main-函数只负责启动应用"></a> main 函数只负责启动应用</h3>
+<p>Grype 的程序入口位于 <code>cmd/grype/main.go</code>，核心代码非常短：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    app := cli.Application(</span><br><span class="line">        clio.Identification&#123;</span><br><span class="line">            Name:           applicationName,</span><br><span class="line">            Version:        version,</span><br><span class="line">            BuildDate:      buildDate,</span><br><span class="line">            GitCommit:      gitCommit,</span><br><span class="line">            GitDescription: gitDescription,</span><br><span class="line">        &#125;,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    app.Run()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里没有输入解析、数据库加载或漏洞匹配。它只做了两件事：</p>
+<ol>
+<li>使用名称、版本、构建时间和 Git 信息创建应用；</li>
+<li>调用 <code>app.Run()</code> 启动应用。</li>
+</ol>
+<p><code>version</code>、<code>buildDate</code>、<code>gitCommit</code> 和 <code>gitDescription</code> 默认都是 <code>NotProvided</code>，正式发布时通过构建参数注入。这也是直接执行 <code>go build ./cmd/grype</code> 后，<code>grype version</code> 可能显示 <code>[not provided]</code> 的原因。</p>
+<h3 id="clicreate-组装整个命令行应用"><a class="markdownIt-Anchor" href="#clicreate-组装整个命令行应用"></a> cli.create 组装整个命令行应用</h3>
+<p><code>cli.Application()</code> 内部调用 <code>create()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Application</span><span class="params">(id clio.Identification)</span></span> clio.Application &#123;</span><br><span class="line">    app, _ := create(id)</span><br><span class="line">    <span class="keyword">return</span> app</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">create</span><span class="params">(id clio.Identification)</span></span> (clio.Application, *cobra.Command) &#123;</span><br><span class="line">    clioCfg := SetupConfig(id)</span><br><span class="line">    app := clio.New(*clioCfg)</span><br><span class="line">    rootCmd := commands.Root(app)</span><br><span class="line"></span><br><span class="line">    rootCmd.AddCommand(</span><br><span class="line">        commands.DB(app),</span><br><span class="line">        commands.Completion(app),</span><br><span class="line">        commands.Explain(app),</span><br><span class="line">        clio.VersionCommand(id, syftVersion, dbVersion),</span><br><span class="line">        clio.ConfigCommand(app, <span class="literal">nil</span>),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> app, rootCmd</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>create()</code> 先通过 <code>SetupConfig()</code> 创建 clio 配置，再创建应用和根命令，最后注册 <code>db</code>、<code>completion</code>、<code>explain</code>、<code>version</code>、<code>config</code> 等子命令。<a target="_blank" rel="noopener" href="https://github.com/anchore/clio">clio</a> 是 Anchore 多个命令行项目共用的应用框架，Cobra 则负责命令、参数和子命令解析。两者的分工可以简单理解为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Cobra</span><br><span class="line">└── 命令树、参数、RunE</span><br><span class="line"></span><br><span class="line">clio</span><br><span class="line">├── 配置加载</span><br><span class="line">├── 日志</span><br><span class="line">├── UI</span><br><span class="line">├── 事件总线</span><br><span class="line">├── 应用生命周期</span><br><span class="line">└── 退出码映射</span><br></pre></td></tr></table></figure>
+<p>Grype 在交互式终端中可以显示动态进度，在重定向输出、quiet 模式或不适合启用 UI 时，则使用无动态界面的实现。</p>
+<p><code>SetupConfig()</code> 还负责将 clio 创建的事件总线、日志和脱敏存储设置到 Grype、Syft、stereoscope 等内部包中。这样后续的软件包编目和镜像读取可以共用同一套日志与 UI。</p>
+<h3 id="根命令将控制权交给-rungrype"><a class="markdownIt-Anchor" href="#根命令将控制权交给-rungrype"></a> 根命令将控制权交给 runGrype</h3>
+<p>根命令定义在 <code>cmd/grype/cli/commands/root.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Root</span><span class="params">(app clio.Application)</span></span> *cobra.Command &#123;</span><br><span class="line">    opts := options.DefaultGrype(app.ID())</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> app.SetupRootCommand(&amp;cobra.Command&#123;</span><br><span class="line">        Use:  fmt.Sprintf(<span class="string">&quot;%s [IMAGE]&quot;</span>, app.ID().Name),</span><br><span class="line">        Args: validateRootArgs,</span><br><span class="line">        RunE: <span class="function"><span class="keyword">func</span><span class="params">(cmd *cobra.Command, args []<span class="type">string</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">            userInput := <span class="string">&quot;&quot;</span></span><br><span class="line">            <span class="keyword">if</span> <span class="built_in">len</span>(args) &gt; <span class="number">0</span> &#123;</span><br><span class="line">                userInput = args[<span class="number">0</span>]</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> runGrype(cmd.Context(), app, opts, userInput)</span><br><span class="line">        &#125;,</span><br><span class="line">    &#125;, opts)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>options.DefaultGrype()</code> 创建默认扫描配置，<code>app.SetupRootCommand()</code> 将配置字段和命令行参数绑定起来。Cobra 完成参数解析和校验后执行 <code>RunE</code>，并将用户输入交给 <code>runGrype()</code>。</p>
+<p>因此，从入口到扫描函数的核心路径可以简化为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">main()</span><br><span class="line">  → cli.Application()</span><br><span class="line">    → create()</span><br><span class="line">      → commands.Root()</span><br><span class="line">        → Cobra.RunE</span><br><span class="line">          → runGrype()</span><br></pre></td></tr></table></figure>
+<h2 id="rungrype-如何组织一次扫描"><a class="markdownIt-Anchor" href="#rungrype-如何组织一次扫描"></a> runGrype 如何组织一次扫描</h2>
+<p><code>runGrype()</code> 是整条调用链的编排中心。它本身并不实现 npm 版本比较或 Alpine 漏洞查询，而是准备各个模块需要的对象，并规定执行顺序。为了看清它的层次，可以把这个函数拆成三个阶段：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">准备阶段</span><br><span class="line">├── 创建输出 Writer</span><br><span class="line">├── 整理 ignore 规则</span><br><span class="line">├── 加载漏洞数据库</span><br><span class="line">└── 收集软件包</span><br><span class="line"></span><br><span class="line">匹配阶段</span><br><span class="line">├── 创建 VEX Processor</span><br><span class="line">├── 创建 VulnerabilityMatcher</span><br><span class="line">├── 执行数据库 Matcher</span><br><span class="line">├── 应用 ignore / VEX</span><br><span class="line">└── 检查严重级别阈值</span><br><span class="line"></span><br><span class="line">输出阶段</span><br><span class="line">├── 构建 Document</span><br><span class="line">├── 按策略排序</span><br><span class="line">└── Presenter 输出报告</span><br></pre></td></tr></table></figure>
+<h3 id="准备阶段"><a class="markdownIt-Anchor" href="#准备阶段"></a> 准备阶段</h3>
+<h4 id="输出-writer-在扫描前创建"><a class="markdownIt-Anchor" href="#输出-writer-在扫描前创建"></a> 输出 Writer 在扫描前创建</h4>
+<p><code>runGrype()</code> 进入后首先调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">writer, err := format.MakeScanResultWriter(</span><br><span class="line">    opts.Outputs,</span><br><span class="line">    opts.File,</span><br><span class="line">    format.PresentationConfig&#123;</span><br><span class="line">        TemplateFilePath: opts.OutputTemplateFile,</span><br><span class="line">        ShowSuppressed:   opts.ShowSuppressed,</span><br><span class="line">        Pretty:           opts.Pretty,</span><br><span class="line">    &#125;,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这一步只确定结果将以 table、JSON（JavaScript Object Notation，JavaScript 对象表示法）、SARIF（Static Analysis Results Interchange Format，静态分析结果交换格式）或其他格式输出，以及输出到标准输出还是文件。Writer 必须在耗时扫描开始前创建，因为输出格式或文件路径错误应该尽早返回，而不是完成扫描后才告诉用户无法写入报告。</p>
+<p>随后，<code>--only-fixed</code>、<code>--only-notfixed</code>、<code>--ignore-states</code> 等选项会被转换成 <code>IgnoreRule</code>。例如 <code>--only-fixed</code> 的实现并不是让 Matcher 只查询有修复的漏洞，而是增加规则，将 <code>not-fixed</code>、<code>wont-fix</code> 和 <code>unknown</code> 结果移入 ignored matches。</p>
+<h4 id="三个准备任务并行执行"><a class="markdownIt-Anchor" href="#三个准备任务并行执行"></a> 三个准备任务并行执行</h4>
+<p>准备阶段最关键的一段代码是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">err = parallel(</span><br><span class="line">    <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        checkForAppUpdate(app.ID(), opts)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        vp, status, err = grype.LoadVulnerabilityDB(...)</span><br><span class="line">        <span class="keyword">return</span> validateDBLoad(err, status)</span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        packages, pkgContext, s, err = pkg.Provide(</span><br><span class="line">            userInput,</span><br><span class="line">            getProviderConfig(opts),</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>parallel()</code> 在 <code>cmd/grype/cli/commands/util.go</code> 中为每个函数启动一个 goroutine，再通过 <code>sync.WaitGroup</code> 等待全部任务完成。三个任务分别是：</p>
+<ol>
+<li>检查 Grype 是否存在新版本；</li>
+<li>加载并检查漏洞数据库；</li>
+<li>根据输入生成软件包集合。</li>
+</ol>
+<p>这三个任务之间没有数据依赖，适合并行执行。前面的真实日志正好验证了这一点：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">[0000] DEBUG gathering packages</span><br><span class="line">[0000] DEBUG loading DB</span><br></pre></td></tr></table></figure>
+<p>软件包收集在 1.09 秒左右完成，数据库加载在 2.90 秒左右完成。因为后续 Matcher 同时依赖数据库和软件包，所以 <code>parallel()</code> 必须等两个任务都结束后才能继续。</p>
+<h4 id="pkgprovide-将输入转换成软件包"><a class="markdownIt-Anchor" href="#pkgprovide-将输入转换成软件包"></a> pkg.Provide 将输入转换成软件包</h4>
+<p><code>pkg.Provide()</code> 的目标是把各种输入统一成下面三个结果：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">packages   []pkg.Package</span><br><span class="line">pkgContext pkg.Context</span><br><span class="line">s          *sbom.SBOM</span><br></pre></td></tr></table></figure>
+<p>SBOM（Software Bill of Materials，软件物料清单）记录软件包含的组件及其版本等信息。这里即使输入是目录，Syft 也会先创建一份内存中的 SBOM，再由 Grype 将 Syft Package 转换成自己的 <code>pkg.Package</code>。</p>
+<p>Provider 会按固定顺序尝试不同的输入解析器：先识别 PURL（Package URL，软件包 URL）和 CPE（Common Platform Enumeration，通用平台枚举），再尝试 SBOM 和 Zarf 包；如果都不匹配，最后交给 Syft 识别目录、文件和镜像：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">pkg.Provide(userInput)</span><br><span class="line">├── purlProvider</span><br><span class="line">├── cpeProvider</span><br><span class="line">├── syftSBOMProvider</span><br><span class="line">├── zarfProvider</span><br><span class="line">└── syftProvider</span><br><span class="line">    ├── syft.GetSource()</span><br><span class="line">    ├── syft.CreateSBOM()</span><br><span class="line">    └── pkg.FromCollection()</span><br></pre></td></tr></table></figure>
+<p>本文扫描的是 <code>dir:</code> 目录，所以最终进入 <code>syftProvider()</code>。实际 debug 日志显示 JavaScript lock cataloger 发现了 3 个包：根项目本身、<code>lodash</code> 和 <code>minimist</code>。</p>
+<h4 id="loadvulnerabilitydb-返回-vulnerabilityprovider"><a class="markdownIt-Anchor" href="#loadvulnerabilitydb-返回-vulnerabilityprovider"></a> LoadVulnerabilityDB 返回 vulnerability.Provider</h4>
+<p>另一个并行任务调用 <code>grype.LoadVulnerabilityDB()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">LoadVulnerabilityDB</span><span class="params">(...)</span></span> (</span><br><span class="line">    vulnerability.Provider,</span><br><span class="line">    *vulnerability.ProviderStatus,</span><br><span class="line">    <span class="type">error</span>,</span><br><span class="line">) &#123;</span><br><span class="line">    client, err := distribution.NewClient(...)</span><br><span class="line">    curator, err := installation.NewCurator(...)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> update &#123;</span><br><span class="line">        _, err = curator.Update()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    status := curator.Status()</span><br><span class="line">    reader, err := curator.Reader()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> v6.NewVulnerabilityProvider(reader), &amp;status, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里返回的 <code>vulnerability.Provider</code> 隐藏了数据库的具体存储实现。后面的 Matcher 不需要知道漏洞数据来自 SQLite 表、文件还是其他实现，只需要通过 Provider 查询候选漏洞和元数据。</p>
+<p>本文运行时加载的数据库状态如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">schema: v6.1.7</span><br><span class="line">built:  2026-07-15T06:58:38Z</span><br><span class="line">status: valid</span><br></pre></td></tr></table></figure>
+<p>到这里，准备阶段已经得到两个最重要的输入：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">packages []pkg.Package</span><br><span class="line">        +</span><br><span class="line">vulnerability.Provider</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">可以开始漏洞匹配</span><br></pre></td></tr></table></figure>
+<h3 id="匹配阶段"><a class="markdownIt-Anchor" href="#匹配阶段"></a> 匹配阶段</h3>
+<h4 id="创建-vulnerabilitymatcher"><a class="markdownIt-Anchor" href="#创建-vulnerabilitymatcher"></a> 创建 VulnerabilityMatcher</h4>
+<p>数据库和软件包准备完成后，<code>runGrype()</code> 创建 VEX Processor 和 <code>VulnerabilityMatcher</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">vulnMatcher := grype.VulnerabilityMatcher&#123;</span><br><span class="line">    VulnerabilityProvider: vp,</span><br><span class="line">    IgnoreRules:           opts.Ignore,</span><br><span class="line">    NormalizeByCVE:        opts.ByCVE,</span><br><span class="line">    FailSeverity:          opts.FailOnSeverity(),</span><br><span class="line">    Matchers:              getMatchers(opts),</span><br><span class="line">    VexProcessor:          vexProcessor,</span><br><span class="line">    Alerts: grype.AlertsConfig&#123;</span><br><span class="line">        EnableEOLDistroWarnings: opts.Alerts.EnableEOLDistroWarnings,</span><br><span class="line">    &#125;,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>VulnerabilityMatcher</code> 不是某一种软件包的 Matcher，而是所有 Matcher 的上层调度器。它持有：</p>
+<ul>
+<li>漏洞数据库 Provider；</li>
+<li>不同软件生态的 Matcher 集合；</li>
+<li>ignore 规则；</li>
+<li>VEX Processor；</li>
+<li><code>NormalizeByCVE</code> 决定是否将漏洞编号统一为 CVE（Common Vulnerabilities and Exposures，通用漏洞披露）；</li>
+<li><code>FailSeverity</code> 保存严重级别门禁；</li>
+<li>是否启用 EOL（End of Life，生命周期结束）发行版告警。</li>
+</ul>
+<p><code>getMatchers()</code> 调用 <code>matcher.NewDefaultMatchers()</code>，创建 dpkg、rpm、JavaScript、Go、Python、Java、apk 等默认 Matcher。每个 Matcher 都实现相同接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Matcher <span class="keyword">interface</span> &#123;</span><br><span class="line">    PackageTypes() []syftPkg.Type</span><br><span class="line">    Type() MatcherType</span><br><span class="line">    Match(</span><br><span class="line">        vp vulnerability.Provider,</span><br><span class="line">        p pkg.Package,</span><br><span class="line">    ) ([]Match, []IgnoreFilter, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>匹配阶段中的 VEX（Vulnerability Exploitability eXchange，漏洞可利用性交换）用于描述某条漏洞是否真正影响一个产品。</p>
+<h4 id="按软件包类型选择-matcher"><a class="markdownIt-Anchor" href="#按软件包类型选择-matcher"></a> 按软件包类型选择 Matcher</h4>
+<p><code>FindMatchesContext()</code> 先执行数据库匹配，再应用 VEX，最后检查 <code>--fail-on</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">remainingMatches, ignoredMatches, err = m.findDBMatches(...)</span><br><span class="line">remainingMatches, ignoredMatches, err = m.findVEXMatches(...)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> m.FailSeverity != <span class="literal">nil</span> &amp;&amp;</span><br><span class="line">    hasSeverityAtOrAbove(..., *remainingMatches) &#123;</span><br><span class="line">    <span class="keyword">return</span> remainingMatches, ignoredMatches,</span><br><span class="line">        grypeerr.ErrAboveSeverityThreshold</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>数据库匹配的核心在 <code>searchDBForMatches()</code>。它先使用 <code>newMatcherIndex()</code> 建立 <code>软件包类型 → Matcher</code> 的索引，然后逐个处理软件包：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, p := <span class="keyword">range</span> packages &#123;</span><br><span class="line">    matchAgainst, ok := matcherIndex[p.Type]</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        matchAgainst = []match.Matcher&#123;defaultMatcher&#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _, theMatcher := <span class="keyword">range</span> matchAgainst &#123;</span><br><span class="line">        matches, ignorers, err := callMatcherSafely(</span><br><span class="line">            theMatcher,</span><br><span class="line">            m.VulnerabilityProvider,</span><br><span class="line">            p,</span><br><span class="line">        )</span><br><span class="line">        <span class="comment">// 收集并过滤 matches</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>本文的两个依赖都是 npm 包，所以由 JavaScript Matcher 处理。实际结果为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">pkg:npm/lodash@4.17.20    → 5 条 Match</span><br><span class="line">pkg:npm/minimist@0.0.8    → 2 条 Match</span><br><span class="line">根项目                       → 0 条 Match</span><br></pre></td></tr></table></figure>
+<p>因此日志中会出现 <code>across 3 packages</code>，但最终报告只有 2 个受影响的软件包。3 是被编目的包数，2 是产生 Match 的包数，7 才是最终的 Match 数量。</p>
+<h4 id="ignore-vex-和-fail-on-的执行顺序"><a class="markdownIt-Anchor" href="#ignore-vex-和-fail-on-的执行顺序"></a> ignore、VEX 和 fail-on 的执行顺序</h4>
+<p>数据库 Matcher 返回结果后，<code>VulnerabilityMatcher</code> 还会进行几步处理：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">原始 Matcher 结果</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">数据库排除表和硬编码规则</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">用户 ignore 规则</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">可选的 --by-cve 标准化</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">VEX 处理</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">--fail-on 严重级别检查</span><br></pre></td></tr></table></figure>
+<p>这说明 <code>--fail-on</code> 检查的是过滤后的 <code>remainingMatches</code>，而不是所有原始 Match。与此同时，即使命中严重级别阈值，<code>FindMatchesContext()</code> 仍然会返回已经找到的结果和专门的 <code>ErrAboveSeverityThreshold</code> 错误。<code>runGrype()</code> 对这个错误做了特殊处理：保留错误但继续构建报告。这样 Grype 既能输出完整扫描结果，又能在最后返回门禁失败。</p>
+<h3 id="输出阶段"><a class="markdownIt-Anchor" href="#输出阶段"></a> 输出阶段</h3>
+<h4 id="newdocument-将领域对象转换成报告模型"><a class="markdownIt-Anchor" href="#newdocument-将领域对象转换成报告模型"></a> NewDocument 将领域对象转换成报告模型</h4>
+<p>漏洞匹配完成后，<code>runGrype()</code> 调用 <code>models.NewDocument()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">model, err := models.NewDocument(</span><br><span class="line">    app.ID(),</span><br><span class="line">    packages,</span><br><span class="line">    pkgContext,</span><br><span class="line">    *remainingMatches,</span><br><span class="line">    ignoredMatches,</span><br><span class="line">    vp,</span><br><span class="line">    opts,</span><br><span class="line">    dbInfo(status, vp),</span><br><span class="line">    models.SortStrategy(opts.SortBy.Criteria),</span><br><span class="line">    opts.Timestamp,</span><br><span class="line">    distroAlertData,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>Matcher 阶段的对象主要服务于漏洞判断，而 Presenter 需要更完整、更稳定的展示模型。为了生成最终报告，<code>NewDocument()</code> 还会补充 CVSS（Common Vulnerability Scoring System，通用漏洞评分系统）、EPSS（Exploit Prediction Scoring System，漏洞利用预测评分系统）和 KEV（Known Exploited Vulnerabilities，已知被利用漏洞）等风险数据。它会完成以下工作：</p>
+<ul>
+<li>将每个 Match 与完整 Package 重新关联；</li>
+<li>查询漏洞 Metadata，补充 CVSS、EPSS、KEV 和 Risk；</li>
+<li>将 ignored matches 转换成报告结构；</li>
+<li>填充 source、distro、配置和数据库信息；</li>
+<li>按 <code>--sort-by</code> 指定的策略排序。</li>
+</ul>
+<p>这也解释了为什么漏洞匹配完成后还需要单独构建 Document：Match 只回答 <code>哪个包命中了哪条漏洞</code>，报告还需要回答“严重性如何、风险多大、使用了哪个数据库、应该如何排序”。</p>
+<h4 id="writer-根据格式选择-presenter"><a class="markdownIt-Anchor" href="#writer-根据格式选择-presenter"></a> Writer 根据格式选择 Presenter</h4>
+<p>最后，<code>writer.Write()</code> 根据用户指定的输出格式选择 Presenter：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetPresenter</span><span class="params">(format Format, ...)</span></span> presenter.Presenter &#123;</span><br><span class="line">    <span class="keyword">switch</span> format &#123;</span><br><span class="line">    <span class="keyword">case</span> JSONFormat:</span><br><span class="line">        <span class="keyword">return</span> json.NewPresenter(...)</span><br><span class="line">    <span class="keyword">case</span> TableFormat:</span><br><span class="line">        <span class="keyword">return</span> table.NewPresenter(...)</span><br><span class="line">    <span class="keyword">case</span> SarifFormat:</span><br><span class="line">        <span class="keyword">return</span> sarif.NewPresenter(...)</span><br><span class="line">    <span class="keyword">case</span> CycloneDXJSON:</span><br><span class="line">        <span class="keyword">return</span> cyclonedx.NewJSONPresenter(...)</span><br><span class="line">    <span class="keyword">case</span> TemplateFormat:</span><br><span class="line">        <span class="keyword">return</span> template.NewPresenter(...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Presenter 将同一个 Document 编码成 table、JSON、SARIF、CycloneDX 或自定义模板。由此可以看到，输出格式不会改变漏洞匹配过程，它只改变最后一步如何表达结果。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章从 <code>main()</code> 开始，跟踪了一次目录扫描如何经过 clio 和 Cobra 进入 <code>runGrype()</code>，再依次完成软件包发现、数据库加载、漏洞匹配、Document 构建和 Presenter 输出。</p>
+<p>Grype 的整体结构可以概括为：入口层负责启动，命令层负责参数和生命周期，<code>runGrype()</code> 负责流程编排，领域模块负责具体能力。数据库加载和软件包收集被并行执行，Matcher 在二者准备完成后按软件包类型运行，最后再统一处理 ignore、VEX、严重级别门禁和报告输出。</p>
+<p>理解这条主干后，后续分析就有了坐标。下一篇将继续进入命令行和配置系统，分析命令行参数、环境变量、配置文件和默认值如何合并成 <code>options.Grype</code>，以及这些配置如何影响本文看到的每一个扫描阶段。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/16/go-grype-03/" rel="prev" title="Grype 源码分析 03：如何解析命令行和配置">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 03：如何解析命令行和配置
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/15/go-grype-01/" rel="next" title="Grype 源码分析 01：快速使用">
+      Grype 源码分析 01：快速使用 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#grype-%E7%9A%84%E6%95%B4%E4%BD%93%E8%B0%83%E7%94%A8%E9%93%BE"><span class="nav-number">1.</span> <span class="nav-text"> Grype 的整体调用链</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%88%E7%9C%8B%E5%AE%9E%E9%99%85%E8%BF%90%E8%A1%8C%E6%97%A5%E5%BF%97"><span class="nav-number">1.1.</span> <span class="nav-text"> 先看实际运行日志</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E%E7%A8%8B%E5%BA%8F%E5%85%A5%E5%8F%A3%E8%BF%9B%E5%85%A5-rungrype"><span class="nav-number">2.</span> <span class="nav-text"> 从程序入口进入 runGrype</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#main-%E5%87%BD%E6%95%B0%E5%8F%AA%E8%B4%9F%E8%B4%A3%E5%90%AF%E5%8A%A8%E5%BA%94%E7%94%A8"><span class="nav-number">2.1.</span> <span class="nav-text"> main 函数只负责启动应用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#clicreate-%E7%BB%84%E8%A3%85%E6%95%B4%E4%B8%AA%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%BA%94%E7%94%A8"><span class="nav-number">2.2.</span> <span class="nav-text"> cli.create 组装整个命令行应用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E5%91%BD%E4%BB%A4%E5%B0%86%E6%8E%A7%E5%88%B6%E6%9D%83%E4%BA%A4%E7%BB%99-rungrype"><span class="nav-number">2.3.</span> <span class="nav-text"> 根命令将控制权交给 runGrype</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#rungrype-%E5%A6%82%E4%BD%95%E7%BB%84%E7%BB%87%E4%B8%80%E6%AC%A1%E6%89%AB%E6%8F%8F"><span class="nav-number">3.</span> <span class="nav-text"> runGrype 如何组织一次扫描</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%86%E5%A4%87%E9%98%B6%E6%AE%B5"><span class="nav-number">3.1.</span> <span class="nav-text"> 准备阶段</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%BE%93%E5%87%BA-writer-%E5%9C%A8%E6%89%AB%E6%8F%8F%E5%89%8D%E5%88%9B%E5%BB%BA"><span class="nav-number">3.1.1.</span> <span class="nav-text"> 输出 Writer 在扫描前创建</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%89%E4%B8%AA%E5%87%86%E5%A4%87%E4%BB%BB%E5%8A%A1%E5%B9%B6%E8%A1%8C%E6%89%A7%E8%A1%8C"><span class="nav-number">3.1.2.</span> <span class="nav-text"> 三个准备任务并行执行</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#pkgprovide-%E5%B0%86%E8%BE%93%E5%85%A5%E8%BD%AC%E6%8D%A2%E6%88%90%E8%BD%AF%E4%BB%B6%E5%8C%85"><span class="nav-number">3.1.3.</span> <span class="nav-text"> pkg.Provide 将输入转换成软件包</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#loadvulnerabilitydb-%E8%BF%94%E5%9B%9E-vulnerabilityprovider"><span class="nav-number">3.1.4.</span> <span class="nav-text"> LoadVulnerabilityDB 返回 vulnerability.Provider</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%B9%E9%85%8D%E9%98%B6%E6%AE%B5"><span class="nav-number">3.2.</span> <span class="nav-text"> 匹配阶段</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-vulnerabilitymatcher"><span class="nav-number">3.2.1.</span> <span class="nav-text"> 创建 VulnerabilityMatcher</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%8C%89%E8%BD%AF%E4%BB%B6%E5%8C%85%E7%B1%BB%E5%9E%8B%E9%80%89%E6%8B%A9-matcher"><span class="nav-number">3.2.2.</span> <span class="nav-text"> 按软件包类型选择 Matcher</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#ignore-vex-%E5%92%8C-fail-on-%E7%9A%84%E6%89%A7%E8%A1%8C%E9%A1%BA%E5%BA%8F"><span class="nav-number">3.2.3.</span> <span class="nav-text"> ignore、VEX 和 fail-on 的执行顺序</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E9%98%B6%E6%AE%B5"><span class="nav-number">3.3.</span> <span class="nav-text"> 输出阶段</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#newdocument-%E5%B0%86%E9%A2%86%E5%9F%9F%E5%AF%B9%E8%B1%A1%E8%BD%AC%E6%8D%A2%E6%88%90%E6%8A%A5%E5%91%8A%E6%A8%A1%E5%9E%8B"><span class="nav-number">3.3.1.</span> <span class="nav-text"> NewDocument 将领域对象转换成报告模型</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#writer-%E6%A0%B9%E6%8D%AE%E6%A0%BC%E5%BC%8F%E9%80%89%E6%8B%A9-presenter"><span class="nav-number">3.3.2.</span> <span class="nav-text"> Writer 根据格式选择 Presenter</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">267</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

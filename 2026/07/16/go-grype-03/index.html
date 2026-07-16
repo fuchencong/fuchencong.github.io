@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇文章从 main() 开始，跟踪了一次扫描如何进入 runGrype()。在真正加载漏洞数据库（Database，源码和日志中常简写为 DB）和收集软件包之前，还有一个重要步骤：把默认值、配置文件、profile（配置档）、环境变量和命令行参数合并成最终的 options.Grype。这篇文章我们将分析 Grype 是如何解析命令行和配置的。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 03：如何解析命令行和配置">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/16/go-grype-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇文章从 main() 开始，跟踪了一次扫描如何进入 runGrype()。在真正加载漏洞数据库（Database，源码和日志中常简写为 DB）和收集软件包之前，还有一个重要步骤：把默认值、配置文件、profile（配置档）、环境变量和命令行参数合并成最终的 options.Grype。这篇文章我们将分析 Grype 是如何解析命令行和配置的。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-16T06:27:26.000Z">
+<meta property="article:modified_time" content="2026-07-16T06:31:03.441Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/16/go-grype-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 03：如何解析命令行和配置 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/16/go-grype-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 03：如何解析命令行和配置
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-16 14:27:26" itemprop="dateCreated datePublished" datetime="2026-07-16T14:27:26+08:00">2026-07-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>上一篇文章从 <code>main()</code> 开始，跟踪了一次扫描如何进入 <code>runGrype()</code>。在真正加载漏洞数据库（Database，源码和日志中常简写为 DB）和收集软件包之前，还有一个重要步骤：把默认值、配置文件、<code>profile</code>（配置档）、环境变量和命令行参数合并成最终的 <code>options.Grype</code>。这篇文章我们将分析 Grype 是如何解析命令行和配置的。</p>
+<span id="more"></span>
+<h2 id="一个配置值的完整旅程"><a class="markdownIt-Anchor" href="#一个配置值的完整旅程"></a> 一个配置值的完整旅程</h2>
+<p>Grype 是一个 CLI（Command-Line Interface，命令行界面）程序，同一个配置通常有多种写法。例如，下面几种方式都可以设置结果排序策略：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 配置文件</span></span><br><span class="line">grype -c grype.yaml <span class="built_in">dir</span>:.</span><br><span class="line"></span><br><span class="line"><span class="comment"># 环境变量</span></span><br><span class="line">GRYPE_SORT_BY=severity grype <span class="built_in">dir</span>:.</span><br><span class="line"></span><br><span class="line"><span class="comment"># 命令行参数</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --sort-by risk</span><br></pre></td></tr></table></figure>
+<p>如果三种方式同时出现，最终谁生效？配置值如何从一个字符串变成 <code>runGrype()</code> 可以直接使用的对象？这篇文章将围绕 <code>sort-by</code> 的完整生命周期，分析 clio、fangs、Viper 和 Cobra 如何共同完成 Grype 的配置加载。</p>
+<p>先来看最终结论。Grype 配置从低到高的优先级如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">默认值</span><br><span class="line">  &lt; 配置文件顶层值</span><br><span class="line">  &lt; 选中的 profile</span><br><span class="line">  &lt; 环境变量</span><br><span class="line">  &lt; 命令行参数</span><br></pre></td></tr></table></figure>
+<p>fangs 源码中还保留了 Viper 内部 <code>Set</code> 和键值配置层，但对于普通 Grype 用户，最重要的就是上面五层。</p>
+<h3 id="使用-sort-by-验证优先级"><a class="markdownIt-Anchor" href="#使用-sort-by-验证优先级"></a> 使用 sort-by 验证优先级</h3>
+<p><code>sort-by</code> 可以设置为 <code>package</code>、<code>severity</code>、<code>epss</code>、<code>risk</code>、<code>kev</code> 或 <code>vulnerability</code>。其中，<code>epss</code> 依据 EPSS（Exploit Prediction Scoring System，漏洞利用预测评分系统）数据排序，<code>kev</code> 则优先展示 KEV（Known Exploited Vulnerabilities，已知被利用漏洞）目录收录的漏洞。</p>
+<p>为了观察这些配置来源如何相互覆盖，我们准备下面的 YAML（YAML Ain’t Markup Language，一种便于人阅读的数据序列化格式）配置文件：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">sort-by:</span> <span class="string">package</span></span><br><span class="line"><span class="attr">check-for-app-update:</span> <span class="literal">false</span></span><br><span class="line"><span class="attr">timestamp:</span> <span class="literal">false</span></span><br><span class="line"></span><br><span class="line"><span class="attr">db:</span></span><br><span class="line">  <span class="attr">auto-update:</span> <span class="literal">false</span></span><br><span class="line"></span><br><span class="line"><span class="attr">profiles:</span></span><br><span class="line">  <span class="attr">ci:</span></span><br><span class="line">    <span class="attr">sort-by:</span> <span class="string">severity</span></span><br><span class="line">    <span class="attr">fail-on-severity:</span> <span class="string">high</span></span><br><span class="line">    <span class="attr">only-fixed:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+<p>这个为持续集成（Continuous Integration，CI）准备的 <code>ci</code> profile 将排序方式改为 <code>severity</code>，同时只保留已有修复版本的漏洞，并对 High 及以上漏洞启用门禁。</p>
+<p>接下来依次运行五组命令。命令统一选择 JSON（JavaScript Object Notation，JavaScript 对象表示法）输出，并将扫描报告重定向到 <code>/dev/null</code>，只通过 <code>-vv</code> 日志观察最终配置。</p>
+<ul>
+<li>只使用默认值：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype -vv <span class="built_in">dir</span>:./vulnerable-node-app -o json &gt; /dev/null</span><br></pre></td></tr></table></figure>
+<ul>
+<li>加载配置文件：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">grype -vv -c grype.yaml \</span><br><span class="line">  <span class="built_in">dir</span>:./vulnerable-node-app -o json &gt; /dev/null</span><br></pre></td></tr></table></figure>
+<ul>
+<li>选择 <code>ci</code> profile：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">grype -vv -c grype.yaml --profile ci \</span><br><span class="line">  <span class="built_in">dir</span>:./vulnerable-node-app -o json &gt; /dev/null</span><br></pre></td></tr></table></figure>
+<ul>
+<li>在 profile 之上设置环境变量：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">GRYPE_SORT_BY=kev \</span><br><span class="line">  grype -vv -c grype.yaml --profile ci \</span><br><span class="line">  <span class="built_in">dir</span>:./vulnerable-node-app -o json &gt; /dev/null</span><br></pre></td></tr></table></figure>
+<ul>
+<li>最后再增加命令行参数：</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">GRYPE_SORT_BY=kev \</span><br><span class="line">  grype -vv -c grype.yaml --profile ci \</span><br><span class="line">  --sort-by epss \</span><br><span class="line">  <span class="built_in">dir</span>:./vulnerable-node-app -o json &gt; /dev/null</span><br></pre></td></tr></table></figure>
+<p><code>-vv</code> 输出的最终配置如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">CASE         SORT_BY    EXIT_CODE</span><br><span class="line">default      risk       0</span><br><span class="line">config       package    0</span><br><span class="line">profile      severity   2</span><br><span class="line">environment  kev        2</span><br><span class="line">flag         epss       2</span><br></pre></td></tr></table></figure>
+<p>结果与优先级完全一致：</p>
+<ul>
+<li><code>risk</code> 来自 Grype 默认值；</li>
+<li><code>package</code> 来自配置文件顶层；</li>
+<li><code>severity</code> 来自 <code>ci</code> profile，并覆盖顶层的 <code>package</code>；</li>
+<li>环境变量 <code>GRYPE_SORT_BY=kev</code> 覆盖 profile；</li>
+<li>命令行参数 <code>--sort-by epss</code> 具有最高优先级。</li>
+</ul>
+<p>profile、环境变量和 flag 三组命令的退出码都是 2，因为 <code>ci</code> profile 还设置了 <code>fail-on-severity: high</code> 和 <code>only-fixed: true</code>。环境变量和命令行参数只覆盖了 <code>sort-by</code>，没有清除 profile 中的其他配置。</p>
+<h3 id="配置对象何时完成加载"><a class="markdownIt-Anchor" href="#配置对象何时完成加载"></a> 配置对象何时完成加载</h3>
+<p>从源码角度看，一个配置值会经过下面的过程：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">DefaultGrype()</span><br><span class="line">└── 创建带默认值的 options.Grype</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">AddFlags()</span><br><span class="line">└── 将字段指针绑定到 Cobra flag</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">Cobra 解析命令行</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">clio PreRunE</span><br><span class="line">└── fangs.Load()</span><br><span class="line">    ├── 查找并合并配置文件</span><br><span class="line">    ├── 合并 profile</span><br><span class="line">    ├── 绑定环境变量和 flag</span><br><span class="line">    ├── Viper Unmarshal</span><br><span class="line">    └── 递归执行 PostLoad()</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">runGrype(ctx, app, opts, userInput)</span><br></pre></td></tr></table></figure>
+<ul>
+<li><a target="_blank" rel="noopener" href="https://github.com/anchore/clio">clio</a> 是 anchore 自己封装的上层的应用框架：它以 Cobra 命令为基础，统一管理应用初始化、全局配置、日志和退出码等生命周期。在这篇文章关注的配置流程中，clio 最重要的作用是包装 Cobra 的 <code>PreRunE</code>，确保配置加载发生在命令的 <code>RunE</code> 之前。</li>
+<li><a target="_blank" rel="noopener" href="https://github.com/anchore/fangs">fangs</a> 是 clio 使用的底层配置库，目标是让 Cobra 与 Viper 的组合更简单、更一致。Cobra 负责解析命令行参数，Viper 负责统一读取配置文件和环境变量，fangs 则通过字段指针和 <code>mapstructure</code> tag，将这些外部值与已经带有默认值的 Go 结构体连接起来，完成配置文件查找、profile 合并、环境变量与 flag 绑定</li>
+<li><strong><code>runGrype()</code> 接收到的 <code>opts</code> 已经是最终结果</strong>。扫描流程不需要再分别判断某个值来自配置文件还是命令行。</li>
+</ul>
+<h2 id="配置对象是如何构造的"><a class="markdownIt-Anchor" href="#配置对象是如何构造的"></a> 配置对象是如何构造的</h2>
+<p>Grype 没有为命令行、环境变量和配置文件分别维护三套模型。它们最终都映射到 <code>cmd/grype/cli/options</code> 中的 Go 结构体。</p>
+<h3 id="setupconfig-建立全局配置能力"><a class="markdownIt-Anchor" href="#setupconfig-建立全局配置能力"></a> SetupConfig 建立全局配置能力</h3>
+<p><code>cmd/grype/cli/cli.go</code> 中的 <code>SetupConfig()</code> 负责初始化 clio：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">SetupConfig</span><span class="params">(id clio.Identification)</span></span> *clio.SetupConfig &#123;</span><br><span class="line">    <span class="keyword">return</span> clio.NewSetupConfig(id).</span><br><span class="line">        WithGlobalConfigFlag().</span><br><span class="line">        WithGlobalLoggingFlags().</span><br><span class="line">        WithConfigInRootHelp()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中与配置加载直接相关的是：</p>
+<ul>
+<li><code>WithGlobalConfigFlag()</code> 注册全局 <code>-c</code>、<code>--config</code> 和 <code>--profile</code>；</li>
+<li><code>WithGlobalLoggingFlags()</code> 注册 <code>-v</code>、<code>-q</code> 等日志参数；</li>
+<li><code>NewSetupConfig(id)</code> 使用应用名 <code>grype</code> 创建 fangs 配置，因此环境变量统一以 <code>GRYPE_</code> 开头；</li>
+<li><code>WithConfigInRootHelp()</code> 让根命令的 <code>--help</code> 能够展示完整的应用配置说明。</li>
+</ul>
+<p>全局参数注册在 Cobra 的 <code>PersistentFlags()</code> 中，所以 <code>-c</code> 和 <code>--profile</code> 不仅能用于扫描根命令，也能用于 <code>grype config</code>、<code>grype db</code> 等子命令。</p>
+<h3 id="defaultgrype-先建立默认值"><a class="markdownIt-Anchor" href="#defaultgrype-先建立默认值"></a> DefaultGrype 先建立默认值</h3>
+<p>根命令在创建时调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">opts := options.DefaultGrype(app.ID())</span><br></pre></td></tr></table></figure>
+<p><code>DefaultGrype()</code> 返回一个已经设置默认值的配置对象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">DefaultGrype</span><span class="params">(id clio.Identification)</span></span> *Grype &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;Grype&#123;</span><br><span class="line">        Search:          defaultSearch(source.SquashedScope),</span><br><span class="line">        FixChannel:      DefaultFixChannels(),</span><br><span class="line">        DatabaseCommand: DatabaseCommand&#123;DB: DefaultDatabase(id)&#125;,</span><br><span class="line">        Match:           defaultMatchConfig(),</span><br><span class="line">        ExternalSources: defaultExternalSources(),</span><br><span class="line">        CheckForAppUpdate: <span class="literal">true</span>,</span><br><span class="line">        SortBy:            defaultSortBy(),</span><br><span class="line">        Timestamp:         <span class="literal">true</span>,</span><br><span class="line">        Alerts:            defaultAlerts(),</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>以 <code>SortBy</code> 为例，<code>defaultSortBy()</code> 从 Presenter 支持的策略中构造允许值，并将默认 Criteria 设置为 <code>risk</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> SortBy <span class="keyword">struct</span> &#123;</span><br><span class="line">    Criteria         <span class="type">string</span>   <span class="string">`mapstructure:&quot;sort-by&quot;`</span></span><br><span class="line">    AllowableOptions []<span class="type">string</span> <span class="string">`mapstructure:&quot;-&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">defaultSortBy</span><span class="params">()</span></span> SortBy &#123;</span><br><span class="line">    <span class="keyword">return</span> SortBy&#123;</span><br><span class="line">        Criteria:         models.DefaultSortStrategy.String(),</span><br><span class="line">        AllowableOptions: strategies,</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>AllowableOptions</code> 使用 <code>mapstructure:&quot;-&quot;</code>，表示它是内部辅助字段，不从外部配置中加载。</p>
+<h3 id="结构体-tag-定义配置路径"><a class="markdownIt-Anchor" href="#结构体-tag-定义配置路径"></a> 结构体 tag 定义配置路径</h3>
+<p><code>options.Grype</code> 是整个扫描命令的配置根对象。下面截取部分字段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Grype <span class="keyword">struct</span> &#123;</span><br><span class="line">    Outputs    []<span class="type">string</span> <span class="string">`yaml:&quot;output&quot; mapstructure:&quot;output&quot;`</span></span><br><span class="line">    OnlyFixed <span class="type">bool</span>     <span class="string">`yaml:&quot;only-fixed&quot; mapstructure:&quot;only-fixed&quot;`</span></span><br><span class="line">    Search    search   <span class="string">`yaml:&quot;search&quot; mapstructure:&quot;search&quot;`</span></span><br><span class="line">    Match     matchConfig <span class="string">`yaml:&quot;match&quot; mapstructure:&quot;match&quot;`</span></span><br><span class="line">    FailOn    <span class="type">string</span>   <span class="string">`yaml:&quot;fail-on-severity&quot; mapstructure:&quot;fail-on-severity&quot;`</span></span><br><span class="line">    SortBy    SortBy   <span class="string">`yaml:&quot;,inline&quot; mapstructure:&quot;,squash&quot;`</span></span><br><span class="line">    DatabaseCommand <span class="string">`yaml:&quot;,inline&quot; mapstructure:&quot;,squash&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>mapstructure</code> tag 决定 fangs 和 Viper 使用的配置路径，<code>yaml</code> tag 则用于输出可读配置。原始结构中也存在 <code>json</code> tag，这里为了突出主线省略了。</p>
+<p>普通嵌套字段会形成多级路径。例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> search <span class="keyword">struct</span> &#123;</span><br><span class="line">    Scope <span class="type">string</span> <span class="string">`mapstructure:&quot;scope&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它对应三种外部写法：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># YAML 配置</span></span><br><span class="line"><span class="attr">search:</span></span><br><span class="line">  <span class="attr">scope:</span> <span class="string">all-layers</span></span><br></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 环境变量：层级使用下划线连接</span></span><br><span class="line">GRYPE_SEARCH_SCOPE=all-layers grype <span class="built_in">dir</span>:.</span><br><span class="line"></span><br><span class="line"><span class="comment"># 命令行参数</span></span><br><span class="line">grype <span class="built_in">dir</span>:. --scope all-layers</span><br></pre></td></tr></table></figure>
+<p><code>SortBy</code> 上的 <code>mapstructure:&quot;,squash&quot;</code> 则表示不增加 <code>sort-by</code> 的父级，因此配置写成顶层 <code>sort-by: risk</code>，而不是 <code>sort-by.criteria: risk</code>。</p>
+<h3 id="addflags-使用字段指针注册参数"><a class="markdownIt-Anchor" href="#addflags-使用字段指针注册参数"></a> AddFlags 使用字段指针注册参数</h3>
+<p><code>Grype</code> 和 <code>SortBy</code> 都实现了 <code>AddFlags()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(o *Grype)</span></span> AddFlags(flags clio.FlagSet) &#123;</span><br><span class="line">    flags.StringArrayVarP(&amp;o.Outputs,</span><br><span class="line">        <span class="string">&quot;output&quot;</span>, <span class="string">&quot;o&quot;</span>,</span><br><span class="line">        <span class="string">&quot;report output formatter&quot;</span>,</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    flags.StringVarP(&amp;o.FailOn,</span><br><span class="line">        <span class="string">&quot;fail-on&quot;</span>, <span class="string">&quot;f&quot;</span>,</span><br><span class="line">        <span class="string">&quot;set the return code to 2 when threshold is met&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(o *SortBy)</span></span> AddFlags(flags clio.FlagSet) &#123;</span><br><span class="line">    flags.StringVarP(&amp;o.Criteria,</span><br><span class="line">        <span class="string">&quot;sort-by&quot;</span>, <span class="string">&quot;&quot;</span>,</span><br><span class="line">        <span class="string">&quot;sort the match results&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里最重要的是传入字段指针，例如 <code>&amp;o.Criteria</code>。fangs 会记录 <code>这个 flag 对应哪个配置字段</code>，后面才能让 Viper 将命令行参数、环境变量和配置文件合并到同一位置。</p>
+<p>fangs 的 <code>FlagSet</code> 不要求调用者再次传入默认值，而是直接读取字段当前值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f *pflagSet)</span></span> StringVarP(</span><br><span class="line">    p *<span class="type">string</span>,</span><br><span class="line">    name, shorthand, usage <span class="type">string</span>,</span><br><span class="line">) &#123;</span><br><span class="line">    f.flagSet.StringVarP(p, name, shorthand, *p, usage)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因此默认值只在 <code>DefaultGrype()</code> 中定义一次，Cobra flag 的默认值会自动与配置对象保持一致。</p>
+<p>fangs 还会递归遍历嵌套结构体，所以根对象调用一次 <code>AddFlags</code> 后，<code>SortBy.AddFlags()</code>、数据库选项和其他子配置的 <code>AddFlags()</code> 也会被执行。</p>
+<h2 id="外部配置如何合并"><a class="markdownIt-Anchor" href="#外部配置如何合并"></a> 外部配置如何合并</h2>
+<p>配置对象和 flag 注册完成后，Cobra 开始执行命令。clio 将配置加载包装在 <code>PreRunE</code> 中，因此它一定发生在实际 <code>RunE</code> 之前。</p>
+<h3 id="clio-在-prerune-中调用-fangsload"><a class="markdownIt-Anchor" href="#clio-在-prerune-中调用-fangsload"></a> clio 在 PreRunE 中调用 fangs.Load</h3>
+<p>clio 的 <code>setupCommand()</code> 会替换命令原有的 <code>PreRunE</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">*fn = <span class="function"><span class="keyword">func</span><span class="params">(cmd *cobra.Command, args []<span class="type">string</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    err := a.Setup(cfgs...)(cmd, args)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> original != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> original(cmd, args)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>a.Setup()</code> 最终调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">fangs.Load(</span><br><span class="line">    a.setupConfig.FangsConfig,</span><br><span class="line">    cmd,</span><br><span class="line">    allConfigs...,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这意味着执行顺序是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">Cobra 解析 flag</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">PreRunE</span><br><span class="line">└── fangs.Load()</span><br><span class="line">    ├── 合并外部配置</span><br><span class="line">    └── 执行 PostLoad()</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">RunE</span><br><span class="line">└── runGrype()</span><br></pre></td></tr></table></figure>
+<p>如果配置加载或校验失败，<code>RunE</code> 不会执行，数据库和软件包收集也不会开始。</p>
+<h3 id="配置文件查找顺序"><a class="markdownIt-Anchor" href="#配置文件查找顺序"></a> 配置文件查找顺序</h3>
+<p>没有显式指定 <code>-c</code> 时，fangs 会按下面的顺序查找 Grype 配置：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">./.grype.yaml</span><br><span class="line">./.grype/config.yaml</span><br><span class="line">~/.grype.yaml</span><br><span class="line">~/.config/grype/config.yaml</span><br><span class="line">/etc/xdg/grype/config.yaml</span><br></pre></td></tr></table></figure>
+<p>可以直接查看当前环境中的搜索位置：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype config locations</span><br></pre></td></tr></table></figure>
+<p>如果使用 <code>-c grype.yaml</code> 显式指定文件，就不再搜索这些默认位置。Grype 支持多次使用 <code>-c</code>，fangs 会按照文件出现顺序合并；同一个标量键由靠前的文件优先，列表和 map 则会按规则合并。</p>
+<p>也可以通过 <code>GRYPE_CONFIG</code> 指定配置文件，但命令行 <code>-c</code> 的优先级更高：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">GRYPE_CONFIG=grype.yaml grype <span class="built_in">dir</span>:.</span><br><span class="line">grype -c grype.yaml <span class="built_in">dir</span>:.</span><br></pre></td></tr></table></figure>
+<h3 id="profile-先覆盖配置文件顶层值"><a class="markdownIt-Anchor" href="#profile-先覆盖配置文件顶层值"></a> profile 先覆盖配置文件顶层值</h3>
+<p>fangs 读取配置文件后，会根据 <code>--profile</code> 找到 <code>profiles</code> 下的对应节点，再将 profile 内容覆盖到顶层配置。</p>
+<p>对于前面的配置：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">sort-by:</span> <span class="string">package</span></span><br><span class="line"></span><br><span class="line"><span class="attr">profiles:</span></span><br><span class="line">  <span class="attr">ci:</span></span><br><span class="line">    <span class="attr">sort-by:</span> <span class="string">severity</span></span><br><span class="line">    <span class="attr">fail-on-severity:</span> <span class="string">high</span></span><br><span class="line">    <span class="attr">only-fixed:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+<p>选择 profile：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype -c grype.yaml --profile ci config --load</span><br></pre></td></tr></table></figure>
+<p>实际加载后的关键字段为：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">only-fixed:</span> <span class="literal">true</span></span><br><span class="line"><span class="attr">fail-on-severity:</span> <span class="string">&#x27;high&#x27;</span></span><br><span class="line"><span class="attr">sort-by:</span> <span class="string">&#x27;severity&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>profile 适合保存一组有共同含义的配置。例如开发者本地可以使用完整报告，CI profile 则只对已有修复的 High 及以上漏洞执行门禁。</p>
+<p>profile 属于配置文件合并阶段，因此它仍会被更高优先级的环境变量或命令行参数覆盖。这就是前面 <code>GRYPE_SORT_BY=kev</code> 和 <code>--sort-by epss</code> 能继续改变结果的原因。</p>
+<h3 id="环境变量如何映射嵌套字段"><a class="markdownIt-Anchor" href="#环境变量如何映射嵌套字段"></a> 环境变量如何映射嵌套字段</h3>
+<p>fangs 基于应用名设置环境变量前缀，并将配置路径中的点号和连字符替换为下划线：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">sort-by                         → GRYPE_SORT_BY</span><br><span class="line">search.scope                    → GRYPE_SEARCH_SCOPE</span><br><span class="line">db.auto-update                  → GRYPE_DB_AUTO_UPDATE</span><br><span class="line">match.javascript.using-cpes     → GRYPE_MATCH_JAVASCRIPT_USING_CPES</span><br></pre></td></tr></table></figure>
+<p>因此，大部分配置项不需要手写环境变量绑定。只要结构体存在 <code>mapstructure</code> 路径，Viper 就可以按照统一规则生成对应名称。</p>
+<p>对于 registry 凭据等需要兼容 Syft 或特殊处理的字段，Grype 也会在相应 <code>PostLoad()</code> 中读取专用环境变量。普通配置则遵循统一映射规则。</p>
+<h3 id="flag-为什么具有最高优先级"><a class="markdownIt-Anchor" href="#flag-为什么具有最高优先级"></a> flag 为什么具有最高优先级</h3>
+<p>在 <code>configureViper()</code> 中，fangs 通过字段指针找到已经注册的 pflag，并调用 <code>BindPFlag()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> flag, ok := flags[ptr]; ok &#123;</span><br><span class="line">    err := viper.BindPFlag(path, flag)</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Viper 合并时，显式设置的 flag 优先于环境变量和配置文件。需要注意，“显式设置”与“flag 自己带有默认值”不同：用户没有传入 <code>--sort-by</code> 时，配置文件仍然能够将默认 <code>risk</code> 覆盖为 <code>package</code>；只有真正传入 <code>--sort-by epss</code> 时，flag 才成为最高优先级值。</p>
+<h2 id="postload-如何校验和转换配置"><a class="markdownIt-Anchor" href="#postload-如何校验和转换配置"></a> PostLoad 如何校验和转换配置</h2>
+<p>Viper 将外部数据反序列化到 Go 结构体后，配置还不能立即进入扫描流程。fangs 会递归查找实现 <code>PostLoader</code> 接口的对象并调用 <code>PostLoad()</code>。</p>
+<h3 id="根配置负责跨字段处理"><a class="markdownIt-Anchor" href="#根配置负责跨字段处理"></a> 根配置负责跨字段处理</h3>
+<p><code>options.Grype.PostLoad()</code> 处理根对象上的逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(o *Grype)</span></span> PostLoad() <span class="type">error</span> &#123;</span><br><span class="line">    o.From = flatten(o.From)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> o.FailOn != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        failOnSeverity := *o.FailOnSeverity()</span><br><span class="line">        <span class="keyword">if</span> failOnSeverity == vulnerability.UnknownSeverity &#123;</span><br><span class="line">            <span class="keyword">return</span> fmt.Errorf(</span><br><span class="line">                <span class="string">&quot;bad --fail-on severity value &#x27;%s&#x27;&quot;</span>,</span><br><span class="line">                o.FailOn,</span><br><span class="line">            )</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里做了两件事：</p>
+<ul>
+<li>将 <code>--from docker,registry</code> 这样的逗号分隔值展开为列表；</li>
+<li>将 <code>fail-on-severity</code> 转换成内部 Severity，并拒绝未知值。</li>
+</ul>
+<h3 id="子配置负责自己的约束"><a class="markdownIt-Anchor" href="#子配置负责自己的约束"></a> 子配置负责自己的约束</h3>
+<p>嵌套的 <code>SortBy</code>、<code>search</code>、<code>Database</code>、<code>registry</code> 和 matcher config 也分别实现了 <code>PostLoad()</code>。</p>
+<p>以 <code>SortBy</code> 为例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(o *SortBy)</span></span> PostLoad() <span class="type">error</span> &#123;</span><br><span class="line">    allowed := strset.New(o.AllowableOptions...)</span><br><span class="line">    <span class="keyword">if</span> !allowed.Has(strings.ToLower(o.Criteria)) &#123;</span><br><span class="line">        <span class="keyword">return</span> fmt.Errorf(</span><br><span class="line">            <span class="string">&quot;invalid sort-by criteria: %q (allowable: %s)&quot;</span>,</span><br><span class="line">            o.Criteria,</span><br><span class="line">            strings.Join(o.AllowableOptions, <span class="string">&quot;, &quot;</span>),</span><br><span class="line">        )</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>实际传入非法值：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype -c grype.yaml --sort-by invalid <span class="built_in">dir</span>:.</span><br></pre></td></tr></table></figure>
+<p>程序输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">ERROR invalid application config: invalid sort-by criteria: &quot;invalid&quot;</span><br><span class="line">      (allowable: package, severity, epss, risk, kev, vulnerability)</span><br><span class="line"></span><br><span class="line">exit_code=1</span><br></pre></td></tr></table></figure>
+<p>日志中没有 <code>loading DB</code> 或 <code>gathering packages</code>，说明错误发生在 <code>PreRunE</code> 配置阶段，<code>runGrype()</code> 根本没有开始执行。</p>
+<p>这种结构让每个子配置只关心自己的合法性。例如：</p>
+<ul>
+<li><code>search.PostLoad()</code> 校验 <code>squashed</code>、<code>all-layers</code> 等 scope；</li>
+<li><code>Database.PostLoad()</code> 展开缓存目录中的 <code>~</code>；</li>
+<li>RPM（RPM Package Manager）和 dpkg（Debian 系的软件包管理器）配置会校验缺失 epoch 时采用的版本比较策略；</li>
+<li>registry config 检查认证方式和相关环境变量。</li>
+</ul>
+<h3 id="fielddescriber-生成配置说明"><a class="markdownIt-Anchor" href="#fielddescriber-生成配置说明"></a> FieldDescriber 生成配置说明</h3>
+<p><code>options.Grype</code> 还实现了 <code>FieldDescriber</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(o *Grype)</span></span> DescribeFields(</span><br><span class="line">    descriptions clio.FieldDescriptionSet,</span><br><span class="line">) &#123;</span><br><span class="line">    descriptions.Add(</span><br><span class="line">        &amp;o.CheckForAppUpdate,</span><br><span class="line">        <span class="string">&quot;enable/disable checking for application updates&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    descriptions.Add(</span><br><span class="line">        &amp;o.Exclusions,</span><br><span class="line">        <span class="string">&quot;a list of globs to exclude from scanning&quot;</span>,</span><br><span class="line">    )</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里同样使用字段指针，将说明文字与具体字段关联。<code>grype config</code> 输出中的注释、环境变量名称和允许值，就是由字段描述、flag usage 和结构体路径共同生成的。</p>
+<p>查看带默认值的完整配置模板：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype config</span><br></pre></td></tr></table></figure>
+<p>加载并校验当前配置后再显示：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype -c grype.yaml --profile ci config --load</span><br></pre></td></tr></table></figure>
+<p><code>--load</code> 很重要：不加它时，<code>config</code> 主要展示配置模板；加上它才会读取配置文件、环境变量和 profile，并执行 <code>PostLoad()</code> 校验。</p>
+<h2 id="最终配置如何影响扫描"><a class="markdownIt-Anchor" href="#最终配置如何影响扫描"></a> 最终配置如何影响扫描</h2>
+<p>配置加载完成后，Cobra 执行根命令的 <code>RunE</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> runGrype(cmd.Context(), app, opts, userInput)</span><br></pre></td></tr></table></figure>
+<p>从这里开始，<code>opts</code> 不再是“配置文件对象”或“命令行对象”，而是所有来源合并后的扫描配置。</p>
+<h3 id="不同配置被分发给不同模块"><a class="markdownIt-Anchor" href="#不同配置被分发给不同模块"></a> 不同配置被分发给不同模块</h3>
+<p><code>runGrype()</code> 会将 <code>options.Grype</code> 拆分给各个模块：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>下游模块</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Outputs</code>、<code>File</code>、<code>Pretty</code></td>
+<td><code>format.MakeScanResultWriter()</code></td>
+<td>创建报告 Writer</td>
+</tr>
+<tr>
+<td><code>Search</code>、<code>Registry</code>、<code>Exclusions</code></td>
+<td><code>getProviderConfig()</code></td>
+<td>配置 Syft 和输入 Provider</td>
+</tr>
+<tr>
+<td><code>DB</code></td>
+<td><code>LoadVulnerabilityDB()</code></td>
+<td>配置数据库下载、缓存和校验</td>
+</tr>
+<tr>
+<td><code>Match</code></td>
+<td><code>getMatcherConfig()</code></td>
+<td>创建各软件生态 Matcher</td>
+</tr>
+<tr>
+<td><code>Ignore</code>、<code>VexDocuments</code></td>
+<td><code>VulnerabilityMatcher</code></td>
+<td>过滤或调整 Match</td>
+</tr>
+<tr>
+<td><code>FailOn</code></td>
+<td><code>VulnerabilityMatcher.FailSeverity</code></td>
+<td>执行严重级别门禁</td>
+</tr>
+<tr>
+<td><code>SortBy.Criteria</code></td>
+<td><code>models.NewDocument()</code></td>
+<td>决定报告排序</td>
+</tr>
+</tbody>
+</table>
+<p>因此配置系统并不执行扫描逻辑，它的作用是为后面的领域模块准备类型明确且经过校验的参数。</p>
+<h3 id="debug-日志展示的是最终配置"><a class="markdownIt-Anchor" href="#debug-日志展示的是最终配置"></a> debug 日志展示的是最终配置</h3>
+<p>clio 在 <code>fangs.Load()</code> 和全部 <code>PostLoad()</code> 完成后调用 <code>logConfiguration()</code>。因此 <code>-vv</code> 日志中的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">config:</span><br><span class="line">  ...</span><br><span class="line">  only-fixed: true</span><br><span class="line">  fail-on-severity: high</span><br><span class="line">  sort-by: epss</span><br></pre></td></tr></table></figure>
+<p>展示的是最终生效值，而不是某一个配置文件的原始内容。排查“为什么某个选项没有生效”时，<code>-vv</code> 是最直接的方法。</p>
+<p>回到文章开头的五组实验，现在可以将每一行结果与源码步骤对应起来：</p>
+<table>
+<thead>
+<tr>
+<th>结果</th>
+<th>来源</th>
+<th>对应实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>risk</code></td>
+<td><code>DefaultGrype()</code></td>
+<td>默认配置对象</td>
+</tr>
+<tr>
+<td><code>package</code></td>
+<td><code>grype.yaml</code></td>
+<td>fangs 读取配置文件</td>
+</tr>
+<tr>
+<td><code>severity</code></td>
+<td><code>profiles.ci</code></td>
+<td><code>mergeProfiles()</code> 覆盖顶层值</td>
+</tr>
+<tr>
+<td><code>kev</code></td>
+<td><code>GRYPE_SORT_BY</code></td>
+<td>Viper 自动环境变量映射</td>
+</tr>
+<tr>
+<td><code>epss</code></td>
+<td><code>--sort-by</code></td>
+<td><code>BindPFlag()</code> 提供最高优先级</td>
+</tr>
+</tbody>
+</table>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章分析了 Grype 配置从创建到消费的完整过程。<code>DefaultGrype()</code> 先创建默认对象，fangs 通过字段指针递归注册 Cobra flag；命令执行时，clio 在 <code>PreRunE</code> 中调用 <code>fangs.Load()</code>，将配置文件、profile、环境变量和 flag 合并，再递归执行各级 <code>PostLoad()</code>。</p>
+<p>对于普通用户，配置优先级可以记为：命令行参数高于环境变量，环境变量高于 profile，profile 高于配置文件顶层值，配置文件又高于默认值。非法配置会在 <code>runGrype()</code> 启动之前被拒绝，而通过校验的最终 <code>options.Grype</code> 会被分发给 Provider、数据库、Matcher 和 Presenter。</p>
+<p>下一篇将继续沿着 <code>runGrype()</code> 向下分析 <code>pkg.Provide()</code>，看看 <code>dir:</code>、<code>docker:</code>、<code>registry:</code> 和 <code>sbom:</code> 等不同输入如何被识别，以及 Syft 如何将目录和镜像转换成 Grype 可以匹配的 Package 集合。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/16/go-grype-02/" rel="next" title="Grype 源码分析 02：整体流程">
+      Grype 源码分析 02：整体流程 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E9%85%8D%E7%BD%AE%E5%80%BC%E7%9A%84%E5%AE%8C%E6%95%B4%E6%97%85%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text"> 一个配置值的完整旅程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8-sort-by-%E9%AA%8C%E8%AF%81%E4%BC%98%E5%85%88%E7%BA%A7"><span class="nav-number">1.1.</span> <span class="nav-text"> 使用 sort-by 验证优先级</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E5%AF%B9%E8%B1%A1%E4%BD%95%E6%97%B6%E5%AE%8C%E6%88%90%E5%8A%A0%E8%BD%BD"><span class="nav-number">1.2.</span> <span class="nav-text"> 配置对象何时完成加载</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E5%AF%B9%E8%B1%A1%E6%98%AF%E5%A6%82%E4%BD%95%E6%9E%84%E9%80%A0%E7%9A%84"><span class="nav-number">2.</span> <span class="nav-text"> 配置对象是如何构造的</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#setupconfig-%E5%BB%BA%E7%AB%8B%E5%85%A8%E5%B1%80%E9%85%8D%E7%BD%AE%E8%83%BD%E5%8A%9B"><span class="nav-number">2.1.</span> <span class="nav-text"> SetupConfig 建立全局配置能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#defaultgrype-%E5%85%88%E5%BB%BA%E7%AB%8B%E9%BB%98%E8%AE%A4%E5%80%BC"><span class="nav-number">2.2.</span> <span class="nav-text"> DefaultGrype 先建立默认值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%93%E6%9E%84%E4%BD%93-tag-%E5%AE%9A%E4%B9%89%E9%85%8D%E7%BD%AE%E8%B7%AF%E5%BE%84"><span class="nav-number">2.3.</span> <span class="nav-text"> 结构体 tag 定义配置路径</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#addflags-%E4%BD%BF%E7%94%A8%E5%AD%97%E6%AE%B5%E6%8C%87%E9%92%88%E6%B3%A8%E5%86%8C%E5%8F%82%E6%95%B0"><span class="nav-number">2.4.</span> <span class="nav-text"> AddFlags 使用字段指针注册参数</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%A4%96%E9%83%A8%E9%85%8D%E7%BD%AE%E5%A6%82%E4%BD%95%E5%90%88%E5%B9%B6"><span class="nav-number">3.</span> <span class="nav-text"> 外部配置如何合并</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#clio-%E5%9C%A8-prerune-%E4%B8%AD%E8%B0%83%E7%94%A8-fangsload"><span class="nav-number">3.1.</span> <span class="nav-text"> clio 在 PreRunE 中调用 fangs.Load</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6%E6%9F%A5%E6%89%BE%E9%A1%BA%E5%BA%8F"><span class="nav-number">3.2.</span> <span class="nav-text"> 配置文件查找顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#profile-%E5%85%88%E8%A6%86%E7%9B%96%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6%E9%A1%B6%E5%B1%82%E5%80%BC"><span class="nav-number">3.3.</span> <span class="nav-text"> profile 先覆盖配置文件顶层值</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E5%A6%82%E4%BD%95%E6%98%A0%E5%B0%84%E5%B5%8C%E5%A5%97%E5%AD%97%E6%AE%B5"><span class="nav-number">3.4.</span> <span class="nav-text"> 环境变量如何映射嵌套字段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#flag-%E4%B8%BA%E4%BB%80%E4%B9%88%E5%85%B7%E6%9C%89%E6%9C%80%E9%AB%98%E4%BC%98%E5%85%88%E7%BA%A7"><span class="nav-number">3.5.</span> <span class="nav-text"> flag 为什么具有最高优先级</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#postload-%E5%A6%82%E4%BD%95%E6%A0%A1%E9%AA%8C%E5%92%8C%E8%BD%AC%E6%8D%A2%E9%85%8D%E7%BD%AE"><span class="nav-number">4.</span> <span class="nav-text"> PostLoad 如何校验和转换配置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B9%E9%85%8D%E7%BD%AE%E8%B4%9F%E8%B4%A3%E8%B7%A8%E5%AD%97%E6%AE%B5%E5%A4%84%E7%90%86"><span class="nav-number">4.1.</span> <span class="nav-text"> 根配置负责跨字段处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AD%90%E9%85%8D%E7%BD%AE%E8%B4%9F%E8%B4%A3%E8%87%AA%E5%B7%B1%E7%9A%84%E7%BA%A6%E6%9D%9F"><span class="nav-number">4.2.</span> <span class="nav-text"> 子配置负责自己的约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#fielddescriber-%E7%94%9F%E6%88%90%E9%85%8D%E7%BD%AE%E8%AF%B4%E6%98%8E"><span class="nav-number">4.3.</span> <span class="nav-text"> FieldDescriber 生成配置说明</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%80%E7%BB%88%E9%85%8D%E7%BD%AE%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%89%AB%E6%8F%8F"><span class="nav-number">5.</span> <span class="nav-text"> 最终配置如何影响扫描</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E5%90%8C%E9%85%8D%E7%BD%AE%E8%A2%AB%E5%88%86%E5%8F%91%E7%BB%99%E4%B8%8D%E5%90%8C%E6%A8%A1%E5%9D%97"><span class="nav-number">5.1.</span> <span class="nav-text"> 不同配置被分发给不同模块</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#debug-%E6%97%A5%E5%BF%97%E5%B1%95%E7%A4%BA%E7%9A%84%E6%98%AF%E6%9C%80%E7%BB%88%E9%85%8D%E7%BD%AE"><span class="nav-number">5.2.</span> <span class="nav-text"> debug 日志展示的是最终配置</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">267</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
