@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前两篇文章从 main() 和配置系统开始，建立了 Grype 的顶层调用框架。runGrype() 完成配置加载后，第一个关键步骤就是调用 pkg.Provide()，将用户输入转换成漏洞匹配引擎可以直接使用的 []pkg.Package。这篇文章将分析 Grype 如何把 dir:、docker:、registry:、sbom: 甚至一个 PURL 字符串统一为一个软件包集合。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 04：从目录和镜像到软件包清单">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/17/go-grype-04/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="前两篇文章从 main() 和配置系统开始，建立了 Grype 的顶层调用框架。runGrype() 完成配置加载后，第一个关键步骤就是调用 pkg.Provide()，将用户输入转换成漏洞匹配引擎可以直接使用的 []pkg.Package。这篇文章将分析 Grype 如何把 dir:、docker:、registry:、sbom: 甚至一个 PURL 字符串统一为一个软件包集合。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-17T03:23:43.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:28:31.427Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/17/go-grype-04/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 04：从目录和镜像到软件包清单 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/17/go-grype-04/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 04：从目录和镜像到软件包清单
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-17 11:23:43" itemprop="dateCreated datePublished" datetime="2026-07-17T11:23:43+08:00">2026-07-17</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/%E5%AE%89%E5%85%A8/" itemprop="url" rel="index"><span itemprop="name">安全</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>前两篇文章从 <code>main()</code> 和配置系统开始，建立了 Grype 的顶层调用框架。<code>runGrype()</code> 完成配置加载后，第一个关键步骤就是调用 <code>pkg.Provide()</code>，将用户输入转换成漏洞匹配引擎可以直接使用的 <code>[]pkg.Package</code>。这篇文章将分析 Grype 如何把 <code>dir:</code>、<code>docker:</code>、<code>registry:</code>、<code>sbom:</code> 甚至一个 PURL 字符串统一为一个软件包集合。</p>
+<span id="more"></span>
+<h2 id="为什么需要-provider-链"><a class="markdownIt-Anchor" href="#为什么需要-provider-链"></a> 为什么需要 Provider 链</h2>
+<p>Grype 接受多种输入形式。用户可以扫描本地目录：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:./my-project</span><br></pre></td></tr></table></figure>
+<p>也可以直接扫描一个容器镜像：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype docker:alpine:latest</span><br></pre></td></tr></table></figure>
+<p>或者提供一份已经生成的 SBOM（Software Bill of Materials，软件物料清单）文件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype sbom:result.json</span><br></pre></td></tr></table></figure>
+<p>甚至只检查一个特定的软件包：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype pkg:npm/lodash@4.17.20</span><br></pre></td></tr></table></figure>
+<p>这些输入本质上完全不同——目录是文件系统上的路径，镜像是 Docker daemon 或 registry 上的分层文件系统，SBOM 文件是 JSON 或 XML 文档，PURL（Package URL，软件包 URL）则是单纯的字符串。如果让 <code>runGrype()</code> 去判断&quot;这是哪种输入&quot;，代码会变得冗长且难以扩展。</p>
+<p>Grype 的解法是 Provider 链：将每种输入解析成独立的 Provider，然后按固定顺序尝试，直到某一个 Provider 声明 <code>这个输入我可以处理</code>。没有哪个 Provider 需要知道其他 Provider 的存在，新增输入类型只需要在链中增加一个环节。</p>
+<h2 id="provider-链的调度过程"><a class="markdownIt-Anchor" href="#provider-链的调度过程"></a> Provider 链的调度过程</h2>
+<p><code>pkg.Provide()</code> 是外部调用的入口函数。但它并不直接执行输入识别，而是先做一些准备工作，再将核心调度委托给内部的 <code>provide()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Provide</span><span class="params">(userInput <span class="type">string</span>, config ProviderConfig)</span></span> ([]Package, Context, *sbom.SBOM, <span class="type">error</span>) &#123;</span><br><span class="line">    applyChannel := getDistroChannelApplier(config.Distro.FixChannels)</span><br><span class="line">    <span class="keyword">if</span> config.Distro.Override != <span class="literal">nil</span> &#123;</span><br><span class="line">        applyChannel(config.Distro.Override)</span><br><span class="line">        log.Infof(<span class="string">&quot;using distro: %s&quot;</span>, config.Distro.Override.String())</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    packages, ctx, s, err := provide(userInput, config, applyChannel)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, Context&#123;&#125;, <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    setContextDistro(packages, &amp;ctx)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    packages = removePackagesByOverlap(packages)</span><br><span class="line">    <span class="keyword">return</span> FromPtrs(packages), ctx, s, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>入口函数有三层职责：准备 Distro 信息并应用到各 Provider；在 Provider 返回结果后补充发行版传播和去重；最后将结果从指针切片转为值切片。</p>
+<p>而真正的 Provider 调度链位于 <code>provide()</code> 中，按固定顺序执行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">provide</span><span class="params">(userInput <span class="type">string</span>, config ProviderConfig, applyChannel <span class="keyword">func</span>(d *distro.Distro)</span></span> <span class="type">bool</span>) ([]*Package, Context, *sbom.SBOM, <span class="type">error</span>) &#123;</span><br><span class="line">    packages, ctx, s, err := purlProvider(userInput, config, applyChannel)</span><br><span class="line">    <span class="keyword">if</span> !errors.Is(err, errDoesNotProvide) &#123;</span><br><span class="line">        <span class="keyword">return</span> packages, ctx, s, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    packages, ctx, s, err = cpeProvider(userInput, config)</span><br><span class="line">    <span class="keyword">if</span> !errors.Is(err, errDoesNotProvide) &#123;</span><br><span class="line">        <span class="keyword">return</span> packages, ctx, s, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    packages, ctx, s, err = syftSBOMProvider(userInput, config, applyChannel)</span><br><span class="line">    <span class="keyword">if</span> !errors.Is(err, errDoesNotProvide) &#123;</span><br><span class="line">        <span class="keyword">return</span> packages, ctx, s, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    packages, ctx, s, err = zarfProvider(userInput, config, applyChannel)</span><br><span class="line">    <span class="keyword">if</span> !errors.Is(err, errDoesNotProvide) &#123;</span><br><span class="line">        <span class="keyword">return</span> packages, ctx, s, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 最终回退到 Syft</span></span><br><span class="line">    <span class="keyword">return</span> syftProvider(userInput, config, applyChannel)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段代码的逻辑非常清晰：每个 Provider 接收同样的 <code>userInput</code>，如果不认识这个输入就返回 <code>errDoesNotProvide</code>，调度器则继续尝试下一个。一旦某个 Provider 返回的结果不是 <code>errDoesNotProvide</code>（无论成功还是失败），调度链立即终止。最后一个 <code>syftProvider</code> 没有返回 <code>errDoesNotProvide</code> 的检查，它是兜底的，因为 Syft 有能力处理目录、文件和镜像这三类最常见的输入。</p>
+<p>可以把这个过程理解为一道流水线：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">输入字符串</span><br><span class="line">    │</span><br><span class="line">    ├── purlProvider     → &quot;这个字符串像 PURL 吗？&quot;</span><br><span class="line">    ├── cpeProvider      → &quot;这个字符串像 CPE 吗？&quot;</span><br><span class="line">    ├── syftSBOMProvider → &quot;这个字符串指向 SBOM 文件吗？&quot;</span><br><span class="line">    ├── zarfProvider     → &quot;这个字符串指向 Zarf 包吗？&quot;</span><br><span class="line">    └── syftProvider     → &quot;交给 Syft 识别 (目录/文件/镜像)&quot;</span><br></pre></td></tr></table></figure>
+<p>这五个 Provider 各自如何判断输入是否属于自己的领域，是接下来分析的重点。</p>
+<h2 id="逐一解析五个-provider"><a class="markdownIt-Anchor" href="#逐一解析五个-provider"></a> 逐一解析五个 Provider</h2>
+<h3 id="purl-provider直接描述单个软件包"><a class="markdownIt-Anchor" href="#purl-provider直接描述单个软件包"></a> PURL Provider：直接描述单个软件包</h3>
+<p>PURL 是一套标准化的软件包标识方案，格式如 <code>pkg:npm/lodash@4.17.20</code>。PURL Provider 的判断逻辑最为简单直接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getPurlReader</span><span class="params">(userInput <span class="type">string</span>)</span></span> (r io.Reader, ctx Context, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> strings.HasPrefix(userInput, singlePurlInputPrefix) &#123;</span><br><span class="line">        ctx.Source = &amp;source.Description&#123;</span><br><span class="line">            Metadata: PURLLiteralMetadata&#123;</span><br><span class="line">                PURL: userInput,</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> strings.NewReader(userInput), ctx, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, ctx, errDoesNotProvide</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>只要用户输入以 <code>pkg:</code> 开头，PURL Provider 就将这个字符串当作合法的 Syft SBOM 输入，调用 <code>format.Decode()</code> 让 Syft 去解析。这里利用了 Syft 的解码器能够识别 PURL 字符串并将其转换为一个最小化的 SBOM 对象。解析完成后，<code>FromCollection()</code> 再将 Syft Package 转换为 Grype Package。</p>
+<p>PURL Provider 还引入了一个重要的模式——Enhancer。它将 PURL 作为 Pure string 传入 Syft，但有些信息 Syft 不会从纯 PURL 字符串中提取（例如上游包信息和发行版信息）。因此 PURL Provider 在转换时附加了 <code>purlEnhancers()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> FromCollection(s.Artifacts.Packages, s.Relationships,</span><br><span class="line">    config.SynthesisConfig, purlEnhancers(applyChannel)...), ctx, s, <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>Enhancer 是一个函数类型：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Enhancer <span class="function"><span class="keyword">func</span><span class="params">(out *Package, purl packageurl.PackageURL, pkg syftPkg.Package)</span></span></span><br></pre></td></tr></table></figure>
+<p>在 <code>FromPackages()</code> 中，每个 Syft Package 转换完成后，所有 Enhancer 都会依次执行，补充 PURL 中的上游包和 Distro 信息。这个模式使得转换过程对扩展开放——如果未来需要从 PURL 中提取更多数据，只需增加一个新的 Enhancer 即可。</p>
+<h3 id="cpe-provider用标准化名称描述产品"><a class="markdownIt-Anchor" href="#cpe-provider用标准化名称描述产品"></a> CPE Provider：用标准化名称描述产品</h3>
+<p>CPE（Common Platform Enumeration，通用平台枚举）是另一种描述软件产品的标准，格式如 <code>cpe:2.3:a:vendor:product:version:*:*:*:*:*:*:*</code>。CPE Provider 的结构与 PURL Provider 几乎对称：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getCPEReader</span><span class="params">(userInput <span class="type">string</span>)</span></span> (r io.Reader, ctx Context, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> strings.HasPrefix(userInput, cpeInputPrefix) &#123;</span><br><span class="line">        ctx.Source = &amp;source.Description&#123;</span><br><span class="line">            Metadata: CPELiteralMetadata&#123;</span><br><span class="line">                CPE: userInput,</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> strings.NewReader(userInput), ctx, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, ctx, errDoesNotProvide</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>同样借助 Syft 的 <code>format.Decode()</code> 将 CPE 字符串解析为最小 SBOM，再转换为 Grype Package。CPE Provider 不需要 Enhancer，因为 CPE 只表达产品标识，不含额外的 Distro 或上游信息。</p>
+<h3 id="sbom-provider解析已有的物料清单"><a class="markdownIt-Anchor" href="#sbom-provider解析已有的物料清单"></a> SBOM Provider：解析已有的物料清单</h3>
+<p>SBOM Provider 处理的场景是用户已经提前生成了一份 SBOM 文件。它支持三种输入方式：</p>
+<ul>
+<li>通过管道重定向：<code>cat sbom.json | grype</code></li>
+<li>使用 <code>sbom:</code> 前缀显式指定：<code>grype sbom:./report.json</code></li>
+<li>直接给出 SBOM 文件路径：<code>grype ./report.json</code></li>
+</ul>
+<p>判断规则的入口在 <code>getSBOMReader()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getSBOMReader</span><span class="params">(userInput <span class="type">string</span>)</span></span> (io.ReadSeeker, <span class="type">string</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">switch</span> &#123;</span><br><span class="line">    <span class="keyword">case</span> userInput == <span class="string">&quot;&quot;</span>:</span><br><span class="line">        r, err := stdinReader()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">nil</span>, <span class="string">&quot;&quot;</span>, err</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> decodeStdin(r)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">case</span> explicitlySpecifyingPurlList(userInput):</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">case</span> explicitlySpecifyingCPEList(userInput):</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">case</span> explicitlySpecifyingSBOM(userInput):</span><br><span class="line">        filepath := strings.TrimPrefix(userInput, <span class="string">&quot;sbom:&quot;</span>)</span><br><span class="line">        <span class="keyword">return</span> openFile(filepath)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">case</span> isPossibleSBOM(userInput):</span><br><span class="line">        <span class="keyword">return</span> openFile(userInput)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, <span class="string">&quot;&quot;</span>, errDoesNotProvide</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里值得关注的是最后一个分支 <code>isPossibleSBOM()</code>：当用户没有加上 <code>sbom:</code> 前缀，输入也不是 PURL 或 CPE 时，Grype 怎么判断一个文件路径指向的是普通文件还是 SBOM？答案是读取文件头部的 MIME 类型：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">isPossibleSBOM</span><span class="params">(userInput <span class="type">string</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    f, path, err := openFile(userInput)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">defer</span> log.CloseAndLogError(f, path)</span><br><span class="line"></span><br><span class="line">    mType, err := mimetype.DetectReader(f)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> isAncestorOfMimetype(mType, <span class="string">&quot;text/plain&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>SBOM 文件的格式可以是 JSON（<code>application/json</code>）、XML（<code>application/xml</code>）或纯文本（<code>text/plain</code>），它们在 MIME 类型树上都属于 <code>text/plain</code> 的后代。如果文件不是文本格式（例如是一个二进制 ELF 文件），Grype 就认为这不是 SBOM，返回 <code>errDoesNotProvide</code> 让调度器跳过。</p>
+<p>找到 SBOM 文件后，<code>syftSBOMProvider()</code> 调用 <code>format.Decode()</code> 解析 SBOM 内容。这里有一个细节值得注意：对于非 Syft JSON 格式的 SBOM（例如 SPDX），同样使用了 <code>purlEnhancers()</code> 来从 PURL 中补充信息。这是因为 Syft JSON 在序列化时已经保留了完整字段，而其他格式可能丢失了上游包或 Distro 数据。</p>
+<h3 id="zarf-provider解析-zarf-包"><a class="markdownIt-Anchor" href="#zarf-provider解析-zarf-包"></a> Zarf Provider：解析 Zarf 包</h3>
+<p>Zarf 是用于气隙（airgap）环境部署的一种打包格式。Grype 对 Zarf 的支持通过 <code>zarfProvider()</code> 实现，它会识别 zarf 包格式并提取其中的 SBOM 信息，本质上也是一种 SBOM 解析的特化形式。</p>
+<h3 id="syft-provider面向目录和镜像的通用编目"><a class="markdownIt-Anchor" href="#syft-provider面向目录和镜像的通用编目"></a> Syft Provider：面向目录和镜像的通用编目</h3>
+<p>前面四个 Provider 都无法处理用户输入时，调度器进入最后的 <code>syftProvider()</code>。这正是最常见的情况——扫描目录或容器镜像：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">syftProvider</span><span class="params">(userInput <span class="type">string</span>, config ProviderConfig, applyChannel <span class="keyword">func</span>(*distro.Distro)</span></span> <span class="type">bool</span>) ([]*Package, Context, *sbom.SBOM, <span class="type">error</span>) &#123;</span><br><span class="line">    src, err := getSource(userInput, config)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, Context&#123;&#125;, <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">defer</span> log.CloseAndLogError(src, <span class="string">&quot;syft source&quot;</span>)</span><br><span class="line"></span><br><span class="line">    s, err := syft.CreateSBOM(context.Background(), src, config.SBOMOptions)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, Context&#123;&#125;, <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> s == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, Context&#123;&#125;, <span class="literal">nil</span>, errors.New(<span class="string">&quot;no SBOM provided&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    srcDescription := src.Describe()</span><br><span class="line">    d, distroDetectionFailed := distroFromSBOM(s, config, applyChannel)</span><br><span class="line">    packages := FromCollection(s.Artifacts.Packages, s.Relationships, config.SynthesisConfig)</span><br><span class="line">    pkgCtx := Context&#123;</span><br><span class="line">        Source:                &amp;srcDescription,</span><br><span class="line">        Distro:                d,</span><br><span class="line">        DistroDetectionFailed: distroDetectionFailed,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> packages, pkgCtx, s, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这一小段代码浓缩了 Grype 与 Syft 的完整协作流程，可以拆成三步：创建 Source、编目生成 SBOM、转换软件包。理解这三步之前，需要先理解 Grype 和 Syft 之间到底是什么关系。</p>
+<h2 id="grype-与-syft-的分工"><a class="markdownIt-Anchor" href="#grype-与-syft-的分工"></a> Grype 与 Syft 的分工</h2>
+<p>Grype 和 Syft 是 Anchore 开源生态中的两个独立工具。Syft 负责软件组成分析——给定一个目标，识别其中包含的所有软件包并生成 SBOM。Grype 负责漏洞扫描——获取一份软件包清单和一个漏洞数据库，找出哪些包受哪些漏洞影响。</p>
+<p>因此 Grype 并不重新实现软件包编目逻辑（它不需要关心怎么从 <code>package-lock.json</code> 中提取 npm 包、怎么从 <code>APK_INDEX</code> 中解析 Alpine 包），而是直接调用 Syft 作为库。两者的分工如下：</p>
+<ul>
+<li><strong>Syft</strong>：回答&quot;这个目标里有哪些软件包&quot;；</li>
+<li><strong>Grype</strong>：回答&quot;这些软件包里有哪些漏洞&quot;。</li>
+</ul>
+<p>Grype 调用 Syft 生成 SBOM 后，再将 Syft 的 Package 模型转换为自己的 <code>pkg.Package</code>。这个转换的必要性在于：Syft 的 Package 包含了大量编目细节（文件证据、分类器等），而 Grype 只关心漏洞匹配所需的核心字段——包名、版本、类型、PURL、CPE 和 Distro 信息。</p>
+<h3 id="创建-source输入类型的关键识别"><a class="markdownIt-Anchor" href="#创建-source输入类型的关键识别"></a> 创建 Source：输入类型的关键识别</h3>
+<p>调用 Syft 的第一步，是用 <code>getSource()</code> 将用户输入字符串转换为 Syft 的 <code>source.Source</code> 接口。<code>Source</code> 是 Syft 中对扫描目标的抽象，它统一了目录和镜像两种完全不同的数据来源：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getSource</span><span class="params">(userInput <span class="type">string</span>, config ProviderConfig)</span></span> (source.Source, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> config.SBOMOptions.Search.Scope == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, errDoesNotProvide</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    sources := config.Sources</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(sources) == <span class="number">0</span> &#123;</span><br><span class="line">        schemeSource, newUserInput := stereoscope.ExtractSchemeSource(userInput, allSourceTags()...)</span><br><span class="line">        <span class="keyword">if</span> schemeSource != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            sources = []<span class="type">string</span>&#123;schemeSource&#125;</span><br><span class="line">            userInput = newUserInput</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> syft.GetSource(context.Background(), userInput, syft.DefaultGetSourceConfig().</span><br><span class="line">        WithSources(sources...).</span><br><span class="line">        WithDefaultImagePullSource(config.DefaultImagePullSource).</span><br><span class="line">        WithAlias(source.Alias&#123;Name: config.Name&#125;).</span><br><span class="line">        WithRegistryOptions(config.RegistryOptions).</span><br><span class="line">        WithPlatform(platform).</span><br><span class="line">        WithExcludeConfig(source.ExcludeConfig&#123;Paths: config.Exclusions&#125;))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里面有两个输入来源。首先是 <code>--from</code> 参数（对应 <code>config.Sources</code>），它显式告诉 Syft 以什么身份去解释输入：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">grype python:3.13.2-alpine3.21 --from registry</span><br></pre></td></tr></table></figure>
+<p>如果用户没有设置 <code>--from</code>，Grype 会使用 stereoscope（Anchore 的容器镜像分析库）从用户输入中提取 scheme 前缀。常见的 scheme 包括：</p>
+<table>
+<thead>
+<tr>
+<th>scheme</th>
+<th>含义</th>
+<th>Syft 行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dir:</code></td>
+<td>本地目录</td>
+<td>直接扫描文件系统</td>
+</tr>
+<tr>
+<td><code>file:</code></td>
+<td>本地文件</td>
+<td>扫描指定文件</td>
+</tr>
+<tr>
+<td><code>docker:</code></td>
+<td>Docker daemon 镜像</td>
+<td>从 Docker daemon 拉取</td>
+</tr>
+<tr>
+<td><code>registry:</code></td>
+<td>镜像仓库</td>
+<td>从 registry 拉取</td>
+</tr>
+<tr>
+<td><code>podman:</code></td>
+<td>Podman 镜像</td>
+<td>从 Podman 拉取</td>
+</tr>
+<tr>
+<td><code>image:</code></td>
+<td>通用镜像</td>
+<td>按配置顺序尝试各 source</td>
+</tr>
+<tr>
+<td>无前缀</td>
+<td>可能是目录或文件</td>
+<td>按配置顺序尝试各 source</td>
+</tr>
+</tbody>
+</table>
+<p>scheme 识别完成后，Grype 将清理后的输入和 source 列表一起交给 <code>syft.GetSource()</code>。Syft 内部维护了一个 Source Provider 注册表（类似 Grype 自己的 Provider 链），按顺序尝试用不同 Provider 去&quot;打开&quot;这个输入，直到某一个成功返回一个可用的 Source 对象。</p>
+<p>如果所有 Provider 都失败，Syft 返回错误，Grype 的 Provider 链也因此终止，<code>pkg.Provide()</code> 向上传播这个错误。<code>errDoesNotProvide</code> 的终止条件保证了调度链只在&quot;这个输入不属于我&quot;时继续向前，而一旦出现&quot;我试图处理但失败了&quot;的错误，整个链路就会停下来。</p>
+<h3 id="编目生成-sbom"><a class="markdownIt-Anchor" href="#编目生成-sbom"></a> 编目生成 SBOM</h3>
+<p>拿到 Source 后，Syft 调用 <code>CreateSBOM()</code> 执行实际的软件包编目：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">s, err := syft.CreateSBOM(context.Background(), src, config.SBOMOptions)</span><br></pre></td></tr></table></figure>
+<p><code>CreateSBOM()</code> 会根据 Source 的类型和配置，选择合适的 Cataloger（编目器）集合去遍历文件系统或镜像层。例如，对于 npm 项目，JavaScript cataloger 会解析 <code>package-lock.json</code> 和 <code>node_modules</code>；对于 Alpine 镜像，apk cataloger 会解析 <code>/lib/apk/db/installed</code>。完成编目后，Syft 返回一个 <code>sbom.SBOM</code> 对象，其中的 <code>s.Artifacts.Packages</code> 就是发现的全部软件包。</p>
+<p>这个过程中还有一个小细节：<code>config.SBOMOptions</code> 承载了 Grype 的配置对 Syft 编目行为的影响，例如编目范围。Grype 没有直接操作 Syft 的 Cataloger 列表，而是通过配置告诉 Syft 应该怎么做，保持了两层之间的清晰边界。</p>
+<h3 id="识别-linux-发行版"><a class="markdownIt-Anchor" href="#识别-linux-发行版"></a> 识别 Linux 发行版</h3>
+<p>SBOM 生成后，Grype 从 SBOM 的 <code>LinuxDistribution</code> 字段中提取发行版信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">distroFromSBOM</span><span class="params">(s *sbom.SBOM, config ProviderConfig, applyChannel <span class="keyword">func</span>(*distro.Distro)</span></span> <span class="type">bool</span>) (d *distro.Distro, detectionFailed <span class="type">bool</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> config.Distro.Override != <span class="literal">nil</span> &#123;</span><br><span class="line">        d = config.Distro.Override</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        d = distro.FromRelease(s.Artifacts.LinuxDistribution, config.Distro.FixChannels)</span><br><span class="line">        applyChannel(d)</span><br><span class="line">        detectionFailed = s.Artifacts.LinuxDistribution != <span class="literal">nil</span> &amp;&amp; d == <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> d, detectionFailed</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>发行版识别是漏洞匹配的前置条件——不同发行版对同一个软件包使用不同的版本命名和补丁策略，漏洞数据库也是按发行版组织的。Syft 从 <code>/etc/os-release</code> 等文件中读取发行版信息，Grype 将其转换为内部的 <code>distro.Distro</code> 对象，并应用发行版特定的 fix channel。</p>
+<p>需要注意，<code>DistroDetectionFailed</code> 是一个重要信号：如果 Syft 在文件系统中找到了 <code>os-release</code> 文件（说明这确实是一个 Linux 系统），却无法识别发行版类型（例如是一个未被收录的小众发行版），Grype 会将这个状态标记出来供下游告警使用。</p>
+<h2 id="syft-package-到-grype-package-的模型转换"><a class="markdownIt-Anchor" href="#syft-package-到-grype-package-的模型转换"></a> Syft Package 到 Grype Package 的模型转换</h2>
+<p>SBOM 中的 Syft Package 不能直接用于漏洞匹配，Grype 需要将其转换为自己的 <code>pkg.Package</code>。这个转换在 <code>FromCollection()</code> 和 <code>FromPackages()</code> 中完成。</p>
+<h3 id="grype-package-的结构"><a class="markdownIt-Anchor" href="#grype-package-的结构"></a> Grype Package 的结构</h3>
+<p>先来看转换的目标——Grype 的 <code>Package</code> 结构体只保留漏洞匹配关心的字段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Package <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID        ID</span><br><span class="line">    Name      <span class="type">string</span></span><br><span class="line">    Version   <span class="type">string</span></span><br><span class="line">    Locations file.LocationSet</span><br><span class="line">    Language  syftPkg.Language</span><br><span class="line">    Distro    *distro.Distro</span><br><span class="line">    Licenses  []<span class="type">string</span></span><br><span class="line">    Type      syftPkg.Type</span><br><span class="line">    CPEs      []cpe.CPE</span><br><span class="line">    PURL      <span class="type">string</span></span><br><span class="line">    Upstreams []UpstreamPackage</span><br><span class="line">    Metadata  any</span><br><span class="line">    Annotations <span class="keyword">map</span>[<span class="type">string</span>][]<span class="type">string</span></span><br><span class="line">    RelatedPackages <span class="keyword">map</span>[artifact.RelationshipType][]*Package</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>与 Syft 原生的 Package 相比，Grype 版本省略了文件证据、分类器元数据、依赖关系图等编目过程才需要的信息，但增加了用于漏洞匹配的关键内容：</p>
+<ul>
+<li><strong>Upstreams</strong>：记录上游源码包信息。Debian 系的二进制包可能来自不同于包名的源码包（例如 <code>libssl1.1</code> 的上游是 <code>openssl</code>），漏洞数据是按源码包名组织的。如果没有这个字段，Matcher 就无法将二进制包关联到正确的漏洞记录；</li>
+<li><strong>Metadata</strong>：根据包类型提取的元数据，只保留匹配相关的部分。例如 RPM 包的 epoch 和 modularity label（影响版本比较），Java 包的 POM group ID 和 artifact ID（影响 CPE 匹配），但不会保留 Syft 中完整的 <code>RpmDBEntry</code> 结构；</li>
+<li><strong>RelatedPackages</strong>：记录包之间的关系（OwnershipByFileOverlap、Contains 等），用于后续的去重和关联匹配；</li>
+<li><strong>Annotations</strong>：携带 Provider 附加的键值对信息，支持同一包来自多个来源时聚合。</li>
+</ul>
+<h3 id="从-syft-package-构造-grype-package"><a class="markdownIt-Anchor" href="#从-syft-package-构造-grype-package"></a> 从 Syft Package 构造 Grype Package</h3>
+<p><code>New()</code> 函数完成单个包的转换：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(p syftPkg.Package, enhancers ...Enhancer)</span></span> Package &#123;</span><br><span class="line">    metadata, upstreams := dataFromPkg(p)</span><br><span class="line"></span><br><span class="line">    out := Package&#123;</span><br><span class="line">        ID:        grypeID(p),</span><br><span class="line">        Name:      p.Name,</span><br><span class="line">        Version:   p.Version,</span><br><span class="line">        Locations: p.Locations,</span><br><span class="line">        Licenses:  licenses,</span><br><span class="line">        Language:  p.Language,</span><br><span class="line">        Type:      p.Type,</span><br><span class="line">        CPEs:      p.CPEs,</span><br><span class="line">        PURL:      p.PURL,</span><br><span class="line">        Upstreams: upstreams,</span><br><span class="line">        Metadata:  metadata,</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(enhancers) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        purl, _ := packageurl.FromString(p.PURL)</span><br><span class="line">        <span class="keyword">for</span> _, e := <span class="keyword">range</span> enhancers &#123;</span><br><span class="line">            e(&amp;out, purl, p)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> out</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>大部分字段是直接映射的——名称、版本、类型、PURL 不需要转换。真正的转换工作发生在 <code>dataFromPkg()</code> 中，这个函数根据 Syft Package 的 Metadata 类型，提取 Grype 关心的结构化数据。</p>
+<p>以 Debian 包为例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">dpkgDataFromPkg</span><span class="params">(p syftPkg.Package)</span></span> (upstreams []UpstreamPackage) &#123;</span><br><span class="line">    <span class="keyword">switch</span> value := p.Metadata.(<span class="keyword">type</span>) &#123;</span><br><span class="line">    <span class="keyword">case</span> syftPkg.DpkgDBEntry:</span><br><span class="line">        <span class="keyword">if</span> value.Source != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            upstreams = <span class="built_in">append</span>(upstreams, UpstreamPackage&#123;</span><br><span class="line">                Name:    value.Source,</span><br><span class="line">                Version: value.SourceVersion,</span><br><span class="line">            &#125;)</span><br><span class="line">        &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> upstreams</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Debian 系的二进制包在 <code>DpkgDBEntry</code> 中记录了 <code>Source</code> 字段——一个如 <code>openssl</code> 的源码包名。Grype 将其提取为 Upstream，后面的 Matcher 就可以按源码包名去漏洞数据库中查询。</p>
+<p>RPM 包的转换则更复杂：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">rpmDataFromPkg</span><span class="params">(p syftPkg.Package)</span></span> (metadata *RpmMetadata, upstreams []UpstreamPackage) &#123;</span><br><span class="line">    <span class="keyword">switch</span> m := p.Metadata.(<span class="keyword">type</span>) &#123;</span><br><span class="line">    <span class="keyword">case</span> syftPkg.RpmDBEntry:</span><br><span class="line">        <span class="keyword">if</span> m.SourceRpm != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            upstreams = handleSourceRPM(p.Name, m.SourceRpm)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> m.Epoch != <span class="literal">nil</span> || m.ModularityLabel != <span class="literal">nil</span> &#123;</span><br><span class="line">            metadata = &amp;RpmMetadata&#123;</span><br><span class="line">                Epoch:           m.Epoch,</span><br><span class="line">                ModularityLabel: m.ModularityLabel,</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> metadata, upstreams</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>RPM 的 <code>SourceRpm</code> 字段（例如 <code>openssl-1.1.1k-6.el8_5.src.rpm</code>）需要正则解析才能提取出上游包名和版本，同时 epoch 和 modularity label 是版本比较的必要参数。</p>
+<h3 id="cpe-的补充生成"><a class="markdownIt-Anchor" href="#cpe-的补充生成"></a> CPE 的补充生成</h3>
+<p>转换过程中还有一个对漏洞匹配至关重要的处理——当 Syft Package 没有 CPE 时，Grype 可以选择自动生成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> <span class="built_in">len</span>(p.CPEs) == <span class="number">0</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> config.GenerateMissingCPEs &#123;</span><br><span class="line">        p.CPEs = cpes.Generate(p)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这是由于某些 SBOM 格式（比如 SPDX）可能不包含 CPE 信息，但 CPE 是漏洞数据库的重要查询维度。Grype 通过 Syft 的 <code>cpes.Generate()</code> 根据包名、版本和厂商信息推导出可能的 CPE，确保后面的 CPE 匹配路径不会因为缺少数据而漏报。</p>
+<h3 id="包关系的重建"><a class="markdownIt-Anchor" href="#包关系的重建"></a> 包关系的重建</h3>
+<p><code>FromPackages()</code> 不仅转换单个包，还会利用 Syft 输出的 artifact relationships 来建立包与包之间的关联：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, r := <span class="keyword">range</span> relationships &#123;</span><br><span class="line">    <span class="keyword">if</span> !retainRelationshipType(r.Type) &#123;</span><br><span class="line">        <span class="keyword">continue</span></span><br><span class="line">    &#125;</span><br><span class="line">    fromPkg, fromOK := pkgByID[grypeID(r.From)]</span><br><span class="line">    toPkg, toOK := pkgByID[grypeID(r.To)]</span><br><span class="line">    <span class="keyword">if</span> !fromOK || !toOK &#123;</span><br><span class="line">        <span class="keyword">continue</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> invertRelationship(r.Type) &#123;</span><br><span class="line">        fromPkg, toPkg = toPkg, fromPkg</span><br><span class="line">    &#125;</span><br><span class="line">    fromPkg.RelatedPackages[r.Type] = <span class="built_in">append</span>(fromPkg.RelatedPackages[r.Type], toPkg)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Grype 只保留了两种关系类型：<code>Contains</code>（A 包含 B）和 <code>OwnershipByFileOverlap</code>（A 的文件覆盖了 B 的文件）。前者用于表达容器层之间的包含关系和多层镜像扫描；后者是去重的关键依据——当同一个文件同时被 deb 包和 python 包声明时，Grype 需要决定保留哪一个。</p>
+<p>特别地，当 SBOM 中缺少 OwnershipByFileOverlap 关系时（某些 SBOM 格式不记录这个关系），Grype 会通过 <code>FileOwner</code> 接口来自动重建：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> !hasOverlapRelationships &amp;&amp; <span class="built_in">len</span>(ownedLocations) &gt; <span class="number">0</span> &#123;</span><br><span class="line">    <span class="keyword">for</span> _, p := <span class="keyword">range</span> pkgs &#123;</span><br><span class="line">        <span class="keyword">for</span> _, loc := <span class="keyword">range</span> p.Locations.ToUnorderedSlice() &#123;</span><br><span class="line">            <span class="keyword">if</span> contained, ok := ownedLocations[loc.RealPath]; ok &#123;</span><br><span class="line">                <span class="keyword">for</span> _, ownerPackage := <span class="keyword">range</span> contained &#123;</span><br><span class="line">                    <span class="keyword">if</span> ownerPackage == p &#123;</span><br><span class="line">                        <span class="keyword">continue</span></span><br><span class="line">                    &#125;</span><br><span class="line">                    p.RelatedPackages[artifact.OwnershipByFileOverlapRelationship] =</span><br><span class="line">                        <span class="built_in">append</span>(p.RelatedPackages[artifact.OwnershipByFileOverlapRelationship], ownerPackage)</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段逻辑的思路是：如果某些包声称自己&quot;拥有&quot;某些文件（通过 <code>FileOwner</code> 接口），而其他包的位置也正好在这组文件里，那么它们之间存在文件重叠关系。通过在内存中重建这个关系，Grype 保证了去重逻辑在不完整的 SBOM 中也能正常工作。</p>
+<h2 id="发行版信息的传播"><a class="markdownIt-Anchor" href="#发行版信息的传播"></a> 发行版信息的传播</h2>
+<p>Provider 返回软件包后，<code>Provide()</code> 还有一项重要工作：确保每个包都关联了正确的 Linux 发行版信息。</p>
+<h3 id="从软件包推断发行版"><a class="markdownIt-Anchor" href="#从软件包推断发行版"></a> 从软件包推断发行版</h3>
+<p>如果 Context 层面还没有 Distro 信息（例如当输入是一个不含 <code>os-release</code> 的 SBOM 时），Grype 会尝试从软件包自身推断：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">setContextDistro</span><span class="params">(packages []*Package, ctx *Context)</span></span> &#123;</span><br><span class="line">    <span class="keyword">if</span> ctx.Distro != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">var</span> singleDistro *distro.Distro</span><br><span class="line">    <span class="keyword">for</span> _, p := <span class="keyword">range</span> packages &#123;</span><br><span class="line">        <span class="keyword">if</span> p.Distro == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> singleDistro == <span class="literal">nil</span> &#123;</span><br><span class="line">            singleDistro = p.Distro</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> singleDistro.Type != p.Distro.Type ||</span><br><span class="line">            singleDistro.Version != p.Distro.Version ||</span><br><span class="line">            singleDistro.Codename != p.Distro.Codename &#123;</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> singleDistro != <span class="literal">nil</span> &#123;</span><br><span class="line">        ctx.Distro = singleDistro</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个函数的策略是：如果所有包都声明了同一个发行版，就将它提升为 Context 级别的 Distro。但如果存在两个不同发行版的包（例如一个混合了 Alpine 和 Debian 软件包的容器），则放弃设置。</p>
+<h3 id="将发行版写回每个包"><a class="markdownIt-Anchor" href="#将发行版写回每个包"></a> 将发行版写回每个包</h3>
+<p>反过来，如果 Context 已经有了 Distro 但某些包缺少这个字段，Grype 会反过来将 Context 的 Distro 写回包上：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> ctx.Distro != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">for</span> i := <span class="keyword">range</span> packages &#123;</span><br><span class="line">        <span class="keyword">if</span> packages[i].Distro == <span class="literal">nil</span> &#123;</span><br><span class="line">            packages[i].Distro = ctx.Distro</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个双向传播保证了：无论发行版信息来自 <code>os-release</code> 还是某个包的 PURL，最终每个包都能获得一致的 Distro 引用，后续 Matcher 无需关心信息来源。</p>
+<h2 id="重叠软件包的去重"><a class="markdownIt-Anchor" href="#重叠软件包的去重"></a> 重叠软件包的去重</h2>
+<p>最后一个关键步骤是去除因文件重叠而冗余的软件包。这个问题的根源是：在容器镜像中，同一个文件可能同时被操作系统包管理器和一个语言包管理器声明。例如，<code>/usr/lib/python3.9/site-packages/...</code> 下的文件既属于 <code>python3.9</code> deb 包，也被 Python 包管理器识别为 pip 包。</p>
+<p><code>removePackagesByOverlap()</code> 从 RelatedPackages 中读取 OwnershipByFileOverlap 关系并执行去重：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">removePackagesByOverlap</span><span class="params">(pkgs []*Package)</span></span> []*Package &#123;</span><br><span class="line">    <span class="keyword">return</span> slices.DeleteFunc(pkgs, <span class="function"><span class="keyword">func</span><span class="params">(p *Package)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> p.RelatedPackages == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">        &#125;</span><br><span class="line">        overlapping := p.RelatedPackages[artifact.OwnershipByFileOverlapRelationship]</span><br><span class="line">        <span class="keyword">for</span> _, from := <span class="keyword">range</span> overlapping &#123;</span><br><span class="line">            <span class="keyword">if</span> excludePackage(p, from) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>哪些包应该被移除？<code>excludePackage()</code> 实现了判断逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">excludePackage</span><span class="params">(p *Package, parent *Package)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="comment">// 版本不一致，两者都保留</span></span><br><span class="line">    <span class="keyword">if</span> !strings.HasPrefix(parent.Version, p.Version) &amp;&amp;</span><br><span class="line">        !strings.HasPrefix(p.Version, parent.Version) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 父包是 OS 包，子包不是，且该发行版漏洞数据完整——移除子包</span></span><br><span class="line">    <span class="keyword">if</span> distroFeedIsComprehensive(parent.Distro) &amp;&amp; isOSPackage(parent) &amp;&amp; !isOSPackage(p) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 无论如何，移除二进制包</span></span><br><span class="line">    <span class="keyword">if</span> p.Type != syftPkg.BinaryPkg &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>去重的策略分三层：</p>
+<ol>
+<li><strong>版本一致性检查</strong>：如果两个重叠包的版本前缀不匹配（例如 deb 包版本是 <code>3.9.2-1</code> 而 Python 包版本是 <code>3.9.2</code>），说明它们可能代表不同的版本，两者都保留；</li>
+<li><strong>OS 包优先</strong>：当发行版的漏洞 Feed 足够全面（即提供了包括 <code>not-fixed</code> 在内的完整漏洞状态），OS 包更适合用于匹配，因为发行版维护者会追踪每个包的补丁状态。这时子包（语言包）会被移除，因为它的漏洞信息已经由 OS 包的表覆盖；</li>
+<li><strong>移除二进制包</strong>：不论发行版 Feed 是否全面，纯二进制包总是被移除——它们不携带上游信息，无法有效匹配漏洞。</li>
+</ol>
+<p>这里的&quot;全面发行版&quot;列表 <code>comprehensiveDistros</code> 是从漏洞数据库中提取的——只有那些漏洞记录中包含 <code>wont-fix</code> 和 <code>not-fixed</code> 状态的发行版才被认为&quot;全面&quot;。目前包括 Debian、Red Hat、Ubuntu、Arch Linux、Azure、Mariner 等。</p>
+<h2 id="回到-rungrype素材准备完毕"><a class="markdownIt-Anchor" href="#回到-rungrype素材准备完毕"></a> 回到 runGrype：素材准备完毕</h2>
+<p>至此，<code>pkg.Provide()</code> 返回了三个结果：</p>
+<ul>
+<li><code>[]pkg.Package</code>：漏洞匹配引擎的输入；</li>
+<li><code>pkg.Context</code>：源信息和发行版信息，供报告生成使用；</li>
+<li><code>*sbom.SBOM</code>：完整的 Syft SBOM 对象，供下游需要完整物料清单的场景使用。</li>
+</ul>
+<p>在 <code>runGrype()</code> 中，<code>pkg.Provide()</code> 与 <code>LoadVulnerabilityDB()</code> 在 <code>parallel()</code> 中并发执行。当两者都返回后，扫描流程具备了漏洞匹配的两个必要条件：软件包集合和漏洞数据库。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>这篇文章沿着 <code>pkg.Provide()</code> 的 Provider 调度链，分析了 Grype 如何将 PURL、CPE、SBOM 文件、容器镜像和本地目录这五种不同的输入，统一为一个软件包集合。理解这个链路后，下一篇将进入 Grype 的核心数据模型，分析 Package、Vulnerability、Match 和 Context 之间的关系，以及一次漏洞匹配为什么可以产生多条 Match。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/17/go-grype-05/" rel="prev" title="Grype 源码分析 05：Grype 的核心数据模型">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 05：Grype 的核心数据模型
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/16/go-grype-03/" rel="next" title="Grype 源码分析 03：如何解析命令行和配置">
+      Grype 源码分析 03：如何解析命令行和配置 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-provider-%E9%93%BE"><span class="nav-number">1.</span> <span class="nav-text"> 为什么需要 Provider 链</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#provider-%E9%93%BE%E7%9A%84%E8%B0%83%E5%BA%A6%E8%BF%87%E7%A8%8B"><span class="nav-number">2.</span> <span class="nav-text"> Provider 链的调度过程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%80%90%E4%B8%80%E8%A7%A3%E6%9E%90%E4%BA%94%E4%B8%AA-provider"><span class="nav-number">3.</span> <span class="nav-text"> 逐一解析五个 Provider</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#purl-provider%E7%9B%B4%E6%8E%A5%E6%8F%8F%E8%BF%B0%E5%8D%95%E4%B8%AA%E8%BD%AF%E4%BB%B6%E5%8C%85"><span class="nav-number">3.1.</span> <span class="nav-text"> PURL Provider：直接描述单个软件包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cpe-provider%E7%94%A8%E6%A0%87%E5%87%86%E5%8C%96%E5%90%8D%E7%A7%B0%E6%8F%8F%E8%BF%B0%E4%BA%A7%E5%93%81"><span class="nav-number">3.2.</span> <span class="nav-text"> CPE Provider：用标准化名称描述产品</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sbom-provider%E8%A7%A3%E6%9E%90%E5%B7%B2%E6%9C%89%E7%9A%84%E7%89%A9%E6%96%99%E6%B8%85%E5%8D%95"><span class="nav-number">3.3.</span> <span class="nav-text"> SBOM Provider：解析已有的物料清单</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#zarf-provider%E8%A7%A3%E6%9E%90-zarf-%E5%8C%85"><span class="nav-number">3.4.</span> <span class="nav-text"> Zarf Provider：解析 Zarf 包</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#syft-provider%E9%9D%A2%E5%90%91%E7%9B%AE%E5%BD%95%E5%92%8C%E9%95%9C%E5%83%8F%E7%9A%84%E9%80%9A%E7%94%A8%E7%BC%96%E7%9B%AE"><span class="nav-number">3.5.</span> <span class="nav-text"> Syft Provider：面向目录和镜像的通用编目</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#grype-%E4%B8%8E-syft-%E7%9A%84%E5%88%86%E5%B7%A5"><span class="nav-number">4.</span> <span class="nav-text"> Grype 与 Syft 的分工</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA-source%E8%BE%93%E5%85%A5%E7%B1%BB%E5%9E%8B%E7%9A%84%E5%85%B3%E9%94%AE%E8%AF%86%E5%88%AB"><span class="nav-number">4.1.</span> <span class="nav-text"> 创建 Source：输入类型的关键识别</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%96%E7%9B%AE%E7%94%9F%E6%88%90-sbom"><span class="nav-number">4.2.</span> <span class="nav-text"> 编目生成 SBOM</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%86%E5%88%AB-linux-%E5%8F%91%E8%A1%8C%E7%89%88"><span class="nav-number">4.3.</span> <span class="nav-text"> 识别 Linux 发行版</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#syft-package-%E5%88%B0-grype-package-%E7%9A%84%E6%A8%A1%E5%9E%8B%E8%BD%AC%E6%8D%A2"><span class="nav-number">5.</span> <span class="nav-text"> Syft Package 到 Grype Package 的模型转换</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#grype-package-%E7%9A%84%E7%BB%93%E6%9E%84"><span class="nav-number">5.1.</span> <span class="nav-text"> Grype Package 的结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E-syft-package-%E6%9E%84%E9%80%A0-grype-package"><span class="nav-number">5.2.</span> <span class="nav-text"> 从 Syft Package 构造 Grype Package</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cpe-%E7%9A%84%E8%A1%A5%E5%85%85%E7%94%9F%E6%88%90"><span class="nav-number">5.3.</span> <span class="nav-text"> CPE 的补充生成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%85%E5%85%B3%E7%B3%BB%E7%9A%84%E9%87%8D%E5%BB%BA"><span class="nav-number">5.4.</span> <span class="nav-text"> 包关系的重建</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%91%E8%A1%8C%E7%89%88%E4%BF%A1%E6%81%AF%E7%9A%84%E4%BC%A0%E6%92%AD"><span class="nav-number">6.</span> <span class="nav-text"> 发行版信息的传播</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E%E8%BD%AF%E4%BB%B6%E5%8C%85%E6%8E%A8%E6%96%AD%E5%8F%91%E8%A1%8C%E7%89%88"><span class="nav-number">6.1.</span> <span class="nav-text"> 从软件包推断发行版</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B0%86%E5%8F%91%E8%A1%8C%E7%89%88%E5%86%99%E5%9B%9E%E6%AF%8F%E4%B8%AA%E5%8C%85"><span class="nav-number">6.2.</span> <span class="nav-text"> 将发行版写回每个包</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%87%8D%E5%8F%A0%E8%BD%AF%E4%BB%B6%E5%8C%85%E7%9A%84%E5%8E%BB%E9%87%8D"><span class="nav-number">7.</span> <span class="nav-text"> 重叠软件包的去重</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9E%E5%88%B0-rungrype%E7%B4%A0%E6%9D%90%E5%87%86%E5%A4%87%E5%AE%8C%E6%AF%95"><span class="nav-number">8.</span> <span class="nav-text"> 回到 runGrype：素材准备完毕</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">269</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
