@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="前面的文章中，我们分析了 Grype 如何加载漏洞数据库、匹配框架如何运转、以及不同生态系统如何实施各自的匹配策略。但在整个漏洞匹配链路中，有一个环节被我们反复提及却一直未被展开讨论——版本比较。Grype 需要为 14 种以上的软件包格式分别提供正确的版本比较逻辑，而每一套逻辑背后都对应着一个生态的历史积累、社区约定和技术规范。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 09：软件版本比较为什么如此复杂">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/19/go-grype-09/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="前面的文章中，我们分析了 Grype 如何加载漏洞数据库、匹配框架如何运转、以及不同生态系统如何实施各自的匹配策略。但在整个漏洞匹配链路中，有一个环节被我们反复提及却一直未被展开讨论——版本比较。Grype 需要为 14 种以上的软件包格式分别提供正确的版本比较逻辑，而每一套逻辑背后都对应着一个生态的历史积累、社区约定和技术规范。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-19T13:38:24.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:48:44.136Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/19/go-grype-09/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 09：软件版本比较为什么如此复杂 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/19/go-grype-09/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 09：软件版本比较为什么如此复杂
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-19 21:38:24" itemprop="dateCreated datePublished" datetime="2026-07-19T21:38:24+08:00">2026-07-19</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>前面的文章中，我们分析了 Grype 如何加载漏洞数据库、匹配框架如何运转、以及不同生态系统如何实施各自的匹配策略。但在整个漏洞匹配链路中，有一个环节被我们反复提及却一直未被展开讨论——<strong>版本比较</strong>。Grype 需要为 14 种以上的软件包格式分别提供正确的版本比较逻辑，而每一套逻辑背后都对应着一个生态的历史积累、社区约定和技术规范。</p>
+<span id="more"></span>
+<p>本文将从 Grype 版本比较系统的整体架构出发，深入剖析各类版本比较器的实现原理，并展示它们如何与约束表达式和数据库查询协作，完成从&quot;版本字符串&quot;到&quot;是否受影响&quot;的最终判断。</p>
+<h2 id="版本比较系统的整体架构"><a class="markdownIt-Anchor" href="#版本比较系统的整体架构"></a> 版本比较系统的整体架构</h2>
+<p>在进入具体实现之前，我们先建立整个版本比较系统的全局视图。Grype 的版本比较系统位于 <code>grype/version</code> 包，由四个核心抽象组成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Format（版本格式）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">Version（版本对象）  ◄──  Comparator（版本比较器）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">Constraint（约束表达式）  ◄──  Range Expression（范围表达式解析）</span><br></pre></td></tr></table></figure>
+<p><strong>Format</strong> 是一个枚举类型，标识版本字符串属于哪种软件生态。Grype 定义了 14 种格式：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    UnknownFormat Format = <span class="literal">iota</span></span><br><span class="line">    SemanticFormat    <span class="comment">// npm, NuGet, Hex, Composer, Pub, Swift, Conan 等</span></span><br><span class="line">    ApkFormat         <span class="comment">// Alpine Linux</span></span><br><span class="line">    DebFormat         <span class="comment">// Debian / Ubuntu</span></span><br><span class="line">    MavenFormat       <span class="comment">// Java / Maven</span></span><br><span class="line">    RpmFormat         <span class="comment">// Red Hat / CentOS / Fedora</span></span><br><span class="line">    PythonFormat      <span class="comment">// Python PEP 440</span></span><br><span class="line">    KBFormat          <span class="comment">// Windows KB 补丁</span></span><br><span class="line">    GemFormat         <span class="comment">// Ruby Gem</span></span><br><span class="line">    PortageFormat     <span class="comment">// Gentoo</span></span><br><span class="line">    GolangFormat      <span class="comment">// Go Module</span></span><br><span class="line">    JVMFormat         <span class="comment">// JVM / JRE / JDK</span></span><br><span class="line">    BitnamiFormat     <span class="comment">// Bitnami</span></span><br><span class="line">    PacmanFormat      <span class="comment">// Arch Linux</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>一个包（如 <code>lodash</code>）通过 <code>pkg.VersionFormat(p)</code> 函数映射到对应的 Format——<code>NpmPkg</code> 类型映射到 <code>SemanticFormat</code>，<code>ApkPkg</code> 映射到 <code>ApkFormat</code>，以此类推。</p>
+<p><strong>Version</strong> 是版本比较系统的核心对象，它封装了一个版本字符串和它对应的 Format，并对外提供 <code>Compare()</code> 和 <code>Is()</code> 两个方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Version <span class="keyword">struct</span> &#123;</span><br><span class="line">    Raw         <span class="type">string</span></span><br><span class="line">    Format      Format</span><br><span class="line">    comparators <span class="keyword">map</span>[Format]Comparator</span><br><span class="line">    Config      ComparisonConfig</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v Version)</span></span> Compare(other *Version) (<span class="type">int</span>, <span class="type">error</span>) &#123; ... &#125;</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v *Version)</span></span> Is(op Operator, other *Version) (<span class="type">bool</span>, <span class="type">error</span>) &#123; ... &#125;</span><br></pre></td></tr></table></figure>
+<p><strong>Comparator</strong> 是一个接口，定义了 <code>Compare()</code> 方法——负责实际比较两个版本字符串的数值大小：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Comparator <span class="keyword">interface</span> &#123;</span><br><span class="line">    Compare(*Version) (<span class="type">int</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Grype 为每种 Format 都实现了一个 Comparator：<code>semanticVersion</code>、<code>apkVersion</code>、<code>debVersion</code>、<code>rpmVersion</code> 等等。<code>Version.Compare()</code> 的核心逻辑就是：根据自身 Format 获取对应的 Comparator，然后调用 Comparator 的 <code>Compare()</code> 方法。这里有一个重要的容错设计——如果主格式的比较失败（例如解析错误），Grype 会尝试用另一个版本的 Format 的 Comparator 进行回退比较。</p>
+<p><strong>Constraint</strong> 是版本比较系统的上层抽象，负责表达&quot;版本范围&quot;并回答&quot;某个版本是否满足这个范围&quot;。它的接口定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Constraint <span class="keyword">interface</span> &#123;</span><br><span class="line">    fmt.Stringer</span><br><span class="line">    Value() <span class="type">string</span></span><br><span class="line">    Format() Format</span><br><span class="line">    Satisfied(*Version) (<span class="type">bool</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>约束表达式可以是 <code>&gt;= 1.0, &lt; 2.0</code> 这样的简单范围，也可以是 <code>&gt;= 1.0, &lt; 2.0 || = 2.0.1</code> 这样多个范围的 OR 组合。Grype 通过 <code>version.GetConstraint(constStr, format)</code> 工厂函数，根据不同的 Format 创建对应的 Constraint 实例。</p>
+<p>这四个抽象之间的协作关系可以这样理解：<strong>Constraint 告诉你&quot;漏洞影响哪些版本&quot;</strong>（例如 <code>&lt; 4.17.21</code>），<strong>Version 告诉你&quot;软件包的当前版本&quot;</strong>（例如 <code>4.17.20</code>），<strong>Comparator 负责比较两个版本的数值大小</strong>，三者配合完成最终判断：软件的当前版本是否落在漏洞影响的版本范围内。</p>
+<h2 id="约束表达式从字符串到结构化范围"><a class="markdownIt-Anchor" href="#约束表达式从字符串到结构化范围"></a> 约束表达式：从字符串到结构化范围</h2>
+<p>在深入各种版本比较器之前，我们需要先理解约束表达式是如何被解析的。漏洞数据库中存储的约束是一段文本，例如：</p>
+<ul>
+<li><code>&gt;= 1.0, &lt; 2.0</code>：声明版本范围在 1.0 以上但不到 2.0</li>
+<li><code>&lt; 3.2.1</code>：版本低于 3.2.1 才受影响</li>
+<li><code>&gt;= 1.0, &lt; 2.0 || &gt;= 3.0, &lt; 4.0</code>：版本在 1.x 和 3.x 两个区间之一</li>
+</ul>
+<p>这些文本需要被解析为 Grype 可以逐个计算的比较单元。解析工作由 <code>range_expression.go</code> 中的 <code>parseRangeExpression()</code> 和 <code>range.go</code> 中的 <code>parseRange()</code> 两个函数完成。</p>
+<h3 id="两阶段解析从文本到-or-of-and-结构"><a class="markdownIt-Anchor" href="#两阶段解析从文本到-or-of-and-结构"></a> 两阶段解析：从文本到 OR-of-AND 结构</h3>
+<p>约束表达式的解析分为两个阶段。</p>
+<p>第一阶段是<strong>词法扫描</strong>（<code>scanExpression()</code>），使用 Go 标准库的 <code>text/scanner</code> 将原始字符串拆分为&quot;或组&quot;（OR groups）和&quot;与组&quot;（AND groups）。具体来说：</p>
+<ul>
+<li>逗号 <code>,</code> 分隔的是 AND 关系——所有条件必须同时满足。例如 <code>&gt;= 1.0, &lt; 2.0</code> 表示&quot;版本 &gt;= 1.0 且 &lt; 2.0&quot;。</li>
+<li>双竖线 <code>||</code> 分隔的是 OR 关系——任一条件满足即可。例如 <code>&lt; 1.0 || &gt; 2.0</code> 表示&quot;版本 &lt; 1.0 或 &gt; 2.0&quot;。</li>
+</ul>
+<p>这样的设计直接对应了漏洞约束中常见的手写形式：一个漏洞影响范围通常由若干 OR 子句组成，每个子句内部是 AND 连接的多个边界条件。</p>
+<p>第二阶段是<strong>单元解析</strong>（<code>parseRange()</code>），将每个版本-操作符对解析为 <code>rangeUnit</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> rangeUnit <span class="keyword">struct</span> &#123;</span><br><span class="line">    Operator Operator</span><br><span class="line">    Version  <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>parseRange()</code> 使用正则表达式 <code>constraintPartPattern</code> 从每段文本中提取操作符（<code>&gt;=</code>、<code>&lt;=</code>、<code>&gt;</code>、<code>&lt;</code>、<code>=</code>）和版本号：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> constraintPartPattern = regexp.MustCompile(</span><br><span class="line">    <span class="string">`\s*(?P&lt;prefix&gt;[^&gt;&lt;=a-zA-Z0-9().&#x27;&quot;]*)(?P&lt;operator&gt;[&gt;&lt;=]*)\s*(?P&lt;version&gt;.+)`</span>,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>最终，整个约束表达式被解析为一个 <code>simpleRangeExpression</code>，其内部结构是 <code>[][]rangeUnit</code>——外层数组是 OR 关系，内层数组是 AND 关系。这种&quot;或中包含与&quot;（OR-of-ANDs）的结构可以表达大多数实际的漏洞约束场景。</p>
+<h3 id="约束的满足性判断"><a class="markdownIt-Anchor" href="#约束的满足性判断"></a> 约束的满足性判断</h3>
+<p>当一个约束需要判断某个版本是否满足它时，执行的是两级逻辑运算：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *simpleRangeExpression)</span></span> satisfiedWithConfig(format Format, version *Version, cfg ComparisonConfig) (<span class="type">bool</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    oneSatisfied := <span class="literal">false</span></span><br><span class="line">    <span class="keyword">for</span> i, andOperand := <span class="keyword">range</span> c.Units &#123;</span><br><span class="line">        allSatisfied := <span class="literal">true</span></span><br><span class="line">        <span class="keyword">for</span> j, andUnit := <span class="keyword">range</span> andOperand &#123;</span><br><span class="line">            <span class="comment">// 比较本版本和约束中的版本</span></span><br><span class="line">            result, err := version.Compare(constraintVersion)</span><br><span class="line">            ...</span><br><span class="line">            <span class="keyword">if</span> !unit.Satisfied(result) &#123;</span><br><span class="line">                allSatisfied = <span class="literal">false</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        oneSatisfied = oneSatisfied || allSatisfied</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> oneSatisfied, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>外层循环遍历 OR 组——只要有一个 OR 组整体满足就返回 <code>true</code>。内层循环遍历 AND 组——必须所有 AND 单元都满足才判定为该 OR 组满足。每个 <code>rangeUnit.Satisfied()</code> 方法根据比较结果判断该单元是否满足：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *rangeUnit)</span></span> Satisfied(comparison <span class="type">int</span>) <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> c.Operator &#123;</span><br><span class="line">    <span class="keyword">case</span> EQ:  <span class="keyword">return</span> comparison == <span class="number">0</span></span><br><span class="line">    <span class="keyword">case</span> GT:  <span class="keyword">return</span> comparison &gt; <span class="number">0</span></span><br><span class="line">    <span class="keyword">case</span> GTE: <span class="keyword">return</span> comparison &gt;= <span class="number">0</span></span><br><span class="line">    <span class="keyword">case</span> LT:  <span class="keyword">return</span> comparison &lt; <span class="number">0</span></span><br><span class="line">    <span class="keyword">case</span> LTE: <span class="keyword">return</span> comparison &lt;= <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>至此，我们得到了约束解析到判断的完整链条：<strong>文本约束 → 扫描为 OR/AND 组 → 解析为 rangeUnit → 通过 Comparator 比较版本 → 逻辑运算得到最终布尔结果</strong>。</p>
+<p>有了这个全局视图，我们就可以深入各个版本比较器的具体实现了。</p>
+<h2 id="版本比较的三类策略"><a class="markdownIt-Anchor" href="#版本比较的三类策略"></a> 版本比较的三类策略</h2>
+<p>Grype 中的 14 种版本格式，虽然各有独特的比较逻辑，但从实现方式上可以归纳为三类：</p>
+<ul>
+<li><strong>委托外部分库类</strong>：Semantic、APK、DEB、Maven、Python、Bitnami——这些版本格式将比较工作委托给成熟的第三方库，Grype 自身只负责适配和数据清洗；</li>
+<li><strong>自主分段比较类</strong>：RPM、Pacman、Gem、Portage——这些格式自行实现了分段提取与逐段比较的逻辑；</li>
+<li><strong>降级与简化类</strong>：Golang（伪版本处理）、JVM（JEP 223 转换）、KB（相等性比较）、Fuzzy（通用模糊比较）——面对不规范或非标准版本号，采用转换、规范化或降级策略。</li>
+</ul>
+<p>下面我们按&quot;从简单到复杂&quot;的顺序逐一分析。</p>
+<h2 id="语义化版本最广泛使用的比较基础"><a class="markdownIt-Anchor" href="#语义化版本最广泛使用的比较基础"></a> 语义化版本：最广泛使用的比较基础</h2>
+<p>语义化版本（Semantic Versioning，semver）是 Grype 中使用频率最高的版本格式——npm、NuGet、Hex、Composer、Pub、Swift、Conan 等多个生态都归入此格式。Grype 通过 <code>github.com/anchore/go-version</code>（hashicorp 版 go-version 的 fork）库来处理语义化版本比较：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> semanticVersion <span class="keyword">struct</span> &#123;</span><br><span class="line">    obj *hashiVer.Version</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newSemanticVersion</span><span class="params">(raw <span class="type">string</span>, strict <span class="type">bool</span>)</span></span> (semanticVersion, <span class="type">error</span>) &#123;</span><br><span class="line">    clean := semverPrereleaseNormalizer.Replace(raw)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">if</span> strict &#123;</span><br><span class="line">        verObj, err = hashiVer.NewSemver(clean)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        clean = trimLeadingV(clean)</span><br><span class="line">        verObj, err = hashiVer.NewVersion(clean)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有几个值得注意的设计决策。</p>
+<p><strong>非严格模式是默认选择。</strong> <code>newSemanticVersion()</code> 的 <code>strict</code> 参数控制是否使用严格的 semver 解析。在 strict 模式下，只有完全符合 <code>MAJOR.MINOR.PATCH-prerelease+build</code> 格式的版本才能被接受。但 Grype 的实际调用中，strict 默认为 <code>false</code>——这是因为现实中的版本号往往不完全符合 semver 规范，例如 <code>1.0.0a</code>、<code>1.0</code>（缺少 PATCH 段）、<code>v1.0.0</code>（带 v 前缀）等。非严格模式给 <code>hashicorp/go-version</code> 更大的包容度，允许解析部分版本和不规范版本。</p>
+<p><strong>预发布后缀规范化。</strong> <code>semverPrereleaseNormalizer</code> 处理了 Ruby gem 社区中的一个常见变体：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> semverPrereleaseNormalizer = strings.NewReplacer(</span><br><span class="line">    <span class="string">&quot;.alpha&quot;</span>, <span class="string">&quot;-alpha&quot;</span>, <span class="string">&quot;.beta&quot;</span>, <span class="string">&quot;-beta&quot;</span>, <span class="string">&quot;.rc&quot;</span>, <span class="string">&quot;-rc&quot;</span>,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>一些 gem 包使用 <code>.alpha</code>、<code>.beta</code>、<code>.rc</code> 而不是 semver 标准的 <code>-alpha</code>、<code>-beta</code>、<code>-rc</code>。通过简单的字符串替换，Grype 在不丢失信息的前提下统一了这些变体。</p>
+<p><strong>v 前缀去除。</strong> <code>trimLeadingV()</code> 是一个全局共用的工具函数，如果版本号以 <code>v</code> 或 <code>V</code> 开头且后跟数字，则去除此前缀。这意味着 <code>v1.5.0</code> 和 <code>1.5.0</code> 被视为同一个版本。</p>
+<p>语义化版本的 Compare 方法极为直接——纯粹委托给底层库：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v semanticVersion)</span></span> Compare(other *Version) (<span class="type">int</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    o, err := newSemanticVersion(other.Raw, <span class="literal">false</span>)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> v.obj.Compare(o.obj), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>底层库的 semver 比较规则遵循标准的优先级规律：<code>MAJOR &gt; MINOR &gt; PATCH</code>；有预发布标识的版本小于无预发布标识的正式版本；预发布标识按字典序比较。</p>
+<h2 id="apk-和-deblinux-发行版的版本体系"><a class="markdownIt-Anchor" href="#apk-和-deblinux-发行版的版本体系"></a> APK 和 DEB：Linux 发行版的版本体系</h2>
+<p>Alpine Linux 的 APK 包管理器和 Debian 的 dpkg 分别使用各自的版本格式，它们都委托给专门的外部 Go 库来实现比较。</p>
+<h3 id="apk-版本"><a class="markdownIt-Anchor" href="#apk-版本"></a> APK 版本</h3>
+<p>APK 版本比较委托给 <code>github.com/knqyf263/go-apk-version</code> 库：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> apkVersion <span class="keyword">struct</span> &#123;</span><br><span class="line">    obj apk.Version</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newApkVersion</span><span class="params">(raw <span class="type">string</span>)</span></span> (apkVersion, <span class="type">error</span>) &#123;</span><br><span class="line">    ver, err := apk.NewVersion(trimLeadingV(raw))</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> apkVersion&#123;&#125;, invalidFormatError(ApkFormat, raw, err)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> apkVersion&#123;obj: ver&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>APK 的版本格式遵循 Alpine 的 pkgver 约定，形式为 <code>&#123;digit&#125;&#123;.digit&#125;...&#123;_alpha&#125;&#123;_suf&#125;</code>。例如 <code>1.2.3-r4</code> 或 <code>20210101-r0</code>。比较逻辑是典型的逐段比较：数字段按数值比较，字母段按字符串比较，版本后缀 <code>_alpha</code>、<code>_beta</code>、<code>_pre</code>、<code>_rc</code>、<code>_p</code> 有预设的先后顺序。</p>
+<h3 id="deb-版本与-epoch-问题"><a class="markdownIt-Anchor" href="#deb-版本与-epoch-问题"></a> DEB 版本与 Epoch 问题</h3>
+<p>DEB 版本的复杂性在于 Epoch（纪元号）。Debian 的完整版本格式是 <code>[epoch:]upstream_version[-debian_revision]</code>，其中 epoch 是一个整数，后跟冒号。当包的上游改变了版本编号方式时（例如从日期格式切换到语义版本），Epoch 用于确保正确的升级顺序——epoch 更大的版本永远是更新的版本，即使 upstream_version 看起来更小。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> debVersion <span class="keyword">struct</span> &#123;</span><br><span class="line">    obj   deb.Version</span><br><span class="line">    epoch *<span class="type">int</span></span><br><span class="line">    raw   <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>DEB 版本比较同样委托给 <code>github.com/knqyf263/go-deb-version</code>。但 Grype 额外手动提取了 epoch 字段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">extractDebEpoch</span><span class="params">(raw <span class="type">string</span>)</span></span> *<span class="type">int</span> &#123;</span><br><span class="line">    before, _, ok := strings.Cut(raw, <span class="string">&quot;:&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    epochStr := before</span><br><span class="line">    epoch, err := strconv.Atoi(epochStr)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> &amp;epoch</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>之所以需要手动提取 epoch，是因为 Grype 引入了 <strong>MissingEpochStrategy</strong>（缺失 epoch 处理策略）——一个专门针对 DEB 和 RPM 版本的版本比较配置机制。这个机制解决了一个在实际漏洞扫描中频繁出现的问题：<strong>当软件包的版本字符串没有包含 epoch，但漏洞约束中包含 epoch 时，应该如何比较？</strong></p>
+<p>想象这样一个场景：Debian 系统中安装了一个名为 <code>libssl</code> 的包，版本号为 <code>1.1.1n-0+deb10u3</code>（没有 epoch 前缀）；数据库中记录的漏洞约束是 <code>&gt;= 1:1.1.1d-0+deb10u2</code>（epoch 为 1，意味着这是一次上游版本体系的重大变更）。如果简单地将缺失的 epoch 视为 0，那么 <code>0:1.1.1n</code> 将远小于 <code>1:1.1.1d</code>，导致扫描器报告一个实际上不受影响的漏洞。这正是 <code>MissingEpochStrategyAuto</code> 要解决的问题。</p>
+<p>Grype 定义了两种 epoch 处理策略：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    MissingEpochStrategyZero MissingEpochStrategy = <span class="string">&quot;zero&quot;</span>  <span class="comment">// 缺失 epoch 视为 0（默认）</span></span><br><span class="line">    MissingEpochStrategyAuto MissingEpochStrategy = <span class="string">&quot;auto&quot;</span>  <span class="comment">// 缺失 epoch 匹配约束中的 epoch</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>MissingEpochStrategyZero</code> 是最保守的策略——缺失 epoch 一律视为 0。这在 epoch 确实为 0 的场景下是正确的，但可能导致上述误报。</p>
+<p><code>MissingEpochStrategyAuto</code> 的策略是：如果软件包版本缺少 epoch，但漏洞约束中有 epoch，则<strong>临时为软件包版本注入约束中的 epoch 值</strong>再进行比较：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> cfg.MissingEpochStrategy == MissingEpochStrategyAuto &#123;</span><br><span class="line">    <span class="keyword">if</span> v.epoch == <span class="literal">nil</span> &amp;&amp; o.epoch != <span class="literal">nil</span> &#123;</span><br><span class="line">        versionWithEpoch := strconv.Itoa(*o.epoch) + <span class="string">&quot;:&quot;</span> + v.raw</span><br><span class="line">        vWithEpoch, err := deb.NewVersion(versionWithEpoch)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        <span class="keyword">return</span> normalizeComparison(vWithEpoch.Compare(o.obj)), <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个设计的精妙之处在于：它假设&quot;缺失 epoch 的版本实际上属于该 epoch 的版本谱系&quot;。这个假设在 Debian 官方仓库的上下文中通常是安全的——同一发行版的同一个包，名称固定，不会跨越 epoch 边界产生混乱。</p>
+<p><code>debVersion</code> 通过 <code>CompareWithConfig()</code> 方法来支持这种配置化的比较。同时它保留了标准的 <code>Compare()</code> 方法作为回退——当没有配置时，默认使用 go-deb-version 库的原生行为。</p>
+<h2 id="rpm-版本最复杂的比较场景"><a class="markdownIt-Anchor" href="#rpm-版本最复杂的比较场景"></a> RPM 版本：最复杂的比较场景</h2>
+<p>RPM 版本比较是整个 <code>grype/version</code> 包中最复杂的部分，它面临的挑战远超其他格式。要理解为什么，需要先了解 RPM 的版本结构和漏洞匹配中的特殊场景。</p>
+<h3 id="rpm-的版本结构"><a class="markdownIt-Anchor" href="#rpm-的版本结构"></a> RPM 的版本结构</h3>
+<p>RPM 的完整版本格式是 <code>[epoch:]version-release</code>。例如 <code>2:1.28-419.el8_4.1</code> 中：</p>
+<ul>
+<li><code>2</code> 是 epoch</li>
+<li><code>1.28</code> 是 version</li>
+<li><code>419.el8_4.1</code> 是 release</li>
+</ul>
+<p>Grype 将这三部分分别存储在 <code>rpmVersion</code> 结构体中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> rpmVersion <span class="keyword">struct</span> &#123;</span><br><span class="line">    epoch   *<span class="type">int</span></span><br><span class="line">    version <span class="type">string</span></span><br><span class="line">    release <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>epoch 的解析通过 <code>splitEpochFromVersion()</code> 完成——在冒号处分割，冒号前是 epoch，冒号后是剩余的版本号。关键设计在于：<strong>Grype 用 nil 而非 0 表示&quot;epoch 缺失&quot;</strong>。这个决策有深刻的含义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">splitEpochFromVersion</span><span class="params">(rawVersion <span class="type">string</span>)</span></span> (*<span class="type">int</span>, <span class="type">string</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    fields := strings.SplitN(rawVersion, <span class="string">&quot;:&quot;</span>, <span class="number">2</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(fields) == <span class="number">1</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, rawVersion, <span class="literal">nil</span>  <span class="comment">// epoch 缺失 → nil 而非 0</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>为什么是 nil 而不是 0？因为 Red Hat 的官方规范说&quot;epoch 缺失时应视为 0&quot;，但实际漏洞数据中的 epoch 经常不一致——上游源 RPM 文件名可能剥离了 epoch，漏洞数据库中的约束可能包含 epoch。如果简单地用 0 替代缺失的 epoch，可能产生错误的比较结果。用 nil 让缺失状态&quot;有迹可循&quot;，这样比较逻辑本身可以根据上下文灵活决策。</p>
+<h3 id="rpm-的两套比较逻辑直接匹配-vs-上游包匹配"><a class="markdownIt-Anchor" href="#rpm-的两套比较逻辑直接匹配-vs-上游包匹配"></a> RPM 的两套比较逻辑：直接匹配 vs 上游包匹配</h3>
+<p>RPM Matcher 中有两种不同场景的版本比较，它们对 epoch 的处理方式截然不同——这正是 epoch 问题的核心所在。</p>
+<p><strong>场景一：直接匹配（二进制包匹配）。</strong> 当用二进制 RPM 包名直接匹配漏洞数据库中的同名记录时，epoch 信息通常是可靠的——RPM 数据库中存储了完整的 epoch，Red Hat 的安全公告也准确记录了 epoch。在这种情况下，缺失的 epoch 可以安全地假设为 0，Grype 甚至会在搜索前主动补全 epoch：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addEpochIfApplicable</span><span class="params">(p *pkg.Package)</span></span> &#123;</span><br><span class="line">    meta, ok := p.Metadata.(pkg.RpmMetadata)</span><br><span class="line">    <span class="keyword">switch</span> &#123;</span><br><span class="line">    <span class="keyword">case</span> strings.Contains(ver, <span class="string">&quot;:&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span>                    <span class="comment">// 已经有 epoch</span></span><br><span class="line">    <span class="keyword">case</span> ok &amp;&amp; meta.Epoch != <span class="literal">nil</span>:</span><br><span class="line">        p.Version = fmt.Sprintf(<span class="string">&quot;%d:%s&quot;</span>, *meta.Epoch, ver)  <span class="comment">// 从元数据补全</span></span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        p.Version = <span class="string">&quot;0:&quot;</span> + ver    <span class="comment">// 显式补为 0</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在这个场景下，版本比较使用 <code>MissingEpochStrategyZero</code>，缺失 epoch 被视为 0，因为 epoch 信息的来源是可信的。</p>
+<p><strong>场景二：上游包匹配（source RPM 匹配）。</strong> 当通过 source RPM 查找上游包（例如 <code>perl</code> 的上游 sourceRPM）时，epoch 的问题变得复杂。source RPM 文件名通常不包含 epoch 信息——但上游包可能确实有一个非零 epoch。</p>
+<p>考虑 RPM Matcher 源码中的注释给出的真实案例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">包名:       perl-Errno</span><br><span class="line">版本:       0:1.28-419.el8_4.1</span><br><span class="line">sourceRPM:  perl-5.26.3-419.el8_4.1.src.rpm</span><br><span class="line"></span><br><span class="line">漏洞记录:</span><br><span class="line">    ID:               CVE-2020-10543</span><br><span class="line">    Package Name:      perl（注意：是 source 包名，不是 perl-Errno）</span><br><span class="line">    Version constraint: &lt; 4:5.26.3-419.el8</span><br></pre></td></tr></table></figure>
+<p>如果按 Red Hat 规范，缺失 epoch 视为 0，则比较是：<code>0:5.26.3-419.el8 &lt; 4:5.26.3-419.el8 = true</code>——判断为受影响。但实际上，perl-Errno 的 source RPM 来自同一发行版的稳定仓库，它很可能就是 4:5.26.3-419.el8，而不是 0:5.26.3-419.el8。真正的比较应该是：<code>5.26.3-419.el8 == 5.26.3-419.el8 = true</code>——版本相同，不受影响。</p>
+<p>这正是 RPM 比较器默认行为的设计哲学——<strong>当只有一方有 epoch 时，忽略 epoch 直接比较 version 和 release 段</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v rpmVersion)</span></span> compare(v2 rpmVersion) <span class="type">int</span> &#123;</span><br><span class="line">    <span class="comment">// 只有双方都有显式 epoch 时才比较 epoch</span></span><br><span class="line">    <span class="keyword">if</span> epochIsPresent(v.epoch) &amp;&amp; epochIsPresent(v2.epoch) &#123;</span><br><span class="line">        epochResult := compareEpochs(*v.epoch, *v2.epoch)</span><br><span class="line">        <span class="keyword">if</span> epochResult != <span class="number">0</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> epochResult</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 否则跳过 epoch，直接比较 version 段和 release 段</span></span><br><span class="line">    ret := compareRpmVersions(v.version, v2.version)</span><br><span class="line">    <span class="keyword">if</span> ret != <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> ret</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> compareRpmVersions(v.release, v2.release)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个设计虽然不符合 Red Hat 官方 RPM 规范，但对于漏洞扫描的场景来说是更实用的选择——它能避免因数据源中 epoch 信息不一致而导致的错误匹配。</p>
+<p>当 <code>MissingEpochStrategyAuto</code> 被激活时（在 RPM Matcher 的上游包搜索路径中使用），处理逻辑更精细：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> cfg.MissingEpochStrategy == MissingEpochStrategyAuto &#123;</span><br><span class="line">    <span class="keyword">if</span> !epochIsPresent(v.epoch) &amp;&amp; epochIsPresent(v2.epoch) &#123;</span><br><span class="line">        vWithEpoch := v</span><br><span class="line">        vWithEpoch.epoch = v2.epoch  <span class="comment">// 使用约束中的 epoch</span></span><br><span class="line">        <span class="keyword">return</span> vWithEpoch.compare(v2)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这相当于说：“如果软件包版本缺少 epoch，我猜它和约束是同一个 epoch 体系”。这个假设在上游包匹配场景中通常是合理的。</p>
+<h3 id="rpm-的逐段比较算法"><a class="markdownIt-Anchor" href="#rpm-的逐段比较算法"></a> RPM 的逐段比较算法</h3>
+<p>epoch 之后，RPM 的 version 和 release 段使用逐段比较算法。<code>compareRpmVersions()</code> 的实现参考了 RPM 源码中的 C 函数 <code>rpmvercmp</code>：</p>
+<ol>
+<li>
+<p><strong>按字母数字分段</strong>：将版本字符串按&quot;字母&quot;和&quot;数字&quot;的边界切分为多个 segment。例如 <code>1.28</code> 分段为 <code>[&quot;1&quot;, &quot;28&quot;]</code>；<code>419.el8_4.1</code> 分段为 <code>[&quot;419&quot;, &quot;el&quot;, &quot;8&quot;, &quot;4&quot;, &quot;1&quot;]</code>。</p>
+</li>
+<li>
+<p><strong>逐个 segment 比较</strong>：数字 segment 按数值比较（去除前导零），字母 segment 按字典序比较。</p>
+</li>
+<li>
+<p><strong>波浪号（tilde）是&quot;最小&quot;</strong>：RPM 的波浪号 <code>~</code> 表示&quot;小于任何值&quot;。例如 <code>1.0~alpha</code> 小于 <code>1.0</code>。这是因为 RPM 规范中 <code>~</code> 用于表示 pre-release 版本。</p>
+</li>
+<li>
+<p><strong>剩余 segment 处理</strong>：如果一方有更多 segment，检查剩余 segment 是否为&quot;非零&quot;内容——全部为 0 的 segment 序列不影响比较结果。</p>
+</li>
+</ol>
+<p>这个算法的威力在于它建立在字母/数字交替分段的基础上，能正确处理如 <code>419.el8</code> vs <code>419.el8_4</code> 这类混合了字母数字的版本号——它不会被 <code>_4</code> 所迷惑，而是正确地将它拆为独立的 segment 再比较。</p>
+<h2 id="go-伪版本当版本号本身就是代码"><a class="markdownIt-Anchor" href="#go-伪版本当版本号本身就是代码"></a> Go 伪版本：当版本号本身就是代码</h2>
+<p>Go Module 的版本号在稳定发布版中遵循 semver（<code>v1.2.3</code>），但 Go 生态中还有一种独特的版本形式：<strong>伪版本（pseudo-version）</strong>。伪版本的格式是 <code>v0.0.0-YYYYMMDDHHMMSS-commithash</code>，例如 <code>v0.0.0-20230101000000-abcdef123456</code>。它们用于引用没有标签的 commit，或者未发布的开发版本。</p>
+<p>Go 版本的比较器面临两个挑战：</p>
+<p><strong>挑战一是 Go 标准库的版本前缀。</strong> Syft 报告的 Go 标准库版本格式为 <code>go1.24.1</code>，这不是合法的 semver。<code>newGolangVersion()</code> 通过去除 <code>go</code> 前缀来修复：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newGolangVersion</span><span class="params">(v <span class="type">string</span>)</span></span> (golangVersion, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> v == <span class="string">&quot;(devel)&quot;</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> golangVersion&#123;&#125;, ErrUnsupportedVersion</span><br><span class="line">    &#125;</span><br><span class="line">    fixedUp := strings.TrimPrefix(v, <span class="string">&quot;go&quot;</span>)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>挑战二是 <code>+incompatible+dirty</code> 这类非标准分隔的构建元数据。</strong> Go 模块的 <code>+incompatible</code> 标记表示一个 major 版本 &gt; 1 的模块没有使用 Go modules。但有时会出现 <code>+incompatible+dirty</code> 这样的连续加号。按 semver 规范，构建元数据由 <code>.</code> 分隔，而非 <code>+</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">before, after, found := strings.Cut(fixedUp, <span class="string">&quot;+&quot;</span>)</span><br><span class="line"><span class="keyword">if</span> found &#123;</span><br><span class="line">    fixedUp = before + <span class="string">&quot;+&quot;</span> + strings.ReplaceAll(after, <span class="string">&quot;+&quot;</span>, <span class="string">&quot;.&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>修复后，Golang 版本使用 <code>hashicorp/go-version</code> 的严格 semver 模式进行解析和比较。这意味着伪版本 <code>v0.0.0-20230101...</code> 天然小于任何稳定版本 <code>v1.0.0</code>——因为 MAJOR 段为 0 且包含预发布信息。</p>
+<p><code>(devel)</code> 是一个特殊值，表示开发中的版本。Grype 将其标记为 <code>ErrUnsupportedVersion</code>，在比较时直接返回错误。这也是为什么在 Go Matcher 中，主模块的 <code>(devel)</code> 版本会被直接跳过——没有任何版本约束能对此做出有意义的判断。</p>
+<h2 id="python-pep-440公开发布与本地构建"><a class="markdownIt-Anchor" href="#python-pep-440公开发布与本地构建"></a> Python PEP 440：公开发布与本地构建</h2>
+<p>Python 的版本规范 PEP 440 定义了一个独特的概念：<strong>版本由&quot;公开发布标识&quot;和可选的&quot;本地版本标签&quot;组成</strong>（格式为 <code>public[+local]</code>）。公开发布部分遵循 <code>N[.N]+[&#123;a|b|rc&#125;N][.postN][.devN]</code> 模式；本地版本标签（以 <code>+</code> 为前缀）用于表示内部构建或补丁。</p>
+<p>PEP 440 的比较器委托给 <code>github.com/aquasecurity/go-pep440-version</code> 库，但 Grype 在此基础上增加了一层次要逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> pep440Version <span class="keyword">struct</span> &#123;</span><br><span class="line">    public goPepVersion.Version  <span class="comment">// 公开发布部分</span></span><br><span class="line">    full   goPepVersion.Version  <span class="comment">// 完整版本（含本地段）</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v pep440Version)</span></span> Compare(other *Version) (<span class="type">int</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    o, err := newPep440Version(other.Raw)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    result := v.public.Compare(o.public)</span><br><span class="line">    <span class="keyword">if</span> result != <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> result, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 公开发布部分相等时，检查本地版本标签</span></span><br><span class="line">    <span class="keyword">if</span> o.full.Local() == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>, <span class="literal">nil</span>  <span class="comment">// 约束无本地段→视为相等</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> v.full.Compare(o.full), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的逻辑是：<strong>只有当约束中包含本地版本标签时，才比较本地段；否则，如果公开发布部分相等，就认为版本相等。</strong> 这是因为在漏洞匹配的场景中，含有本地版本标签的包（例如 <code>1.0.0+internal.patch.1</code>）通常与其公开发布版本（<code>1.0.0</code>）具有相同的安全性特征——本地补丁一般不改变包的漏洞状态。</p>
+<h2 id="ruby-gem自实现的精细比较"><a class="markdownIt-Anchor" href="#ruby-gem自实现的精细比较"></a> Ruby Gem：自实现的精细比较</h2>
+<p>Ruby Gem 的版本比较是 Grype 自行实现的，不使用外部库。它的复杂性来自两个特殊处理：</p>
+<p><strong>一是架构后缀剥离。</strong> Gem 的版本号可能包含平台/架构信息，例如 <code>1.0.0-x86_64-linux</code>。<code>cleanArchFromVersion()</code> 函数在比较前剥离这些后缀，避免它们干扰版本比较：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">cleanArchFromVersion</span><span class="params">(raw <span class="type">string</span>)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">    platforms := []<span class="type">string</span>&#123;<span class="string">&quot;x86&quot;</span>, <span class="string">&quot;universal&quot;</span>, <span class="string">&quot;arm&quot;</span>, <span class="string">&quot;aarch64&quot;</span>, <span class="string">&quot;java&quot;</span>, <span class="string">&quot;dalvik&quot;</span>, <span class="string">&quot;x64&quot;</span>, <span class="string">&quot;powerpc&quot;</span>, <span class="string">&quot;sparc&quot;</span>, <span class="string">&quot;mswin&quot;</span>&#125;</span><br><span class="line">    dash := <span class="string">&quot;-&quot;</span></span><br><span class="line">    <span class="keyword">for</span> _, p := <span class="keyword">range</span> platforms &#123;</span><br><span class="line">        vals := strings.SplitN(raw, dash+p, <span class="number">2</span>)</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(vals) == <span class="number">2</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> vals[<span class="number">0</span>]</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> raw</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>二是混合 segment 比较。</strong> Gem 的版本由字母和数字交替组成（如 <code>1.0.0.alpha1</code>），Grype 将这些 segment 解析为 <code>[]any</code>（整数或字符串），然后逐段比较：</p>
+<ul>
+<li>数字 segment 按数值比较</li>
+<li>字母 segment 按字典序比较</li>
+<li>数字 segment &quot;大于&quot;字母 segment（即 <code>1.a &lt; 1.0</code>）</li>
+</ul>
+<p><strong>三是预发布版本中的中间零处理。</strong> 在预发布版本中（包含字母字符的版本），数字 segment 中的零会被裁剪——例如 <code>1.0.0.alpha</code> 和 <code>1.alpha</code> 被视为等价。这是 RubyGems 规范中关于 <code>is_prerelease?</code> 的实现细节，用于正确处理类似 <code>1.0.0.rc1</code> vs <code>1.0.0</code> 的比较。</p>
+<h2 id="jvm-版本jep-223-前后的两套体系"><a class="markdownIt-Anchor" href="#jvm-版本jep-223-前后的两套体系"></a> JVM 版本：JEP 223 前后的两套体系</h2>
+<p>JVM 的版本号在 Java 9（JEP 223）引入了彻底的变革，使得版本比较必须同时处理两种格式：</p>
+<p><strong>JEP 223 之前的旧格式：</strong> <code>1.&#123;major&#125;.&#123;minor&#125;_&#123;update&#125;-b&#123;build&#125;</code>，例如 <code>1.8.0_302-b08</code>。</p>
+<p><strong>JEP 223 之后的新格式：</strong> <code>&#123;major&#125;.&#123;minor&#125;.&#123;patch&#125;</code>，例如 <code>11.0.16.1</code>，但实践中经常是非标准的，如 <code>8.0-update302-b08</code>。</p>
+<p>Grype 的 JVM 版本比较器通过两套正则表达式和转换逻辑，将所有变体统一为 semver 再比较：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> (</span><br><span class="line">    preJep223VersionPattern = regexp.MustCompile(<span class="string">`^1\.(?P&lt;major&gt;\d+)(\.(?P&lt;minor&gt;\d+)([_-](update)?(_)?(?P&lt;patch&gt;\d+))?...)?`</span>)</span><br><span class="line">    nonCompliantSemverIsh   = regexp.MustCompile(<span class="string">`^(?P&lt;major&gt;\d+)(\.(?P&lt;minor&gt;\d+)(\.(?P&lt;patch&gt;\d+))?([_-](update)?(_)?(?P&lt;update&gt;\d+))?...)?`</span>)</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>转换的核心思路是：将 <code>update</code> 后跟的数字映射为 semver 的 PATCH 段（如果 PATCH 不存在或为 0），将 <code>-b</code> 后的数字映射为构建元数据。例如：</p>
+<ul>
+<li><code>1.8.0_302-b08</code> → <code>8.0.302+8</code></li>
+<li><code>8.0-update302-b08</code> → <code>8.0.302+8</code></li>
+<li><code>11.0.16.1</code> → <code>11.0.16.1</code>（无需转换）</li>
+</ul>
+<p>转换后统一使用 <code>hashicorp/go-version</code> 进行 semver 风格的比较。</p>
+<h2 id="模糊比较当一切皆为未知时的最后防线"><a class="markdownIt-Anchor" href="#模糊比较当一切皆为未知时的最后防线"></a> 模糊比较：当一切皆为未知时的最后防线</h2>
+<p>并非所有软件包都能归入上述已知格式。Grype 提供了 <code>FuzzyVersion</code> 和 <code>FuzzyConstraint</code> 作为处理未知格式（<code>UnknownFormat</code>）的降级方案。</p>
+<p><code>FuzzyVersion</code> 的策略是&quot;先尝试 semver，不成就用模糊比较&quot;：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v fuzzyVersion)</span></span> Compare(other *Version) (<span class="type">int</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    semver := newFuzzySemver(other.Raw)</span><br><span class="line">    <span class="keyword">if</span> semver != <span class="literal">nil</span> &amp;&amp; v.semVer != <span class="literal">nil</span> &amp;&amp; v.semVer.obj != <span class="literal">nil</span> &amp;&amp; semver.obj != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> v.semVer.obj.Compare(semver.obj), <span class="literal">nil</span>  <span class="comment">// 都能解析为 semver → 用 semver</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> fuzzyVersionComparison(v.raw, other.Raw), <span class="literal">nil</span>  <span class="comment">// 否则用模糊比较</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>fuzzyVersionComparison()</code> 是一个改编自 Facebook nvdtools 的通用版本比较函数，它的核心思想是 <strong>“将版本字符串拆分为数字段和字母段，然后逐段比较”</strong>——这本质上是一个最朴素的版本比较模型：</p>
+<ul>
+<li>按字符类型（数字 vs 标点）将字符串分段</li>
+<li>数字段按数字的值比较（用零填充使位数相等）</li>
+<li>字母段按字符串字典序比较</li>
+<li>如果包含 <code>p9</code>、<code>p15</code> 这类&quot;patch number&quot;格式，将数字部分提取出来单独比较</li>
+</ul>
+<p>它不需要任何生态知识，代价是可能出现不准确的比较——例如 <code>&quot;2000&quot;</code> vs <code>&quot;11.7&quot;</code> 的比较结果会是不合理的。但作为最后的兜底策略，它确保 Grype 不会因为无法解析版本而直接崩溃。</p>
+<p><code>FuzzyConstraint</code> 的匹配策略也遵循类似的&quot;双轨制&quot;：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(f fuzzyConstraint)</span></span> Satisfied(verObj *Version) (<span class="type">bool</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 如果版本有已知格式，先尝试用正确的约束类型重试</span></span><br><span class="line">    <span class="keyword">if</span> verObj.Format != UnknownFormat &#123;</span><br><span class="line">        newConstraint, err := GetConstraint(f.RawPhrase, verObj.Format)</span><br><span class="line">        <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">            satisfied, err := newConstraint.Satisfied(verObj)</span><br><span class="line">            <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> satisfied, <span class="literal">nil</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 回退到 semver 约束检查</span></span><br><span class="line">    <span class="keyword">if</span> f.SemanticConstraint != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> semver, err := newSemanticVersion(version, <span class="literal">true</span>); err == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> f.SemanticConstraint.Check(semver.obj), <span class="literal">nil</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 最后手段：模糊约束检查</span></span><br><span class="line">    <span class="keyword">return</span> f.Constraints.satisfied(UnknownFormat, verObj)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个三级回退策略非常务实：有格式就用格式专用解析 → 尝试 semver 约束 → 最后用模糊比较兜底。</p>
+<h2 id="特殊版本格式概览"><a class="markdownIt-Anchor" href="#特殊版本格式概览"></a> 特殊版本格式概览</h2>
+<p>除了上述主要格式，Grype 还实现了几个特殊的版本比较器，它们各自服务于特定的匹配场景。</p>
+<p><strong>Maven 版本</strong>（<code>mavenVersion</code>）委托给 <code>github.com/masahiro331/go-mvn-version</code> 库，Maven 的版本顺序规则与 semver 有微妙差别——例如 <code>1.0-sp</code>（Service Pack）被视为比 <code>1.0</code> 更高的版本。Grype 额外处理了 Java 运行时限定符：<code>.jre11</code>、<code>.jdk17</code> 等后缀在比较前被剥离，因为它们表示运行时版本而非包自身的版本。</p>
+<p><strong>Portage 版本</strong>（<code>portageVersion</code>）对应 Gentoo Linux 的 ebuild 版本体系。它使用一个复杂的正则表达式 <code>(\d+)((\.\d+)*)([a-z]?)((_(pre|p|beta|alpha|rc)\d*)*)(-r(\d+))?</code> 来捕获所有版本组件。版本后缀 <code>_alpha</code>、<code>_beta</code>、<code>_pre</code>、<code>_rc</code>、<code>_p</code> 有预设的优先级，<code>-r</code> 表示修订号。</p>
+<p><strong>Pacman 版本</strong>（<code>pacmanVersion</code>）对应 Arch Linux 的包管理器。其结构与 RPM 极其相似（<code>[epoch:]version-release</code>），但由于两者的版本比较算法可能在未来独立演进，Grype 有意保留了各自独立的实现。</p>
+<p><strong>Bitnami 版本</strong>（<code>bitnamiVersion</code>）的特殊之处在于它的&quot;回退解析&quot;策略：首先尝试 Bitnami 专用的 <code>go-version</code> 解析器，如果失败则使用 <code>hashicorp/go-version</code> 的非严格解析作为回退。这是因为 Bitnami 包的版本号通常来自上游（可能是任意格式），但修订号被剥离——Bitnami 修订号只改变打包方式，不改变上游源码，因此不应影响漏洞匹配。</p>
+<p><strong>KB 版本</strong>（<code>kbVersion</code>）是 Windows KB 安全补丁的版本格式。它是最简单的版本比较器——只做相等性比较：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(v kbVersion)</span></span> compare(other kbVersion) <span class="type">int</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> reflect.DeepEqual(v, other) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>  <span class="comment">// 不相等就返回 1，不做大小判断</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这是因为 KB 补丁号（如 <code>KB5001234</code>）本身就是标识符而非顺序版本号——你不需要判断 <code>KB5001234</code> 是否&quot;大于&quot;<code>KB5001233</code>，你只需要知道当前系统是否安装了某个特定的 KB 补丁。</p>
+<h2 id="从数据库到匹配版本比较的调用全景"><a class="markdownIt-Anchor" href="#从数据库到匹配版本比较的调用全景"></a> 从数据库到匹配：版本比较的调用全景</h2>
+<p>有了所有版本比较器的知识，我们可以回顾版本比较在整个漏洞匹配链路中的完整位置。</p>
+<h3 id="数据库加载阶段"><a class="markdownIt-Anchor" href="#数据库加载阶段"></a> 数据库加载阶段</h3>
+<p>漏洞数据库（v6 architecture）在内存中构建 Vulnerability 对象时，会调用 <code>getVersionConstraint()</code> 将数据库中的 affected range 转换为 Constraint 对象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getVersionConstraint</span><span class="params">(affectedRanges []Range)</span></span> (version.Constraint, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> constraints []<span class="type">string</span></span><br><span class="line">    <span class="keyword">for</span> _, r := <span class="keyword">range</span> affectedRanges &#123;</span><br><span class="line">        <span class="keyword">if</span> r.Version.Constraint != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            constraints = <span class="built_in">append</span>(constraints, r.Version.Constraint)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    versionFormat := version.ParseFormat(ty)</span><br><span class="line">    constraint, err := version.GetConstraint(strings.Join(constraints, <span class="string">&quot;||&quot;</span>), versionFormat)</span><br><span class="line">    <span class="keyword">return</span> constraint, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>关键点在于：多个 affected range 被 <code>||</code> 拼接成一个组合约束，然后 <code>version.GetConstraint()</code> 根据漏洞的生态系统类型创建对应格式的 Constraint——可能是 <code>genericConstraint</code>、<code>kbConstraint</code>，也可能是 <code>fuzzyConstraint</code>。</p>
+<h3 id="匹配执行阶段"><a class="markdownIt-Anchor" href="#匹配执行阶段"></a> 匹配执行阶段</h3>
+<p>在匹配阶段，<code>matchPackageByLanguage</code> 和 <code>matchPackageByDistro</code> 通过 <code>OnlyVulnerableVersions()</code> 创建版本条件：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">OnlyVulnerableVersions</span><span class="params">(v *version.Version)</span></span> vulnerability.Criteria &#123;</span><br><span class="line">    <span class="keyword">if</span> v == <span class="literal">nil</span> || v.Raw == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> search.ByFunc(<span class="function"><span class="keyword">func</span><span class="params">(_ vulnerability.Vulnerability)</span></span> (<span class="type">bool</span>, <span class="type">string</span>, <span class="type">error</span>) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span>, <span class="string">&quot;&quot;</span>, <span class="literal">nil</span>  <span class="comment">// 无版本→匹配所有</span></span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> search.ByVersion(*v)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个 Criteria 最终触发 <code>VersionCriteria.MatchesConstraint()</code>，调用 <code>constraint.Satisfied(&amp;v.Version)</code>，这才是版本比较真正发生的地方。</p>
+<h3 id="优化策略provider-层面的提前过滤"><a class="markdownIt-Anchor" href="#优化策略provider-层面的提前过滤"></a> 优化策略：Provider 层面的提前过滤</h3>
+<p>在 v6 Provider 中，<code>filterAffectedPackageRanges()</code> 函数提供了数据库查询层面的提前过滤——在构建完整的 Vulnerability 对象之前，先检查版本约束是否满足：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">filterAffectedPackageRanges</span><span class="params">(matcher search.VersionConstraintMatcher, b *PackageBlob)</span></span> (<span class="type">bool</span>, []<span class="type">string</span>) &#123;</span><br><span class="line">    <span class="keyword">for</span> _, r := <span class="keyword">range</span> b.Ranges &#123;</span><br><span class="line">        format := version.ParseFormat(v.Type)</span><br><span class="line">        constraint, err := version.GetConstraint(v.Constraint, format)</span><br><span class="line">        matches, err := matcher.MatchesConstraint(constraint)</span><br><span class="line">        <span class="keyword">if</span> matches &#123;</span><br><span class="line">            <span class="keyword">continue</span>  <span class="comment">// 这个 range 满足，保留</span></span><br><span class="line">        &#125;</span><br><span class="line">        unmatchedConstraints = <span class="built_in">append</span>(unmatchedConstraints, v.Constraint)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(b.Ranges) == <span class="built_in">len</span>(unmatchedConstraints), unmatchedConstraints</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当所有 ranges 都不满足时，这个 Blob 根本不会被转换为 Vulnerability 对象——从而避免了不必要的内存分配和后处理。</p>
+<h3 id="epoch-策略的传递路径"><a class="markdownIt-Anchor" href="#epoch-策略的传递路径"></a> Epoch 策略的传递路径</h3>
+<p>最后一个值得关注的细节是 Epoch 策略如何从 Matcher 配置一路传递到版本比较逻辑。路径是这样的：</p>
+<ol>
+<li>Matcher 配置中设置 <code>MissingEpochStrategy</code></li>
+<li>Matcher 创建 <code>version.NewWithConfig()</code> 将策略封装进 Version 对象</li>
+<li><code>simpleRangeExpression.satisfied()</code> 提取 Version 中的 Config 并调用 <code>compareWithConfig()</code></li>
+<li><code>compareWithConfig()</code> 通过类型断言判断 Comparator 是否支持配置化比较（目前只有 RPM 和 DEB），并调用其 <code>CompareWithConfig()</code> 方法</li>
+</ol>
+<p>这条路径确保了 epoch 策略的设置在正确的时间点、对正确的格式生效。</p>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>版本比较是漏洞匹配中最容易被低估的部分。在 Grype 中，它不是一个简单的字符串比较或数字大小判断，而是一套包含 14 种格式、三级分类策略、两类 epoch 处理策略和多层回退机制的子系统。理解了版本比较系统后，我们就完成了从&quot;命令行入口&quot;到&quot;扫描结果&quot;的完整技术链条。下一篇将转向漏洞匹配的后续处理——Grype 如何对匹配结果进行风险排序和优先级评估。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/20/go-grype-10/" rel="prev" title="Grype 源码分析 10：如何计算漏洞优先级">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 10：如何计算漏洞优先级
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/19/go-grype-08/" rel="next" title="Grype 源码分析 08：不同软件生态的漏洞匹配策略">
+      Grype 源码分析 08：不同软件生态的漏洞匹配策略 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%89%88%E6%9C%AC%E6%AF%94%E8%BE%83%E7%B3%BB%E7%BB%9F%E7%9A%84%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84"><span class="nav-number">1.</span> <span class="nav-text"> 版本比较系统的整体架构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BA%A6%E6%9D%9F%E8%A1%A8%E8%BE%BE%E5%BC%8F%E4%BB%8E%E5%AD%97%E7%AC%A6%E4%B8%B2%E5%88%B0%E7%BB%93%E6%9E%84%E5%8C%96%E8%8C%83%E5%9B%B4"><span class="nav-number">2.</span> <span class="nav-text"> 约束表达式：从字符串到结构化范围</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%A4%E9%98%B6%E6%AE%B5%E8%A7%A3%E6%9E%90%E4%BB%8E%E6%96%87%E6%9C%AC%E5%88%B0-or-of-and-%E7%BB%93%E6%9E%84"><span class="nav-number">2.1.</span> <span class="nav-text"> 两阶段解析：从文本到 OR-of-AND 结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BA%A6%E6%9D%9F%E7%9A%84%E6%BB%A1%E8%B6%B3%E6%80%A7%E5%88%A4%E6%96%AD"><span class="nav-number">2.2.</span> <span class="nav-text"> 约束的满足性判断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%89%88%E6%9C%AC%E6%AF%94%E8%BE%83%E7%9A%84%E4%B8%89%E7%B1%BB%E7%AD%96%E7%95%A5"><span class="nav-number">3.</span> <span class="nav-text"> 版本比较的三类策略</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AF%AD%E4%B9%89%E5%8C%96%E7%89%88%E6%9C%AC%E6%9C%80%E5%B9%BF%E6%B3%9B%E4%BD%BF%E7%94%A8%E7%9A%84%E6%AF%94%E8%BE%83%E5%9F%BA%E7%A1%80"><span class="nav-number">4.</span> <span class="nav-text"> 语义化版本：最广泛使用的比较基础</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#apk-%E5%92%8C-deblinux-%E5%8F%91%E8%A1%8C%E7%89%88%E7%9A%84%E7%89%88%E6%9C%AC%E4%BD%93%E7%B3%BB"><span class="nav-number">5.</span> <span class="nav-text"> APK 和 DEB：Linux 发行版的版本体系</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#apk-%E7%89%88%E6%9C%AC"><span class="nav-number">5.1.</span> <span class="nav-text"> APK 版本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#deb-%E7%89%88%E6%9C%AC%E4%B8%8E-epoch-%E9%97%AE%E9%A2%98"><span class="nav-number">5.2.</span> <span class="nav-text"> DEB 版本与 Epoch 问题</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#rpm-%E7%89%88%E6%9C%AC%E6%9C%80%E5%A4%8D%E6%9D%82%E7%9A%84%E6%AF%94%E8%BE%83%E5%9C%BA%E6%99%AF"><span class="nav-number">6.</span> <span class="nav-text"> RPM 版本：最复杂的比较场景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#rpm-%E7%9A%84%E7%89%88%E6%9C%AC%E7%BB%93%E6%9E%84"><span class="nav-number">6.1.</span> <span class="nav-text"> RPM 的版本结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rpm-%E7%9A%84%E4%B8%A4%E5%A5%97%E6%AF%94%E8%BE%83%E9%80%BB%E8%BE%91%E7%9B%B4%E6%8E%A5%E5%8C%B9%E9%85%8D-vs-%E4%B8%8A%E6%B8%B8%E5%8C%85%E5%8C%B9%E9%85%8D"><span class="nav-number">6.2.</span> <span class="nav-text"> RPM 的两套比较逻辑：直接匹配 vs 上游包匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rpm-%E7%9A%84%E9%80%90%E6%AE%B5%E6%AF%94%E8%BE%83%E7%AE%97%E6%B3%95"><span class="nav-number">6.3.</span> <span class="nav-text"> RPM 的逐段比较算法</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#go-%E4%BC%AA%E7%89%88%E6%9C%AC%E5%BD%93%E7%89%88%E6%9C%AC%E5%8F%B7%E6%9C%AC%E8%BA%AB%E5%B0%B1%E6%98%AF%E4%BB%A3%E7%A0%81"><span class="nav-number">7.</span> <span class="nav-text"> Go 伪版本：当版本号本身就是代码</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#python-pep-440%E5%85%AC%E5%BC%80%E5%8F%91%E5%B8%83%E4%B8%8E%E6%9C%AC%E5%9C%B0%E6%9E%84%E5%BB%BA"><span class="nav-number">8.</span> <span class="nav-text"> Python PEP 440：公开发布与本地构建</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ruby-gem%E8%87%AA%E5%AE%9E%E7%8E%B0%E7%9A%84%E7%B2%BE%E7%BB%86%E6%AF%94%E8%BE%83"><span class="nav-number">9.</span> <span class="nav-text"> Ruby Gem：自实现的精细比较</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#jvm-%E7%89%88%E6%9C%ACjep-223-%E5%89%8D%E5%90%8E%E7%9A%84%E4%B8%A4%E5%A5%97%E4%BD%93%E7%B3%BB"><span class="nav-number">10.</span> <span class="nav-text"> JVM 版本：JEP 223 前后的两套体系</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A8%A1%E7%B3%8A%E6%AF%94%E8%BE%83%E5%BD%93%E4%B8%80%E5%88%87%E7%9A%86%E4%B8%BA%E6%9C%AA%E7%9F%A5%E6%97%B6%E7%9A%84%E6%9C%80%E5%90%8E%E9%98%B2%E7%BA%BF"><span class="nav-number">11.</span> <span class="nav-text"> 模糊比较：当一切皆为未知时的最后防线</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%89%B9%E6%AE%8A%E7%89%88%E6%9C%AC%E6%A0%BC%E5%BC%8F%E6%A6%82%E8%A7%88"><span class="nav-number">12.</span> <span class="nav-text"> 特殊版本格式概览</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E%E6%95%B0%E6%8D%AE%E5%BA%93%E5%88%B0%E5%8C%B9%E9%85%8D%E7%89%88%E6%9C%AC%E6%AF%94%E8%BE%83%E7%9A%84%E8%B0%83%E7%94%A8%E5%85%A8%E6%99%AF"><span class="nav-number">13.</span> <span class="nav-text"> 从数据库到匹配：版本比较的调用全景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E5%8A%A0%E8%BD%BD%E9%98%B6%E6%AE%B5"><span class="nav-number">13.1.</span> <span class="nav-text"> 数据库加载阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8C%B9%E9%85%8D%E6%89%A7%E8%A1%8C%E9%98%B6%E6%AE%B5"><span class="nav-number">13.2.</span> <span class="nav-text"> 匹配执行阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%98%E5%8C%96%E7%AD%96%E7%95%A5provider-%E5%B1%82%E9%9D%A2%E7%9A%84%E6%8F%90%E5%89%8D%E8%BF%87%E6%BB%A4"><span class="nav-number">13.3.</span> <span class="nav-text"> 优化策略：Provider 层面的提前过滤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#epoch-%E7%AD%96%E7%95%A5%E7%9A%84%E4%BC%A0%E9%80%92%E8%B7%AF%E5%BE%84"><span class="nav-number">13.4.</span> <span class="nav-text"> Epoch 策略的传递路径</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">14.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">276</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

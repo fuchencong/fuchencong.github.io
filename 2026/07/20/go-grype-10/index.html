@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="拿到匹配结果只是&quot;发现漏洞&quot;的终点，&quot;修复漏洞&quot;的起点在哪里？想象这样一个场景：一次扫描产生了 200 条漏洞匹配，其中既有 Critical 级别的远程代码执行漏洞，也有 Low 级别的本地拒绝服务漏洞。安全工程师面临一个现实问题——应该先修哪一个？">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 10：如何计算漏洞优先级">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/20/go-grype-10/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="拿到匹配结果只是&quot;发现漏洞&quot;的终点，&quot;修复漏洞&quot;的起点在哪里？想象这样一个场景：一次扫描产生了 200 条漏洞匹配，其中既有 Critical 级别的远程代码执行漏洞，也有 Low 级别的本地拒绝服务漏洞。安全工程师面临一个现实问题——应该先修哪一个？">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-20T03:38:26.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:48:44.020Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/20/go-grype-10/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 10：如何计算漏洞优先级 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/20/go-grype-10/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 10：如何计算漏洞优先级
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-20 11:38:26" itemprop="dateCreated datePublished" datetime="2026-07-20T11:38:26+08:00">2026-07-20</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>拿到匹配结果只是&quot;发现漏洞&quot;的终点，&quot;修复漏洞&quot;的起点在哪里？想象这样一个场景：一次扫描产生了 200 条漏洞匹配，其中既有 Critical 级别的远程代码执行漏洞，也有 Low 级别的本地拒绝服务漏洞。安全工程师面临一个现实问题——<strong>应该先修哪一个？</strong></p>
+<span id="more"></span>
+<p>优先级如果只按 Severity（严重性）来判断，就会出现一个矛盾：一个标记为 “High” 的漏洞如果从未在任何真实攻击中被利用过，它的实际威胁可能远小于一个标记为 “Medium” 但正在被勒索软件组织广泛利用的漏洞。Grype 的解决方案是引入一个综合的 <strong>Risk Score（风险评分）</strong> ——它将 Severity、CVSS 评分、EPSS 利用概率和 CISA KEV 已知利用信息整合为一个 0-100 的数值，帮助用户在众多漏洞中做出更理性的优先级决策。</p>
+<p>本文将从风险数据的来源出发，逐一分析 Severity、CVSS、EPSS 和 KEV 如何进入 Grype 的数据模型，然后深入风险评分的计算逻辑，最后阐述不同排序策略的实现原理。</p>
+<h2 id="风险数据的来源全景"><a class="markdownIt-Anchor" href="#风险数据的来源全景"></a> 风险数据的来源全景</h2>
+<p>在深入具体实现之前，先建立整个风险数据链条的全局认识。</p>
+<p>漏洞的风险评估依赖四个维度的数据，它们来自不同的数据源，在 Grype 内部通过不同路径汇聚到 <code>vulnerability.Metadata</code> 对象中：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">漏洞数据库 (v6)</span><br><span class="line">    │</span><br><span class="line">    ├── VulnerabilityBlob.Severities ──────► Severity 字符串 + CVSS 向量</span><br><span class="line">    │</span><br><span class="line">    ├── KnownExploitedVulnerabilityHandle ─► KEV 数据（通过 CVE 关联）</span><br><span class="line">    │</span><br><span class="line">    ├── EpssHandle ────────────────────────► EPSS 数据（通过 CVE 关联）</span><br><span class="line">    │</span><br><span class="line">    └── CWEHandle ─────────────────────────► CWE 数据（通过 CVE 关联）</span><br></pre></td></tr></table></figure>
+<p>前面分析过的 v6 数据库中存储的是<strong>漏洞记录与受影响包之间的关联关系</strong>，而风险相关的数据则是通过<strong>漏洞的 CVE 编号</strong>跨表关联查询获得的。这四类数据在查询时通过 <code>vulnerabilityProvider.getVulnerabilityMetadata()</code> 汇总为 <code>vulnerability.Metadata</code> 对象，然后附着在 <code>Vulnerability</code> 对象上随匹配结果一起输出。</p>
+<p>值得注意的一个设计细节是：<strong>风险数据在数据库中独立存储，在查询时动态组装</strong>。KEV 和 EPSS 数据并不是直接存储在漏洞记录中，而是存储在以 CVE 为键的独立表中。这样做的好处是：KEV 和 EPSS 数据源可以独立更新，不需要重新构建整个漏洞数据库的核心关联记录。</p>
+<h2 id="severity漏洞严重性的第一印象"><a class="markdownIt-Anchor" href="#severity漏洞严重性的第一印象"></a> Severity：漏洞严重性的第一印象</h2>
+<p>Severity 是一个字符串标签——“Critical”、“High”、“Medium”、“Low” 或 “Negligible”——它是用户看到漏洞时的第一印象。但它的来源并不像表面上那么简单。</p>
+<h3 id="severity-的来源"><a class="markdownIt-Anchor" href="#severity-的来源"></a> Severity 的来源</h3>
+<p>在 v6 数据库中，每条漏洞记录（<code>VulnerabilityHandle</code>）的 Blob 中都有一个 <code>Severities</code> 数组，按优先级排序。Grype 取数组中的第一个（优先级最高的）条目来确定 Severity：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">extractSeverities</span><span class="params">(vuln *VulnerabilityHandle)</span></span> (vulnerability.Severity, []vulnerability.Cvss, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> vuln.BlobValue == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> vulnerability.UnknownSeverity, <span class="literal">nil</span>, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    sev := vulnerability.UnknownSeverity</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(vuln.BlobValue.Severities) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">var</span> err <span class="type">error</span></span><br><span class="line">        <span class="comment">// grype DB v6+ will order the set of severities by rank, so we can just take the first one</span></span><br><span class="line">        sev, err = extractSeverity(vuln.BlobValue.Severities[<span class="number">0</span>].Value)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> sev, toCvss(vuln.BlobValue.Severities...), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Severity 的确定有两种路径：</p>
+<ul>
+<li><strong>如果数据源直接提供了字符串标签</strong>（如 “high”、“critical”），Grype 直接使用 <code>ParseSeverity()</code> 将其映射为内部的 <code>Severity</code> 枚举——从 <code>UnknownSeverity</code>（0）到 <code>CriticalSeverity</code>（5）的整数常量。</li>
+<li><strong>如果数据源提供的是 CVSS 向量</strong>（如 <code>CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H</code>），Grype 会解析向量提取 Base Score，然后根据 CVSS 版本将其映射为字符串 Severity。</li>
+</ul>
+<h3 id="cvss-评分到-severity-的映射"><a class="markdownIt-Anchor" href="#cvss-评分到-severity-的映射"></a> CVSS 评分到 Severity 的映射</h3>
+<p>CVSS 有两个主要版本体系——CVSS v2 和 CVSS v3.x/4.0，它们的 Severity 阈值不同。Grype 为两个版本分别实现了映射：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">interpretCVSSv3Plus</span><span class="params">(score <span class="type">float64</span>)</span></span> vulnerability.Severity &#123;</span><br><span class="line">    <span class="keyword">if</span> score &gt;= <span class="number">9.0</span> &#123; <span class="keyword">return</span> vulnerability.CriticalSeverity &#125;</span><br><span class="line">    <span class="keyword">if</span> score &gt;= <span class="number">7.0</span> &#123; <span class="keyword">return</span> vulnerability.HighSeverity &#125;</span><br><span class="line">    <span class="keyword">if</span> score &gt;= <span class="number">4.0</span> &#123; <span class="keyword">return</span> vulnerability.MediumSeverity &#125;</span><br><span class="line">    <span class="keyword">if</span> score &gt; <span class="number">0</span>   &#123; <span class="keyword">return</span> vulnerability.LowSeverity &#125;</span><br><span class="line">    <span class="keyword">if</span> score == <span class="number">0</span>  &#123; <span class="keyword">return</span> vulnerability.NegligibleSeverity &#125;</span><br><span class="line">    <span class="keyword">return</span> vulnerability.UnknownSeverity</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>为什么需要两套映射？因为 <strong>CVSS v2 没有 “Critical” 级别</strong>——它的最高级别是 “High”（7.0-10.0）。而 CVSS v3.x 在 9.0-10.0 之间增加了 “Critical” 级别。如果不对版本做区分，一个 CVSS v2 评分 8.0 的漏洞会显示为 “High”，而一个 CVSS v3 评分 8.0 的漏洞也是 “High”——但这个 CVSS v3 评分 9.5 的漏洞才是 “Critical”。这种区分能让用户更准确地理解漏洞的严重程度。</p>
+<h3 id="severity-在风险评分中的角色"><a class="markdownIt-Anchor" href="#severity-在风险评分中的角色"></a> Severity 在风险评分中的角色</h3>
+<p>Severity 标签在风险评分中被转换为数值——不是直接用枚举序号，而是取每个级别的<strong>中间值</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">severityToScore</span><span class="params">(severity <span class="type">string</span>)</span></span> <span class="type">float64</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> strings.ToLower(severity) &#123;</span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;negligible&quot;</span>: <span class="keyword">return</span> <span class="number">0.5</span></span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;low&quot;</span>:        <span class="keyword">return</span> <span class="number">3.0</span></span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;medium&quot;</span>:     <span class="keyword">return</span> <span class="number">5.0</span></span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;high&quot;</span>:       <span class="keyword">return</span> <span class="number">7.5</span></span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;critical&quot;</span>:   <span class="keyword">return</span> <span class="number">9.0</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 未知的 severity 放在中间位置，而不是末尾</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">5.0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>&quot;取中间值&quot;这个设计值得思考。一个 “High” 级别的漏洞在 CVSS v3 标准中对应 7.0-8.9 的范围，取中间值 7.5 是合理的近似。但更有趣的是对未知 severity 的处理：它返回 5.0（Medium 级别）而不是 0。注释解释了这样做的理由——未知的 severity 不应该被放在列表底部而被忽略，相反，放在中间位置能够确保它们不被埋没在大量低风险结果中。</p>
+<h2 id="cvss多维度严重性评估"><a class="markdownIt-Anchor" href="#cvss多维度严重性评估"></a> CVSS：多维度严重性评估</h2>
+<p>CVSS（Common Vulnerability Scoring System，通用漏洞评分系统）是漏洞管理领域最广泛采用的标准之一。它不仅仅是一个分数，还包含一个向量字符串，编码了攻击向量（AV）、攻击复杂度（AC）、权限要求（PR）、用户交互（UI）、范围（S）等多个维度的评估。</p>
+<h3 id="多数据源的-cvss"><a class="markdownIt-Anchor" href="#多数据源的-cvss"></a> 多数据源的 CVSS</h3>
+<p>同一个漏洞（如 CVE-2023-xxxx）可能被多个数据源评估，每个数据源可能给出不同的 CVSS 评分——NVD 可能给出 8.8，Red Hat 可能给出 7.5，GitHub 可能给出 9.0。Grype 的处理策略是<strong>全部保留，不做偏袒</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">toCvss</span><span class="params">(severities ...Severity)</span></span> []vulnerability.Cvss &#123;</span><br><span class="line">    <span class="keyword">var</span> out []vulnerability.Cvss</span><br><span class="line">    <span class="keyword">for</span> _, sev := <span class="keyword">range</span> severities &#123;</span><br><span class="line">        <span class="keyword">if</span> sev.Scheme != SeveritySchemeCVSS &#123; <span class="keyword">continue</span> &#125;</span><br><span class="line">        cvssSev, ok := sev.Value.(CVSSSeverity)</span><br><span class="line">        <span class="keyword">if</span> !ok &#123; <span class="keyword">continue</span> &#125;</span><br><span class="line">        <span class="comment">// 从向量字符串解析出完整的 metrics</span></span><br><span class="line">        metrics, err := cvss.ParseMetricsFromVector(cvssSev.Vector)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        out = <span class="built_in">append</span>(out, vulnerability.Cvss&#123;</span><br><span class="line">            Source:  sev.Source,          <span class="comment">// 谁评估的（NVD、Red Hat...）</span></span><br><span class="line">            Type:    legacyCVSSType(sev.Rank), <span class="comment">// Primary 或 Secondary</span></span><br><span class="line">            Version: cvssSev.Version,     <span class="comment">// 2.0、3.0、3.1、4.0</span></span><br><span class="line">            Vector:  cvssSev.Vector,      <span class="comment">// 完整的向量字符串</span></span><br><span class="line">            Metrics: *metrics,            <span class="comment">// 解析出的 BaseScore 等指标</span></span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> out</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>两个设计要点在这里：</p>
+<ul>
+<li><strong>Type 字段反映了评分的优先级</strong>。Rank 为 1 的评分被标记为 “Primary”，其余的为 “Secondary”。这保持了向早期 Grype 版本的向后兼容。</li>
+<li><strong>从向量重新解析 Metrics</strong>。数据库中存储了 CVSS 向量字符串，但 Grype 使用 <code>cvss.ParseMetricsFromVector()</code> 从向量中重新解析出 BaseScore、ExploitabilityScore 和 ImpactScore。这意味着 Grype 不依赖上游数据库已经计算好的分数，而是基于 CVSS 向量独立计算，避免了存储的不一致。</li>
+</ul>
+<h3 id="cvss-在风险评分中的角色"><a class="markdownIt-Anchor" href="#cvss-在风险评分中的角色"></a> CVSS 在风险评分中的角色</h3>
+<p>在 <code>severity()</code> 函数中，CVSS 的 Base Score 和字符串 Severity 被平等对待——取两者的平均值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">severity</span><span class="params">(m Metadata)</span></span> <span class="type">float64</span> &#123;</span><br><span class="line">    stringSeverityScore := severityToScore(m.Severity) / <span class="number">10.0</span>  <span class="comment">// 归一化到 0-1</span></span><br><span class="line">    avgBaseScore := average(validBaseScores(m.Cvss...)...) / <span class="number">10.0</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> avgBaseScore == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> stringSeverityScore  <span class="comment">// 只有字符串 severity 可用</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> average(stringSeverityScore, avgBaseScore)  <span class="comment">// 取两者平均</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>为什么这样设计？注释中给出了解释：<strong>有些供应商只更新字符串 severity，不更新 CVSS 评分</strong>。如果只使用 CVSS 评分，可能会遗漏供应商对严重性的更新。反之亦然——有些记录只有 CVSS 评分没有字符串 severity。通过取平均值，Grype 在不偏向任何一个数据源的前提下综合了两类信息。</p>
+<p>这里还有一个重要的过滤逻辑：<code>validBaseScores()</code> 会过滤掉 BaseScore 为 0 的记录。因为 <strong>CVSS 的 Base Score 理论上不可能为 0</strong>——如果看到 0，说明数据有问题，不应将其纳入平均计算。</p>
+<h2 id="epss从漏洞有多严重到漏洞是否有人利用"><a class="markdownIt-Anchor" href="#epss从漏洞有多严重到漏洞是否有人利用"></a> EPSS：从&quot;漏洞有多严重&quot;到&quot;漏洞是否有人利用&quot;</h2>
+<p>如果说 CVSS 回答的是&quot;这个漏洞有多严重&quot;，EPSS（Exploit Prediction Scoring System，漏洞利用预测评分系统）回答的就是&quot;这个漏洞在未来 30 天内被利用的概率有多大&quot;。</p>
+<h3 id="为什么-epss-很重要"><a class="markdownIt-Anchor" href="#为什么-epss-很重要"></a> 为什么 EPSS 很重要</h3>
+<p>传统的漏洞优先级完全依赖 CVSS 评分，但 CVSS 存在一个内在局限：它评估的是漏洞的<strong>技术严重性</strong>，而不是<strong>现实威胁</strong>。一个 CVSS 10.0 的漏洞如果存在于一段几乎无人使用的代码路径中，其实际威胁可能远低于一个 CVSS 5.0 但正被活跃利用的漏洞。</p>
+<p>EPSS 由 FIRST 组织发布，使用机器学习模型对 CVE 被利用的概率进行预测。它输出两个值：</p>
+<ul>
+<li><strong>EPSS 分数</strong>（0-1）：漏洞在未来 30 天内被利用的估计概率。例如 0.05 表示 5% 的利用概率。</li>
+<li><strong>Percentile（百分位）</strong>（0-1）：该漏洞的利用概率在所有 CVE 中的排名。例如 0.95 表示它比 95% 的已知漏洞更可能被利用。</li>
+</ul>
+<h3 id="epss-的数据库存储与查询"><a class="markdownIt-Anchor" href="#epss-的数据库存储与查询"></a> EPSS 的数据库存储与查询</h3>
+<p>在 v6 数据库中，EPSS 数据存储在一个名为 <code>EpssHandle</code> 的独立表中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> EpssHandle <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID         <span class="type">int64</span></span><br><span class="line">    Cve        <span class="type">string</span>    <span class="comment">// CVE 编号（索引，大小写不敏感）</span></span><br><span class="line">    Epss       <span class="type">float64</span>   <span class="comment">// EPSS 分数（0-1）</span></span><br><span class="line">    Percentile <span class="type">float64</span>   <span class="comment">// 百分位（0-1）</span></span><br><span class="line">    Date       time.Time <span class="comment">// 从 EpssMetadata 中设置，不在本表存储</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>EPSS 数据的日期是一个全局属性，存储在 <code>EpssMetadata</code> 表中——所有 EPSS 记录共享同一个数据日期，因为这个数据是由 FIRST 每天整体发布的。这种设计避免了在每个 EPSS 句柄中重复存储相同的日期。</p>
+<p>查询时，<code>vulnerabilityProvider</code> 首先提取漏洞的所有 CVE 编号（包括主 ID 和别名），然后逐个查询 EPSS 表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(vp vulnerabilityProvider)</span></span> fetchEpss(cves []<span class="type">string</span>) ([]vulnerability.EPSS, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> out []vulnerability.EPSS</span><br><span class="line">    <span class="keyword">for</span> _, cve := <span class="keyword">range</span> cves &#123;</span><br><span class="line">        entries, err := vp.reader.GetEpss(cve)</span><br><span class="line">        <span class="keyword">for</span> _, entry := <span class="keyword">range</span> entries &#123;</span><br><span class="line">            out = <span class="built_in">append</span>(out, vulnerability.EPSS&#123;</span><br><span class="line">                CVE:        entry.Cve,</span><br><span class="line">                EPSS:       entry.Epss,</span><br><span class="line">                Percentile: entry.Percentile,</span><br><span class="line">                Date:       entry.Date,</span><br><span class="line">            &#125;)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> out, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="epss-兼容性控制"><a class="markdownIt-Anchor" href="#epss-兼容性控制"></a> EPSS 兼容性控制</h3>
+<p>数据库的 schema version 决定了 EPSS 是否可用。<code>vulnerabilityDecoratorStore</code> 在初始化时检查版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">minSupportedEPSSClientVersion := schemaver.New(<span class="number">6</span>, <span class="number">0</span>, <span class="number">2</span>)</span><br><span class="line"><span class="comment">// ...</span></span><br><span class="line">epssEnabled: dbVersion.GreaterOrEqualTo(minSupportedEPSSClientVersion),</span><br></pre></td></tr></table></figure>
+<p>如果数据库版本低于 6.0.2，EPSS 数据不可用，但 Grype 不会报错——它会<strong>优雅降级</strong>，返回 nil 而不报错。这确保了旧版本数据库的兼容性。</p>
+<h2 id="kev被证实的利用行为"><a class="markdownIt-Anchor" href="#kev被证实的利用行为"></a> KEV：被证实的利用行为</h2>
+<p>如果说 EPSS 是<strong>预测</strong>，那么 CISA 的 KEV（Known Exploited Vulnerabilities，已知被利用漏洞）就是<strong>证实</strong>——它记录了已经在野外被观察到的真实利用行为。</p>
+<h3 id="kev-的数据结构"><a class="markdownIt-Anchor" href="#kev-的数据结构"></a> KEV 的数据结构</h3>
+<p>KEV 不仅仅是&quot;这个漏洞被利用过&quot;的二元标记。它包含了丰富的上下文信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> KnownExploitedVulnerabilityBlob <span class="keyword">struct</span> &#123;</span><br><span class="line">    VendorProject              <span class="type">string</span>     <span class="comment">// 受影响的厂商/项目</span></span><br><span class="line">    Product                    <span class="type">string</span>     <span class="comment">// 受影响的特定产品</span></span><br><span class="line">    DateAdded                  *time.Time <span class="comment">// KEV 收录日期</span></span><br><span class="line">    RequiredAction             <span class="type">string</span>     <span class="comment">// 要求的修复措施</span></span><br><span class="line">    DueDate                    *time.Time <span class="comment">// 修复截止日期（联邦机构）</span></span><br><span class="line">    KnownRansomwareCampaignUse <span class="type">string</span>     <span class="comment">// 是否被勒索软件利用</span></span><br><span class="line">    Notes                      <span class="type">string</span>     <span class="comment">// 补充说明</span></span><br><span class="line">    URLs                       []<span class="type">string</span>   <span class="comment">// 参考链接</span></span><br><span class="line">    CWEs                       []<span class="type">string</span>   <span class="comment">// 相关 CWE</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些信息在数据库中以 blob 形式存储（通过 <code>KnownExploitedVulnerabilityHandle</code> + <code>BlobID</code>），查询时通过 <code>attachBlobValue()</code> 加载。这种设计将大尺寸、可变的 blob 数据与用于索引的固定字段（<code>cve</code>）分离，在查询效率和数据完整性之间取得了平衡。</p>
+<h3 id="kev-在威胁评估中的优先级"><a class="markdownIt-Anchor" href="#kev-在威胁评估中的优先级"></a> KEV 在威胁评估中的优先级</h3>
+<p>EPSS 的官方使用指南承认：<strong>一旦有确凿的证据表明漏洞正在野外被利用，EPSS 的概率预测就失去了参考价值</strong>——因为利用的概率已经是 100% 了。这正是 Grype 的实现逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">threat</span><span class="params">(m Metadata)</span></span> <span class="type">float64</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(m.KnownExploited) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="comment">// 按照 EPSS 的官方指南，任何野外利用的证据</span></span><br><span class="line">        <span class="comment">// （不仅仅是 PoC）应该优先于 EPSS 数据</span></span><br><span class="line">        <span class="keyword">return</span> <span class="number">1.0</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(m.EPSS) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0.0</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> m.EPSS[<span class="number">0</span>].EPSS  <span class="comment">// 返回 EPSS 概率（0-1）</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>threat()</code> 函数中有清晰的优先级：</p>
+<ul>
+<li>有 KEV → 威胁值 1.0（最高，因为利用已经被证实了）</li>
+<li>没有 KEV 但有 EPSS → 使用 EPSS 的预测概率</li>
+<li>两者都没有 → 威胁值 0.0（无可用数据）</li>
+</ul>
+<p>这个简单的 fall-through 逻辑体现了一个务实的工程原则：<strong>确定性信息优先于统计预测</strong>。</p>
+<h2 id="risk-score多维归一的风险量化"><a class="markdownIt-Anchor" href="#risk-score多维归一的风险量化"></a> Risk Score：多维归一的风险量化</h2>
+<p>有了 Severity 和 Threat 之后，Grype 将它们合并为一个 0-100 的风险评分。这是整个风险计算的核心公式：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">riskScore</span><span class="params">(m Metadata)</span></span> <span class="type">float64</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> min(threat(m) * severity(m) * kevModifier(m), <span class="number">1.0</span>) * <span class="number">100.0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>公式中各因子的含义：</p>
+<table>
+<thead>
+<tr>
+<th>因子</th>
+<th>含义</th>
+<th>取值范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>threat(m)</code></td>
+<td>被利用的可能性</td>
+<td>0.0 ~ 1.0</td>
+</tr>
+<tr>
+<td><code>severity(m)</code></td>
+<td>漏洞的严重程度</td>
+<td>0.0 ~ 1.0</td>
+</tr>
+<tr>
+<td><code>kevModifier(m)</code></td>
+<td>KEV 相关的修正系数</td>
+<td>1.0 ~ 1.1</td>
+</tr>
+<tr>
+<td>乘积 ÷ 100</td>
+<td>原始风险 × 影响（目前固定为 1.0），缩放为百分比</td>
+<td>0 ~ 100</td>
+</tr>
+</tbody>
+</table>
+<h3 id="kev-的修正作用"><a class="markdownIt-Anchor" href="#kev-的修正作用"></a> KEV 的修正作用</h3>
+<p>KEV 出现在两个地方。首先，它在 <code>threat()</code> 中将威胁值直接设为 1.0（如上文所述）。其次，它还在 <code>kevModifier()</code> 中作为乘积系数再次起作用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">kevModifier</span><span class="params">(m Metadata)</span></span> <span class="type">float64</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(m.KnownExploited) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">for</span> _, kev := <span class="keyword">range</span> m.KnownExploited &#123;</span><br><span class="line">            <span class="keyword">if</span> strings.ToLower(kev.KnownRansomwareCampaignUse) == <span class="string">&quot;known&quot;</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="number">1.1</span>  <span class="comment">// 勒索软件利用 → 额外的 10% 加成</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1.05</span>  <span class="comment">// 普通 KEV → 5% 加成</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1.0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里区分了两个层级：</p>
+<ul>
+<li><strong>普通 KEV</strong>：漏洞被 CISA 确认在野外被利用 → 额外 +5% 风险</li>
+<li><strong>勒索软件 KEV</strong>：漏洞被已知的勒索软件活动使用 → 额外 +10% 风险</li>
+</ul>
+<p>为什么勒索软件打个更高的分？因为勒索软件的利用意味着直接的商业影响——加密数据、停运系统、勒索赎金——这比&quot;一般性的野外利用&quot;更紧急，通常需要立即响应。</p>
+<h3 id="几个计算实例"><a class="markdownIt-Anchor" href="#几个计算实例"></a> 几个计算实例</h3>
+<p>为了帮助理解这三个因子的组合效果，下面给出几个典型场景的计算：</p>
+<p><strong>场景一：Critical 漏洞 + EPSS 高概率（无 KEV）</strong></p>
+<ul>
+<li>Severity: Critical → <code>severityToScore(&quot;critical&quot;) = 9.0 → 0.9</code></li>
+<li>CVSS Base Score: 9.1 → <code>0.91</code></li>
+<li><code>severity() = average(0.9, 0.91) = 0.905</code></li>
+<li>EPSS: 0.24 → <code>threat() = 0.24</code></li>
+<li><code>kevModifier() = 1.0</code>（无 KEV）</li>
+<li><code>riskScore = min(0.24 × 0.905 × 1.0, 1.0) × 100 = 21.7</code></li>
+</ul>
+<p><strong>场景二：Medium 漏洞 + 被勒索软件利用（有 KEV）</strong></p>
+<ul>
+<li>Severity: Medium → <code>severityToScore(&quot;medium&quot;) = 5.0 → 0.5</code></li>
+<li>CVSS Base Score: 5.5 → <code>0.55</code></li>
+<li><code>severity() = average(0.5, 0.55) = 0.525</code></li>
+<li>有 KEV → <code>threat() = 1.0</code></li>
+<li>勒索软件 → <code>kevModifier() = 1.1</code></li>
+<li><code>riskScore = min(1.0 × 0.525 × 1.1, 1.0) × 100 = 57.75</code></li>
+</ul>
+<p><strong>场景三：High 漏洞 + 无 EPSS（无数据）</strong></p>
+<ul>
+<li>Severity: High → <code>severityToScore(&quot;high&quot;) = 7.5 → 0.75</code></li>
+<li>CVSS Base Score: 7.8 → <code>0.78</code></li>
+<li><code>severity() = average(0.75, 0.78) = 0.765</code></li>
+<li>无 KEV，无 EPSS → <code>threat() = 0.0</code></li>
+<li><code>riskScore = min(0.0 × 0.765 × 1.0, 1.0) × 100 = 0.0</code></li>
+</ul>
+<p>关键在于场景二的得分（57.75）远高于场景一（21.7），尽管场景一的 Serity 是 “Critical” 而场景二只是 “Medium”。这正是 Risk Score 的核心价值——<strong>它将一个纯理论上的&quot;严重性&quot;评估，综合了真实世界的威胁情报，使得用户看到一个&quot;正在被勒索软件利用的 Medium 漏洞&quot;应该在&quot;一个暂时没有看到利用迹象的 Critical 漏洞&quot;之前获得关注</strong>。</p>
+<h3 id="risk-的缓存"><a class="markdownIt-Anchor" href="#risk-的缓存"></a> Risk 的缓存</h3>
+<p>Risk Score 的计算有缓存机制——第一次计算后存储在 <code>Metadata.risk</code> 字段中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Metadata)</span></span> RiskScore() <span class="type">float64</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> m == <span class="literal">nil</span> &#123; <span class="keyword">return</span> <span class="number">0</span> &#125;</span><br><span class="line">    <span class="keyword">if</span> m.risk != <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> m.risk  <span class="comment">// 已计算，直接返回缓存</span></span><br><span class="line">    &#125;</span><br><span class="line">    m.risk = riskScore(*m)  <span class="comment">// 第一次计算，存储结果</span></span><br><span class="line">    <span class="keyword">return</span> m.risk</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这是因为 <code>RiskScore()</code> 可能在多处被调用（排序时多次比较、JSON 序列化时输出），而计算结果不会改变，直接返回缓存避免了重复计算。</p>
+<h2 id="排序多维度比较策略"><a class="markdownIt-Anchor" href="#排序多维度比较策略"></a> 排序：多维度比较策略</h2>
+<p>有了 Risk Score 之后，下一个问题是：<strong>如何对匹配结果进行排序，让最值得关注的漏洞排在最前面？</strong></p>
+<p>Grype 提供了五种排序策略，通过 <code>--sort-by</code> 参数控制。默认策略是 <code>risk</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> matchSortStrategy = <span class="keyword">map</span>[SortStrategy]sortStrategyImpl&#123;</span><br><span class="line">    SortByRisk: &#123;</span><br><span class="line">        compareByRisk,</span><br><span class="line">        compareBySeverity,</span><br><span class="line">        compareByEPSSPercentile,</span><br><span class="line">        comparePackageAttributes,</span><br><span class="line">        compareByVulnerabilityID,</span><br><span class="line">    &#125;,</span><br><span class="line">    SortBySeverity: &#123;</span><br><span class="line">        compareBySeverity,</span><br><span class="line">        compareByRisk,</span><br><span class="line">        compareByEPSSPercentile,</span><br><span class="line">        comparePackageAttributes,</span><br><span class="line">        compareByVulnerabilityID,</span><br><span class="line">    &#125;,</span><br><span class="line">    SortByThreat: &#123;</span><br><span class="line">        compareByEPSSPercentile,</span><br><span class="line">        compareByRisk,</span><br><span class="line">        compareBySeverity,</span><br><span class="line">        comparePackageAttributes,</span><br><span class="line">        compareByVulnerabilityID,</span><br><span class="line">    &#125;,</span><br><span class="line">    SortByKEV: &#123;</span><br><span class="line">        compareByKEV,</span><br><span class="line">        compareByRisk,</span><br><span class="line">        compareBySeverity,</span><br><span class="line">        compareByEPSSPercentile,</span><br><span class="line">        comparePackageAttributes,</span><br><span class="line">        compareByVulnerabilityID,</span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="comment">// ... SortByPackage 和 SortByVulnerability</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="多级比较的平局打破机制"><a class="markdownIt-Anchor" href="#多级比较的平局打破机制"></a> 多级比较的&quot;平局打破&quot;机制</h3>
+<p>每种排序策略都不是单一维度的比较，而是一个<strong>比较函数的列表</strong>——每个比较函数只负责一个维度，如果这个维度上两个结果相等（返回 0），就交给下一个比较函数继续判断。这就是 <code>combine()</code> 函数的作用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">combine</span><span class="params">(impls ...compareFunc)</span></span> compareFunc &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(a, b Match)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">        <span class="keyword">for</span> _, impl := <span class="keyword">range</span> impls &#123;</span><br><span class="line">            result := impl(a, b)</span><br><span class="line">            <span class="keyword">if</span> result != <span class="number">0</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> result  <span class="comment">// 已经分出大小，立即返回</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>  <span class="comment">// 所有维度都相等</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>以默认的 <code>SortByRisk</code> 为例，比较的执行顺序是：</p>
+<ol>
+<li><strong>compareByRisk</strong>：先按 Risk Score 降序排列。如果两个漏洞的 Risk Score 不同，排序就结束了——Risk 高的排前面。</li>
+<li><strong>compareBySeverity</strong>：如果 Risk Score 相同，再按 Severity 降序排列（Critical &gt; High &gt; Medium &gt; Low &gt; Negligible）。</li>
+<li><strong>compareByEPSSPercentile</strong>：如果 Severity 也相同，按 EPSS 百分位降序排列。</li>
+<li><strong>comparePackageAttributes</strong>：如果以上风险指标都相同，按包名 → 版 本号 → 包类型排序，确保相同包的漏洞聚合在一起。</li>
+<li><strong>compareByVulnerabilityID</strong>：最后按漏洞 ID 字符串排序，作为最终的去重标准。</li>
+</ol>
+<p>这种多级比较策略确保排序结果是<strong>完全确定的</strong>——不管重复运行多少次，相同的输入总是产生相同的输出顺序。</p>
+<h3 id="五个排序策略的差异"><a class="markdownIt-Anchor" href="#五个排序策略的差异"></a> 五个排序策略的差异</h3>
+<p>每个策略的&quot;主维度&quot;不同，但它们的 fallback（平局打破）维度存在共同的模式：</p>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>主维度</th>
+<th>第一候补</th>
+<th>第二候补</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>risk</code>（默认）</td>
+<td>Risk Score</td>
+<td>Severity</td>
+<td>EPSS Percentile</td>
+<td>日常扫描，关注综合优先级</td>
+</tr>
+<tr>
+<td><code>severity</code></td>
+<td>Severity</td>
+<td>Risk Score</td>
+<td>EPSS Percentile</td>
+<td>关注最严重的漏洞</td>
+</tr>
+<tr>
+<td><code>epss</code></td>
+<td>EPSS Percentile</td>
+<td>Risk Score</td>
+<td>Severity</td>
+<td>关注最可能被利用的漏洞</td>
+</tr>
+<tr>
+<td><code>kev</code></td>
+<td>KEV 条目数</td>
+<td>Risk Score</td>
+<td>Severity</td>
+<td>关注已知被主动利用的漏洞</td>
+</tr>
+<tr>
+<td><code>package</code></td>
+<td>包名</td>
+<td>版本号</td>
+<td>包类型</td>
+<td>按包分组查看</td>
+</tr>
+</tbody>
+</table>
+<p>KEV 排序的比较函数比较特殊——它比较的不是一个数值属性，而是 KEV 条目的数量：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">compareByKEV</span><span class="params">(a, b Match)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">    aKEV := <span class="built_in">len</span>(a.Vulnerability.KnownExploited)</span><br><span class="line">    bKEV := <span class="built_in">len</span>(b.Vulnerability.KnownExploited)</span><br><span class="line">    <span class="comment">// 更多的 KEV 条目排前面</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>EPSS 排序使用的也不是 EPSS 分数本身，而是<strong>Percentile（百分位）</strong>——因为 Percentile 能更直观地反映一个漏洞在所有 CVE 中的相对位置：百分位 0.95 意味着&quot;这个漏洞比 95% 的已知漏洞更可能被利用&quot;。</p>
+<h3 id="排序的触发时机"><a class="markdownIt-Anchor" href="#排序的触发时机"></a> 排序的触发时机</h3>
+<p>排序不是在 Matcher 中进行的，而是在输出阶段——<code>Document</code> 构建过程中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewDocument</span><span class="params">(..., strategy SortStrategy, ...)</span></span> (Document, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 将 match.Matches 转为 presenter models</span></span><br><span class="line">    <span class="keyword">for</span> _, m := <span class="keyword">range</span> matches.Sorted() &#123;</span><br><span class="line">        p := pkg.ByID(m.Package.ID, packages)</span><br><span class="line">        matchModel, err := newMatch(m, *p, metadataProvider)</span><br><span class="line">        findings = <span class="built_in">append</span>(findings, *matchModel)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 按策略排序</span></span><br><span class="line">    SortMatches(findings, strategy)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意这里有一个容易被忽略的顺序：<code>matches.Sorted()</code> 是 match 包内部的排序（按包和匹配类型），而 <code>SortMatches()</code> 是在 presenter models 层按用户指定的策略（默认是 risk）重新排序。两层排序各自独立，保证了内部一致性和用户可配置性。</p>
+<h2 id="fail-onseverity-阈值与退出码"><a class="markdownIt-Anchor" href="#fail-onseverity-阈值与退出码"></a> Fail-on：Severity 阈值与退出码</h2>
+<p>除了在结果排序中起作用外，Severity 还有另一个重要用途：<strong><code>--fail-on</code> 控制扫描的退出码</strong>。</p>
+<p>在 <code>FindMatchesContext()</code> 完成所有匹配和过滤之后，会检查是否触发失败阈值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> m.FailSeverity != <span class="literal">nil</span> &amp;&amp; hasSeverityAtOrAbove(m.VulnerabilityProvider, *m.FailSeverity, *remainingMatches) &#123;</span><br><span class="line">    err = grypeerr.ErrAboveSeverityThreshold</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>hasSeverityAtOrAbove()</code> 的逻辑很直接——遍历所有匹配结果，只要发现一个 Severity 大于等于阈值的，就返回 true：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">hasSeverityAtOrAbove</span><span class="params">(store vulnerability.MetadataProvider, severity vulnerability.Severity, matches match.Matches)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> severity == vulnerability.UnknownSeverity &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span>  <span class="comment">// 未知的阈值 → 不触发</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">for</span> m := <span class="keyword">range</span> matches.Enumerate() &#123;</span><br><span class="line">        metadata, _ := store.VulnerabilityMetadata(m.Vulnerability.Reference)</span><br><span class="line">        <span class="keyword">if</span> vulnerability.ParseSeverity(metadata.Severity) &gt;= severity &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Severity</code> 类型的值越大表示越严重（<code>CriticalSeverity = 5</code> &gt; <code>UnknownSeverity = 0</code>），所以直接使用整数比较。例如 <code>--fail-on high</code> 设置阈值为 <code>HighSeverity</code>，任何 Critical 或 High 级别的匹配都会触发非零退出码。</p>
+<p>这意味着：<strong><code>--fail-on</code> 只看 Severity 标签，不关心 Risk Score 或 EPSS</strong>。这种设计是合理的——CI 流水线需要快速判断&quot;是否有高严重性问题阻止发布&quot;，而 Risk Score 主要用于人工审查时的优先级排序。</p>
+<h2 id="cwe被低估的辅助信息"><a class="markdownIt-Anchor" href="#cwe被低估的辅助信息"></a> CWE：被低估的辅助信息</h2>
+<p>除了 Severity、CVSS、EPSS 和 KEV，Grype 还从数据库中查询了 CWE（Common Weakness Enumeration，通用弱点枚举）数据。CWE 对风险评分没有影响，但它是理解漏洞<strong>本质</strong>的关键——它回答的是&quot;这是什么类型的弱点&quot;（缓冲区溢出？跨站脚本？SQL 注入？），而非&quot;这个漏洞严重吗&quot;。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> CWEHandle <span class="keyword">struct</span> &#123;</span><br><span class="line">    CVE    <span class="type">string</span></span><br><span class="line">    CWE    <span class="type">string</span>  <span class="comment">// 如 &quot;CWE-79&quot;（跨站脚本）</span></span><br><span class="line">    Source <span class="type">string</span>  <span class="comment">// 数据来源</span></span><br><span class="line">    Type   <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>CWE 不能帮用户决定&quot;先修哪一个&quot;，但能帮助用户回答&quot;我们最常见的问题类型是什么&quot;，对安全治理和培训有持久的价值。</p>
+<h2 id="风险数据的完整旅程"><a class="markdownIt-Anchor" href="#风险数据的完整旅程"></a> 风险数据的完整旅程</h2>
+<p>让我们将视角拉远，回顾风险数据从源头到最终排序的完整旅程：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line">漏洞数据源（NVD、GHSA、Red Hat...）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">漏洞数据库构建（vunnel → Grype DB v6）</span><br><span class="line">    ├── Severities Blob（严重性标签 + CVSS 向量）</span><br><span class="line">    ├── KEV 表（通过 CVE 关联）</span><br><span class="line">    ├── EPSS 表（通过 CVE 关联，独立更新频率）</span><br><span class="line">    └── CWE 表（通过 CVE 关联）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">vulnerabilityProvider.getVulnerabilityMetadata()</span><br><span class="line">    ├── extractSeverities()        → Severity + CVSS</span><br><span class="line">    ├── fetchKnownExploited()      → KEV</span><br><span class="line">    ├── fetchEpss()                → EPSS</span><br><span class="line">    └── fetchCWE()                 → CWE</span><br><span class="line">    │ （按 metadataCache 缓存，同一 CVE 只查一次）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">vulnerability.Metadata（附着在 Vulnerability 上）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">Matcher 匹配，生成 match.Matches</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">Document 构建</span><br><span class="line">    ├── newMatch() → Metadata.RiskScore()（计算/缓存 Risk）</span><br><span class="line">    └── SortMatches(findings, strategy)（按策略排序）</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">输出（JSON/Table/CycloneDX...）</span><br></pre></td></tr></table></figure>
+<p>从这张全景图中可以看到一些重要的设计原则：</p>
+<ul>
+<li><strong>数据与评分分离</strong>：原始数据（Severity、CVSS、EPSS、KEV）存储在数据库中，Risk Score 在使用时动态计算——这使得评分算法可以独立于数据库版本迭代。</li>
+<li><strong>查询合并</strong>：<code>metadataCache</code> 按 CVE ID 缓存 Metadata，同一个 CVE 影响多个包时，只需要从数据库查询一次风险数据。</li>
+<li><strong>优雅降级无处不在</strong>：数据库版本不满足要求时返回 nil 而不报错；EEPS 数据缺失时威胁值按 0 处理；未知 severity 放在中间而不是末尾。每一步都对失败场景做了设计。</li>
+</ul>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>Grype 的风险评估系统可以看作三个层次的叠加：</p>
+<ol>
+<li>
+<p><strong>基础严重性</strong>（Severity + CVSS）：回答&quot;漏洞技术上的危害有多大&quot;。它来源于漏洞数据库提供方的评估——NVD、GitHub Advisory、Red Hat 安全公告等。Severity 字符串和 CVSS 评分同等重要，取平均以避免偏袒任何一个数据源。</p>
+</li>
+<li>
+<p><strong>现实威胁</strong>（EPSS + KEV）：回答&quot;漏洞在现实世界中被利用的可能性有多大&quot;。EPSS 是统计预测，KEV 是观察证实；一旦被证实，预测就失去意义——威胁值直接设为 1.0。</p>
+</li>
+<li>
+<p><strong>综合优先级</strong>（Risk Score）：Severity × Threat × KEV Modifier，三条输入合并为一个 0-100 的分数。看似简单的乘法，但在每个因子的取值上都有精细的设计决策——KEV 的额外加成（1.05 vs 1.1 区分勒索软件）、severity 的计算（CVSS 和标签取平均）、threat 的 fallback 逻辑（KEV &gt; EPSS &gt; 0）。</p>
+</li>
+</ol>
+<p>这套系统不追求绝对的精确性——漏洞管理领域的&quot;精确&quot;本身就难以定义——而是追求<strong>合理的排序</strong>，让真正需要关注的漏洞排在前面。一个&quot;正在被勒索软件利用的 Medium 漏洞&quot;得分（57.75）远比一个&quot;暂时没有利用迹象的 Critical 漏洞&quot;得分（21.7）高，正体现了这种设计理念。</p>
+<p>掌握了风险评分和排序系统后，下一篇文章将进入 Grype 扫描流程的最后一环——结果的过滤、VEX 处理与报告输出，看 ignore 规则、VEX 文档和多种输出格式如何将&quot;内部匹配结果&quot;转化为用户可操作的&quot;最终报告&quot;。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/20/go-grype-11/" rel="prev" title="Grype 源码分析 11：结果过滤、VEX 与报告输出">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 11：结果过滤、VEX 与报告输出
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/19/go-grype-09/" rel="next" title="Grype 源码分析 09：软件版本比较为什么如此复杂">
+      Grype 源码分析 09：软件版本比较为什么如此复杂 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A3%8E%E9%99%A9%E6%95%B0%E6%8D%AE%E7%9A%84%E6%9D%A5%E6%BA%90%E5%85%A8%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text"> 风险数据的来源全景</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#severity%E6%BC%8F%E6%B4%9E%E4%B8%A5%E9%87%8D%E6%80%A7%E7%9A%84%E7%AC%AC%E4%B8%80%E5%8D%B0%E8%B1%A1"><span class="nav-number">2.</span> <span class="nav-text"> Severity：漏洞严重性的第一印象</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#severity-%E7%9A%84%E6%9D%A5%E6%BA%90"><span class="nav-number">2.1.</span> <span class="nav-text"> Severity 的来源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cvss-%E8%AF%84%E5%88%86%E5%88%B0-severity-%E7%9A%84%E6%98%A0%E5%B0%84"><span class="nav-number">2.2.</span> <span class="nav-text"> CVSS 评分到 Severity 的映射</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#severity-%E5%9C%A8%E9%A3%8E%E9%99%A9%E8%AF%84%E5%88%86%E4%B8%AD%E7%9A%84%E8%A7%92%E8%89%B2"><span class="nav-number">2.3.</span> <span class="nav-text"> Severity 在风险评分中的角色</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#cvss%E5%A4%9A%E7%BB%B4%E5%BA%A6%E4%B8%A5%E9%87%8D%E6%80%A7%E8%AF%84%E4%BC%B0"><span class="nav-number">3.</span> <span class="nav-text"> CVSS：多维度严重性评估</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E6%95%B0%E6%8D%AE%E6%BA%90%E7%9A%84-cvss"><span class="nav-number">3.1.</span> <span class="nav-text"> 多数据源的 CVSS</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cvss-%E5%9C%A8%E9%A3%8E%E9%99%A9%E8%AF%84%E5%88%86%E4%B8%AD%E7%9A%84%E8%A7%92%E8%89%B2"><span class="nav-number">3.2.</span> <span class="nav-text"> CVSS 在风险评分中的角色</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#epss%E4%BB%8E%E6%BC%8F%E6%B4%9E%E6%9C%89%E5%A4%9A%E4%B8%A5%E9%87%8D%E5%88%B0%E6%BC%8F%E6%B4%9E%E6%98%AF%E5%90%A6%E6%9C%89%E4%BA%BA%E5%88%A9%E7%94%A8"><span class="nav-number">4.</span> <span class="nav-text"> EPSS：从&quot;漏洞有多严重&quot;到&quot;漏洞是否有人利用&quot;</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88-epss-%E5%BE%88%E9%87%8D%E8%A6%81"><span class="nav-number">4.1.</span> <span class="nav-text"> 为什么 EPSS 很重要</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#epss-%E7%9A%84%E6%95%B0%E6%8D%AE%E5%BA%93%E5%AD%98%E5%82%A8%E4%B8%8E%E6%9F%A5%E8%AF%A2"><span class="nav-number">4.2.</span> <span class="nav-text"> EPSS 的数据库存储与查询</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#epss-%E5%85%BC%E5%AE%B9%E6%80%A7%E6%8E%A7%E5%88%B6"><span class="nav-number">4.3.</span> <span class="nav-text"> EPSS 兼容性控制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kev%E8%A2%AB%E8%AF%81%E5%AE%9E%E7%9A%84%E5%88%A9%E7%94%A8%E8%A1%8C%E4%B8%BA"><span class="nav-number">5.</span> <span class="nav-text"> KEV：被证实的利用行为</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#kev-%E7%9A%84%E6%95%B0%E6%8D%AE%E7%BB%93%E6%9E%84"><span class="nav-number">5.1.</span> <span class="nav-text"> KEV 的数据结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kev-%E5%9C%A8%E5%A8%81%E8%83%81%E8%AF%84%E4%BC%B0%E4%B8%AD%E7%9A%84%E4%BC%98%E5%85%88%E7%BA%A7"><span class="nav-number">5.2.</span> <span class="nav-text"> KEV 在威胁评估中的优先级</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#risk-score%E5%A4%9A%E7%BB%B4%E5%BD%92%E4%B8%80%E7%9A%84%E9%A3%8E%E9%99%A9%E9%87%8F%E5%8C%96"><span class="nav-number">6.</span> <span class="nav-text"> Risk Score：多维归一的风险量化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#kev-%E7%9A%84%E4%BF%AE%E6%AD%A3%E4%BD%9C%E7%94%A8"><span class="nav-number">6.1.</span> <span class="nav-text"> KEV 的修正作用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%A0%E4%B8%AA%E8%AE%A1%E7%AE%97%E5%AE%9E%E4%BE%8B"><span class="nav-number">6.2.</span> <span class="nav-text"> 几个计算实例</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#risk-%E7%9A%84%E7%BC%93%E5%AD%98"><span class="nav-number">6.3.</span> <span class="nav-text"> Risk 的缓存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%92%E5%BA%8F%E5%A4%9A%E7%BB%B4%E5%BA%A6%E6%AF%94%E8%BE%83%E7%AD%96%E7%95%A5"><span class="nav-number">7.</span> <span class="nav-text"> 排序：多维度比较策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E7%BA%A7%E6%AF%94%E8%BE%83%E7%9A%84%E5%B9%B3%E5%B1%80%E6%89%93%E7%A0%B4%E6%9C%BA%E5%88%B6"><span class="nav-number">7.1.</span> <span class="nav-text"> 多级比较的&quot;平局打破&quot;机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%94%E4%B8%AA%E6%8E%92%E5%BA%8F%E7%AD%96%E7%95%A5%E7%9A%84%E5%B7%AE%E5%BC%82"><span class="nav-number">7.2.</span> <span class="nav-text"> 五个排序策略的差异</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E5%BA%8F%E7%9A%84%E8%A7%A6%E5%8F%91%E6%97%B6%E6%9C%BA"><span class="nav-number">7.3.</span> <span class="nav-text"> 排序的触发时机</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#fail-onseverity-%E9%98%88%E5%80%BC%E4%B8%8E%E9%80%80%E5%87%BA%E7%A0%81"><span class="nav-number">8.</span> <span class="nav-text"> Fail-on：Severity 阈值与退出码</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#cwe%E8%A2%AB%E4%BD%8E%E4%BC%B0%E7%9A%84%E8%BE%85%E5%8A%A9%E4%BF%A1%E6%81%AF"><span class="nav-number">9.</span> <span class="nav-text"> CWE：被低估的辅助信息</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A3%8E%E9%99%A9%E6%95%B0%E6%8D%AE%E7%9A%84%E5%AE%8C%E6%95%B4%E6%97%85%E7%A8%8B"><span class="nav-number">10.</span> <span class="nav-text"> 风险数据的完整旅程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">11.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">276</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

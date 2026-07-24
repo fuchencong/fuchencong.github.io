@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="我们已经沿着 Grype 的扫描链路，我们从 main() 一路跟踪到了漏洞匹配和风险评分。当 VulnerabilityMatcher.FindMatchesContext() 执行完毕，返回了 remainingMatches（有效匹配）和 ignoredMatches（被忽略匹配）。那么问题来了：从这两组匹配结果到用户最终看到的报告，中间还发生了什么？">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 11：结果过滤、VEX 与报告输出">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/20/go-grype-11/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="我们已经沿着 Grype 的扫描链路，我们从 main() 一路跟踪到了漏洞匹配和风险评分。当 VulnerabilityMatcher.FindMatchesContext() 执行完毕，返回了 remainingMatches（有效匹配）和 ignoredMatches（被忽略匹配）。那么问题来了：从这两组匹配结果到用户最终看到的报告，中间还发生了什么？">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-20T07:20:26.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:48:43.927Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/20/go-grype-11/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 11：结果过滤、VEX 与报告输出 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/20/go-grype-11/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 11：结果过滤、VEX 与报告输出
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-20 15:20:26" itemprop="dateCreated datePublished" datetime="2026-07-20T15:20:26+08:00">2026-07-20</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>我们已经沿着 Grype 的扫描链路，我们从 <code>main()</code> 一路跟踪到了漏洞匹配和风险评分。当 <code>VulnerabilityMatcher.FindMatchesContext()</code> 执行完毕，返回了 <code>remainingMatches</code>（有效匹配）和 <code>ignoredMatches</code>（被忽略匹配）。那么问题来了：<strong>从这两组匹配结果到用户最终看到的报告，中间还发生了什么？</strong></p>
+<span id="more"></span>
+<p>本文将从 <code>VulnerabilityMatcher.FindMatchesContext()</code> 的内部过滤步骤出发，依次分析三件事：</p>
+<ol>
+<li><strong>Grype 的过滤体系</strong>——漏洞匹配结果如何被逐层筛选，什么样的匹配会被&quot;留下来&quot;，什么样的会被&quot;忽略掉&quot;；</li>
+<li><strong>VEX 处理机制</strong>——OpenVEX 和 CSAF 两份标准文档如何进入 Grype、如何与匹配结果交互；</li>
+<li><strong>报告输出系统</strong>——table、JSON、CycloneDX、SARIF 各格式如何生成，<code>--fail-on</code> 退出码如何计算。</li>
+</ol>
+<p>读完之后，你将完整地理解一次 <code>grype dir:.</code> 从命令行到输出报告的闭环。</p>
+<h2 id="过滤体系全景匹配完成后发生了什么"><a class="markdownIt-Anchor" href="#过滤体系全景匹配完成后发生了什么"></a> 过滤体系全景：匹配完成后发生了什么</h2>
+<p>先回顾一下 <code>VulnerabilityMatcher.FindMatchesContext()</code> 的内部流程（简化版）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grype/vulnerability_matcher.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *VulnerabilityMatcher)</span></span> FindMatchesContext(...) &#123;</span><br><span class="line">    <span class="comment">// 第一步：在数据库中搜索漏洞匹配</span></span><br><span class="line">    remainingMatches, ignoredMatches, _ = m.findDBMatches(ctx, pkgs, progressMonitor)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第二步：应用 VEX 文档过滤</span></span><br><span class="line">    remainingMatches, ignoredMatches, _ = m.findVEXMatches(pkgContext, remainingMatches, ignoredMatches, progressMonitor)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第三步：检查 fail-on 条件</span></span><br><span class="line">    <span class="keyword">if</span> m.FailSeverity != <span class="literal">nil</span> &amp;&amp; hasSeverityAtOrAbove(...) &#123;</span><br><span class="line">        err = grypeerr.ErrAboveSeverityThreshold</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这三步的背后，实际上对应着一套四层过滤系统：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">原始匹配</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">第一层：内置精确忽略规则 (ApplyExplicitIgnoreRules)</span><br><span class="line">    │ 基于包类型、包名、CVE将已知误报排除</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">第二层：Matcher 返回的忽略规则 (ignoredMatchFilter)</span><br><span class="line">    │ 基于文件路径重叠去重多个 Matcher 的重复匹配</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">第三层：用户自定义忽略规则 (ApplyIgnoreRules)</span><br><span class="line">    │ 基于 --ignore-states、--only-fixed、配置文件 ignore 规则</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">第四层：VEX 文档处理 (ApplyVEX)</span><br><span class="line">    │ 基于 VEX 文档的 &quot;not_affected&quot; / &quot;fixed&quot; 状态过滤</span><br><span class="line">    │ 基于 VEX 文档的 &quot;affected&quot; / &quot;under_investigation&quot; 状态恢复</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">最终匹配结果</span><br></pre></td></tr></table></figure>
+<p>让我们重点分析第一层和第三层——因为这两层使用的是同一套 <code>IgnoreRule</code> + <code>ApplyIgnoreRules</code> 引擎，只是规则的来源不同。VEX 作为第四层有独立的处理通路，我们放在后面专门讨论。</p>
+<h2 id="ignorerule一条规则的完整表达"><a class="markdownIt-Anchor" href="#ignorerule一条规则的完整表达"></a> IgnoreRule：一条规则的完整表达</h2>
+<p>忽略体系的血液是 <code>IgnoreRule</code>，它的设计体现了 Grype 的核心理念：<strong>一个忽略规则由多个维度组成，所有指定的维度必须同时满足（AND 逻辑），未指定的维度不做限制</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grype/match/ignore.go</span></span><br><span class="line"><span class="keyword">type</span> IgnoreRule <span class="keyword">struct</span> &#123;</span><br><span class="line">    Vulnerability    <span class="type">string</span>            <span class="comment">// 精确漏洞 ID，如 &quot;CVE-2021-44228&quot;</span></span><br><span class="line">    IncludeAliases   <span class="type">bool</span>              <span class="comment">// 是否同时匹配漏洞别名</span></span><br><span class="line">    Reason           <span class="type">string</span>            <span class="comment">// 忽略原因，用于报告展示</span></span><br><span class="line">    Namespace        <span class="type">string</span>            <span class="comment">// 漏洞命名空间，如 &quot;nvd:cpe&quot;</span></span><br><span class="line">    FixState         <span class="type">string</span>            <span class="comment">// 修复状态过滤：fixed/not-fixed/unknown/wont-fix</span></span><br><span class="line">    Package          IgnoreRulePackage <span class="comment">// 包维度过滤条件</span></span><br><span class="line">    VexStatus        <span class="type">string</span>            <span class="comment">// VEX 状态（由 vex processor 处理）</span></span><br><span class="line">    VexJustification <span class="type">string</span>            <span class="comment">// VEX 豁免理由</span></span><br><span class="line">    MatchType        Type              <span class="comment">// 匹配类型过滤</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> IgnoreRulePackage <span class="keyword">struct</span> &#123;</span><br><span class="line">    Name         <span class="type">string</span> <span class="comment">// 包名（支持正则）</span></span><br><span class="line">    Version      <span class="type">string</span> <span class="comment">// 精确版本</span></span><br><span class="line">    Language     <span class="type">string</span> <span class="comment">// 语言生态</span></span><br><span class="line">    Type         <span class="type">string</span> <span class="comment">// 包类型</span></span><br><span class="line">    Location     <span class="type">string</span> <span class="comment">// 文件路径（支持 glob）</span></span><br><span class="line">    UpstreamName <span class="type">string</span> <span class="comment">// 上游包名（支持正则）</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>你可以看到，一个规则可以同时组合&quot;某个 CVE&quot; + “某个包名” + “某种包类型” + “某个文件位置”——只有当一个匹配在所有这些维度上同时命中时，才会被忽略。</p>
+<h3 id="忽略匹配的条件函数体系"><a class="markdownIt-Anchor" href="#忽略匹配的条件函数体系"></a> 忽略匹配的条件函数体系</h3>
+<p><code>IgnoreRule.IgnoreMatch()</code> 方法的核心思路很清晰：</p>
+<ol>
+<li>遍历规则中所有非空字段，为每个字段构造一个条件函数；</li>
+<li>如果一个条件返回 <code>false</code>，规则立即不生效；</li>
+<li>如果所有条件都返回 <code>true</code>，则规则生效，返回自身。</li>
+</ol>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r IgnoreRule)</span></span> IgnoreMatch(match Match) []IgnoreRule &#123;</span><br><span class="line">    <span class="comment">// VEX 规则由 vex processor 单独处理</span></span><br><span class="line">    <span class="keyword">if</span> r.VexStatus != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    ignoreConditions := getIgnoreConditionsForRule(r)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(ignoreConditions) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>  <span class="comment">// 规则没有指定任何条件，不生效</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _, condition := <span class="keyword">range</span> ignoreConditions &#123;</span><br><span class="line">        <span class="keyword">if</span> !condition(match) &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">nil</span>  <span class="comment">// 任何一个条件不满足，规则不生效</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> []IgnoreRule&#123;r&#125;  <span class="comment">// 所有条件满足，规则生效</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个条件函数都是一个 <code>func(match Match) bool</code> 闭包。值得关注的是其中几个有特殊逻辑的条件：</p>
+<p><strong>包名匹配支持正则探测</strong>。Grype 会检测字符串中是否包含正则特殊字符（<code>^$*+?[]&#123;&#125;(\)|</code> 等），如果有则编译为正则表达式，否则走精确字符串匹配：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ifPackageNameApplies</span><span class="params">(name <span class="type">string</span>)</span></span> ignoreCondition &#123;</span><br><span class="line">    <span class="keyword">if</span> isLikelyARegex(name) &#123;</span><br><span class="line">        pattern, err := packageNameRegex(name)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> || pattern == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(Match)</span></span> <span class="type">bool</span> &#123; <span class="keyword">return</span> <span class="literal">false</span> &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(match Match)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> pattern.MatchString(match.Package.Name)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(match Match)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> name == match.Package.Name</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>一个有趣的设计是：<strong><code>.</code> 被刻意排除在正则检测之外</strong>。注释解释道这个字符在包名和版本号中太常见了，如果把它当作正则，会产生大量不需要的编译和误判。</p>
+<p><strong>文件路径匹配使用 glob 模式</strong>。通过 <code>doublestar.Match</code> 支持 <code>**</code> 递归通配，这意味着你可以在配置文件中写 <code>**/test/**</code> 来忽略所有测试目录下的匹配：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ruleLocationAppliesToPath</span><span class="params">(location, path <span class="type">string</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    doesMatch, err := doublestar.Match(location, path)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> doesMatch</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>FixState 的特殊处理</strong>：<code>unknown</code> 状态同时匹配 <code>FixStateUnknown</code> 和空字符串（表示修复状态未指定）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ifFixStateApplies</span><span class="params">(fs <span class="type">string</span>)</span></span> ignoreCondition &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(match Match)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> fs == <span class="type">string</span>(vulnerability.FixStateUnknown) &amp;&amp;</span><br><span class="line">            match.Vulnerability.Fix.State == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> fs == <span class="type">string</span>(match.Vulnerability.Fix.State)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="忽略规则的批量应用"><a class="markdownIt-Anchor" href="#忽略规则的批量应用"></a> 忽略规则的批量应用</h3>
+<p>有了单个规则的匹配逻辑，批量应用就很简单了。<code>ApplyIgnoreFilters</code> 遍历所有匹配，对每个匹配尝试所有规则，一旦命中就将其从&quot;有效匹配&quot;移到&quot;忽略匹配&quot;中，并附带记录哪些规则导致了忽略：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ApplyIgnoreFilters</span>[<span class="title">T</span> <span class="title">IgnoreFilter</span>]<span class="params">(matches []Match, filters ...T)</span></span> ([]Match, []IgnoredMatch) &#123;</span><br><span class="line">    <span class="keyword">var</span> out []Match</span><br><span class="line">    <span class="keyword">var</span> ignoredMatches []IgnoredMatch</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _, match := <span class="keyword">range</span> matches &#123;</span><br><span class="line">        <span class="keyword">var</span> applicableRules []IgnoreRule</span><br><span class="line">        <span class="keyword">for</span> _, filter := <span class="keyword">range</span> filters &#123;</span><br><span class="line">            applicableRules = <span class="built_in">append</span>(applicableRules, filter.IgnoreMatch(match)...)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> <span class="built_in">len</span>(applicableRules) &gt; <span class="number">0</span> &#123;</span><br><span class="line">            ignoredMatches = <span class="built_in">append</span>(ignoredMatches, IgnoredMatch&#123;</span><br><span class="line">                Match:              match,</span><br><span class="line">                AppliedIgnoreRules: applicableRules,</span><br><span class="line">            &#125;)</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        &#125;</span><br><span class="line">        out = <span class="built_in">append</span>(out, match)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> out, ignoredMatches</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>IgnoredMatch</code> 是一个包装结构——它在 <code>Match</code> 之上附加了 <code>AppliedIgnoreRules</code> 列表，让用户清楚地知道&quot;这条漏洞为什么被忽略了&quot;：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> IgnoredMatch <span class="keyword">struct</span> &#123;</span><br><span class="line">    Match</span><br><span class="line">    AppliedIgnoreRules []IgnoreRule</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="内置忽略从硬编码误报到命令行快捷过滤"><a class="markdownIt-Anchor" href="#内置忽略从硬编码误报到命令行快捷过滤"></a> 内置忽略：从硬编码误报到命令行快捷过滤</h2>
+<p>理解引擎之后，再看 Grype 自带哪些过滤规则。它们分为三层：硬编码的精确忽略规则、命令行快捷过滤、用户配置文件中的自定义规则。</p>
+<h3 id="硬编码的精确忽略"><a class="markdownIt-Anchor" href="#硬编码的精确忽略"></a> 硬编码的精确忽略</h3>
+<p>Grype 的 <code>explicitIgnoreRules</code> 是在 <code>init()</code> 中硬编码的一组规则，处理的都是<strong>已知的包名混淆场景</strong>——一个 CVE 影响的是某个特定产品，但因为共享相同的包名，被错误地关联到了不相关的包上：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grype/match/explicit_ignores.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> explicitIgnores = []ignoreValues&#123;</span><br><span class="line">        <span class="comment">// CVE-2021-44228 影响 log4j，但被关联到了某些不相关的 java-archive 包</span></span><br><span class="line">        &#123;</span><br><span class="line">            typ:             <span class="string">&quot;java-archive&quot;</span>,</span><br><span class="line">            vulnerabilities: []<span class="type">string</span>&#123;<span class="string">&quot;CVE-2021-44228&quot;</span>, <span class="string">&quot;CVE-2021-45046&quot;</span>, <span class="comment">/* ... */</span>&#125;,</span><br><span class="line">            packages:        []<span class="type">string</span>&#123;<span class="string">&quot;log4j-api&quot;</span>, <span class="string">&quot;log4j-slf4j-impl&quot;</span>, <span class="comment">/* ... */</span>&#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="comment">// CVE-2017-14196 影响 Squiz Matrix CMS，与 ruby gem &quot;matrix&quot; 无关</span></span><br><span class="line">        &#123;</span><br><span class="line">            typ:             <span class="string">&quot;gem&quot;</span>,</span><br><span class="line">            vulnerabilities: []<span class="type">string</span>&#123;<span class="string">&quot;CVE-2017-14196&quot;</span>, <span class="comment">/* ... */</span>&#125;,</span><br><span class="line">            packages:        []<span class="type">string</span>&#123;<span class="string">&quot;matrix&quot;</span>&#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="comment">// CVE-1999-1338 影响 DeleGate 代理服务器，与 ruby gem &quot;delegate&quot; 无关</span></span><br><span class="line">        &#123;</span><br><span class="line">            typ:             <span class="string">&quot;gem&quot;</span>,</span><br><span class="line">            vulnerabilities: []<span class="type">string</span>&#123;<span class="string">&quot;CVE-1999-1338&quot;</span>, <span class="comment">/* ... */</span>&#125;,</span><br><span class="line">            packages:        []<span class="type">string</span>&#123;<span class="string">&quot;delegate&quot;</span>&#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 对每条记录，按 vuln × package 笛卡尔积生成 IgnoreRule</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些规则通过 <code>ApplyExplicitIgnoreRules()</code> 在 Matcher 匹配期间就介入——它发生在每个包的数据库查询完成之后（即调用这个设计反映了 Grype 的一个务实原则：<strong>与其在数据库中修改（可能影响其他使用者），不如在扫描时透明地排除已知误报，并允许用户通过 <code>ExclusionProvider</code> 接口从数据库中加载更多规则</strong>。</p>
+<h3 id="命令行快捷过滤"><a class="markdownIt-Anchor" href="#命令行快捷过滤"></a> 命令行快捷过滤</h3>
+<p>在 <code>runGrype()</code> 函数中，Grype 将几个命令行选项<strong>翻译为 IgnoreRule</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// cmd/grype/cli/commands/root.go</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// --only-fixed：只显示有修复的漏洞</span></span><br><span class="line"><span class="keyword">var</span> ignoreNonFixedMatches = []match.IgnoreRule&#123;</span><br><span class="line">    &#123;FixState: <span class="type">string</span>(vulnerability.FixStateNotFixed)&#125;,</span><br><span class="line">    &#123;FixState: <span class="type">string</span>(vulnerability.FixStateWontFix)&#125;,</span><br><span class="line">    &#123;FixState: <span class="type">string</span>(vulnerability.FixStateUnknown)&#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// --only-notfixed：只显示尚未修复的漏洞</span></span><br><span class="line"><span class="keyword">var</span> ignoreFixedMatches = []match.IgnoreRule&#123;</span><br><span class="line">    &#123;FixState: <span class="type">string</span>(vulnerability.FixStateFixed)&#125;,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// --ignore-states：通用的修复状态过滤</span></span><br><span class="line"><span class="keyword">for</span> _, ignoreState := <span class="keyword">range</span> stringutil.SplitCommaSeparatedString(opts.IgnoreStates) &#123;</span><br><span class="line">    opts.Ignore = <span class="built_in">append</span>(opts.Ignore, match.IgnoreRule&#123;FixState: ignoreState&#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>--only-fixed</code> 和 <code>--only-notfixed</code> 这两个选项本质上不过是预制的 <code>IgnoreRule</code> 组合。这解释了为什么命令行有这么多的 filter 选项，但底层都走同一套 <code>ApplyIgnoreRules</code> 引擎。</p>
+<p>另外，内核头文件匹配也有自己的一组默认忽略规则：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> ignoreLinuxKernelHeaders = []match.IgnoreRule&#123;</span><br><span class="line">    &#123;Package: match.IgnoreRulePackage&#123;</span><br><span class="line">        Name: <span class="string">&quot;kernel-headers&quot;</span>, UpstreamName: <span class="string">&quot;kernel&quot;</span>,</span><br><span class="line">        Type: <span class="type">string</span>(syftPkg.RpmPkg),</span><br><span class="line">    &#125;, MatchType: match.ExactIndirectMatch&#125;,</span><br><span class="line">    <span class="comment">// ... deb 内核头文件包同样被忽略</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当用户没有启用 <code>--match-upstream-kernel-headers</code> 时，这些规则被静默添加。为什么默认排除？因为内核头文件包通常只包含头文件而非可执行代码，linux 内核的漏洞几乎永远不可能通过这些头文件包被利用——这是一个典型的&quot;技术上匹配但业务上无意义&quot;的场景。</p>
+<h3 id="忽略规则中的性能优化"><a class="markdownIt-Anchor" href="#忽略规则中的性能优化"></a> 忽略规则中的性能优化</h3>
+<p>当存在大量忽略规则时，逐条遍历匹配可能带来性能问题。Grype 通过 <code>ignoredMatchFilter()</code> 对规则做了<strong>按维度索引</strong>的优化：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ignoreRulesByIndex <span class="keyword">struct</span> &#123;</span><br><span class="line">    remainingFilters       []match.IgnoreFilter        <span class="comment">// 不适用索引的规则</span></span><br><span class="line">    locationIgnoreRules    <span class="keyword">map</span>[<span class="type">string</span>][]match.IgnoreRule <span class="comment">// 按文件路径索引</span></span><br><span class="line">    packageNameIgnoreRules <span class="keyword">map</span>[<span class="type">string</span>][]match.IgnoreRule <span class="comment">// 按包名索引</span></span><br><span class="line">    vulnIDFilters          <span class="keyword">map</span>[<span class="type">string</span>][]match.IgnoreFilter <span class="comment">// 按漏洞ID索引</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>对于不含通配符的路径规则、包名规则、漏洞 ID 规则，Grype 将其从线性列表中摘出，放入哈希索引按 O(1) 命中。只有那些需要正则/glob 匹配的复杂规则，才会走原始的线性遍历。</p>
+<h2 id="vex从有这个漏洞到这个漏洞真的能利用吗"><a class="markdownIt-Anchor" href="#vex从有这个漏洞到这个漏洞真的能利用吗"></a> VEX：从&quot;有这个漏洞&quot;到&quot;这个漏洞真的能利用吗&quot;</h2>
+<p>理解了忽略体系之后，我们进入本文最有意思的话题——VEX。</p>
+<h3 id="问题为什么需要-vex"><a class="markdownIt-Anchor" href="#问题为什么需要-vex"></a> 问题：为什么需要 VEX</h3>
+<p>传统的漏洞扫描对&quot;匹配&quot;的理解很简单：<strong>软件包的名称和版本落在漏洞记录的影响范围内，就产生一条告警</strong>。这个逻辑有两个盲区：</p>
+<ul>
+<li><strong>假阳性无法自证</strong>。假如一个镜像打包了 <code>openssl</code>，但它使用的接口完全不受某个 CVE 影响。扫描工具只知道版本在范围内，不知道使用的是哪些 API。</li>
+<li><strong>状态判断需要外部信息</strong>。一个漏洞可能是&quot;已验证受影响&quot;（affected），也可能是&quot;经分析不受影响&quot;（not_affected），也可能是&quot;已修复&quot;（fixed），或者是&quot;正在调查中&quot;（under_investigation）。这些状态不是扫描工具能从版本号中推断的。</li>
+</ul>
+<p>**VEX（Vulnerability Exploitability eXchange，漏洞可利用性交换）**正是为解决这些问题而生的标准。它允许软件供应商、组件开发者在软件之外额外发布一份文档，声明某个 CVE 对某个产品/组件实际的可利用状态。</p>
+<p>Grype 支持两种 VEX 格式：</p>
+<ul>
+<li><strong>OpenVEX</strong>：由 OpenSSF 推动，格式简洁，基于 JSON。Statement 包含 vulnerability（漏洞）、product（受影响产品）、status（受影响状态）和可选的 subcomponents（子组件）。</li>
+<li><strong>CSAF（Common Security Advisory Framework）</strong>：OASIS 标准，基于 JSON 的安全公告格式。比 OpenVEX 更重量级，包含了完整的安全公告元数据（文档追踪、发布者、修订历史等）。</li>
+</ul>
+<h3 id="整体架构processor-的双阶段模型"><a class="markdownIt-Anchor" href="#整体架构processor-的双阶段模型"></a> 整体架构：Processor 的双阶段模型</h3>
+<p>Grype 通过 <code>vex.Processor</code> 统一了两种格式的处理。无论用户提供的是 OpenVEX 还是 CSAF 文件，都通过同一接口处理：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grype/vex/processor.go</span></span><br><span class="line"><span class="keyword">type</span> vexProcessorImplementation <span class="keyword">interface</span> &#123;</span><br><span class="line">    ReadVexDocuments(docs []<span class="type">string</span>) (any, <span class="type">error</span>)</span><br><span class="line">    FilterMatches(any, []match.IgnoreRule, *pkg.Context, *match.Matches, []match.IgnoredMatch) (*match.Matches, []match.IgnoredMatch, <span class="type">error</span>)</span><br><span class="line">    AugmentMatches(any, []match.IgnoreRule, *pkg.Context, *match.Matches, []match.IgnoredMatch) (*match.Matches, []match.IgnoredMatch, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>ApplyVEX()</code> 方法统一编排了这两个阶段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(vm *Processor)</span></span> ApplyVEX(pkgContext *pkg.Context, remainingMatches *match.Matches, ignoredMatches []match.IgnoredMatch) (*match.Matches, []match.IgnoredMatch, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 1. 读取 VEX 文档</span></span><br><span class="line">    rawVexData, _ := vm.impl.ReadVexDocuments(vm.Options.Documents)</span><br><span class="line"></span><br><span class="line">    vexRules := extractVexRules(vm.Options.IgnoreRules)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. FilterMatches：将 not_affected / fixed 的匹配移到忽略列表</span></span><br><span class="line">    remainingMatches, ignoredMatches, _ = vm.impl.FilterMatches(rawVexData, vexRules, pkgContext, remainingMatches, ignoredMatches)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. AugmentMatches：将 affected / under_investigation 的匹配从忽略列表移回</span></span><br><span class="line">    remainingMatches, ignoredMatches, _ = vm.impl.AugmentMatches(rawVexData, vexRules, pkgContext, remainingMatches, ignoredMatches)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> remainingMatches, ignoredMatches, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>为什么要分两步？因为 Filter 和 Augment 的视角是相反的：</p>
+<ul>
+<li><strong>FilterMatches</strong> 面向&quot;这个漏洞其实不可利用&quot;的场景。VEX 说 <code>not_affected</code> 或 <code>fixed</code>，那你之前基于版本号的匹配就是假阳性，应当从有效匹配中移除。</li>
+<li><strong>AugmentMatches</strong> 面向&quot;这个漏洞其实很重要&quot;的场景。如果一条匹配之前因为用户 ignore 规则被抑制了，但 VEX 明确指出 <code>affected</code> 或 <code>under_investigation</code>，那它应该被<strong>恢复</strong>到有效匹配中——VEX 的权威声明可以覆盖之前所有的忽略规则。</li>
+</ul>
+<p>两步走的设计还有一个实用的效果：如果同一个漏洞在两个 VEX 文件中有冲突的声明（比如一份说 <code>not_affected</code>，另一份说 <code>affected</code>），那么 <strong>AugmentMatches 在 FilterMatches 之后执行</strong>，<code>affected</code> 会覆盖之前的 <code>not_affected</code>。</p>
+<p>格式检测由 <code>getVexImplementation()</code> 自动完成——它嗅探第一个文档文件，判断是 CSAF 还是 OpenVEX：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getVexImplementation</span><span class="params">(documents []<span class="type">string</span>)</span></span> (vexProcessorImplementation, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(documents) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> csaf.IsCSAF(firstDoc) &#123;</span><br><span class="line">        <span class="keyword">return</span> csaf.New(), <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> openvex.IsOpenVex(firstDoc) &#123;</span><br><span class="line">        <span class="keyword">return</span> openvex.New(), <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;unsupported VEX document format&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>所有 VEX 文件必须是同一格式——你不能在一次扫描中混合使用 OpenVEX 和 CSAF。</p>
+<h3 id="openvex产品身份识别与两阶段匹配"><a class="markdownIt-Anchor" href="#openvex产品身份识别与两阶段匹配"></a> OpenVEX：产品身份识别与两阶段匹配</h3>
+<p>OpenVEX 实现中最复杂的部分不是语句匹配本身，而是<strong>产品身份识别</strong>——Grype 如何将扫描到的软件包与 VEX Statement 中的 Product 关联起来。</p>
+<p><code>productIdentifiersFromContext()</code> 为这个关联构建了身份标识列表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">productIdentifiersFromContext</span><span class="params">(pkgContext *pkg.Context)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> v := pkgContext.Source.Metadata.(<span class="keyword">type</span>) &#123;</span><br><span class="line">    <span class="keyword">case</span> source.ImageMetadata:</span><br><span class="line">        <span class="comment">// 镜像扫描：从 Tags + RepoDigests 构建标识符</span></span><br><span class="line">        tagIdentifiers := identifiersFromTags(v.Tags, pkgContext.Source.Name)</span><br><span class="line">        digestIdentifiers := identifiersFromDigests(v.RepoDigests)</span><br><span class="line">        <span class="keyword">return</span> slices.Concat(tagIdentifiers, digestIdentifiers)</span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="comment">// 目录/文件扫描：用 name@version 构造 generic PURL</span></span><br><span class="line">        <span class="keyword">if</span> pkgContext.Source.Name != <span class="string">&quot;&quot;</span> &amp;&amp; pkgContext.Source.Version != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> []<span class="type">string</span>&#123;<span class="string">&quot;pkg:generic/&quot;</span> + strings.ToLower(pkgContext.Source.Name) + <span class="string">&quot;@&quot;</span> + pkgContext.Source.Version&#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> []<span class="type">string</span>&#123;&#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>对于镜像扫描，Grype 从每个 tag 和 digest 构造多个标识符，包括原始 tag 字符串和 OCI PURL（带 <code>?tag=</code> qualifier 或 <code>?repository_url=</code> qualifier）。Docker Hub 的多种 URL 形式（<code>docker.io</code>、<code>index.docker.io</code>、<code>registry-1.docker.io</code>）被统一规范化为 <code>index.docker.io</code>。</p>
+<p>对于目录扫描，Grype 用 <code>pkg:generic/&lt;name&gt;@&lt;version&gt;</code> 作为产品标识——这允许 VEX 文档直接以包 PURL 作为产品声明。</p>
+<p>有了产品标识之后，<code>findMatchingStatement()</code> 执行一次<strong>两阶段匹配</strong>：</p>
+<ol>
+<li><strong>第一轮</strong>：以扫描上下文的产品标识（镜像、目录）作为产品去查 VEX，以当前包的 PURL 作为子组件过滤。这处理了&quot;镜像即产品、包即子组件&quot;的容器扫描场景。</li>
+<li><strong>第二轮</strong>：如果第一轮没找到，以包的 PURL 自身作为产品去查 VEX。这处理了&quot;包即产品&quot;的目录扫描场景——VEX 文档中的产品声明可能就是 <code>pkg:npm/lodash@4.17.21</code>。</li>
+</ol>
+<h3 id="csaf标准化安全公告的处理"><a class="markdownIt-Anchor" href="#csaf标准化安全公告的处理"></a> CSAF：标准化安全公告的处理</h3>
+<p>CSAF 的实现比 OpenVEX 多了一层——<strong>多份公告的排序和聚合</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(*Processor)</span></span> ReadVexDocuments(docs []<span class="type">string</span>) (any, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> advs advisories</span><br><span class="line">    <span class="keyword">for</span> _, doc := <span class="keyword">range</span> docs &#123;</span><br><span class="line">        adv, _ := csaf.LoadAdvisory(doc)</span><br><span class="line">        advs = <span class="built_in">append</span>(advs, adv)</span><br><span class="line">    &#125;</span><br><span class="line">    slices.SortStableFunc(advs, newerCurrentReleaseDateFirst)</span><br><span class="line">    <span class="keyword">return</span> advs, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当多个 CSAF 公告都声明了同一个 CVE 的状态时，Grype 按 <code>CurrentReleaseDate</code> 降序排列——<strong>最新发布的公告优先</strong>。这是一个务实的决策：最新发布的公告最有可能反映最新的分析结论。</p>
+<p>CSAF 的状态体系比 OpenVEX 更丰富——它有 8 种产品状态（<code>first_affected</code>、<code>known_affected</code>、<code>last_affected</code>、<code>recommended</code>、<code>first_fixed</code>、<code>fixed</code>、<code>known_not_affected</code>、<code>under_investigation</code>），但都被映射到了 CISA 定义的 4 个标准状态之一：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grype/vex/csaf/status.go (逻辑精简)</span></span><br><span class="line"><span class="comment">// first_affected, known_affected, last_affected, recommended → affected</span></span><br><span class="line"><span class="comment">// first_fixed, fixed → fixed</span></span><br><span class="line"><span class="comment">// known_not_affected → not_affected</span></span><br><span class="line"><span class="comment">// under_investigation → under_investigation</span></span><br></pre></td></tr></table></figure>
+<h3 id="vex-规则默认行为与自定义"><a class="markdownIt-Anchor" href="#vex-规则默认行为与自定义"></a> VEX 规则：默认行为与自定义</h3>
+<p>当用户通过 <code>--vex</code> 提供了 VEX 文件时，Grype 自动认为用户希望用 VEX 来过滤结果：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">applyVexRules</span><span class="params">(opts *options.Grype)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(opts.VexDocuments) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="comment">// 默认：VEX 文档中声明 not_affected 和 fixed 的都会被过滤</span></span><br><span class="line">        opts.Ignore = <span class="built_in">append</span>(opts.Ignore, ignoreVEXFixedNotAffected...)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// --vex-add 允许用户额外指定要基于哪些状态做 Augment</span></span><br><span class="line">    <span class="keyword">for</span> _, status := <span class="keyword">range</span> opts.VexAdd &#123;</span><br><span class="line">        <span class="keyword">switch</span> status &#123;</span><br><span class="line">        <span class="keyword">case</span> <span class="type">string</span>(vexStatus.Affected):</span><br><span class="line">            opts.Ignore = <span class="built_in">append</span>(opts.Ignore, match.IgnoreRule&#123;VexStatus: <span class="type">string</span>(vexStatus.Affected)&#125;)</span><br><span class="line">        <span class="keyword">case</span> <span class="type">string</span>(vexStatus.UnderInvestigation):</span><br><span class="line">            opts.Ignore = <span class="built_in">append</span>(opts.Ignore, match.IgnoreRule&#123;VexStatus: <span class="type">string</span>(vexStatus.UnderInvestigation)&#125;)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意一个重要的区别：<strong><code>not_affected</code>/<code>fixed</code> 被隐式添加为过滤规则</strong>（无需用户显式配置），而 <strong><code>affected</code>/<code>under_investigation</code> 需要用户通过 <code>--vex-add</code> 显式启用</strong>。这个设计背后是安全考量——默认只抑制误报是安全的（减少噪音），但默认主动恢复已忽略的匹配可能引入意外结果，所以需要用户明确声明。</p>
+<h3 id="四种-vex-状态的实际效果"><a class="markdownIt-Anchor" href="#四种-vex-状态的实际效果"></a> 四种 VEX 状态的实际效果</h3>
+<p>至此，VEX 的四种标准状态与实际行为的对应关系就清晰了：</p>
+<table>
+<thead>
+<tr>
+<th>VEX 状态</th>
+<th>方向</th>
+<th>作用</th>
+<th>需要显式启用？</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not_affected</code></td>
+<td>Filter</td>
+<td>匹配被移到忽略列表</td>
+<td>否（默认启用）</td>
+</tr>
+<tr>
+<td><code>fixed</code></td>
+<td>Filter</td>
+<td>匹配被移到忽略列表</td>
+<td>否（默认启用）</td>
+</tr>
+<tr>
+<td><code>affected</code></td>
+<td>Augment</td>
+<td>已忽略的匹配被恢复</td>
+<td>是（<code>--vex-add affected</code>）</td>
+</tr>
+<tr>
+<td><code>under_investigation</code></td>
+<td>Augment</td>
+<td>已忽略的匹配被恢复</td>
+<td>是（<code>--vex-add under_investigation</code>）</td>
+</tr>
+</tbody>
+</table>
+<h2 id="报告输出系统从内存数据到多种格式"><a class="markdownIt-Anchor" href="#报告输出系统从内存数据到多种格式"></a> 报告输出系统：从内存数据到多种格式</h2>
+<p>匹配结果经过过滤和 VEX 处理后，进入 <code>runGrype()</code> 的最后阶段——生成报告。</p>
+<h3 id="document报告的通用数据模型"><a class="markdownIt-Anchor" href="#document报告的通用数据模型"></a> Document：报告的通用数据模型</h3>
+<p>所有输出格式共享同一个数据源：<code>models.Document</code>。<code>NewDocument()</code> 将 <code>match.Matches</code> 和 <code>[]match.IgnoredMatch</code> 转换为独立的模型层数据：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// grype/presenter/models/document.go</span></span><br><span class="line"><span class="keyword">type</span> Document <span class="keyword">struct</span> &#123;</span><br><span class="line">    Matches         []Match         <span class="string">`json:&quot;matches&quot;`</span></span><br><span class="line">    IgnoredMatches  []IgnoredMatch  <span class="string">`json:&quot;ignoredMatches,omitempty&quot;`</span></span><br><span class="line">    AlertsByPackage []PackageAlerts <span class="string">`json:&quot;alertsByPackage,omitempty&quot;`</span></span><br><span class="line">    Source          *source         <span class="string">`json:&quot;source&quot;`</span></span><br><span class="line">    Distro          distribution    <span class="string">`json:&quot;distro&quot;`</span></span><br><span class="line">    Descriptor      descriptor      <span class="string">`json:&quot;descriptor&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>IgnoredMatches</code> 使用 <code>json:&quot;ignoredMatches,omitempty&quot;</code> 标签——当没有忽略匹配时，JSON 输出中不会出现这个字段。每个 <code>IgnoredMatch</code> 包含完整的漏洞信息和触发忽略的规则列表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> IgnoredMatch <span class="keyword">struct</span> &#123;</span><br><span class="line">    Match</span><br><span class="line">    AppliedIgnoreRules []IgnoreRule <span class="string">`json:&quot;appliedIgnoreRules&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个模型层转换的要点是 <strong>有效的匹配和忽略的匹配都要放进报告</strong>——区别只在于前者在 <code>matches</code> 中，后者在 <code>ignoredMatches</code> 中。这意味着 JSON 输出中，用户可以完整地看到&quot;哪些漏洞被匹配到了，哪些被忽略了，为什么被忽略&quot;。</p>
+<h3 id="writer-系统一个文档多个目标"><a class="markdownIt-Anchor" href="#writer-系统一个文档多个目标"></a> Writer 系统：一个文档，多个目标</h3>
+<p><code>format.ScanResultWriter</code> 是输出层的核心抽象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ScanResultWriter <span class="keyword">interface</span> &#123;</span><br><span class="line">    Write(result models.PresenterConfig) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Grype 支持三种 Writer：</p>
+<ul>
+<li><strong><code>scanResultMultiWriter</code></strong>：将同一份结果写到多个目标。这对应了 <code>-o json=result.json -o table=report.txt</code> 这样的用法——一次扫描，多种输出。</li>
+<li><strong><code>scanResultStreamWriter</code></strong>：写到文件或 stdout。</li>
+<li><strong><code>scanResultPublisher</code></strong>：发布到事件总线（供交互式 UI 消费）。</li>
+</ul>
+<p>输出路径的解析逻辑在 <code>parseOutputFlags()</code> 中：它将 <code>-o &lt;format&gt;=&lt;path&gt;</code> 字符串拆解，格式名映射到 <code>Format</code> 枚举，路径经过 <code>homedir.Expand()</code> 处理（支持 <code>~</code>），如果目录不存在则自动创建。</p>
+<h3 id="格式工厂"><a class="markdownIt-Anchor" href="#格式工厂"></a> 格式工厂</h3>
+<p><code>GetPresenter()</code> 是一个工厂函数，根据格式枚举创建对应的 Presenter：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetPresenter</span><span class="params">(format Format, c PresentationConfig, pb models.PresenterConfig)</span></span> presenter.Presenter &#123;</span><br><span class="line">    <span class="keyword">switch</span> format &#123;</span><br><span class="line">    <span class="keyword">case</span> JSONFormat:</span><br><span class="line">        <span class="keyword">return</span> json.NewPresenter(pb)</span><br><span class="line">    <span class="keyword">case</span> TableFormat:</span><br><span class="line">        <span class="keyword">return</span> table.NewPresenter(pb, c.ShowSuppressed)</span><br><span class="line">    <span class="keyword">case</span> CycloneDXJSON:</span><br><span class="line">        <span class="keyword">return</span> cyclonedx.NewJSONPresenter(pb)</span><br><span class="line">    <span class="keyword">case</span> CycloneDXXML:</span><br><span class="line">        <span class="keyword">return</span> cyclonedx.NewXMLPresenter(pb)</span><br><span class="line">    <span class="keyword">case</span> SarifFormat:</span><br><span class="line">        <span class="keyword">return</span> sarif.NewPresenter(pb)</span><br><span class="line">    <span class="keyword">case</span> TemplateFormat:</span><br><span class="line">        <span class="keyword">return</span> template.NewPresenter(pb, c.TemplateFilePath)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个 Presenter 都实现了 <code>go-presenter</code> 库的 <code>Presenter</code> 接口（<code>Present(io.Writer) error</code>），各格式的实现差异很大。</p>
+<h3 id="各格式输出实现一览"><a class="markdownIt-Anchor" href="#各格式输出实现一览"></a> 各格式输出实现一览</h3>
+<p><strong>Table 格式</strong>。使用 <code>tablewriter</code> 库渲染无边框表格，列包括：Name、Installed、Fixed In、Type、Vulnerability、Severity、EPSS、Risk。<code>getRows()</code> 是核心方法——它先生成有效匹配的行，如果 <code>showSuppressed</code>（通过 <code>--show-suppressed</code> 开启）为 true，再将忽略匹配追加进去，用 “(suppressed)” 或 “(suppressed by VEX)” 标注：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *Presenter)</span></span> getRows(doc models.Document, showSuppressed <span class="type">bool</span>) rows &#123;</span><br><span class="line">    <span class="keyword">var</span> rs rows</span><br><span class="line">    <span class="keyword">for</span> _, m := <span class="keyword">range</span> doc.Matches &#123;</span><br><span class="line">        rs = <span class="built_in">append</span>(rs, p.newRow(m, <span class="string">&quot;&quot;</span>, multipleDistros))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> showSuppressed &#123;</span><br><span class="line">        <span class="keyword">for</span> _, m := <span class="keyword">range</span> doc.IgnoredMatches &#123;</span><br><span class="line">            msg := appendSuppressed</span><br><span class="line">            <span class="keyword">for</span> i := <span class="keyword">range</span> m.AppliedIgnoreRules &#123;</span><br><span class="line">                <span class="keyword">if</span> m.AppliedIgnoreRules[i].Namespace == <span class="string">&quot;vex&quot;</span> &#123;</span><br><span class="line">                    msg = appendSuppressedVEX</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            rs = <span class="built_in">append</span>(rs, p.newRow(m.Match, msg, multipleDistros))</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> rs</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>颜色处理使用了 <code>lipgloss</code> 库——Critical 是粗体粉色，High 是红色，Medium 是金色，Low 是青色，Negligible 是深灰色。KEV 漏洞用白底粉字渲染，非常显眼。</p>
+<p><strong>JSON 格式</strong>。最简单——直接 <code>json.Encoder.Encode(document)</code>。支持 Pretty 模式（缩进）。</p>
+<p><strong>CycloneDX 格式</strong>。将 Syft 的 SBOM 转换为 CycloneDX 格式，然后<strong>在 BOM 上附加漏洞信息</strong>——包括评分（CVSS + EPSS + KEV）、来源、参考链接、修复建议、受影响组件 BOM ref。这种方式保留了完整的 SBOM 物料清单，让下游工具（如 Dependency-Track）可以同时消费组件信息和漏洞信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *Presenter)</span></span> Present(output io.Writer) <span class="type">error</span> &#123;</span><br><span class="line">    cyclonedxBOM := cyclonedxhelpers.ToFormatModel(*p.sbom)</span><br><span class="line">    cyclonedxBOM.Metadata.Tools = &amp;cyclonedx.ToolsChoice&#123;</span><br><span class="line">        Components: &amp;[]cyclonedx.Component&#123;&#123;</span><br><span class="line">            Type: cyclonedx.ComponentTypeApplication,</span><br><span class="line">            Name: p.id.Name, Version: p.id.Version,</span><br><span class="line">        &#125;&#125;,</span><br><span class="line">    &#125;</span><br><span class="line">    vulns := <span class="built_in">make</span>([]cyclonedx.Vulnerability, <span class="number">0</span>)</span><br><span class="line">    <span class="keyword">for</span> _, m := <span class="keyword">range</span> p.document.Matches &#123;</span><br><span class="line">        v, _ := NewVulnerability(m)</span><br><span class="line">        vulns = <span class="built_in">append</span>(vulns, v)</span><br><span class="line">    &#125;</span><br><span class="line">    cyclonedxBOM.Vulnerabilities = &amp;vulns</span><br><span class="line">    enc := cyclonedx.NewBOMEncoder(output, p.format)</span><br><span class="line">    <span class="keyword">return</span> enc.EncodeVersion(cyclonedxBOM, cyclonedxBOM.SpecVersion)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>SARIF 格式</strong>。输出 <code>sarif.Version210</code> 格式的报告。它为每个唯一的&quot;漏洞-包&quot;组合生成一条 Rule，使用 SHA-256 为每个结果生成 Partial Fingerprints（用于跨扫描追踪告警），并区分了四种位置来源（镜像、文件、目录、PURL/SBOM）。SARIF level 的映射遵循了 GitHub Code Scanning 的惯例：</p>
+<ul>
+<li>Critical / High → <code>&quot;error&quot;</code></li>
+<li>Medium → <code>&quot;warning&quot;</code></li>
+<li>Low / Negligible / Unknown → <code>&quot;note&quot;</code></li>
+</ul>
+<p><strong>Template 格式</strong>。允许用户使用 Go template（带 Sprig 函数库）自定义输出格式。模板可以直接访问 <code>Document</code> 的全部字段，包括 <code>Matches</code> 和 <code>IgnoredMatches</code>。</p>
+<h3 id="一个细节忽略匹配在各格式中的呈现差异"><a class="markdownIt-Anchor" href="#一个细节忽略匹配在各格式中的呈现差异"></a> 一个细节：忽略匹配在各格式中的呈现差异</h3>
+<p>各种输出格式对 <code>IgnoredMatches</code> 的处理策略并不一致：</p>
+<ul>
+<li><strong>JSON</strong>：<code>IgnoredMatches</code> 作为 <code>Document</code> 的一个字段自然呈现，每个忽略匹配都自带 <code>AppliedIgnoreRules</code>。</li>
+<li><strong>Table</strong>：需要 <code>--show-suppressed</code> 显式开启，忽略匹配以灰色标注追加到表格末尾。</li>
+<li><strong>SARIF / CycloneDX</strong>：<strong>不包含</strong>忽略的匹配——它们只输出有效的 <code>Matches</code>。这是一个务实的选择：SARIF 和 CycloneDX 作为标准化交换格式，应只包含&quot;确认存在的&quot;漏洞。</li>
+<li><strong>Template</strong>：模板作者可以自由选择是否渲染忽略的匹配，灵活性最高。</li>
+</ul>
+<h2 id="fail-on用退出码驱动-ci-闸门"><a class="markdownIt-Anchor" href="#fail-on用退出码驱动-ci-闸门"></a> –fail-on：用退出码驱动 CI 闸门</h2>
+<p>在 CI/CD 流水线中，扫描结果需要被量化为一个布尔值——“扫描通过了吗？”。Grype 用 <code>--fail-on</code> 选项和退出码实现了这个判断。</p>
+<p><code>--fail-on</code> 接收一个 Severity 级别字符串（<code>negligible</code>、<code>low</code>、<code>medium</code>、<code>high</code>、<code>critical</code>），Grepe 在匹配完成后调用 <code>hasSeverityAtOrAbove()</code> 检查剩余的有效匹配：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">hasSeverityAtOrAbove</span><span class="params">(store vulnerability.MetadataProvider, severity vulnerability.Severity, matches match.Matches)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> severity == vulnerability.UnknownSeverity &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">for</span> m := <span class="keyword">range</span> matches.Enumerate() &#123;</span><br><span class="line">        metadata, _ := store.VulnerabilityMetadata(m.Vulnerability.Reference)</span><br><span class="line">        <span class="keyword">if</span> vulnerability.ParseSeverity(metadata.Severity) &gt;= severity &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如果有任何一条匹配的 Severity 达到了阈值，Grype 返回 <code>grypeerr.ErrAboveSeverityThreshold</code> 错误，然后在 CLI 层映射为退出码 2：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// cmd/grype/cli/cli.go</span></span><br><span class="line">WithMapExitCode(<span class="function"><span class="keyword">func</span><span class="params">(err <span class="type">error</span>)</span></span> <span class="type">int</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> errors.Is(err, grypeerr.ErrAboveSeverityThreshold) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">2</span>  <span class="comment">// 有漏洞的 Severity 达到或超过 --fail-on 指定的级别</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> errors.Is(err, grypeerr.ErrDBUpgradeAvailable) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">100</span>  <span class="comment">// 数据库需要更新</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>  <span class="comment">// 其他错误</span></span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p><strong>退出码设计</strong>：</p>
+<ul>
+<li><code>0</code>：扫描完成，没有 Severity 达到阈值的漏洞（或没有设置 <code>--fail-on</code>）；</li>
+<li><code>1</code>：扫描过程出错（数据库加载失败、解析错误等）；</li>
+<li><code>2</code>：扫描完成，但存在至少一条 Severity 达到或超过 <code>--fail-on</code> 阈值；</li>
+<li><code>100</code>：数据库升级可用（仅用于 <code>grype db check</code>）。</li>
+</ul>
+<p>这个退出码设计让 CI 流水线可以做差异化处理：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">grype <span class="built_in">dir</span>:. --fail-on high</span><br><span class="line"><span class="keyword">case</span> $? <span class="keyword">in</span></span><br><span class="line">  0) <span class="built_in">echo</span> <span class="string">&quot;No high or critical vulnerabilities&quot;</span> ;;</span><br><span class="line">  1) <span class="built_in">echo</span> <span class="string">&quot;Scan failed&quot;</span> &amp;&amp; <span class="built_in">exit</span> 1 ;;</span><br><span class="line">  2) <span class="built_in">echo</span> <span class="string">&quot;High/Critical vulnerabilities found! Blocking deploy.&quot;</span> &amp;&amp; <span class="built_in">exit</span> 2 ;;</span><br><span class="line"><span class="keyword">esac</span></span><br></pre></td></tr></table></figure>
+<h2 id="完整链路回顾"><a class="markdownIt-Anchor" href="#完整链路回顾"></a> 完整链路回顾</h2>
+<p>本文覆盖的是 Grype 扫描流程中的最后一个阶段。回顾从匹配到输出的完整链路：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">匹配完成 (matches + ignoredMatches)</span><br><span class="line">    │</span><br><span class="line">    ├── 第一层过滤：ApplyExplicitIgnoreRules</span><br><span class="line">    │     硬编码误报规则 + 数据库 ExclusionProvider</span><br><span class="line">    │</span><br><span class="line">    ├── 第二层过滤：ignoredMatchFilter</span><br><span class="line">    │     基于文件位置/包名/漏洞 ID 的去重和 Matcher 级忽略</span><br><span class="line">    │</span><br><span class="line">    ├── 第三层过滤：用户 IgnoreRules</span><br><span class="line">    │     --only-fixed / --only-notfixed / --ignore-states / 配置文件</span><br><span class="line">    │</span><br><span class="line">    ├── 第四层处理：VEX</span><br><span class="line">    │     FilterMatches: not_affected/fixed → 忽略</span><br><span class="line">    │     AugmentMatches: affected/under_investigation → 恢复</span><br><span class="line">    │</span><br><span class="line">    ├── fail-on 判断</span><br><span class="line">    │     如果有匹配的 Severity &gt;= 阈值 → 返回退出码 2</span><br><span class="line">    │</span><br><span class="line">    └── Presenter 输出</span><br><span class="line">         Table / JSON / CycloneDX / SARIF / Template</span><br></pre></td></tr></table></figure>
+<p>整套系统的设计哲学可以概括为：</p>
+<ul>
+<li><strong>过滤是声明式的</strong>。IgnoreRule 描述&quot;什么样的匹配应该被忽略&quot;，而不是命令式的过滤步骤。</li>
+<li><strong>VEX 是外部的权威补充</strong>。扫描工具只负责&quot;能匹配到什么&quot;，VEX 负责&quot;确认哪些真的有问题、哪些真的没问题&quot;。</li>
+<li><strong>输出是数据驱动的</strong>。所有格式共享同一个 Document 模型，每个 Presenter 只是同一份数据的不同视图。</li>
+<li><strong>退出码是策略的标准化接口</strong>。<code>--fail-on</code> 将&quot;漏洞严重程度&quot;翻译为流水线可消费的整数，连接扫描工具和 CI 系统的最后一段。</li>
+</ul>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>这篇文章我们分析了漏洞匹配完成后经历的三个关键环节：</p>
+<ul>
+<li>
+<p>首先，<strong>过滤系统</strong>通过一套统一的 <code>IgnoreRule</code> 引擎处理了四种不同来源的规则——硬编码的精确误报排除、Matcher 级别的路径去重、命令行和配置文件的用户过滤、以及 VEX 文档的状态过滤。每一层都有自己的来源和用途，但它们都被统一翻译为 <code>IgnoreRule</code>，通过同一个 <code>ApplyIgnoreRules</code> 引擎处理。</p>
+</li>
+<li>
+<p>其次，<strong>VEX 处理</strong>让 Grype 能够消费外部权威声明，将纯版本号的匹配结果与&quot;漏洞是否真的可被利用&quot;关联起来。OpenVEX 和 CSAF 两种格式自动检测，FilterMatches/AugmentMatches 两个阶段处理了状态声明之间的冲突，确保最后生效的是最权威的判断。</p>
+</li>
+<li>
+<p>最后，<strong>报告输出系统</strong>通过 Document 模型和 Presenter 工厂，将匹配结果转换为 table、JSON、CycloneDX、SARIF 等多种格式。<code>--fail-on</code> 退出码提供了与 CI 流水线的最后一个桥接点。</p>
+</li>
+</ul>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/20/go-grype-12/" rel="prev" title="Grype 源码分析 12：整体总结 Grype 项目">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 12：整体总结 Grype 项目
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/20/go-grype-10/" rel="next" title="Grype 源码分析 10：如何计算漏洞优先级">
+      Grype 源码分析 10：如何计算漏洞优先级 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%87%E6%BB%A4%E4%BD%93%E7%B3%BB%E5%85%A8%E6%99%AF%E5%8C%B9%E9%85%8D%E5%AE%8C%E6%88%90%E5%90%8E%E5%8F%91%E7%94%9F%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">1.</span> <span class="nav-text"> 过滤体系全景：匹配完成后发生了什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#ignorerule%E4%B8%80%E6%9D%A1%E8%A7%84%E5%88%99%E7%9A%84%E5%AE%8C%E6%95%B4%E8%A1%A8%E8%BE%BE"><span class="nav-number">2.</span> <span class="nav-text"> IgnoreRule：一条规则的完整表达</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BF%BD%E7%95%A5%E5%8C%B9%E9%85%8D%E7%9A%84%E6%9D%A1%E4%BB%B6%E5%87%BD%E6%95%B0%E4%BD%93%E7%B3%BB"><span class="nav-number">2.1.</span> <span class="nav-text"> 忽略匹配的条件函数体系</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BF%BD%E7%95%A5%E8%A7%84%E5%88%99%E7%9A%84%E6%89%B9%E9%87%8F%E5%BA%94%E7%94%A8"><span class="nav-number">2.2.</span> <span class="nav-text"> 忽略规则的批量应用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%85%E7%BD%AE%E5%BF%BD%E7%95%A5%E4%BB%8E%E7%A1%AC%E7%BC%96%E7%A0%81%E8%AF%AF%E6%8A%A5%E5%88%B0%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%BF%AB%E6%8D%B7%E8%BF%87%E6%BB%A4"><span class="nav-number">3.</span> <span class="nav-text"> 内置忽略：从硬编码误报到命令行快捷过滤</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A1%AC%E7%BC%96%E7%A0%81%E7%9A%84%E7%B2%BE%E7%A1%AE%E5%BF%BD%E7%95%A5"><span class="nav-number">3.1.</span> <span class="nav-text"> 硬编码的精确忽略</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%BF%AB%E6%8D%B7%E8%BF%87%E6%BB%A4"><span class="nav-number">3.2.</span> <span class="nav-text"> 命令行快捷过滤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BF%BD%E7%95%A5%E8%A7%84%E5%88%99%E4%B8%AD%E7%9A%84%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96"><span class="nav-number">3.3.</span> <span class="nav-text"> 忽略规则中的性能优化</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#vex%E4%BB%8E%E6%9C%89%E8%BF%99%E4%B8%AA%E6%BC%8F%E6%B4%9E%E5%88%B0%E8%BF%99%E4%B8%AA%E6%BC%8F%E6%B4%9E%E7%9C%9F%E7%9A%84%E8%83%BD%E5%88%A9%E7%94%A8%E5%90%97"><span class="nav-number">4.</span> <span class="nav-text"> VEX：从&quot;有这个漏洞&quot;到&quot;这个漏洞真的能利用吗&quot;</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81-vex"><span class="nav-number">4.1.</span> <span class="nav-text"> 问题：为什么需要 VEX</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84processor-%E7%9A%84%E5%8F%8C%E9%98%B6%E6%AE%B5%E6%A8%A1%E5%9E%8B"><span class="nav-number">4.2.</span> <span class="nav-text"> 整体架构：Processor 的双阶段模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#openvex%E4%BA%A7%E5%93%81%E8%BA%AB%E4%BB%BD%E8%AF%86%E5%88%AB%E4%B8%8E%E4%B8%A4%E9%98%B6%E6%AE%B5%E5%8C%B9%E9%85%8D"><span class="nav-number">4.3.</span> <span class="nav-text"> OpenVEX：产品身份识别与两阶段匹配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#csaf%E6%A0%87%E5%87%86%E5%8C%96%E5%AE%89%E5%85%A8%E5%85%AC%E5%91%8A%E7%9A%84%E5%A4%84%E7%90%86"><span class="nav-number">4.4.</span> <span class="nav-text"> CSAF：标准化安全公告的处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#vex-%E8%A7%84%E5%88%99%E9%BB%98%E8%AE%A4%E8%A1%8C%E4%B8%BA%E4%B8%8E%E8%87%AA%E5%AE%9A%E4%B9%89"><span class="nav-number">4.5.</span> <span class="nav-text"> VEX 规则：默认行为与自定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9B%9B%E7%A7%8D-vex-%E7%8A%B6%E6%80%81%E7%9A%84%E5%AE%9E%E9%99%85%E6%95%88%E6%9E%9C"><span class="nav-number">4.6.</span> <span class="nav-text"> 四种 VEX 状态的实际效果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8A%A5%E5%91%8A%E8%BE%93%E5%87%BA%E7%B3%BB%E7%BB%9F%E4%BB%8E%E5%86%85%E5%AD%98%E6%95%B0%E6%8D%AE%E5%88%B0%E5%A4%9A%E7%A7%8D%E6%A0%BC%E5%BC%8F"><span class="nav-number">5.</span> <span class="nav-text"> 报告输出系统：从内存数据到多种格式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#document%E6%8A%A5%E5%91%8A%E7%9A%84%E9%80%9A%E7%94%A8%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B"><span class="nav-number">5.1.</span> <span class="nav-text"> Document：报告的通用数据模型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#writer-%E7%B3%BB%E7%BB%9F%E4%B8%80%E4%B8%AA%E6%96%87%E6%A1%A3%E5%A4%9A%E4%B8%AA%E7%9B%AE%E6%A0%87"><span class="nav-number">5.2.</span> <span class="nav-text"> Writer 系统：一个文档，多个目标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%BC%E5%BC%8F%E5%B7%A5%E5%8E%82"><span class="nav-number">5.3.</span> <span class="nav-text"> 格式工厂</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%84%E6%A0%BC%E5%BC%8F%E8%BE%93%E5%87%BA%E5%AE%9E%E7%8E%B0%E4%B8%80%E8%A7%88"><span class="nav-number">5.4.</span> <span class="nav-text"> 各格式输出实现一览</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E7%BB%86%E8%8A%82%E5%BF%BD%E7%95%A5%E5%8C%B9%E9%85%8D%E5%9C%A8%E5%90%84%E6%A0%BC%E5%BC%8F%E4%B8%AD%E7%9A%84%E5%91%88%E7%8E%B0%E5%B7%AE%E5%BC%82"><span class="nav-number">5.5.</span> <span class="nav-text"> 一个细节：忽略匹配在各格式中的呈现差异</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#fail-on%E7%94%A8%E9%80%80%E5%87%BA%E7%A0%81%E9%A9%B1%E5%8A%A8-ci-%E9%97%B8%E9%97%A8"><span class="nav-number">6.</span> <span class="nav-text"> –fail-on：用退出码驱动 CI 闸门</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%8C%E6%95%B4%E9%93%BE%E8%B7%AF%E5%9B%9E%E9%A1%BE"><span class="nav-number">7.</span> <span class="nav-text"> 完整链路回顾</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">8.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">276</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

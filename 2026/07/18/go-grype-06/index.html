@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上一篇文章中，我们分析了 Package、Vulnerability 和 Match 三个核心类型，其中 Vulnerability 对象是在漏洞数据库中查询得到的，查询接口由 vulnerability.Provider 定义。但是，这个 Provider 背后是什么？漏洞数据库从哪里来、如何存储、又是如何被高效查询的？这正是本文要回答的问题。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 06：漏洞数据库实现原理">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/18/go-grype-06/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上一篇文章中，我们分析了 Package、Vulnerability 和 Match 三个核心类型，其中 Vulnerability 对象是在漏洞数据库中查询得到的，查询接口由 vulnerability.Provider 定义。但是，这个 Provider 背后是什么？漏洞数据库从哪里来、如何存储、又是如何被高效查询的？这正是本文要回答的问题。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-18T03:32:11.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:48:44.380Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/18/go-grype-06/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 06：漏洞数据库实现原理 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/18/go-grype-06/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 06：漏洞数据库实现原理
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-18 11:32:11" itemprop="dateCreated datePublished" datetime="2026-07-18T11:32:11+08:00">2026-07-18</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上一篇文章中，我们分析了 Package、Vulnerability 和 Match 三个核心类型，其中 Vulnerability 对象是在漏洞数据库中查询得到的，查询接口由 <code>vulnerability.Provider</code> 定义。但是，这个 Provider 背后是什么？漏洞数据库从哪里来、如何存储、又是如何被高效查询的？这正是本文要回答的问题。</p>
+<span id="more"></span>
+<p>Grype 的漏洞数据库是一个本地 SQLite 文件，名为 <code>vulnerability.db</code>，它由 Anchore 团队定期构建并通过 CDN 分发。客户端在启动扫描时，会先检查本地数据库的状态，如果需要则自动下载更新，然后以只读方式打开数据库，创建 <code>vulnerabilityProvider</code> 来提供漏洞查询服务。本文将沿着下面这条生命周期线路，逐一展开这些环节的实现细节。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">数据库版本检查</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">下载数据库归档</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">校验摘要和版本</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">安装到缓存目录</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">打开数据库并创建 Provider</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">按包名、生态和版本约束查询</span><br></pre></td></tr></table></figure>
+<h2 id="数据库的-schema-版本管理"><a class="markdownIt-Anchor" href="#数据库的-schema-版本管理"></a> 数据库的 Schema 版本管理</h2>
+<p>在深入具体实现之前，我们需要理解 Grype 如何管理数据库版本，因为版本兼容性贯穿了整个数据库生命周期。</p>
+<p>Grype v6 数据库采用 <strong>SchemaVer</strong>（Schema Version）来标识版本。SchemaVer 是一种专门为数据 schema 设计的语义化版本规范，它由三个数字组成：<code>MODEL.REVISION.ADDITION</code>。在 <code>grype/db/v6/db.go</code> 中定义了当前客户端支持的版本：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    ModelVersion = <span class="number">6</span>    <span class="comment">// 破坏性变更次数</span></span><br><span class="line">    Revision     = <span class="number">1</span>    <span class="comment">// 可能影响部分历史数据的变更次数</span></span><br><span class="line">    Addition     = <span class="number">7</span>    <span class="comment">// 与所有历史数据兼容的变更次数</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这三个数字的含义各不相同：</p>
+<ul>
+<li><strong>ModelVersion（模型版本）</strong>：固定为 <code>6</code>，表示数据库 v6 的主 schema 代际。当 Model 号变化时，新旧数据库完全不能互通，客户端必须使用匹配的数据库。</li>
+<li><strong>Revision（修订版本）</strong>：当引入的变更可能阻止与部分历史数据的交互时递增。例如 v6.1.0 新增了修复可用性信息字段，旧客户端读到这些字段时会忽略它们，不会出错。</li>
+<li><strong>Addition（附加版本）</strong>：当引入完全向后兼容的变更时递增。例如 v6.0.1 新增了 CISA KEV 表，旧客户端不依赖这张表也能正常工作。</li>
+</ul>
+<p>源码中的 changelog 清晰记录了每次版本变更的原因：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// v6 model changelog:</span></span><br><span class="line"><span class="comment">// 6.0.0: Initial version 🎉</span></span><br><span class="line"><span class="comment">// 6.0.1: Add CISA KEV to VulnerabilityDecorator store</span></span><br><span class="line"><span class="comment">// 6.0.2: Add EPSS to VulnerabilityDecorator store</span></span><br><span class="line"><span class="comment">// 6.0.3: Add channel column to OperatingSystem model</span></span><br><span class="line"><span class="comment">// 6.1.0: Add Fix availability information</span></span><br><span class="line"><span class="comment">// 6.1.1: Add UnaffectedCPE / UnaffectedPackage models</span></span><br><span class="line"><span class="comment">// 6.1.2: Add CWEs</span></span><br><span class="line"><span class="comment">// ...</span></span><br></pre></td></tr></table></figure>
+<p>这种版本管理策略的好处是：客户端可以按能力探测数据库的功能。例如，<code>vulnerabilityDecoratorStore</code> 在初始化时会根据数据库的 schema 版本决定是否启用 KEV、EPSS 和 CWE 查询功能：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newVulnerabilityDecoratorStore</span><span class="params">(db *gorm.DB, bs *blobStore, dbVersion schemaver.SchemaVer)</span></span> *vulnerabilityDecoratorStore &#123;</span><br><span class="line">    minSupportedKEVClientVersion := schemaver.New(<span class="number">6</span>, <span class="number">0</span>, <span class="number">1</span>)</span><br><span class="line">    minSupportedEPSSClientVersion := schemaver.New(<span class="number">6</span>, <span class="number">0</span>, <span class="number">2</span>)</span><br><span class="line">    minSupportedCWEClientVersion := schemaver.New(<span class="number">6</span>, <span class="number">1</span>, <span class="number">2</span>)</span><br><span class="line">    <span class="keyword">return</span> &amp;vulnerabilityDecoratorStore&#123;</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        vulnerabilityDecoratorCapabilities: vulnerabilityDecoratorCapabilities&#123;</span><br><span class="line">            kevEnabled:  dbVersion.GreaterOrEqualTo(minSupportedKEVClientVersion),</span><br><span class="line">            epssEnabled: dbVersion.GreaterOrEqualTo(minSupportedEPSSClientVersion),</span><br><span class="line">            cweEnabled:  dbVersion.GreaterOrEqualTo(minSupportedCWEClientVersion),</span><br><span class="line">        &#125;,</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>如果当前数据库的版本低于某项功能所需的最小版本，对应的查询方法会直接返回空结果（优雅降级），而不是报错。反之，如果是写入操作遇到版本不足，则会返回 <code>ErrDBCapabilityNotSupported</code> 错误——因为构建新的数据库时不应缺少必要的能力。</p>
+<h2 id="数据库整体结构store-和-readerwriter-接口"><a class="markdownIt-Anchor" href="#数据库整体结构store-和-readerwriter-接口"></a> 数据库整体结构：store 和 Reader/Writer 接口</h2>
+<p>理解了版本管理后，我们来看数据库的内部组织。Grype 将底层 SQLite 的读写操作封装在 <code>store</code> 结构体中，它组合了多个子 Store，每个子 Store 负责一组相关的数据表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> store <span class="keyword">struct</span> &#123;</span><br><span class="line">    *dbMetadataStore</span><br><span class="line">    *providerStore</span><br><span class="line">    *vulnerabilityStore</span><br><span class="line">    *operatingSystemStore</span><br><span class="line">    *affectedPackageStore</span><br><span class="line">    *unaffectedPackageStore</span><br><span class="line">    *affectedCPEStore</span><br><span class="line">    *unaffectedCPEStore</span><br><span class="line">    *vulnerabilityDecoratorStore</span><br><span class="line">    blobStore *blobStore</span><br><span class="line">    db        *gorm.DB</span><br><span class="line">    config    Config</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些子 Store 并不直接暴露给外部。Grype 通过 <code>Reader</code> 和 <code>Writer</code> 两个接口来隔离读写职责：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Reader <span class="keyword">interface</span> &#123;</span><br><span class="line">    DBMetadataStoreReader</span><br><span class="line">    ProviderStoreReader</span><br><span class="line">    VulnerabilityStoreReader</span><br><span class="line">    VulnerabilityDecoratorStoreReader</span><br><span class="line">    OperatingSystemStoreReader</span><br><span class="line">    AffectedPackageStoreReader</span><br><span class="line">    UnaffectedPackageStoreReader</span><br><span class="line">    AffectedCPEStoreReader</span><br><span class="line">    UnaffectedCPEStoreReader</span><br><span class="line">    io.Closer</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Writer <span class="keyword">interface</span> &#123;</span><br><span class="line">    DBMetadataStoreWriter</span><br><span class="line">    ProviderStoreWriter</span><br><span class="line">    VulnerabilityStoreWriter</span><br><span class="line">    <span class="comment">// ... 其他写入接口</span></span><br><span class="line">    io.Closer</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>值得注意的是，<code>Reader</code> 接口并不包含数据的写入能力。在扫描场景中，Grype 以只读方式打开数据库，调用 <code>NewReader()</code> 创建 <code>store</code> 时 <code>writable</code> 参数为 <code>false</code>。而在构建数据库的场景中，<code>NewWriter()</code> 以可写方式建立连接，并在 <code>Close()</code> 时执行一系列优化操作：删除所有索引（因为分发时索引占用大量空间，客户端打开后会重新创建）、执行 VACUUM 压缩、运行 <code>PRAGMA integrity_check</code> 完整性校验。</p>
+<p>在 <code>store</code> 之下，还有一个 <code>Curator</code> 接口。如果将 <code>Reader</code>/<code>Writer</code> 看作是对数据库文件的直接操作，那么 <code>Curator</code> 则是数据库<strong>生命周期</strong>的管理者——它负责检查本地数据库状态、决定是否需要更新、下载新版本、替换旧版本等等。我们在《Grype 整体执行流程》中看到的 <code>dbCurator</code> 变量，就实现了这个接口。</p>
+<h2 id="数据模型从关系表到-blob-存储"><a class="markdownIt-Anchor" href="#数据模型从关系表到-blob-存储"></a> 数据模型：从关系表到 Blob 存储</h2>
+<h3 id="核心表结构"><a class="markdownIt-Anchor" href="#核心表结构"></a> 核心表结构</h3>
+<p>v6 数据库的数据模型定义在 <code>grype/db/v6/models.go</code> 中，它使用 GORM（Go 语言 ORM 框架）来管理 SQLite 表结构。<code>Models()</code> 函数列出了所有 GORM 管理的模型：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Models</span><span class="params">()</span></span> []any &#123;</span><br><span class="line">    <span class="keyword">return</span> []any&#123;</span><br><span class="line">        &amp;Blob&#123;&#125;,</span><br><span class="line">        &amp;DBMetadata&#123;&#125;,</span><br><span class="line">        &amp;Provider&#123;&#125;,</span><br><span class="line">        &amp;VulnerabilityHandle&#123;&#125;,</span><br><span class="line">        &amp;VulnerabilityAlias&#123;&#125;,</span><br><span class="line">        &amp;AffectedPackageHandle&#123;&#125;,</span><br><span class="line">        &amp;UnaffectedPackageHandle&#123;&#125;,</span><br><span class="line">        &amp;OperatingSystem&#123;&#125;,</span><br><span class="line">        &amp;Package&#123;&#125;,</span><br><span class="line">        &amp;AffectedCPEHandle&#123;&#125;,</span><br><span class="line">        &amp;UnaffectedCPEHandle&#123;&#125;,</span><br><span class="line">        &amp;Cpe&#123;&#125;,</span><br><span class="line">        &amp;KnownExploitedVulnerabilityHandle&#123;&#125;,</span><br><span class="line">        &amp;EpssHandle&#123;&#125;,</span><br><span class="line">        &amp;CWEHandle&#123;&#125;,</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些模型可以按用途分为几类：</p>
+<ul>
+<li><strong>元数据</strong>（<code>DBMetadata</code>）：记录数据库的构建时间和 SchemaVer 版本号；</li>
+<li><strong>数据来源</strong>（<code>Provider</code>）：标识每条漏洞数据的来源，例如 <code>nvd</code>、<code>github</code>、<code>ubuntu</code> 等 Vunnel provider；</li>
+<li><strong>漏洞核心</strong>（<code>VulnerabilityHandle</code> 和 <code>VulnerabilityAlias</code>）：存储漏洞的 ID、状态、发布时间等索引字段，以及别名关系；</li>
+<li><strong>漏洞装饰</strong>（<code>KnownExploitedVulnerabilityHandle</code>、<code>EpssHandle</code>、<code>CWEHandle</code>）：存储 KEV（已知被利用漏洞）、EPSS（漏洞利用预测评分）和 CWE（通用弱点枚举），不直接参与匹配，但用于计算漏洞优先级；</li>
+<li><strong>匹配编排</strong>（<code>AffectedPackageHandle</code>、<code>UnaffectedPackageHandle</code>、<code>AffectedCPEHandle</code>、<code>UnaffectedCPEHandle</code>）：关联漏洞和受影响的软件包/CPE，是匹配查询的核心表；</li>
+<li><strong>支撑数据</strong>（<code>Package</code>、<code>OperatingSystem</code>、<code>Cpe</code>）：定义软件包、操作系统和 CPE 的具体属性。</li>
+</ul>
+<h3 id="blob-存储为什么把-json-存进数据库"><a class="markdownIt-Anchor" href="#blob-存储为什么把-json-存进数据库"></a> Blob 存储：为什么把 JSON 存进数据库</h3>
+<p>在这些表结构中，有一个关键的设计模式值得深入讨论：<strong>Blob 存储</strong>。观察 <code>VulnerabilityHandle</code> 的定义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> VulnerabilityHandle <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID            ID</span><br><span class="line">    Name          <span class="type">string</span>               <span class="comment">// 索引字段</span></span><br><span class="line">    Status        VulnerabilityStatus  <span class="comment">// 索引字段</span></span><br><span class="line">    PublishedDate *time.Time           <span class="comment">// 索引字段</span></span><br><span class="line">    ModifiedDate  *time.Time           <span class="comment">// 索引字段</span></span><br><span class="line">    ProviderID    <span class="type">string</span>               <span class="comment">// 外键</span></span><br><span class="line">    Provider      *Provider</span><br><span class="line">    BlobID        ID                   <span class="comment">// 外键 -&gt; Blob 表</span></span><br><span class="line">    BlobValue     *VulnerabilityBlob   <span class="string">`gorm:&quot;-&quot;`</span>  <span class="comment">// 运行时填充，不存入表</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意到 <code>BlobValue</code> 的 gorm tag 是 <code>gorm:&quot;-&quot;</code>，意味着它不直接作为该表的列存在。实际上，漏洞的详细内容（描述、引用、别名、严重性评分等）被序列化成 JSON 存入单独的 <code>Blob</code> 表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Blob <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID    ID</span><br><span class="line">    Value <span class="type">string</span>  <span class="comment">// JSON 字符串</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>而 <code>VulnerabilityBlob</code> 则定义了这段 JSON 的结构：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> VulnerabilityBlob <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID          <span class="type">string</span>      <span class="string">`json:&quot;id&quot;`</span></span><br><span class="line">    Assigners   []<span class="type">string</span>    <span class="string">`json:&quot;assigner,omitempty&quot;`</span></span><br><span class="line">    Description <span class="type">string</span>      <span class="string">`json:&quot;description,omitempty&quot;`</span></span><br><span class="line">    References  []Reference <span class="string">`json:&quot;refs,omitempty&quot;`</span></span><br><span class="line">    Aliases     []<span class="type">string</span>    <span class="string">`json:&quot;aliases,omitempty&quot;`</span></span><br><span class="line">    Severities  []Severity  <span class="string">`json:&quot;severities,omitempty&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>为什么要这样设计？</strong> 原因有几点：</p>
+<ol>
+<li><strong>减少 JOIN 和 NULL 列</strong>。漏洞的严重性评分、引用链接和别名都是变长列表。如果在关系表中为每个字段建列，要么需要大量 NULL 列，要么需要更多 JOIN。将变长数据放入 JSON 可以保持表结构简洁。</li>
+<li><strong>去重</strong>。多个漏洞可能引用相同的严重性信息或描述。Blob 表通过 xxhash 摘要来判断重复，相同的 JSON 只存一份。</li>
+<li><strong>查询效率</strong>。匹配查询只需要索引字段（漏洞名称、provider、状态），这些保留在 <code>VulnerabilityHandle</code> 表中。查询时先走索引找到匹配行，再通过 <code>BlobID</code> 获取详细的 JSON 内容。</li>
+</ol>
+<p>类似的设计也用于 <code>PackageBlob</code>（描述受影响的版本范围）、<code>KnownExploitedVulnerabilityBlob</code>（KEV 详情）等。几乎每个 Handle 表都关联了一个 Blob。</p>
+<h3 id="blob-的读写流程"><a class="markdownIt-Anchor" href="#blob-的读写流程"></a> Blob 的读写流程</h3>
+<p>写入时，<code>blobStore.addBlobable()</code> 将 Go 对象通过 <code>json.Marshal</code> 序列化，计算 xxh64 摘要，再按摘要去重后写入 <code>Blob</code> 表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *blobStore)</span></span> addBlobs(blobs ...*Blob) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">for</span> i := <span class="keyword">range</span> blobs &#123;</span><br><span class="line">        v := blobs[i]</span><br><span class="line">        digest := v.computeDigest()  <span class="comment">// xxh64 摘要</span></span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> id, ok := s.idsByDigest[digest]; ok &amp;&amp; id != <span class="number">0</span> &#123;</span><br><span class="line">            v.ID = id  <span class="comment">// 已存在，复用 ID</span></span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> err := s.db.Create(v).Error; err != <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;failed to create blob: %w&quot;</span>, err)</span><br><span class="line">        &#125;</span><br><span class="line">        s.idsByDigest[digest] = v.ID</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>读取时，<code>blobStore.attachBlobValue()</code> 先收集所有需要填充的 Handle 的 <code>BlobID</code>，再批量查询 <code>Blob</code> 表，最后将 JSON 反序列化到各 Handle 的 <code>BlobValue</code> 字段中。这个过程叫做「附加」，因为它是在原有查询结果之上追加内容，而不是重新查询。</p>
+<h3 id="写入优化内存缓存"><a class="markdownIt-Anchor" href="#写入优化内存缓存"></a> 写入优化：内存缓存</h3>
+<p>在数据库<strong>构建</strong>过程中，大量数据需要写入，且存在大量重复——多个 Provider 可能引用同一个 CVE，多行数据可能引用同一个 Package。为了加速写入和确保去重，Grype 在 Context 中附加了一个内存缓存：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewLowLevelDB</span><span class="params">(dbFilePath <span class="type">string</span>, empty, writable, debug <span class="type">bool</span>)</span></span> (*gorm.DB, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">if</span> empty &#123;</span><br><span class="line">        dbObj = dbObj.WithContext(withCacheContext(context.Background(), newCache()))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> dbObj, err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个 <code>cache</code> 结构按表名和 <code>cacheKey()</code> 维护了 name-to-ID 的映射。以 <code>VulnerabilityHandle</code> 为例，其 <code>BeforeCreate</code> hook 会先查缓存：如果缓存中已有同名的漏洞记录，则直接复用它的 ID，跳过本次创建；<code>AfterCreate</code> hook 则在创建成功后更新缓存。</p>
+<p>同样的缓存机制也应用于 <code>Provider</code>、<code>OperatingSystem</code>、<code>Package</code> 和 <code>Cpe</code> 等实体。这让大量数据的批量写入能够安全地在 Go 业务层面去重，而不依赖每次 INSERT 时的数据库约束检查。</p>
+<h2 id="数据库的生命周期管理curator"><a class="markdownIt-Anchor" href="#数据库的生命周期管理curator"></a> 数据库的生命周期管理：Curator</h2>
+<p>理解数据库的内部结构后，我们来看它的生命周期是如何被管理的。这部分的核心是 <code>installation/curator</code>。</p>
+<h3 id="配置和目录"><a class="markdownIt-Anchor" href="#配置和目录"></a> 配置和目录</h3>
+<p><code>Curator</code> 的默认配置决定了所有与数据库存储相关的路径和行为：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">DefaultConfig</span><span class="params">(id clio.Identification)</span></span> Config &#123;</span><br><span class="line">    <span class="keyword">return</span> Config&#123;</span><br><span class="line">        DBRootDir:               filepath.Join(xdg.CacheHome, id.Name, <span class="string">&quot;db&quot;</span>),</span><br><span class="line">        ValidateAge:             <span class="literal">true</span>,</span><br><span class="line">        ValidateChecksum:        <span class="literal">true</span>,</span><br><span class="line">        MaxAllowedBuiltAge:      time.Hour * <span class="number">24</span> * <span class="number">5</span>,  <span class="comment">// 5 天</span></span><br><span class="line">        UpdateCheckMaxFrequency: <span class="number">2</span> * time.Hour,        <span class="comment">// 2 小时</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>数据库文件最终存储在 <code>&lt;CacheHome&gt;/grype/db/6/vulnerability.db</code>。其中 <code>6</code> 是 <code>ModelVersion</code>，这样不同主版本的数据库可以共存。默认的 <code>MaxAllowedBuiltAge</code> 是 5 天——超过 5 天的数据库被视为&quot;过期&quot;，Curator 会在检查时报告错误。</p>
+<h3 id="打开数据库reader-和-rehydration"><a class="markdownIt-Anchor" href="#打开数据库reader-和-rehydration"></a> 打开数据库：Reader() 和 rehydration</h3>
+<p>当 Grype 启动扫描时，<code>root.go</code> 中调用的 <code>dbCurator.Reader()</code> 会经历以下步骤：</p>
+<ol>
+<li><strong>检查状态</strong>：调用 <code>Status()</code> 检查数据库文件是否存在；</li>
+<li><strong>打开 Reader</strong>：以只读方式打开 SQLite 数据库，获取 <code>DBMetadata</code>；</li>
+<li><strong>检查是否需要 rehydration</strong>：这是一个关键步骤。所谓 rehydration（补水）是指，当旧客户端下载了数据库后，新客户端打开它时可能需要重建索引。因为数据库在分发时删除了所有索引（节省空间），客户端首次打开时 GORM 的 auto-migrate 会重建索引。但旧客户端和新客户端的模型定义可能不同（新客户端可能有新的索引需求），所以需要重新 hydrate：</li>
+</ol>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">isRehydrationNeeded</span><span class="params">(fs afero.Fs, dirPath <span class="type">string</span>, currentDBVersion *schemaver.SchemaVer, currentClientVersion schemaver.SchemaVer)</span></span> (<span class="type">bool</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    importMetadata, err := db.ReadImportMetadata(fs, dirPath)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    clientHydrationVersion, err := schemaver.Parse(importMetadata.ClientVersion)</span><br><span class="line">    hydratedWithOldClient := clientHydrationVersion.LessThanOrEqualTo(*currentDBVersion)</span><br><span class="line">    haveNewerClient := clientHydrationVersion.LessThan(currentClientVersion)</span><br><span class="line">    doRehydrate := hydratedWithOldClient &amp;&amp; haveNewerClient</span><br><span class="line">    <span class="keyword">return</span> doRehydrate, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>简言之：如果 <code>import.json</code> 中记录的 hydration 客户端版本比当前客户端版本旧，就需要重新 hydrate。</p>
+<h3 id="检查更新update-流程"><a class="markdownIt-Anchor" href="#检查更新update-流程"></a> 检查更新：Update() 流程</h3>
+<p>在扫描流程中，如果用户允许自动更新（<code>db-auto-update: true</code>），Grype 会在打开数据库前调用 <code>Update()</code>。这个过程分为几个阶段：</p>
+<p><strong>第一阶段：检查本地状态。</strong> 读取本地数据库的 <code>Description</code>（构建时间和 schema 版本），验证年龄是否超出 <code>MaxAllowedBuiltAge</code>。如果本地数据库不存在或已过期，则将 <code>current</code> 设为 <code>nil</code>——这意味着任何有效的新数据库都会被采用。</p>
+<p><strong>第二阶段：查询远端。</strong> <code>distribution.Client.IsUpdateAvailable()</code> 从 Grype 的 CDN 拉取 <code>latest.json</code> 文件，其结构如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> LatestDocument <span class="keyword">struct</span> &#123;</span><br><span class="line">    Status  Status  <span class="string">`json:&quot;status&quot;`</span>   <span class="comment">// active / deprecated / eol</span></span><br><span class="line">    Archive <span class="string">`json:&quot;,inline&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Archive <span class="keyword">struct</span> &#123;</span><br><span class="line">    Description db.Description <span class="string">`json:&quot;,inline&quot;`</span></span><br><span class="line">    Path        <span class="type">string</span>         <span class="string">`json:&quot;path&quot;`</span>      <span class="comment">// 归档文件的相对路径</span></span><br><span class="line">    Checksum    <span class="type">string</span>         <span class="string">`json:&quot;checksum&quot;`</span>  <span class="comment">// 归档的校验和</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>isUpdateAvailable()</code> 的判断逻辑很直接：如果 <code>latest.json</code> 中的构建时间比本地数据库更新，就返回这个 Archive 作为可用的更新；如果两者的 <code>ModelVersion</code> 不一致，则拒绝更新（因为主版本不兼容）；如果远端状态为 <code>deprecated</code> 或 <code>eol</code>，还会通过 <code>bus.Notify</code> 发送警告提示用户升级 Grype。</p>
+<p><strong>第三阶段：频率控制。</strong> 在检查更新之前，<code>isUpdateCheckAllowed()</code> 会检查上次更新的时间戳（记录在 <code>last_update_check</code> 文件中）。如果距离上次检查不到 <code>UpdateCheckMaxFrequency</code>（默认 2 小时），则跳过本次更新检查。这是一个低通滤波机制，防止频繁启动 Grype 时对 CDN 造成不必要的压力。</p>
+<p><strong>第四阶段：下载和激活。</strong> 如果需要更新，Curator 会通过 <code>distribution.Client</code> 下载数据库归档文件到临时目录。下载时 Archive 的 Checksum 作为 URL 查询参数传递给 go-getter 库，go-getter 会自动在下载完成后验证文件完整性。</p>
+<p>下载完成后进入 <code>activate()</code>，这是一个关键的过渡阶段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c curator)</span></span> activate(dbDirPath, url <span class="type">string</span>, mon monitor) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="comment">// 1. hydrate: 打开数据库让 GORM auto-migrate，然后计算 DB 文件的 xxh64 摘要</span></span><br><span class="line">    <span class="keyword">if</span> err := c.hydrate(dbDirPath, url, mon); err != <span class="literal">nil</span> &#123; ... &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. replaceDB: 删除旧数据库，将新目录 rename 到最终位置</span></span><br><span class="line">    <span class="keyword">return</span> c.replaceDB(dbDirPath)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>hydrate()</code> 不仅创建索引，还会调用 <code>WriteImportMetadata()</code> 生成 <code>import.json</code> 文件，其中包含：</p>
+<ul>
+<li><code>digest</code>：数据库文件的 xxh64 摘要，用于后续完整性校验；</li>
+<li><code>source</code>：数据库来源 URL；</li>
+<li><code>client_version</code>：当前客户端的 SchemaVer 版本，用于未来的 rehydration 判断。</li>
+</ul>
+<p><code>replaceDB()</code> 则通过 <code>os.Rename</code> 原子性地（同一文件系统内）将新数据库目录替换到最终位置。</p>
+<h3 id="完整性校验"><a class="markdownIt-Anchor" href="#完整性校验"></a> 完整性校验</h3>
+<p>每次 <code>Reader()</code> 被调用时，都会经过 <code>isRehydrationNeeded()</code> 和 <code>Status()</code> 的校验。而 <code>validateIntegrity()</code> 在 <code>Status()</code> 中被调用，它会重新计算磁盘上数据库文件的 xxh64 摘要，与 <code>import.json</code> 中记录的 digest 对比。如果不一致，说明数据库文件已被篡改或损坏。</p>
+<h3 id="手动导入"><a class="markdownIt-Anchor" href="#手动导入"></a> 手动导入</h3>
+<p>除了自动更新，Curator 还支持 <code>Import()</code> 手动导入数据库。用户可以通过 <code>grype db import &lt;path&gt;</code> 导入一个本地 DB 文件或 archive。<code>Import()</code> 会根据输入的类型（URL、<code>.db</code> 文件、archive 文件）分别处理，最终统一走 <code>activate()</code> 流程：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c curator)</span></span> Import(reference <span class="type">string</span>) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> isURL(reference) &#123;</span><br><span class="line">        <span class="comment">// 下载</span></span><br><span class="line">        tempDir, err = c.client.Download(reference, c.config.DBRootDir, ...)</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> strings.HasSuffix(reference, <span class="string">&quot;.db&quot;</span>) &#123;</span><br><span class="line">        <span class="comment">// 复制 DB 文件到临时目录</span></span><br><span class="line">        file.CopyFile(afero.NewOsFs(), reference, filepath.Join(tempDir, db.VulnerabilityDBFileName))</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 解压 archive</span></span><br><span class="line">        unarchive(reference, tempDir)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 统一激活</span></span><br><span class="line">    <span class="keyword">return</span> c.activate(tempDir, url, mon)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="漏洞查询provider-如何工作"><a class="markdownIt-Anchor" href="#漏洞查询provider-如何工作"></a> 漏洞查询：Provider 如何工作</h2>
+<p>数据库就绪之后，扫描流程将 <code>Reader</code> 包装成 <code>vulnerabilityProvider</code>，提供给 <code>VulnerabilityMatcher</code> 使用。这个 Provider 是漏洞数据库的查询入口，其核心方法是 <code>FindVulnerabilities()</code>。</p>
+<h3 id="从-criteria-到-searchquery"><a class="markdownIt-Anchor" href="#从-criteria-到-searchquery"></a> 从 Criteria 到 SearchQuery</h3>
+<p>Matcher 在匹配时，会传入一组 <code>vulnerability.Criteria</code> 对象，这些 Criteria 定义了&quot;要找什么样的漏洞&quot;。Provider 的第一步是将这些 Criteria 转换成一个可执行的 <code>searchQuery</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> searchQuery <span class="keyword">struct</span> &#123;</span><br><span class="line">    pkgSpec        *PackageSpecifier      <span class="comment">// 软件包查询条件</span></span><br><span class="line">    cpeSpec        *cpe.Attributes        <span class="comment">// CPE 查询条件</span></span><br><span class="line">    osSpecs        OSSpecifiers           <span class="comment">// 操作系统过滤条件</span></span><br><span class="line">    vulnSpecs      VulnerabilitySpecifiers <span class="comment">// 漏洞过滤条件</span></span><br><span class="line">    pkgType        syftPkg.Type</span><br><span class="line">    versionMatcher search.VersionConstraintMatcher <span class="comment">// 版本约束匹配器</span></span><br><span class="line">    unaffectedOnly <span class="type">bool</span>                    <span class="comment">// 是否查询不受影响的记录</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个转换过程由 <code>searchQueryBuilder</code> 完成，它通过类型断言（type switch）逐一处理各种 Criteria：</p>
+<ul>
+<li><code>PackageNameCriteria</code> → 设置 <code>pkgSpec.Name</code></li>
+<li><code>EcosystemCriteria</code> → 设置 <code>pkgSpec.Ecosystem</code>（并做生态 normalize，例如 <code>JavaScript</code> → <code>npm</code>）</li>
+<li><code>CPECriteria</code> → 设置 <code>cpeSpec</code>，同时将 CPE 也设置到 <code>pkgSpec.CPE</code>（因为 CPE 匹配会同时走 Package 和 CPE 表）</li>
+<li><code>DistroCriteria</code> → 设置 <code>osSpecs</code>，指定要匹配的发行版及其版本</li>
+<li><code>IDCriteria</code> → 设置 <code>vulnSpecs</code>，限定漏洞 ID</li>
+<li><code>VersionConstraintMatcher</code> → 提取出来，不进入数据库查询而是在后续过滤阶段使用</li>
+<li><code>UnaffectedCriteria</code> → 设置 <code>unaffectedOnly = true</code>，切换到查询 <code>unaffected_package_handles</code> 表</li>
+</ul>
+<p>未能被 builder 消化的 Criteria（如 <code>VersionConstraintMatcher</code>）会作为 <code>remainingCriteria</code> 保留，在数据库查询完成后做二次过滤。</p>
+<h3 id="数据库查询过程"><a class="markdownIt-Anchor" href="#数据库查询过程"></a> 数据库查询过程</h3>
+<p><code>FindVulnerabilities()</code> 的核心流程分为三条主线：</p>
+<p><strong>第一条主线：按 Package 查询。</strong> <code>fetchAndProcessAffectedPackages()</code> 调用 <code>GetAffectedPackages()</code>，在 <code>affected_package_handles</code> 表上执行一个复杂的 JOIN 查询：</p>
+<ul>
+<li>JOIN <code>packages</code> 表（匹配包名和生态）</li>
+<li>JOIN <code>operating_systems</code> 表（匹配发行版）</li>
+<li>JOIN <code>vulnerability_handles</code> 表（如果指定了漏洞过滤条件）</li>
+</ul>
+<p>查询结果返回 <code>[]AffectedPackageHandle</code>，每个 Handle 包含 <code>Package</code>、<code>OperatingSystem</code> 和 <code>Vulnerability</code> 的关联信息。随后，批量预加载 Blob 数据（通过 <code>attachBlobValue</code> 将 JSON 反序列化为 <code>BlobValue</code>）。</p>
+<p><strong>第二条主线：按 CPE 查询。</strong> <code>fetchAndProcessCPEs()</code> 走 <code>affected_cpe_handles</code> 表（或 <code>unaffected_cpe_handles</code> 表）。CPE 查询的逻辑与 Package 查询类似，但它不涉及 <code>packages</code> 表的 JOIN，因为 CPE 表中的数据本身就是以 CPE 标识符为键。</p>
+<p><strong>第三条主线：Unaffected 查询。</strong> 当 <code>unaffectedOnly = true</code> 时，查询切换到 <code>unaffected_package_handles</code> 表。<code>UnaffectedPackageHandle</code> 的结构与 <code>AffectedPackageHandle</code> 完全相同（通过类型定义别名 <code>type UnaffectedPackageHandle packageHandle</code>），只是表名不同。</p>
+<p>无论走哪条主线，查询结果最终都会通过 <code>newVulnerabilityFromAffectedPackageHandle()</code> 转换成 <code>vulnerability.Vulnerability</code> 对象。</p>
+<h3 id="版本范围过滤"><a class="markdownIt-Anchor" href="#版本范围过滤"></a> 版本范围过滤</h3>
+<p>数据库查询返回的结果是&quot;候选&quot;漏洞——它们满足包名、生态和发行版的匹配条件，但还没有经过版本约束的筛选。版本过滤在数据库查询之后进行，由 <code>filterAffectedPackageVersions()</code> 完成。</p>
+<p>其核心逻辑在 <code>filterAffectedPackageRanges()</code> 中：遍历 PackageBlob 中的每个 <code>Range</code>，将其中的版本约束字符串解析为 <code>version.Constraint</code> 对象，然后调用 <code>constraintMatcher.MatchesConstraint(constraint)</code> 检查软件包的当前版本是否落入这个约束范围。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">filterAffectedPackageRanges</span><span class="params">(matcher search.VersionConstraintMatcher, b *PackageBlob)</span></span> (<span class="type">bool</span>, []<span class="type">string</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(b.Ranges) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="comment">// 没有 ranges 意味着隐式地对所有版本易受攻击</span></span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span>, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">var</span> unmatchedConstraints []<span class="type">string</span></span><br><span class="line">    <span class="keyword">for</span> _, r := <span class="keyword">range</span> b.Ranges &#123;</span><br><span class="line">        format := version.ParseFormat(r.Version.Type)</span><br><span class="line">        constraint, err := version.GetConstraint(r.Version.Constraint, format)</span><br><span class="line">        matches, err := matcher.MatchesConstraint(constraint)</span><br><span class="line">        <span class="keyword">if</span> matches &#123;</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        &#125;</span><br><span class="line">        unmatchedConstraints = <span class="built_in">append</span>(unmatchedConstraints, r.Version.Constraint)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(b.Ranges) == <span class="built_in">len</span>(unmatchedConstraints), unmatchedConstraints</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>一个值得注意的细节：如果 <code>Ranges</code> 为空，表示该漏洞对软件包的<strong>所有版本</strong>都有效（<code>return false, nil</code>），不会因为&quot;没有匹配任何 version range&quot;而被过滤掉。</p>
+<h3 id="命名空间兼容性"><a class="markdownIt-Anchor" href="#命名空间兼容性"></a> 命名空间兼容性</h3>
+<p>查询结果的 <code>Vulnerability</code> 对象中有一个 <code>Namespace</code> 字段，它标识了这个漏洞记录的来源语义空间（例如 <code>nvd:cpe</code>、<code>github:language:javascript</code>、<code>redhat:distro:rhel:8</code>）。v6 数据库的 namespace 并非直接存储，而是通过 <code>MimicV5Namespace()</code> 函数<strong>模拟</strong>出来的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MimicV5Namespace</span><span class="params">(vuln *VulnerabilityHandle, affected *AffectedPackageHandle)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> affected.OperatingSystem != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// 发行版包 → &quot;provider:distro:family:version&quot;</span></span><br><span class="line">        <span class="keyword">return</span> fmt.Sprintf(<span class="string">&quot;%s:distro:%s:%s&quot;</span>, pr, family, ver)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> affected.Package != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// 语言生态包 → &quot;provider:language:ecosystem&quot;</span></span><br><span class="line">        <span class="keyword">return</span> mimicV5GithubNamespace(vuln.Provider.ID, affected.Package.Ecosystem)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> fmt.Sprintf(<span class="string">&quot;%s:cpe&quot;</span>, vuln.Provider.ID)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个设计意味着 v6 数据库在存储时不区分 distro/language/cpe 的命名空间，而是在运行时根据关联的 Package 或 OperatingSystem 信息动态推导。这是为了保持向后兼容——上层的 Matcher 代码不需要因为 v5 到 v6 的升级而修改 namespace 匹配逻辑。</p>
+<h3 id="元数据查询和缓存"><a class="markdownIt-Anchor" href="#元数据查询和缓存"></a> 元数据查询和缓存</h3>
+<p>每个 <code>VulnerabilityHandle</code> 转换为 <code>vulnerability.Vulnerability</code> 时，Provider 还会查询它的元数据（Metadata），包括 CVSS 评分、KEV 信息、EPSS 评分和 CWE 关联。这些信息来自 <code>vulnerabilityDecoratorStore</code> 的三张表：</p>
+<ul>
+<li><code>KnownExploitedVulnerabilityHandle</code> → CISA KEV（已知被利用漏洞）</li>
+<li><code>EpssHandle</code> → EPSS（漏洞利用预测评分）</li>
+<li><code>CWEHandle</code> → CWE（通用弱点枚举）</li>
+</ul>
+<p>为了避免重复查询，Provider 内部维护了一个 <code>metadataCache</code>，以漏洞 ID 为键缓存已经查过的 Metadata：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(vp vulnerabilityProvider)</span></span> getCachedMetadata(vuln *VulnerabilityHandle, namespace <span class="type">string</span>, metadataCache <span class="keyword">map</span>[<span class="type">string</span>]*vulnerability.Metadata) (*vulnerability.Metadata, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> metadata, ok := metadataCache[vuln.Name]; ok &#123;</span><br><span class="line">        <span class="keyword">return</span> metadata, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    metadata, err := vp.getVulnerabilityMetadata(vuln, namespace)</span><br><span class="line">    metadataCache[vuln.Name] = metadata</span><br><span class="line">    <span class="keyword">return</span> metadata, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="与整体扫描流程的衔接"><a class="markdownIt-Anchor" href="#与整体扫描流程的衔接"></a> 与整体扫描流程的衔接</h2>
+<p>在之前的整体流程中，我们介绍过扫描的主链路：<code>dbCurator.Reader()</code> 打开数据库，<code>NewVulnerabilityProvider(reader)</code> 创建 Provider，然后将 Provider 传给 <code>VulnerabilityMatcher</code>。本文的分析正好填补了这三个步骤之间的空白：</p>
+<ul>
+<li><code>dbCurator.Reader()</code> → 经历了状态检查、完整性校验、rehydration 判断，最终返回一个只读的 <code>Reader</code>（即底层的 store）；</li>
+<li><code>NewVulnerabilityProvider(reader)</code> → 将 <code>Reader</code> 包装成 <code>vulnerabilityProvider</code>，实现了 <code>vulnerability.Provider</code> 接口；</li>
+<li><code>vulnerabilityProvider.FindVulnerabilities()</code> → 将 Criteria 转换为 SQL 查询，从关系表中找出候选漏洞，再通过版本约束过滤和元数据查询，返回最终的 <code>[]vulnerability.Vulnerability</code>。</li>
+</ul>
+<p>下图展示了这些组件之间的关系：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">dbCurator (Curator 接口)</span><br><span class="line">    │</span><br><span class="line">    ├── distribution.Client ─── CDN (latest.json + archive)</span><br><span class="line">    │</span><br><span class="line">    └── Reader() → Reader 接口</span><br><span class="line">                      │</span><br><span class="line">                      ▼</span><br><span class="line">              vulnerabilityProvider</span><br><span class="line">                      │</span><br><span class="line">                      ├── FindVulnerabilities()</span><br><span class="line">                      │       │</span><br><span class="line">                      │       ├── searchQuery (Criteria → SQL)</span><br><span class="line">                      │       ├── affectedPackageStore (DB JOIN 查询)</span><br><span class="line">                      │       ├── affectedCPEStore    (CPE 查询)</span><br><span class="line">                      │       ├── version filter      (版本约束过滤)</span><br><span class="line">                      │       └── vulnerabilityDecoratorStore (KEV/EPSS/CWE)</span><br><span class="line">                      │</span><br><span class="line">                      └── VulnerabilityMetadata()</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>Grype v6 漏洞数据库的设计体现了几个关键思路：</p>
+<ol>
+<li>
+<p><strong>分层抽象</strong>：底层 SQLite 由 GORM 管理，模型定义在 <code>models.go</code> 中；中间层是 <code>store</code> 及其子 Store，对上层暴露 Reader/Writer 接口；最上层是 <code>vulnerabilityProvider</code>，实现了 <code>vulnerability.Provider</code> 接口，与 Matcher 框架对接。</p>
+</li>
+<li>
+<p><strong>Blob + Handle 的混合存储</strong>：将频繁查询的字段（ID、名称、状态）留在关系表索引中，而将变长和不常查询的字段（描述、严重性评分、引用）序列化为 JSON 存入 Blob 表，兼顾了查询效率和存储灵活性。</p>
+</li>
+<li>
+<p><strong>SchemaVer 兼容性管理</strong>：通过 MODEL.REVISION.ADDITION 三级版本号，客户端能够按能力探测数据库功能，在版本不匹配时采取优雅降级或拒绝写入的策略。</p>
+</li>
+<li>
+<p><strong>安全的生命周期管理</strong>：数据库的下载、校验（archive checksum → file xxh64 digest）、hydration（索引重建 + 元数据记录）、激活（rename 替换），每个阶段都有验证步骤，确保不会将损坏或不兼容的数据库安装到生产环境。</p>
+</li>
+</ol>
+<p>掌握了数据库的实现原理之后，下一篇我们将进入 Grype 最核心的匹配引擎——<code>VulnerabilityMatcher</code>，看它如何将软件包和漏洞记录关联起来，生成我们最终看到的扫描结果。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/18/go-grype-07/" rel="prev" title="Grype 源码分析 07：Matcher 匹配框架">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 07：Matcher 匹配框架
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/17/go-grype-05/" rel="next" title="Grype 源码分析 05：Grype 的核心数据模型">
+      Grype 源码分析 05：Grype 的核心数据模型 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9A%84-schema-%E7%89%88%E6%9C%AC%E7%AE%A1%E7%90%86"><span class="nav-number">1.</span> <span class="nav-text"> 数据库的 Schema 版本管理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E6%95%B4%E4%BD%93%E7%BB%93%E6%9E%84store-%E5%92%8C-readerwriter-%E6%8E%A5%E5%8F%A3"><span class="nav-number">2.</span> <span class="nav-text"> 数据库整体结构：store 和 Reader&#x2F;Writer 接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B%E4%BB%8E%E5%85%B3%E7%B3%BB%E8%A1%A8%E5%88%B0-blob-%E5%AD%98%E5%82%A8"><span class="nav-number">3.</span> <span class="nav-text"> 数据模型：从关系表到 Blob 存储</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E8%A1%A8%E7%BB%93%E6%9E%84"><span class="nav-number">3.1.</span> <span class="nav-text"> 核心表结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#blob-%E5%AD%98%E5%82%A8%E4%B8%BA%E4%BB%80%E4%B9%88%E6%8A%8A-json-%E5%AD%98%E8%BF%9B%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">3.2.</span> <span class="nav-text"> Blob 存储：为什么把 JSON 存进数据库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#blob-%E7%9A%84%E8%AF%BB%E5%86%99%E6%B5%81%E7%A8%8B"><span class="nav-number">3.3.</span> <span class="nav-text"> Blob 的读写流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%99%E5%85%A5%E4%BC%98%E5%8C%96%E5%86%85%E5%AD%98%E7%BC%93%E5%AD%98"><span class="nav-number">3.4.</span> <span class="nav-text"> 写入优化：内存缓存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9A%84%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E7%AE%A1%E7%90%86curator"><span class="nav-number">4.</span> <span class="nav-text"> 数据库的生命周期管理：Curator</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E5%92%8C%E7%9B%AE%E5%BD%95"><span class="nav-number">4.1.</span> <span class="nav-text"> 配置和目录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%93%E5%BC%80%E6%95%B0%E6%8D%AE%E5%BA%93reader-%E5%92%8C-rehydration"><span class="nav-number">4.2.</span> <span class="nav-text"> 打开数据库：Reader() 和 rehydration</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A3%80%E6%9F%A5%E6%9B%B4%E6%96%B0update-%E6%B5%81%E7%A8%8B"><span class="nav-number">4.3.</span> <span class="nav-text"> 检查更新：Update() 流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%8C%E6%95%B4%E6%80%A7%E6%A0%A1%E9%AA%8C"><span class="nav-number">4.4.</span> <span class="nav-text"> 完整性校验</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%8B%E5%8A%A8%E5%AF%BC%E5%85%A5"><span class="nav-number">4.5.</span> <span class="nav-text"> 手动导入</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%BC%8F%E6%B4%9E%E6%9F%A5%E8%AF%A2provider-%E5%A6%82%E4%BD%95%E5%B7%A5%E4%BD%9C"><span class="nav-number">5.</span> <span class="nav-text"> 漏洞查询：Provider 如何工作</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E-criteria-%E5%88%B0-searchquery"><span class="nav-number">5.1.</span> <span class="nav-text"> 从 Criteria 到 SearchQuery</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E6%9F%A5%E8%AF%A2%E8%BF%87%E7%A8%8B"><span class="nav-number">5.2.</span> <span class="nav-text"> 数据库查询过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%89%88%E6%9C%AC%E8%8C%83%E5%9B%B4%E8%BF%87%E6%BB%A4"><span class="nav-number">5.3.</span> <span class="nav-text"> 版本范围过滤</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E5%90%8D%E7%A9%BA%E9%97%B4%E5%85%BC%E5%AE%B9%E6%80%A7"><span class="nav-number">5.4.</span> <span class="nav-text"> 命名空间兼容性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%83%E6%95%B0%E6%8D%AE%E6%9F%A5%E8%AF%A2%E5%92%8C%E7%BC%93%E5%AD%98"><span class="nav-number">5.5.</span> <span class="nav-text"> 元数据查询和缓存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%8E%E6%95%B4%E4%BD%93%E6%89%AB%E6%8F%8F%E6%B5%81%E7%A8%8B%E7%9A%84%E8%A1%94%E6%8E%A5"><span class="nav-number">6.</span> <span class="nav-text"> 与整体扫描流程的衔接</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">276</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

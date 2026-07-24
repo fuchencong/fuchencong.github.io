@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上一篇文章中，我们分析了 Grype Matcher 匹配框架的整体架构：三条搜索路径（语言生态、发行版、CPE）、Criteria 查询条件体系、result.Set 中间结果容器，以及跨 Matcher 的 IgnoreFilter 去重机制。但上一篇文章重点在&quot;框架如何运转&quot;，并没有深入回答一个更具体的问题：为什么 apk、deb、rpm、npm、Go 这些不同生态不能">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 08：不同软件生态的漏洞匹配策略">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/19/go-grype-08/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上一篇文章中，我们分析了 Grype Matcher 匹配框架的整体架构：三条搜索路径（语言生态、发行版、CPE）、Criteria 查询条件体系、result.Set 中间结果容器，以及跨 Matcher 的 IgnoreFilter 去重机制。但上一篇文章重点在&quot;框架如何运转&quot;，并没有深入回答一个更具体的问题：为什么 apk、deb、rpm、npm、Go 这些不同生态不能">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-19T07:00:15.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:48:44.200Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/19/go-grype-08/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 08：不同软件生态的漏洞匹配策略 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/19/go-grype-08/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 08：不同软件生态的漏洞匹配策略
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-19 15:00:15" itemprop="dateCreated datePublished" datetime="2026-07-19T15:00:15+08:00">2026-07-19</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上一篇文章中，我们分析了 Grype Matcher 匹配框架的整体架构：三条搜索路径（语言生态、发行版、CPE）、Criteria 查询条件体系、<code>result.Set</code> 中间结果容器，以及跨 Matcher 的 IgnoreFilter 去重机制。但上一篇文章重点在&quot;框架如何运转&quot;，并没有深入回答一个更具体的问题：<strong>为什么 apk、deb、rpm、npm、Go 这些不同生态不能共用一种匹配规则？</strong></p>
+<span id="more"></span>
+<p>如果你翻看 <code>grype/matcher/</code> 目录下的源码，会发现 Grype 为此实现了 16 个 Matcher。乍看之下，很多 Matcher 的 <code>Match()</code> 方法只有短短几行，似乎只是对公共函数的简单封装。但当你把视角拉近，仔细审视每个 Matcher 在&quot;如何组合三条搜索路径&quot;和&quot;如何处理本生态的特殊情况&quot;上的差异时，就会发现这些差异不是偶然的——它们背后是不同生态在包命名、版本管理、安全数据发布方式上的本质区别。</p>
+<p>本文将以这些差异为线索，逐层展开不同 Matcher 的实现策略。</p>
+<h2 id="从统一框架到差异化策略"><a class="markdownIt-Anchor" href="#从统一框架到差异化策略"></a> 从统一框架到差异化策略</h2>
+<p>让我们先回顾一下统一框架提供了什么。在 <code>grype/matcher/internal</code> 包中，有三个公共匹配函数作为所有 Matcher 的构建基块：</p>
+<ul>
+<li><strong><code>MatchPackageByLanguage</code></strong>：按语言生态 + 包名搜索，处理多名称展开和跨名称 NAK（Negative Acknowledgement）去重；</li>
+<li><strong><code>MatchPackageByDistro</code></strong>：按发行版 + 包名搜索，将结果分为&quot;受影响&quot;和&quot;已修复&quot;两部分，并为已修复的漏洞生成跨生态的 IgnoreFilter；</li>
+<li><strong><code>MatchPackageByCPEs</code></strong>：按 CPE（Common Platform Enumeration，通用平台枚举）标识符搜索，作为通用兜底路径。</li>
+</ul>
+<p>此外还有两个组合函数：</p>
+<ul>
+<li><strong><code>MatchPackageByEcosystemAndCPEs</code></strong>：先按语言生态搜索，可选地再按 CPE 补充搜索，合并结果；</li>
+<li><strong><code>MatchPackageByEcosystemPackageName</code></strong>：按指定的包名（而非包的自身名称）在语言生态中搜索。</li>
+</ul>
+<p>所有 16 个 Matcher 的 <code>Match()</code> 方法，本质上都是在<strong>选择、编排和组合</strong>这些基块函数。但恰恰是这个&quot;选择和组合&quot;的过程，体现了不同生态的根本差异。</p>
+<h2 id="matcher-的分类三大阵营"><a class="markdownIt-Anchor" href="#matcher-的分类三大阵营"></a> Matcher 的分类：三大阵营</h2>
+<p>从&quot;如何利用基块函数&quot;的角度，16 个 Matcher 可以清晰地分为三大阵营：</p>
+<p><strong>纯语言生态 Matcher</strong>：JavaScript（npm）、Python（pip）、Ruby（gem）、Rust（cargo）、Dotnet（NuGet）、Hex（Elixir）。它们只调用 <code>MatchPackageByEcosystemAndCPEs</code>，策略最简单。</p>
+<p><strong>发行版 Matcher</strong>：APK（Alpine）、DPKG（Debian）、RPM（RedHat/CentOS/AlmaLinux）、Portage（Gentoo）、Pacman（Arch）。它们以 <code>MatchPackageByDistro</code> 为核心，但各自叠加了上游包、Epoch、NAK 等差异化逻辑。</p>
+<p><strong>特殊生态 Matcher</strong>：Golang、Java、MSRC、Bitnami。它们虽然在形式上仍使用基块函数，但因为有特殊的匹配需求（伪版本、Maven 仓库查询、KB 补丁），策略无法归入前两类。</p>
+<p>Stock Matcher 则是一个特殊的存在——它声明 <code>PackageTypes()</code> 返回 <code>nil</code>，不认领任何包类型，而是作为&quot;兜底&quot;匹配器为所有找不到专属 Matcher 的包提供 CPE 匹配。</p>
+<p>下面我们按&quot;从简单到复杂&quot;的顺序，依次分析每个阵营中 Matcher 的实现特点。</p>
+<h2 id="纯语言生态-matcher一行代码背后的问题"><a class="markdownIt-Anchor" href="#纯语言生态-matcher一行代码背后的问题"></a> 纯语言生态 Matcher：一行代码背后的问题</h2>
+<p>JavaScript Matcher 的 <code>Match()</code> 方法极其简单：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByEcosystemAndCPEs(store, p, m.Type(), m.cfg.UseCPEs)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Python、Ruby、Rust、Dotnet、Hex 的 Matcher 与此完全相同——唯一的区别是 <code>PackageTypes()</code> 返回不同的包类型（<code>NpmPkg</code>、<code>PythonPkg</code>、<code>GemPkg</code> 等），以及 <code>Type()</code> 返回不同的 Matcher 标识名。</p>
+<p>但&quot;简单&quot;不等于&quot;没有设计&quot;。当你深入 <code>MatchPackageByEcosystemAndCPEs</code> 内部，会发现它解决了两个纯语言生态特有的问题：</p>
+<p><strong>一是 CPE 匹配的可选性。</strong> <code>m.cfg.UseCPEs</code> 是一个配置开关。以 JavaScript 为例，npm 包的漏洞信息主要来自 GitHub Advisory Database（GHSA），这些记录的生态字段被标记为 <code>npm</code>，而不是 NVD 的 CPE 格式。对于语言生态来说，生态匹配（<code>MatchPackageByLanguage</code>）是主要路径——数据库中有专门的 <code>npm</code>、<code>pypi</code>、<code>gem</code> 等命名空间，直接按包名搜索即可命中。CPE 匹配则是辅助路径——它通过 NVD 等通用漏洞库补充发现那些尚未被生态专属数据库收录的漏洞。</p>
+<p>这引出了一个实际的问题：CPE 匹配可能引入误报。NVD 的 CPE 记录并不总是准确反映软件包的生态系统——一个名为 <code>lodash</code> 的 CPE 可能指向 npm 包，也可能指向其他平台上的同名软件。为了降低误报，<code>MatchPackageByCPEs</code> 中引入了 <code>OnlyVulnerableTargets</code> 过滤器，通过比较漏洞 CPE 和包 CPE 的 <code>TargetSW</code>（目标软件）字段，排除那些显然不是同一种语言的匹配。</p>
+<p><strong>二是搜索名称的展开。</strong> <code>MatchPackageByLanguage</code> 内部通过 <code>store.PackageSearchNames(p)</code> 获取要搜索的包名列表。对于大多数语言生态包，这个列表只有一个元素——包自身的名称。但对于某些特殊场景，数据库会注册多个搜索名。在收集完所有名称的受影响（disclosure）记录后，还要查询对应名称的&quot;不受影响&quot;（unaffected）记录，并通过 <code>disclosures.Remove(unaffected)</code> 按漏洞 ID 和别名进行去重。这种&quot;先收集全部、再排除不受影响&quot;的两阶段查询模式，确保了不同数据源对同一漏洞的不同判断能够被正确处理。</p>
+<h2 id="go-matcher伪版本与主模块的困扰"><a class="markdownIt-Anchor" href="#go-matcher伪版本与主模块的困扰"></a> Go Matcher：伪版本与主模块的困扰</h2>
+<p>Go Matcher 虽然也调用 <code>MatchPackageByEcosystemAndCPEs</code>，但在此之前有一段独特的预处理逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    mainModule := <span class="string">&quot;&quot;</span></span><br><span class="line">    <span class="keyword">if</span> m, ok := p.Metadata.(pkg.GolangBinMetadata); ok &#123;</span><br><span class="line">        mainModule = m.MainModule</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> isNotCorrected <span class="type">bool</span></span><br><span class="line">    <span class="keyword">if</span> m.cfg.AllowMainModulePseudoVersionComparison &#123;</span><br><span class="line">        isNotCorrected = strings.HasPrefix(p.Version, <span class="string">&quot;(devel)&quot;</span>)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        isNotCorrected = strings.HasPrefix(p.Version, <span class="string">&quot;v0.0.0-&quot;</span>) || strings.HasPrefix(p.Version, <span class="string">&quot;(devel)&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> p.Name == mainModule &amp;&amp; isNotCorrected &#123;</span><br><span class="line">        <span class="keyword">return</span> matches, <span class="literal">nil</span>, <span class="literal">nil</span>  <span class="comment">// 直接放弃匹配</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByEcosystemAndCPEs(store, p, m.Type(), searchByCPE(p.Name, m.cfg))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段逻辑解决的是 Go 语言生态特有的两个问题。</p>
+<p><strong>第一个问题是主模块的伪版本。</strong> 在 Go 编译产物中，主模块（即正在被编译的那个模块）的版本信息通常不会被嵌入到二进制文件中——这是 Go 工具链的一个已知限制（<a target="_blank" rel="noopener" href="https://github.com/golang/go/issues/50603">golang/go#50603</a>）。Syft 在扫描 Go 二进制文件时会尝试用各种启发式方法推断主模块的版本，但如果推断失败，版本号就是 <code>(devel)</code> 或无意义的伪版本 <code>v0.0.0-...</code>。用这样的版本号去做漏洞匹配毫无意义——你无法判断 <code>(devel)</code> 是否小于 <code>&lt; 1.2.3</code>。因此，Go Matcher 直接跳过主模块且版本信息无效的包，避免产生不可靠的匹配结果。</p>
+<p><strong>第二个问题是 Go 标准库（stdlib）的 CPE 匹配。</strong> 在标准 Go 编译产物中，标准库包不会被单独列出——它们被静态链接到了最终的二进制文件中。只有在某些特殊扫描场景下（如对 Go 源码目录的扫描），stdlib 才可能作为一个独立包出现。对于 stdlib，如果数据库中没有专属的 Go 生态漏洞记录，通过 CPE 路径去 NVD 中查找可能是有益的。<code>searchByCPE()</code> 函数体现了这一策略：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">searchByCPE</span><span class="params">(name <span class="type">string</span>, cfg MatcherConfig)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> cfg.UseCPEs &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> cfg.AlwaysUseCPEForStdlib &amp;&amp; (name == <span class="string">&quot;stdlib&quot;</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>普通的 Go 第三方库（如 <code>github.com/gin-gonic/gin</code>）依赖 <code>UseCPEs</code> 开关；而 <code>stdlib</code> 有一个独立的开关 <code>AlwaysUseCPEForStdlib</code>，允许在不需要为所有 Go 包开启 CPE 匹配的情况下，单独为标准库开启。</p>
+<h2 id="java-matchermaven-仓库的远程查询"><a class="markdownIt-Anchor" href="#java-matchermaven-仓库的远程查询"></a> Java Matcher：Maven 仓库的远程查询</h2>
+<p>Java Matcher 在所有语言生态 Matcher 中是最特殊的——它不仅使用数据库查询，还会<strong>实时访问 Maven 中央仓库</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> m.cfg.SearchMavenUpstream &#123;</span><br><span class="line">        upstreamMatches, ignored, err := m.matchUpstreamMavenPackages(store, p)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">    &#125;</span><br><span class="line">    criteriaMatches, ignored, err := internal.MatchPackageByEcosystemAndCPEs(store, p, m.Type(), m.cfg.UseCPEs)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>为什么需要实时查询 Maven？这与 Java 包在扫描场景中的信息完整度有关。在扫描 JAR 文件时，Syft 有时只能提取到文件名和 SHA-1 摘要，而无法获取完整的 Maven 坐标（<code>groupId:artifactId</code>）。没有 Maven 坐标，就无法在数据库中以包名进行精确搜索。</p>
+<p>Java Matcher 的解决方式是：如果 POM 信息缺失（<code>PomArtifactID</code> 或 <code>PomGroupID</code> 为空），则使用 JAR 文件的 SHA-1 摘要向 Maven 中央仓库发起查询：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> shouldSearchMavenBySha(p pkg.Package) (<span class="type">bool</span>, []<span class="type">string</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> metadata, ok := p.Metadata.(pkg.JavaMetadata); ok &#123;</span><br><span class="line">        <span class="keyword">if</span> metadata.PomArtifactID == <span class="string">&quot;&quot;</span> || metadata.PomGroupID == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">            <span class="keyword">for</span> _, digest := <span class="keyword">range</span> metadata.ArchiveDigests &#123;</span><br><span class="line">                <span class="keyword">if</span> digest.Algorithm == <span class="string">&quot;sha1&quot;</span> &amp;&amp; digest.Value != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">                    digests = <span class="built_in">append</span>(digests, digest.Value)</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">len</span>(digests) &gt; <span class="number">0</span>, digests</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>SHA-1 查询返回 Maven 坐标后，Java Matcher 构造一个间接包（indirect package），用它的 <code>groupId:artifactId</code> 作为包名进行语言生态匹配。这个间接匹配的结果会被标记为 <code>ExactIndirectMatch</code> 类型，表示漏洞是通过上游源包间接命中的，而非通过直接包名。</p>
+<p>此外，Java Matcher 还有另一个独特的设计——在 CPE 版本比较中对 <code>update</code> 字段的特殊处理。Java 版本号如 <code>1.8.0_201</code>（Java 8 update 201）中的下划线表示的是 update 号，而 CPE 将其表示在 <code>update</code> 属性而非 <code>version</code> 属性中。<code>transformJvmVersion()</code> 负责将这两者合并为可比较的版本字符串。</p>
+<h2 id="发行版-matcher从简单到复杂的演化阶梯"><a class="markdownIt-Anchor" href="#发行版-matcher从简单到复杂的演化阶梯"></a> 发行版 Matcher：从简单到复杂的演化阶梯</h2>
+<p>如果说语言生态 Matcher 的差异主要体现在参数配置上，那么发行版 Matcher 的差异则是<strong>架构级别</strong>的——它们在&quot;是否处理上游源包&quot;“如何处理 Epoch”“是否有 NAK 机制”&quot;是否有 EOL 兜底&quot;等维度上各具特色。</p>
+<p>发行版安全数据的组织和发布方式从根本上决定了匹配策略。以 Debian 为例，它的安全公告（DSA）以<strong>源包名</strong>（source package name）为索引——例如 <code>openssl</code> 源包的安全更新覆盖了 <code>libssl-dev</code>、<code>libssl3</code> 等多个二进制包。而 RedHat 的安全公告（RHSA）虽然以 RPM 包名为索引，但源 RPM（source RPM）包名与实际安装的二进制 RPM 包名常常不同。Alpine 则更进一步——它的 SecDB（Security Database）不仅记录了受影响的包，还包含明确标记为&quot;不受影响&quot;（NAK）的记录。这些差异意味着，不能简单地用一个&quot;按包名 + 发行版搜索&quot;的通用逻辑覆盖所有发行版。</p>
+<h3 id="最简形态portage-和-pacman"><a class="markdownIt-Anchor" href="#最简形态portage-和-pacman"></a> 最简形态：Portage 和 Pacman</h3>
+<p>Gentoo 的 Portage Matcher 是最简单的发行版 Matcher：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByDistro(store, p, <span class="literal">nil</span>, m.Type(), <span class="literal">nil</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它直接调用 <code>MatchPackageByDistro</code>，没有任何额外处理——不需要上游包映射，不需要 Epoch 处理，不需要 EOL 兜底，不需要 NAK 查询。这是因为 Gentoo 的安全数据组织方式恰好与 Grype 的&quot;按发行版 + 包名搜索&quot;模型完美匹配。Pacman（Arch Linux）Matcher 则使用 <code>MatchPackageByEcosystemPackageName</code>，按包自身的生态名称搜索，同样是最简形态。</p>
+<p>这个&quot;最简形态&quot;并不是缺陷——恰恰相反，它体现了良好的架构设计：当使用场景不需要额外逻辑时，框架允许 Matcher 保持简洁。</p>
+<h3 id="上游包映射dpkgdebian"><a class="markdownIt-Anchor" href="#上游包映射dpkgdebian"></a> 上游包映射：DPKG（Debian）</h3>
+<p>Debian Matcher 在发行版匹配的基础上增加了<strong>上游源包间接匹配</strong>和 <strong>EOL CPE 兜底</strong>两层逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 第一步：上游源包间接匹配</span></span><br><span class="line">    matches, ignores, err := m.matchUpstreamPackages(store, p)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第二步：直接包名匹配</span></span><br><span class="line">    exactMatches, exactIgnores, err := internal.MatchPackageByDistro(store, p, <span class="literal">nil</span>, m.Type(), &amp;versionConfig)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第三步：EOL 发行版的 CPE 兜底</span></span><br><span class="line">    <span class="keyword">if</span> m.cfg.UseCPEsForEOL &amp;&amp; internal.IsDistroEOL(store, p.Distro) &#123;</span><br><span class="line">        cpeMatches, ignored, err := internal.MatchPackageByCPEs(store, p, m.Type())</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>上游包间接匹配的动机是：Debian 安全公告以源包名为索引。当系统安装了 <code>libssl3</code> 时，安全数据库中 <code>openssl</code> 源包的漏洞记录也应该被匹配到 <code>libssl3</code> 上。Syft 在编目阶段会通过 <code>UpstreamPackages()</code> 推导出包的源包信息——Debian 包的元数据中包含 <code>Source</code> 字段。DpkgMatcher 为每个上游包构造一个合成包（synthetic package），用源包名去数据库中搜索，然后将匹配结果通过 <code>ConvertToIndirectMatches()</code> 标记为间接匹配，并关联回原始包。</p>
+<p>这里还有一个细致的配置选择——Debian Matcher 使用了 <code>MissingEpochStrategy</code> 来控制当版本号中缺失 Epoch 时的处理方式。Debian 版本号格式为 <code>[epoch:]upstream_version[-debian_revision]</code>，Epoch 是一个前置整数，用于在包版本号倒退时（比如上游项目从 <code>2.0</code> 回退到 <code>1.0</code> 的重新打包）保持版本比较的正确性。当一个包或一条漏洞记录的版本号没有显式指定 Epoch 时，应该如何处理？<code>MissingEpochStrategy</code> 提供了&quot;假设为 0&quot;和&quot;剥离 Epoch 后比较&quot;等不同策略。</p>
+<p>EOL CPE 兜底的动机则更加现实。当发行版停止维护后（例如 Debian 9 已于 2022 年 EOL），它的安全团队不再发布新的安全公告。但 NVD 等通用漏洞库仍在持续更新。此时通过 CPE 路径可以为 EOL 发行版补充发现那些发行版安全团队不再追踪的新漏洞：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">IsDistroEOL</span><span class="params">(provider vulnerability.Provider, d *distro.Distro)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    checker, ok := provider.(vulnerability.EOLChecker)</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    eolDate, eoasDate, err := checker.GetOperatingSystemEOL(d)</span><br><span class="line">    <span class="comment">// 比较当前时间与 EOL 日期</span></span><br><span class="line">    <span class="keyword">if</span> eolDate != <span class="literal">nil</span> &amp;&amp; time.Now().After(*eolDate) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>发行版的 EOL 日期嵌入在漏洞数据库中，由 <code>vulnerability.EOLChecker</code> 接口提供。这种设计将&quot;什么发行版已经 EOL&quot;的知识放在数据层（数据库维护者可以随时更新 EOL 日期），而不是硬编码在代码中。</p>
+<h3 id="epoch-和-eusrpmredhatcentosalmalinux"><a class="markdownIt-Anchor" href="#epoch-和-eusrpmredhatcentosalmalinux"></a> Epoch 和 EUS：RPM（RedHat/CentOS/AlmaLinux）</h3>
+<p>RPM Matcher 是所有发行版 Matcher 中逻辑最复杂的一个。这不仅因为 RPM 包生态本身的分支繁多（RedHat、CentOS、AlmaLinux、Rocky Linux 等），更因为 RPM 包的版本管理机制（尤其是 Epoch）和 RedHat 的 EUS（Extended Update Support，扩展更新支持）策略引入了额外的复杂度。</p>
+<p><strong>Epoch 的歧义处理。</strong> RPM Matcher 的核心复杂性来源于一个问题：同一个包的 Epoch 在不同场景中可能有不同的处理方式。RPM 版本格式是 <code>[epoch:]version-release</code>，例如 <code>0:1.28-419.el8_4.1</code>。</p>
+<p>在直接匹配（<code>matchPackage</code>）中，RPM Matcher 会选择&quot;补全缺失的 Epoch 为 0&quot;的策略：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">addEpochIfApplicable</span><span class="params">(p *pkg.Package)</span></span> &#123;</span><br><span class="line">    meta, ok := p.Metadata.(pkg.RpmMetadata)</span><br><span class="line">    <span class="keyword">switch</span> &#123;</span><br><span class="line">    <span class="keyword">case</span> strings.Contains(ver, <span class="string">&quot;:&quot;</span>):</span><br><span class="line">        <span class="keyword">return</span>  <span class="comment">// 已经有 Epoch 了，不需要处理</span></span><br><span class="line">    <span class="keyword">case</span> ok &amp;&amp; meta.Epoch != <span class="literal">nil</span>:</span><br><span class="line">        p.Version = fmt.Sprintf(<span class="string">&quot;%d:%s&quot;</span>, *meta.Epoch, ver)  <span class="comment">// 从元数据中补全</span></span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        p.Version = <span class="string">&quot;0:&quot;</span> + ver  <span class="comment">// 假设 Epoch 为 0</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个策略的合理性在于：直接匹配面对的是具体的 RPM 包，它的 Epoch 是确定可知的——要么在版本字符串中已经存在，要么在 RPM 元数据中显式标注，要么确实就是 0（因为该包从未改变过版本方案）。而 RedHat 的安全数据（RHSA）同样包含完整的版本信息（包括 Epoch），所以双方都有 Epoch 时比较是精确的。</p>
+<p>但在上游包间接匹配（<code>matchUpstreamPackages</code>）中，策略完全不同——上游包<strong>不加 Epoch</strong>。原因在源码注释中有一个精妙的例子：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">比如 perl-Errno 包：</span><br><span class="line">    name:       perl-Errno</span><br><span class="line">    version:    0:1.28-419.el8_4.1</span><br><span class="line">    sourceRPM:  perl-5.26.3-419.el8_4.1.src.rpm</span><br><span class="line"></span><br><span class="line">假设有一条针对 source 包 &quot;perl&quot; 的漏洞：</span><br><span class="line">    ID:                  CVE-2020-10543</span><br><span class="line">    Package Name:        perl</span><br><span class="line">    Version constraint:  &lt; 4:5.26.3-419.el8</span><br><span class="line"></span><br><span class="line">sourceRPM 中没有包含 Epoch 信息（实际 Epoch 可能是 4），</span><br><span class="line">如果假设 Epoch 为 0 做比较：</span><br><span class="line">    0:5.26.3-419.el8 &lt; 4:5.26.3-419.el8 = true → 错误地判定为有漏洞！</span><br><span class="line">剥离 Epoch 后：</span><br><span class="line">    5.26.3-419.el8 &lt; 5.26.3-419.el8 = false → 正确！</span><br></pre></td></tr></table></figure>
+<p>这就是 RPM Matcher 在直接匹配和间接匹配中使用不同 Epoch 处理策略的根本原因——source RPM 的有无 Epoch 代表了不同的信息完整度，不能假设缺失即零。</p>
+<p><strong>EUS 分支的特殊匹配。</strong> 当发行版带有 EUS Channel 标记时（例如 <code>RHEL 9.4+eus</code>），RPM Matcher 会切换到 <code>redhatEUSMatches</code> 路径。EUS 是 RedHat 为特定次版本（minor version）提供的扩展安全支持——例如 RHEL 9.4-EUS 只接收针对 9.4 的安全修复，而不会升级到 9.5。</p>
+<p>EUS 匹配的独特之处在于它需要<strong>合并两个命名空间的查询结果</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 第一步：查基础发行版（&gt;= 9.0 &amp;&amp; &lt; 10）中有哪些漏洞</span></span><br><span class="line">disclosures, err := provider.FindResults(</span><br><span class="line">    search.ByPackageName(searchPkg.Name),</span><br><span class="line">    search.ByDistro(distroWithoutEUS),       <span class="comment">// 不带 EUS channel</span></span><br><span class="line">    internal.OnlyVulnerableVersions(pkgVersion),</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 第二步：查基础发行版和 EUS 发行版中有哪些修复</span></span><br><span class="line">resolutions, err := provider.FindResults(</span><br><span class="line">    search.ByPackageName(searchPkg.Name),</span><br><span class="line">    search.ByDistro(distroWithoutEUS, *searchPkg.Distro),  <span class="comment">// 基础版 + EUS channel</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>从基础发行版查 disclosure（受影响记录），从基础 + EUS 发行版查 resolution（修复记录），然后进行合并：如果某条 disclosure 在 EUS 中已经有了修复，且修复版本小于等于当前包的版本，则该 disclosure 被移除（包已修复）；如果修复版本大于当前包的版本，则 disclosure 保留（包仍受影响）。</p>
+<p>更进一步，EUS 修复还做了<strong>可达性检查</strong>。RHEL 的 EUS 分支是独立的——9.4-EUS 的修复不会被合并到 9.2-EUS 中。因此，当当前系统是 RHEL 9.2-EUS 时，一条标记为 <code>9.4-EUS</code> 的修复是不&quot;可达&quot;的——即使用户受该漏洞影响，也无法通过升级到 EUS 版本来修复。<code>isFixReachableForEUS()</code> 通过解析 RPM 版本 release 字段中的 <code>el</code> 标记来判断修复是否属于当前 EUS 分支。</p>
+<p><strong>AlmaLinux 的特殊处理。</strong> RPM Matcher 在入口处还有一个 AlmaLinux 判断：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> p.Distro != <span class="literal">nil</span> &amp;&amp; shouldUseAlmaLinuxMatching(p.Distro) &#123;</span><br><span class="line">    almaMatches, ignores, err := m.matchAlmaLinux(vp, p)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>为什么 AlmaLinux 不能用普通的 RPM 匹配逻辑？因为 AlmaLinux 的安全公告系统（ALSA）的运作方式与 RedHat 不同。AlmaLinux 是 RHEL 的二进制兼容发行版，它的安全修复通常基于 RHEL 的 RHSA，但可能有自己的发布节奏和修复版本号。</p>
+<p><code>matchAlmaLinux</code> 的策略是：</p>
+<ol>
+<li>以 RHEL 身份查数据库，获取 RHEL 中有哪些 disclosure；</li>
+<li>以 AlmaLinux 身份查数据库，获取 AlmaLinux 中哪些包被标记为&quot;不受影响&quot;（unaffected）；</li>
+<li>将 RHEL disclosure 中在 AlmaLinux 不受影响的条目移除；</li>
+<li>对于保留下来的漏洞，用 AlmaLinux 的修复版本信息替换 RHEL 的修复信息（<code>replaceWithAlmaLinuxFixInfo</code>）。</li>
+</ol>
+<p>这种&quot;先查 RHEL、再过滤 AlmaLinux 不受影响&quot;的策略，充分利用了 RHEL 数据覆盖面广和 AlmaLinux 数据精确度高的各自优势。</p>
+<h3 id="nak-与-secdb-优先apkalpine"><a class="markdownIt-Anchor" href="#nak-与-secdb-优先apkalpine"></a> NAK 与 SecDB 优先：APK（Alpine）</h3>
+<p>APK Matcher 是所有 Matcher 中逻辑最完备的一个。它在 DPKG 的基础上进一步叠加了两层逻辑：<strong>NAK 机制</strong>和 <strong>SecDB 优先的 CPE 去重</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 1. 直接匹配（包自身）</span></span><br><span class="line">    directMatches, directIgnores, err := m.findMatchesForPackage(store, p, <span class="literal">nil</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 间接匹配（包的上游 origin package）</span></span><br><span class="line">    indirectMatches, indirectIgnores, err := m.findMatchesForOriginPackage(store, p)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. NAK 查询</span></span><br><span class="line">    naks, err := m.findNaksForPackage(store, p)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>NAK（Negative Acknowledgement，否定确认）是 Alpine SecDB 的一个特殊条目类型。Alpine 安全团队在分析某个漏洞后，如果确认 Alpine 的特定版本的某个包不受该漏洞影响（例如因为编译选项不同、补丁已提前合入等原因），会在 SecDB 中发布一条 NAK 记录。NAK 记录的版本约束是 <code>&lt; 0</code>（一个永远无法满足的约束），以此区别于正常的漏洞记录。</p>
+<p>APK Matcher 的 NAK 查询使用了特殊的约束条件：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">nakConstraint = search.ByConstraintFunc(<span class="function"><span class="keyword">func</span><span class="params">(c version.Constraint)</span></span> (<span class="type">bool</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> c.String() == <span class="string">&quot;&lt; 0 (apk)&quot;</span>, <span class="literal">nil</span></span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p>查到 NAK 记录后，它们被转为 <code>OwnershipIgnores</code> 过滤器。这与 <code>MatchPackageByDistro</code> 中&quot;已修复的漏洞&quot;生成 IgnoreFilter 的逻辑类似——都是为了让发行版的权威判断传播到同文件位置上的其他生态包（如 Alpine 包内嵌的 Python wheel），避免重复报告。</p>
+<p><strong>SecDB 优先的 CPE 去重</strong>是 APK Matcher 另一个精妙的设计。<code>cpeMatchesWithoutSecDBFixes()</code> 函数实现了这样的逻辑：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> cpeMatchesWithoutSecDBFixes(provider vulnerability.Provider, p pkg.Package) &#123;</span><br><span class="line">    <span class="comment">// 先做 CPE 匹配</span></span><br><span class="line">    cpeMatches, ignored, err := internal.MatchPackageByCPEs(provider, p, m.Type())</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 查询同一包在 SecDB 中是否有对应记录</span></span><br><span class="line">    secDBVulnerabilities, err := provider.FindVulnerabilities(</span><br><span class="line">        search.ByPackageName(p.Name),</span><br><span class="line">        search.ByDistro(*p.Distro))</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 对每条 CPE 发现的 CVE</span></span><br><span class="line">    <span class="keyword">for</span> id, cpeMatchesForID := <span class="keyword">range</span> cpeMatchesByID &#123;</span><br><span class="line">        secDBVulnerabilitiesForID, exists := secDBVulnerabilitiesByID[id]</span><br><span class="line">        <span class="keyword">if</span> !exists &#123;</span><br><span class="line">            <span class="comment">// SecDB 中没有此 CVE，保留 CPE 匹配</span></span><br><span class="line">            <span class="comment">// 但清除修复版本（NVD 不知道 Alpine 何时会修）</span></span><br><span class="line">            finalCpeMatches = <span class="built_in">append</span>(finalCpeMatches, cpeMatchesForID...)</span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// SecDB 中有此 CVE，检查当前包是否受影响</span></span><br><span class="line">        <span class="keyword">if</span> vulnerable &#123;</span><br><span class="line">            <span class="comment">// 如果受影响，保留 CPE 匹配</span></span><br><span class="line">            finalCpeMatches = <span class="built_in">append</span>(finalCpeMatches, cpeMatchesForID...)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 如果不受影响（SecDB 中已经修复），丢弃此 CPE 匹配</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段逻辑的核心策略是：</p>
+<ul>
+<li><strong>如果某条 CVE 在 SecDB 中不存在</strong>，说明 NVD 收录了但 Alpine 安全团队还没有（或不需要）处理，此时保留 CPE 匹配但清除其修复版本信息——因为 NVD 不知道 Alpine 版本的修复应在哪个版本完成；</li>
+<li><strong>如果某条 CVE 在 SecDB 中存在且当前包已修复</strong>，说明 Alpine 安全团队已经有了权威判断（该版本的包已被修复），CPE 匹配的结果应当被丢弃；</li>
+<li><strong>如果某条 CVE 在 SecDB 中存在且当前包仍受影响</strong>，CPE 匹配与 SecDB 匹配是一致的，保留 CPE 匹配——后续的 <code>deduplicateMatches</code> 会确保只保留 SecDB 中没有出现的 CVE。</li>
+</ul>
+<p>这种设计体现了数据源的优先级原则：<strong>发行版安全团队的判断优先于 NVD 的通用数据</strong>。</p>
+<h2 id="特殊生态-matchermsrc-和-bitnami"><a class="markdownIt-Anchor" href="#特殊生态-matchermsrc-和-bitnami"></a> 特殊生态 Matcher：MSRC 和 Bitnami</h2>
+<p>MSRC（Microsoft Security Response Center）Matcher 处理的是 Windows 系统的 KB（Knowledge Base）补丁匹配。它的特殊之处在于&quot;包&quot;的定义——KB 补丁不是传统意义上的软件包，而是 Windows 系统的安全更新标识：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> PackageTypes() []syftPkg.Type &#123;</span><br><span class="line">    <span class="comment">// 表面上是特殊的包类型，实际上 KB 不是包，而是补丁</span></span><br><span class="line">    <span class="keyword">return</span> []syftPkg.Type&#123;syftPkg.KbPkg&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByEcosystemPackageName(store, p, p.Name, m.Type())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>MSRC Matcher 使用 <code>MatchPackageByEcosystemPackageName</code> 而非 <code>MatchPackageByEcosystemAndCPEs</code>，因为 KB 编号是精确的匹配键——<code>KB5001234</code> 要么有对应的漏洞，要么没有，不需要 CPE 兜底。</p>
+<p>Bitnami Matcher 同样使用 <code>MatchPackageByEcosystemPackageName</code>。Bitnami 是为云原生应用提供预打包部署的发行商，它的包通过特殊的 PURL（Package URL）结构提供了完整的版本、发行版和架构信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// Bitnami 包的元数据来自包 URL，包含包名、版本、修订号、发行版或架构信息</span></span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByEcosystemPackageName(store, p, p.Name, m.Type())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="stock-matcher兜底的最后一环"><a class="markdownIt-Anchor" href="#stock-matcher兜底的最后一环"></a> Stock Matcher：兜底的最后一环</h2>
+<p>Stock Matcher 的 <code>PackageTypes()</code> 返回 <code>nil</code>——它不主动认领任何包类型。在 <code>newMatcherIndex()</code> 中，它被单独提取为 <code>defaultMatcher</code>，只为那些在索引中找不到专属 Matcher 的包类型提供兜底：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByEcosystemAndCPEs(store, p, m.Type(), m.cfg.UseCPEs)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Stock Matcher 的策略与简单语言生态 Matcher 完全相同——先按语言生态搜索，再按 CPE 补充。唯一的区别是：它的 <code>Type()</code> 返回 <code>&quot;stock-matcher&quot;</code>，在 Match Details 中标注此匹配是由兜底匹配器完成的。这意味着如果某个 CVE 是通过 Stock Matcher 匹配到的，用户至少可以知道这不是专属 Matcher 的判断——需要更多人工审查。</p>
+<h2 id="从差异中看设计原则"><a class="markdownIt-Anchor" href="#从差异中看设计原则"></a> 从差异中看设计原则</h2>
+<p>回顾 16 个 Matcher 的实现，可以提取出三条贯穿始终的设计原则。</p>
+<p><strong>原则一：组合优于继承。</strong> Grype 没有定义一个&quot;基础 Matcher&quot;然后让各生态继承，而是提供了三个正交的基块函数（Language/Distro/CPE），让每个 Matcher 自由组合。DPKG Matcher 组合了 Distro + Upstream + EOL CPE，APK Matcher 在此基础上再叠加 NAK + SecDB 优先 CPE 去重。每个 Matcher 的复杂度恰好等于它所处理生态的实际复杂度，不多也不少。</p>
+<p><strong>原则二：数据源的权威性分层。</strong> 当同一个漏洞在多个数据源中都有记录时，Grype 有一个隐式的优先级：发行版安全数据库 &gt; 语言生态数据库 &gt; NVD CPE。这种优先级不是硬编码的规则，而是通过 IgnoreFilter 的跨 Matcher 传播和 APK Matcher 的 SecDB 优先去重等机制自然实现的。发行版安全团队的判断之所以优先级最高，是因为他们实际审查了源代码并测试了具体版本——这种判断比 NVD 基于版本号范围的通配判断更可靠。</p>
+<p><strong>原则三：信息缺失时的保守策略。</strong> 当关键信息缺失时（如 Go 主模块的版本是 <code>(devel)</code>，source RPM 没有 Epoch，Maven 坐标不完整），Grype 的策略不是&quot;尽力猜&quot;，而是&quot;明确边界&quot;。Go Matcher 直接跳过无意义版本的包；Java Matcher 尝试通过 SHA-1 从外部补全信息；RPM Matcher 在间接匹配中剥离 Epoch。这些策略的共同点是<strong>知道什么情况下自己不可靠</strong>，并采取对应的降级或补全措施。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>本文从&quot;为什么不同生态不能共用一种匹配规则&quot;出发，逐一分析了 Grype 16 个 Matcher 的差异化实现策略：</p>
+<ul>
+<li><strong>纯语言生态 Matcher</strong>（JavaScript、Python、Ruby、Rust、Dotnet、Hex）以生态匹配为主路径、CPE 匹配为辅助路径，策略最为一致；</li>
+<li><strong>Go Matcher</strong> 通过预处理过滤掉主模块的伪版本，并为 stdlib 提供了独立的 CPE 匹配开关；</li>
+<li><strong>Java Matcher</strong> 能通过 SHA-1 摘要实时查询 Maven 中央仓库来补全不完整的包信息；</li>
+<li><strong>DPKG Matcher</strong> 增加了上游源包间接匹配和 EOL 发行版的 CPE 兜底；</li>
+<li><strong>RPM Matcher</strong> 在 Epoch 处理上区分了直接匹配（补全 0）和间接匹配（剥离 Epoch）两种策略，并支持 EUS 扩展更新支持的特殊匹配；AlmaLinux 分支则通过&quot;先查 RHEL、再过滤 AlmaLinux 不受影响&quot;的策略协调两个数据源；</li>
+<li><strong>APK Matcher</strong> 是策略最完备的发行版 Matcher，在 DPKG 基础上叠加了 NAK 否定确认机制和 SecDB 优先的 CPE 去重逻辑；</li>
+<li><strong>Stock Matcher</strong> 作为兜底匹配器，确保没有包因找不到专属 Matcher 而遗漏。</li>
+</ul>
+<p>掌握了不同生态的匹配策略差异后，下一篇我们将深入 Grype 中被低估的核心——版本比较系统。分析 Grype 如何处理语义版本、发行版版本、Epoch、预发布版本，以及 <code>fixed-in</code> 和版本约束的判断过程。版本比较看似简单，却是决定&quot;有漏洞&quot;还是&quot;已修复&quot;的计算基础。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/19/go-grype-09/" rel="prev" title="Grype 源码分析 09：软件版本比较为什么如此复杂">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 09：软件版本比较为什么如此复杂
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/18/go-grype-07/" rel="next" title="Grype 源码分析 07：Matcher 匹配框架">
+      Grype 源码分析 07：Matcher 匹配框架 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E%E7%BB%9F%E4%B8%80%E6%A1%86%E6%9E%B6%E5%88%B0%E5%B7%AE%E5%BC%82%E5%8C%96%E7%AD%96%E7%95%A5"><span class="nav-number">1.</span> <span class="nav-text"> 从统一框架到差异化策略</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#matcher-%E7%9A%84%E5%88%86%E7%B1%BB%E4%B8%89%E5%A4%A7%E9%98%B5%E8%90%A5"><span class="nav-number">2.</span> <span class="nav-text"> Matcher 的分类：三大阵营</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BA%AF%E8%AF%AD%E8%A8%80%E7%94%9F%E6%80%81-matcher%E4%B8%80%E8%A1%8C%E4%BB%A3%E7%A0%81%E8%83%8C%E5%90%8E%E7%9A%84%E9%97%AE%E9%A2%98"><span class="nav-number">3.</span> <span class="nav-text"> 纯语言生态 Matcher：一行代码背后的问题</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#go-matcher%E4%BC%AA%E7%89%88%E6%9C%AC%E4%B8%8E%E4%B8%BB%E6%A8%A1%E5%9D%97%E7%9A%84%E5%9B%B0%E6%89%B0"><span class="nav-number">4.</span> <span class="nav-text"> Go Matcher：伪版本与主模块的困扰</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#java-matchermaven-%E4%BB%93%E5%BA%93%E7%9A%84%E8%BF%9C%E7%A8%8B%E6%9F%A5%E8%AF%A2"><span class="nav-number">5.</span> <span class="nav-text"> Java Matcher：Maven 仓库的远程查询</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8F%91%E8%A1%8C%E7%89%88-matcher%E4%BB%8E%E7%AE%80%E5%8D%95%E5%88%B0%E5%A4%8D%E6%9D%82%E7%9A%84%E6%BC%94%E5%8C%96%E9%98%B6%E6%A2%AF"><span class="nav-number">6.</span> <span class="nav-text"> 发行版 Matcher：从简单到复杂的演化阶梯</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%80%E7%AE%80%E5%BD%A2%E6%80%81portage-%E5%92%8C-pacman"><span class="nav-number">6.1.</span> <span class="nav-text"> 最简形态：Portage 和 Pacman</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8A%E6%B8%B8%E5%8C%85%E6%98%A0%E5%B0%84dpkgdebian"><span class="nav-number">6.2.</span> <span class="nav-text"> 上游包映射：DPKG（Debian）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#epoch-%E5%92%8C-eusrpmredhatcentosalmalinux"><span class="nav-number">6.3.</span> <span class="nav-text"> Epoch 和 EUS：RPM（RedHat&#x2F;CentOS&#x2F;AlmaLinux）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#nak-%E4%B8%8E-secdb-%E4%BC%98%E5%85%88apkalpine"><span class="nav-number">6.4.</span> <span class="nav-text"> NAK 与 SecDB 优先：APK（Alpine）</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%89%B9%E6%AE%8A%E7%94%9F%E6%80%81-matchermsrc-%E5%92%8C-bitnami"><span class="nav-number">7.</span> <span class="nav-text"> 特殊生态 Matcher：MSRC 和 Bitnami</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#stock-matcher%E5%85%9C%E5%BA%95%E7%9A%84%E6%9C%80%E5%90%8E%E4%B8%80%E7%8E%AF"><span class="nav-number">8.</span> <span class="nav-text"> Stock Matcher：兜底的最后一环</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E%E5%B7%AE%E5%BC%82%E4%B8%AD%E7%9C%8B%E8%AE%BE%E8%AE%A1%E5%8E%9F%E5%88%99"><span class="nav-number">9.</span> <span class="nav-text"> 从差异中看设计原则</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">276</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

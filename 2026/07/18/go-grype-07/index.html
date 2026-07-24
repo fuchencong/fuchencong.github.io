@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上一篇文章中，我们详细分析了 Grype 漏洞数据库 v6 的实现原理——它如何下载、存储和查询漏洞数据。数据库提供了 vulnerability.Provider 接口，Matcher 通过这个接口查询候选漏洞记录。但是，一个关键问题还没有回答：拿到一批软件包后，Grype 如何为每个包选择正确的 Matcher？每个 Matcher 又如何构造查询条件、执行搜索、过滤结果，并最终生成 Mat">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grype 源码分析 07：Matcher 匹配框架">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/07/18/go-grype-07/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上一篇文章中，我们详细分析了 Grype 漏洞数据库 v6 的实现原理——它如何下载、存储和查询漏洞数据。数据库提供了 vulnerability.Provider 接口，Matcher 通过这个接口查询候选漏洞记录。但是，一个关键问题还没有回答：拿到一批软件包后，Grype 如何为每个包选择正确的 Matcher？每个 Matcher 又如何构造查询条件、执行搜索、过滤结果，并最终生成 Mat">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-07-18T03:50:13.000Z">
+<meta property="article:modified_time" content="2026-07-24T03:48:44.296Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta property="article:tag" content="安全">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/18/go-grype-07/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Grype 源码分析 07：Matcher 匹配框架 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/07/18/go-grype-07/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Grype 源码分析 07：Matcher 匹配框架
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-07-18 11:50:13" itemprop="dateCreated datePublished" datetime="2026-07-18T11:50:13+08:00">2026-07-18</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上一篇文章中，我们详细分析了 Grype 漏洞数据库 v6 的实现原理——它如何下载、存储和查询漏洞数据。数据库提供了 <code>vulnerability.Provider</code> 接口，Matcher 通过这个接口查询候选漏洞记录。但是，一个关键问题还没有回答：<strong>拿到一批软件包后，Grype 如何为每个包选择正确的 Matcher？每个 Matcher 又如何构造查询条件、执行搜索、过滤结果，并最终生成 Match 对象？</strong></p>
+<span id="more"></span>
+<p>这就是本文要分析的主题——Grype 的 Matcher 匹配框架。它不是一个孤立的算法，而是一套完整的分层架构：上层 <code>VulnerabilityMatcher</code> 负责调度和编排，中间层的具体 Matcher 实现负责按生态特点选择搜索策略，下层的 <code>result.Set</code> 和 <code>match.Matches</code> 则负责中间结果的收集、去重和合并。</p>
+<p>为了便于理解，本文从一个具体问题出发：<strong>当 <code>VulnerabilityMatcher.FindMatchesContext()</code> 被调用后，内部究竟发生了什么？</strong></p>
+<h2 id="matcher-的组建类型注册与分发"><a class="markdownIt-Anchor" href="#matcher-的组建类型注册与分发"></a> Matcher 的组建：类型注册与分发</h2>
+<p>在深入匹配流程之前，首先需要理解 Matcher 是如何被组织起来的。Grype 为不同的包类型提供了不同的 Matcher 实现——deb 包用 <code>dpkg-matcher</code>，npm 包用 <code>javascript-matcher</code>，RPM 包用 <code>rpm-matcher</code>，等等。这引出了两个基本问题：每个 Matcher 如何声明自己&quot;负责什么类型的包&quot;？框架又如何根据包类型找到对应的 Matcher？</p>
+<h3 id="matcher-接口"><a class="markdownIt-Anchor" href="#matcher-接口"></a> Matcher 接口</h3>
+<p>所有 Matcher 都实现同一个接口，定义在 <code>grype/match/matcher.go</code> 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Matcher <span class="keyword">interface</span> &#123;</span><br><span class="line">    PackageTypes() []syftPkg.Type   <span class="comment">// 声明自己负责哪些包类型</span></span><br><span class="line">    Type() MatcherType              <span class="comment">// 返回 Matcher 自身的标识名</span></span><br><span class="line">    Match(vp vulnerability.Provider, p pkg.Package) ([]Match, []IgnoreFilter, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这三个方法各司其职：</p>
+<ul>
+<li><strong><code>PackageTypes()</code></strong> 是注册机制的核心。例如 <code>DpkgMatcher</code> 返回 <code>[]syftPkg.Type&#123;syftPkg.DebPkg&#125;</code>，表示它只处理 Debian 软件包；而 <code>StockMatcher</code> 返回 <code>nil</code>，意味着它不主动认领任何包类型，而是作为&quot;兜底&quot;匹配器存在。</li>
+<li><strong><code>Type()</code></strong> 返回 Matcher 的标识名（如 <code>&quot;dpkg-matcher&quot;</code>），这个标识名最终会出现在 Match Details 的 <code>Matcher</code> 字段中，让用户知道是哪一种匹配器做出了判断。</li>
+<li><strong><code>Match()</code></strong> 是对单个包执行漏洞匹配的入口。它接收漏洞 Provider 和一个 Package，返回匹配结果、忽略过滤器和可能的错误。</li>
+</ul>
+<h3 id="matcher-注册与索引"><a class="markdownIt-Anchor" href="#matcher-注册与索引"></a> Matcher 注册与索引</h3>
+<p>在 <code>root.go</code> 中，Grype 通过 <code>matcher.NewDefaultMatchers()</code> 一次性创建全部 16 个 Matcher：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewDefaultMatchers</span><span class="params">(mc Config)</span></span> []match.Matcher &#123;</span><br><span class="line">    <span class="keyword">return</span> []match.Matcher&#123;</span><br><span class="line">        dpkg.NewDpkgMatcher(mc.Dpkg),</span><br><span class="line">        ruby.NewRubyMatcher(mc.Ruby),</span><br><span class="line">        python.NewPythonMatcher(mc.Python),</span><br><span class="line">        dotnet.NewDotnetMatcher(mc.Dotnet),</span><br><span class="line">        rpm.NewRpmMatcher(mc.Rpm),</span><br><span class="line">        java.NewJavaMatcher(mc.Java),</span><br><span class="line">        javascript.NewJavascriptMatcher(mc.Javascript),</span><br><span class="line">        &amp;apk.Matcher&#123;&#125;,</span><br><span class="line">        golang.NewGolangMatcher(mc.Golang),</span><br><span class="line">        &amp;msrc.Matcher&#123;&#125;,</span><br><span class="line">        &amp;portage.Matcher&#123;&#125;,</span><br><span class="line">        rust.NewRustMatcher(mc.Rust),</span><br><span class="line">        hex.NewHexMatcher(mc.Hex),</span><br><span class="line">        stock.NewStockMatcher(mc.Stock),</span><br><span class="line">        &amp;bitnami.Matcher&#123;&#125;,</span><br><span class="line">        &amp;pacman.Matcher&#123;&#125;,</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这份列表被传入 <code>VulnerabilityMatcher</code>，但并非直接存储在切片中使用。<code>searchDBForMatches()</code> 在处理第一个包之前，会调用 <code>newMatcherIndex()</code> 将列表转换为一个索引映射：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newMatcherIndex</span><span class="params">(matchers []match.Matcher)</span></span> (<span class="keyword">map</span>[syftPkg.Type][]match.Matcher, match.Matcher) &#123;</span><br><span class="line">    matcherIndex := <span class="built_in">make</span>(<span class="keyword">map</span>[syftPkg.Type][]match.Matcher)</span><br><span class="line">    <span class="keyword">var</span> defaultMatcher match.Matcher</span><br><span class="line">    <span class="keyword">for</span> _, m := <span class="keyword">range</span> matchers &#123;</span><br><span class="line">        <span class="keyword">if</span> m.Type() == match.StockMatcher &#123;</span><br><span class="line">            defaultMatcher = m</span><br><span class="line">            <span class="keyword">continue</span>    <span class="comment">// StockMatcher 不进入索引，单独处理</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">for</span> _, t := <span class="keyword">range</span> m.PackageTypes() &#123;</span><br><span class="line">            matcherIndex[t] = <span class="built_in">append</span>(matcherIndex[t], m)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> matcherIndex, defaultMatcher</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个函数做了两件事：</p>
+<ul>
+<li>将每个 Matcher 按它声明的 <code>PackageTypes()</code> 注册到 <code>matcherIndex</code> 中——一个 <code>map[syftPkg.Type][]match.Matcher</code>。这样一来，当遇到一个 <code>Type == &quot;deb&quot;</code> 的包时，只需查 <code>matcherIndex[&quot;deb&quot;]</code> 就能找到对应的 <code>DpkgMatcher</code>。</li>
+<li>将 <code>StockMatcher</code> 单独提取为 <code>defaultMatcher</code>。如果某个包类型在索引中找不到对应的 Matcher，就由 <code>StockMatcher</code> 兜底。<code>StockMatcher</code> 本身不限定包类型（<code>PackageTypes()</code> 返回 <code>nil</code>），但它会尝试通过语言生态和 CPE 两种路径进行匹配，确保没有包被遗漏。</li>
+</ul>
+<p>这种设计使得新增一个生态的 Matcher 非常简单：只需实现 <code>Matcher</code> 接口，声明它处理的包类型，然后在 <code>NewDefaultMatchers()</code> 中注册即可。框架不需要任何额外修改。</p>
+<h2 id="匹配的总调度vulnerabilitymatcher"><a class="markdownIt-Anchor" href="#匹配的总调度vulnerabilitymatcher"></a> 匹配的总调度：VulnerabilityMatcher</h2>
+<p>理解了 Matcher 如何注册后，我们将视角上移，看匹配过程的总调度者——<code>VulnerabilityMatcher</code>。</p>
+<h3 id="findmatchescontext-的整体流程"><a class="markdownIt-Anchor" href="#findmatchescontext-的整体流程"></a> FindMatchesContext 的整体流程</h3>
+<p><code>VulnerabilityMatcher</code> 定义在 <code>grype/vulnerability_matcher.go</code> 中，它的 <code>FindMatchesContext()</code> 方法是整个匹配过程的入口。这个方法并非简单地遍历包列表然后调用 Matcher，而是分两个大的阶段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *VulnerabilityMatcher)</span></span> FindMatchesContext(</span><br><span class="line">    ctx context.Context,</span><br><span class="line">    pkgs []pkg.Package,</span><br><span class="line">    pkgContext pkg.Context,</span><br><span class="line">) (remainingMatches *match.Matches, ignoredMatches []match.IgnoredMatch, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 阶段一：对漏洞数据库进行匹配</span></span><br><span class="line">    remainingMatches, ignoredMatches, err = m.findDBMatches(ctx, pkgs, progressMonitor)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 阶段二：应用 VEX 文档</span></span><br><span class="line">    remainingMatches, ignoredMatches, err = m.findVEXMatches(pkgContext, remainingMatches, ignoredMatches, progressMonitor)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 阶段三：检查是否超过 FailSeverity 阈值</span></span><br><span class="line">    <span class="keyword">if</span> m.FailSeverity != <span class="literal">nil</span> &amp;&amp; hasSeverityAtOrAbove(...) &#123;</span><br><span class="line">        err = grypeerr.ErrAboveSeverityThreshold</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> remainingMatches, ignoredMatches, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>本文重点分析阶段一 <code>findDBMatches()</code>，因为它是 Matcher 框架的核心。VEX 匹配将在后续文章中单独讨论。</p>
+<h3 id="finddbmatches-的内部阶段"><a class="markdownIt-Anchor" href="#finddbmatches-的内部阶段"></a> findDBMatches 的内部阶段</h3>
+<p><code>findDBMatches()</code> 又分为三个子阶段：</p>
+<ol>
+<li><strong>搜索阶段</strong>（<code>searchDBForMatches</code>）：遍历每个包，用对应的 Matcher 向漏洞数据库发起查询，收集所有的初步匹配结果；</li>
+<li><strong>Ignorer 过滤阶段</strong>：应用 Matcher 返回的忽略过滤器（如&quot;已修复的发行版漏洞不应在语言生态包上再次报告&quot;），以及硬编码的显式排除规则（<code>ApplyExplicitIgnoreRules</code>）；</li>
+<li><strong>用户忽略规则</strong>（<code>applyIgnoreRules</code>）：应用用户在 <code>.grype.yaml</code> 中配置的 <code>ignore</code> 规则，将被忽略的匹配从正式结果中分离出来。</li>
+</ol>
+<p>如果启用了 <code>--by-cve</code> 选项（<code>NormalizeByCVE</code>），还会额外执行一个规范化步骤：将 GHSA 等非 CVE 的漏洞 ID 统一转换为其关联的 CVE 编号，然后再次应用忽略规则——确保转换前后用户的忽略规则都能生效。</p>
+<h3 id="searchdbformatches逐包搜索"><a class="markdownIt-Anchor" href="#searchdbformatches逐包搜索"></a> searchDBForMatches：逐包搜索</h3>
+<p><code>searchDBForMatches()</code> 是匹配框架中最核心的函数。它的流程虽然不长，但每一步都蕴含着重要的设计决策：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *VulnerabilityMatcher)</span></span> searchDBForMatches(</span><br><span class="line">    ctx context.Context,</span><br><span class="line">    packages []pkg.Package,</span><br><span class="line">    progressMonitor *monitorWriter,</span><br><span class="line">) (match.Matches, <span class="type">error</span>) &#123;</span><br><span class="line">    matcherIndex, defaultMatcher := newMatcherIndex(m.Matchers)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _, p := <span class="keyword">range</span> packages &#123;</span><br><span class="line">        <span class="comment">// 1. 按包类型查找对应的 Matcher</span></span><br><span class="line">        matchAgainst, ok := matcherIndex[p.Type]</span><br><span class="line">        <span class="keyword">if</span> !ok &#123;</span><br><span class="line">            matchAgainst = []match.Matcher&#123;defaultMatcher&#125;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 2. 对每个适用的 Matcher，执行匹配</span></span><br><span class="line">        <span class="keyword">for</span> _, theMatcher := <span class="keyword">range</span> matchAgainst &#123;</span><br><span class="line">            matches, ignorers, err := callMatcherSafely(theMatcher, m.VulnerabilityProvider, p)</span><br><span class="line"></span><br><span class="line">            <span class="comment">// 3. 应用显式排除规则</span></span><br><span class="line">            filtered, dropped := match.ApplyExplicitIgnoreRules(m.ExclusionProvider, match.NewMatches(matches...))</span><br><span class="line">            allMatches = <span class="built_in">append</span>(allMatches, filtered.Sorted()...)</span><br><span class="line">            allIgnorers = <span class="built_in">append</span>(allIgnorers, ignorers...)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 收集所有 Matcher 的 IgnoreFilter，对全部匹配统一过滤</span></span><br><span class="line">    filtered, dropped := match.ApplyIgnoreFilters(allMatches, ignoredMatchFilter(allIgnorers))</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 5. 通过 Matches 集合完成指纹去重</span></span><br><span class="line">    res := match.NewMatches(filtered...)</span><br><span class="line">    <span class="keyword">return</span> res, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有三个值得展开讨论的设计点。</p>
+<p><strong>第一，一对多的 Matcher 映射。</strong> <code>matcherIndex</code> 的值类型是 <code>[]match.Matcher</code> 而不是单个 <code>Matcher</code>，这意味着一个包类型可以关联多个 Matcher。虽然目前每个类型只注册了一个 Matcher，但这种设计为未来扩展保留了空间——例如，一种新的语言生态可能需要同时由社区 Matcher 和官方 Matcher 共同处理。</p>
+<p><strong>第二，安全的调用封装。</strong> <code>callMatcherSafely()</code> 通过 <code>defer/recover</code> 捕获 Matcher 内部的 panic，将其转化为 <code>FatalError</code>。这确保了单个 Matcher 的崩溃不会导致整个扫描任务失败——框架会记录错误日志，然后继续处理剩余的包。</p>
+<p><strong>第三，匹配结果的层层过滤。</strong> 每个 Matcher 返回的匹配并非最终结果，它们还要经过三层过滤：首先是硬编码的显式排除规则（如已知的误报 CVE），然后是 Matcher 自身返回的 IgnoreFilter（如发行版已修复的漏洞不应在语言生态包上重复报告），最后是用户的 ignore 配置。每一层过滤都有明确的职责边界，不会相互混淆。</p>
+<h2 id="搜索路径三条匹配主线"><a class="markdownIt-Anchor" href="#搜索路径三条匹配主线"></a> 搜索路径：三条匹配主线</h2>
+<p>现在，我们深入到单个 Matcher 的内部，看它如何对软件包执行漏洞搜索。尽管 Grype 有 16 个 Matcher，但它们的匹配逻辑并非各自为政——大部分 Matcher 最终都会调用 <code>grype/matcher/internal</code> 包中的几个公共函数。这些函数代表了三条不同的搜索路径。</p>
+<h3 id="语言生态匹配matchpackagebylanguage"><a class="markdownIt-Anchor" href="#语言生态匹配matchpackagebylanguage"></a> 语言生态匹配：MatchPackageByLanguage</h3>
+<p>语言生态匹配是处理 npm、Python、Ruby、Java、Go 等编程语言包的核心路径。<code>MatchPackageByLanguage()</code> 函数封装了这一完整过程。</p>
+<p><strong>搜索名称的展开。</strong> 匹配的第一步不是直接查数据库，而是调用 <code>store.PackageSearchNames(p)</code> 确定要搜索的包名列表。对于大多数包，这个列表只有一个元素——包自身的名称。但对于某些特殊场景，列表会扩展：</p>
+<ul>
+<li>一个名为 <code>rootio-libssl3</code> 的 Alpine 包，其搜索名会同时包含 <code>rootio-libssl3</code> 和 <code>libssl3</code>；</li>
+<li>一个 Java 包 <code>com.fasterxml.jackson.core:jackson-databind</code> 可能同时以 Maven 坐标和短名进行搜索。</li>
+</ul>
+<p>这种多名称展开解决了同一个软件在不同漏洞数据源中使用不同命名的问题。对于每个搜索名称，Matcher 会构造一组查询条件并执行两次数据库查询：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _, name := <span class="keyword">range</span> store.PackageSearchNames(p) &#123;</span><br><span class="line">    criteria := []vulnerability.Criteria&#123;</span><br><span class="line">        search.ByEcosystem(p.Language, p.Type),    <span class="comment">// 限定生态</span></span><br><span class="line">        search.ByPackageName(name),                 <span class="comment">// 限定包名</span></span><br><span class="line">        OnlyQualifiedPackages(p),                   <span class="comment">// 检查 Qualifier</span></span><br><span class="line">        OnlyNonWithdrawnVulnerabilities(),          <span class="comment">// 排除已撤回的漏洞</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第一次查询：获取该包名下的所有漏洞（受影响的）</span></span><br><span class="line">    all, err := provider.FindResults(criteria...)</span><br><span class="line">    disclosures = disclosures.Merge(all.Filter(versionCriteria))</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第二次查询：获取明确声明&quot;不受影响&quot;的记录</span></span><br><span class="line">    nakCriteria := <span class="built_in">append</span>(slices.Clone(criteria), search.ForUnaffected(), versionCriteria)</span><br><span class="line">    u, err := provider.FindResults(nakCriteria...)</span><br><span class="line">    unaffected = unaffected.Merge(u)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 从受影响的集合中移除被明确标记为&quot;不受影响&quot;的条目</span></span><br><span class="line">remaining := disclosures.Remove(unaffected)</span><br></pre></td></tr></table></figure>
+<p><strong>为什么要查两次？</strong> 这是因为漏洞数据库中不仅记录了&quot;哪些包受影响&quot;，还记录了&quot;哪些包明确不受影响&quot;。举个具体的例子：CVE-X 声称影响所有版本的 <code>libfoo</code>，但 Debian 安全团队分析了源代码后发现，Debian 的 <code>libfoo</code> 版本由于编译选项不同，实际不受该漏洞影响。此时数据库中会有一条 <code>UnaffectedPackageHandle</code> 记录，明确表示 <code>libfoo</code> 的 Debian 版本不受 CVE-X 的影响。第二次查询正是为了获取这些 NAK（Negative Acknowledgement，否定确认）记录。</p>
+<p>两次查询的结果都收集完毕后，<code>disclosures.Remove(unaffected)</code> 会将被明确否定（unaffected）的漏洞从候选集合中移除。移除的依据是漏洞 ID 及其别名——如果某条漏洞记录说 <code>libfoo</code> 不受 CVE-X 影响，那么 <code>disclosures</code> 中所有 ID 为 CVE-X（或别名中包含 CVE-X）的结果都会被移除。</p>
+<p><strong>版本过滤。</strong> 在第一次查询中，<code>all.Filter(versionCriteria)</code> 是通过 <code>OnlyVulnerableVersions()</code> 实现的。它检查每个候选漏洞的版本约束是否与当前包的版本匹配。如果数据库返回了 10 条与 <code>lodash</code> 相关的漏洞记录，但其中 3 条的版本约束是 <code>&lt; 3.0.0</code>（而 lodash 的版本是 <code>4.17.20</code>，不在这个范围内），那么这 3 条就会被过滤掉。</p>
+<h3 id="发行版匹配matchpackagebydistro"><a class="markdownIt-Anchor" href="#发行版匹配matchpackagebydistro"></a> 发行版匹配：MatchPackageByDistro</h3>
+<p>发行版匹配是处理 apk、deb、rpm 等操作系统包的核心路径。与语言生态匹配相比，它有两个显著区别：使用了发行版信息作为附加查询条件，以及引入了&quot;已修复版本的忽略&quot;机制。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MatchPackageByDistro</span><span class="params">(provider vulnerability.Provider, searchPkg pkg.Package, ...)</span></span> &#123;</span><br><span class="line">    <span class="comment">// 搜索条件增加了 search.ByDistro()</span></span><br><span class="line">    <span class="keyword">for</span> _, name := <span class="keyword">range</span> searchNames &#123;</span><br><span class="line">        v, err := rp.FindResults(</span><br><span class="line">            search.ByPackageName(name),</span><br><span class="line">            search.ByDistro(*searchPkg.Distro),  <span class="comment">// 限定发行版及其版本</span></span><br><span class="line">            OnlyQualifiedPackages(searchPkg),</span><br><span class="line">        )</span><br><span class="line">        allVulns = allVulns.Merge(v)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 将结果分为&quot;受影响&quot;和&quot;已修复&quot;两部分</span></span><br><span class="line">    vulnerable := allVulns.Filter(versionCriteria)</span><br><span class="line">    fixed := allVulns.Remove(vulnerable)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 同时查询 unaffected 记录</span></span><br><span class="line">    unaffected := 查询 UnaffectedPackageHandle</span><br><span class="line">    vulnerable = vulnerable.Remove(unaffected)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 为已修复的漏洞生成忽略规则</span></span><br><span class="line">    ignores := OwnershipIgnores(matchPackage(searchPkg, catalogPkg), <span class="string">&quot;DistroPackageFixed&quot;</span>, fixed.Vulnerabilities()...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>发行版匹配中最精妙的设计在于 <code>fixed</code> 和 <code>ignores</code> 的处理。以 Debian 为例，假设系统安装了 <code>libssl3 1.1.1n-0+deb11u4</code>，而数据库中有两条相关记录：</p>
+<ul>
+<li><code>CVE-2023-0286</code>：影响版本 <code>&lt; 1.1.1n-0+deb11u5</code>（当前包受影响，因为 <code>1.1.1n-0+deb11u4 &lt; 1.1.1n-0+deb11u5</code>）</li>
+<li><code>CVE-2022-4304</code>：影响版本 <code>&lt; 1.1.1n-0+deb11u3</code>（当前包不受影响，因为 <code>1.1.1n-0+deb11u4 &gt;= 1.1.1n-0+deb11u3</code>）</li>
+</ul>
+<p>对于 <code>CVE-2022-4304</code> 这种情况——漏洞数据库中有记录，但当前包的版本已经包含了修复——Grype 不会直接在报告中显示这条漏洞，而是将其转变为一条 <strong>IgnoreFilter</strong>：<code>OwnershipIgnores()</code> 会基于文件所有权关系，为所有与被修复包共享文件路径的其他包（例如在同一个路径下发现的 npm 包）标记忽略规则。这种设计的动机是：发行版包的修复信息是最权威的——如果 Debian 说这个包已经修复了 CVE-X，那么任何语言生态 Matcher 在同一文件位置上发现的同名 CVE 也应该被忽略，避免重复报告。</p>
+<h3 id="cpe-匹配matchpackagebycpes"><a class="markdownIt-Anchor" href="#cpe-匹配matchpackagebycpes"></a> CPE 匹配：MatchPackageByCPEs</h3>
+<p>CPE（Common Platform Enumeration，通用平台枚举）匹配是第三条搜索路径。它不依赖语言生态或发行版信息，而是通过 CPE 标识符进行通用匹配。这条路径主要用于 <code>StockMatcher</code>（兜底匹配器），也在 apk 和 deb 等 Matcher 中作为辅助路径使用。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MatchPackageByCPEs</span><span class="params">(vulnProvider vulnerability.Provider, p pkg.Package, ...)</span></span> &#123;</span><br><span class="line">    <span class="keyword">for</span> _, c := <span class="keyword">range</span> p.CPEs &#123;</span><br><span class="line">        <span class="comment">// 确定搜索版本：优先使用 CPE 中的版本，其次用包版本</span></span><br><span class="line">        searchVersion := c.Attributes.Version</span><br><span class="line">        <span class="keyword">if</span> searchVersion == wfn.NA || searchVersion == wfn.Any &#123;</span><br><span class="line">            searchVersion = p.Version</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        criteria := []vulnerability.Criteria&#123;</span><br><span class="line">            search.ByCPE(c),</span><br><span class="line">            OnlyVulnerableTargets(p),        <span class="comment">// 检查目标软件是否匹配</span></span><br><span class="line">            OnlyQualifiedPackages(p),</span><br><span class="line">            OnlyNonWithdrawnVulnerabilities(),</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        all, err := provider.FindResults(criteria...)</span><br><span class="line">        vulns := all.Filter(versionCriteria)</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 同样查询 unaffected CPE 记录</span></span><br><span class="line">        unaffected, err := provider.FindResults(<span class="built_in">append</span>(criteria, search.ForUnaffected(), versionCriteria)...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>CPE 匹配中有两个值得关注的细节。</p>
+<p><strong>一个是 Alpine 版本兼容处理。</strong> Alpine 包的版本格式是 <code>1.2.3-r21</code>，其中 <code>-r21</code> 是构建索引。如果直接用这个版本去做 CPE 比较，nvdtools 的 WFN（Well-Formed Name）库会错误地将 <code>-r21</code> 识别为预发布（pre-release）后缀。因此 Grype 在 CPE 匹配前会剥离构建索引：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">alpineCPEComparableVersion</span><span class="params">(version <span class="type">string</span>)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">    components := strings.Split(version, <span class="string">&quot;-r&quot;</span>)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(components) == <span class="number">2</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> components[<span class="number">0</span>]  <span class="comment">// 只保留版本号部分</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> version</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>另一个是目标软件过滤。</strong> <code>OnlyVulnerableTargets()</code> 是 CPE 匹配独有的过滤条件。CPE 记录中包含 <code>target_software</code> 字段，标识了漏洞影响的软件类型（例如 <code>nodejs</code>、<code>python</code>、<code>java</code>）。如果漏洞记录声明它只影响 <code>nodejs</code> 目标，而当前包是一个 Python 包，那么这个漏洞就应该被排除。<code>isVulnerableTarget()</code> 函数通过比较漏洞 CPE 和包 CPE 的 <code>TargetSW</code> 字段来完成这一判断，同时考虑了多种特殊情况：</p>
+<ul>
+<li>OS 包（apk、deb、rpm 等）可以直接跳过这一检查，因为它们可能嵌入任何类型的生态包；</li>
+<li>Java 包特殊处理：因为 Java JAR 经常内嵌 JavaScript 等其他生态的组件，所以对 Java 包不做严格的目标软件过滤；</li>
+<li>二进制包（<code>BinaryPkg</code>）和未知类型包严格依赖 CPE 的 TargetSW 匹配，并支持 wildcard。</li>
+</ul>
+<h2 id="criteria-体系将找什么样的漏洞翻译为查询条件"><a class="markdownIt-Anchor" href="#criteria-体系将找什么样的漏洞翻译为查询条件"></a> Criteria 体系：将&quot;找什么样的漏洞&quot;翻译为查询条件</h2>
+<p>分析完三条匹配路径后，有一个反复出现的概念需要单独展开——<strong>Criteria</strong>。</p>
+<p>Criteria 是 Grype 中&quot;搜索条件&quot;的抽象。它不是简单的过滤函数，而是一个接口，定义在 <code>grype/vulnerability/provider.go</code> 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Criteria <span class="keyword">interface</span> &#123;</span><br><span class="line">    MatchesVulnerability(value Vulnerability) (<span class="type">bool</span>, <span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>但 Criteria 的作用远远不止在结果集上做过滤。在整个匹配流程中，Criteria 扮演了<strong>三重角色</strong>：</p>
+<h3 id="角色一数据库查询条件的构造"><a class="markdownIt-Anchor" href="#角色一数据库查询条件的构造"></a> 角色一：数据库查询条件的构造</h3>
+<p>在 <code>vulnerabilityProvider.FindVulnerabilities()</code> 中，传入的 Criteria 会被转换为 SQL 查询条件。例如 <code>search.ByPackageName(&quot;lodash&quot;)</code> 会被翻译为 <code>WHERE packages.name = 'lodash'</code>，<code>search.ByEcosystem(JavaScript, NpmPkg)</code> 会被翻译为 <code>WHERE packages.ecosystem = 'npm'</code>。那些无法翻译为 SQL 条件的 Criteria（如版本约束、Qualifier 检查、目标软件过滤）则被保留下来，在数据库返回结果后进行二次过滤。</p>
+<p>这种&quot;先 SQL 粗筛、后内存精筛&quot;的策略，在保持数据库查询效率的同时，也保留了复杂过滤逻辑的灵活性。</p>
+<h3 id="角色二andor-逻辑的组合"><a class="markdownIt-Anchor" href="#角色二andor-逻辑的组合"></a> 角色二：AND/OR 逻辑的组合</h3>
+<p>多个 Criteria 可以组合使用。在匹配流程中，Matcher 传入的是一组 Criteria，它们之间的关系是 <strong>AND</strong>——所有条件必须同时满足。但如果需要在某些维度上实现&quot;或&quot;的语义，<code>search.Or()</code> 和 <code>search.And()</code> 提供了显式的组合能力：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// AND 组合：所有条件都必须满足</span></span><br><span class="line">search.And(search.ByPackageName(<span class="string">&quot;lodash&quot;</span>), search.ByEcosystem(JavaScript, NpmPkg))</span><br><span class="line"></span><br><span class="line"><span class="comment">// OR 组合：满足任意一个即可</span></span><br><span class="line">search.Or(search.ByPackageName(<span class="string">&quot;lodash&quot;</span>), search.ByPackageName(<span class="string">&quot;lodash-es&quot;</span>))</span><br></pre></td></tr></table></figure>
+<p>更重要的是，<code>CriteriaIterator()</code> 能够将 AND/OR 嵌套的组合展开为多组扁平化的查询条件，每一组对应一次独立的数据库查询。这让 Matcher 可以用一次 <code>FindResults()</code> 调用覆盖多种搜索情况。</p>
+<h3 id="角色三结果集的二次过滤"><a class="markdownIt-Anchor" href="#角色三结果集的二次过滤"></a> 角色三：结果集的二次过滤</h3>
+<p>那些无法在数据库中执行的 Criteria（如 <code>OnlyQualifiedPackages</code>、<code>OnlyVulnerableTargets</code> 等），通过 <code>result.Set.Filter()</code> 在内存中执行。<code>Filter()</code> 遍历集合中的每个 Result，调用 <code>filterVulns()</code> 逐条检查漏洞是否满足所有 Criteria：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">filterVulns</span><span class="params">(vulnerabilities []vulnerability.Vulnerability, details match.Details, criteria []vulnerability.Criteria)</span></span> &#123;</span><br><span class="line">nextVulnerability:</span><br><span class="line">    <span class="keyword">for</span> _, v := <span class="keyword">range</span> vulnerabilities &#123;</span><br><span class="line">        <span class="keyword">for</span> _, c := <span class="keyword">range</span> criteria &#123;</span><br><span class="line">            matches, dropReason, err := c.MatchesVulnerability(v)</span><br><span class="line">            <span class="keyword">if</span> !matches &#123;</span><br><span class="line">                <span class="keyword">continue</span> nextVulnerability  <span class="comment">// 任一条不满足就跳过此漏洞</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        out = <span class="built_in">append</span>(out, v)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> out, details, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>下表总结了 Matcher 中常用的 Criteria 及其作用：</p>
+<table>
+<thead>
+<tr>
+<th>Criteria</th>
+<th>作用</th>
+<th>数据库层面</th>
+<th>内存层面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ByPackageName</code></td>
+<td>限定包名</td>
+<td>翻译为 WHERE 条件</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>ByEcosystem</code></td>
+<td>限定生态</td>
+<td>翻译为 WHERE 条件</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>ByDistro</code></td>
+<td>限定发行版</td>
+<td>翻译为 WHERE 条件</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>ByCPE</code></td>
+<td>限定 CPE</td>
+<td>翻译为 JOIN 条件</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>ByVersion</code></td>
+<td>版本约束检查</td>
+<td>保留为二次过滤</td>
+<td>调用 <code>Constraint.Satisfied()</code></td>
+</tr>
+<tr>
+<td><code>ForUnaffected</code></td>
+<td>查询 unaffected 表</td>
+<td>切换查询目标表</td>
+<td>-</td>
+</tr>
+<tr>
+<td><code>OnlyQualifiedPackages</code></td>
+<td>包限定词检查</td>
+<td>保留为二次过滤</td>
+<td>调用每个 Qualifier 的 <code>Satisfied()</code></td>
+</tr>
+<tr>
+<td><code>OnlyVulnerableTargets</code></td>
+<td>目标软件匹配</td>
+<td>保留为二次过滤</td>
+<td>比较 CPE TargetSW</td>
+</tr>
+<tr>
+<td><code>OnlyNonWithdrawnVulnerabilities</code></td>
+<td>排除撤回的漏洞</td>
+<td>保留为二次过滤</td>
+<td>检查状态是否 withdrawn/rejected</td>
+</tr>
+</tbody>
+</table>
+<h2 id="resultset中间结果的容器"><a class="markdownIt-Anchor" href="#resultset中间结果的容器"></a> result.Set：中间结果的容器</h2>
+<p>在每条匹配路径中，<code>provider.FindResults()</code> 返回的不是 <code>[]match.Match</code>，而是 <code>result.Set</code>。这是一个位于数据库查询结果和最终 Match 之间的中间数据结构。</p>
+<h3 id="为什么需要中间层"><a class="markdownIt-Anchor" href="#为什么需要中间层"></a> 为什么需要中间层</h3>
+<p>直接的想法是：数据库返回漏洞列表，Matcher 将其直接转换为 Match 对象即可。但实际需求更复杂：</p>
+<ul>
+<li>同一个漏洞 ID（如 CVE-X）可能通过不同的搜索路径（包名匹配、CPE 匹配、Upstream 包名匹配）被发现多次，每条路径对应的 <code>match.Detail</code> 不同；</li>
+<li>同一个漏洞 ID 可能影响了多个版本范围，每次版本约束的匹配会产生不同的 <code>Vulnerability</code> 对象；</li>
+<li>不同的漏洞 ID 可能互为别名（如 GHSA 和 CVE 的对应关系），需要按身份（ID + 别名）进行去重。</li>
+</ul>
+<p><code>result.Set</code> 正是为了解决这些问题而设计的。它的类型定义看似简单，实则承载了复杂的集合操作语义：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">    ID              <span class="type">string</span>                       <span class="comment">// 漏洞 ID</span></span><br><span class="line">    Vulnerabilities []vulnerability.Vulnerability <span class="comment">// 属于此 ID 的漏洞记录</span></span><br><span class="line">    Details         []match.Detail              <span class="comment">// 匹配证据</span></span><br><span class="line">    Package         *pkg.Package                <span class="comment">// 匹配的包</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Set <span class="keyword">map</span>[<span class="type">string</span>][]Result</span><br></pre></td></tr></table></figure>
+<p><code>Set</code> 以漏洞 ID 为键，每个键下可以存储多个 <code>Result</code>（因为同一个漏洞可以通过不同搜索路径被发现）。<code>Set</code> 提供了一组集合操作方法：</p>
+<ul>
+<li><strong><code>Merge()</code></strong>：合并两个 Set。同一个 ID 下的 Result 会被合并，分别保留各自的 Details 和 Vulnerabilities；</li>
+<li><strong><code>Filter()</code></strong>：对 Set 中每个 Result 的漏洞列表应用 Criteria 过滤；</li>
+<li><strong><code>Remove()</code></strong>：按身份（ID + 别名）从当前 Set 中移除与传入 Set 重叠的条目。这是 <strong>disclosures.Remove(unaffected)</strong> 操作的实现基础——它将那些明确被标记为&quot;不受影响&quot;的漏洞从候选集中剔除；</li>
+<li><strong><code>Update()</code></strong>：对符合条件的 Result 执行更新操作，例如用 unaffected 记录中的修复信息更新 disclosure 记录的 Fix 字段。</li>
+</ul>
+<p><code>Remove()</code> 的逻辑尤其值得注意——它不仅仅是按 ID 匹配，而是按<strong>身份</strong>匹配。身份包括漏洞 ID 和所有别名：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getIdentity</span><span class="params">(id <span class="type">string</span>, results []Result)</span></span> *strset.Set &#123;</span><br><span class="line">    identity := strset.New()</span><br><span class="line">    identity.Add(id)</span><br><span class="line">    identity.Add(extractAliases(results).List()...)  <span class="comment">// 包含 RelatedVulnerabilities</span></span><br><span class="line">    <span class="keyword">return</span> identity</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这意味着：如果一条 disclosure 的 ID 是 <code>GHSA-xxxx</code>，其 <code>RelatedVulnerabilities</code> 中包含 <code>CVE-2023-xxxx</code>，而一条 NAK 记录的 ID 正是 <code>CVE-2023-xxxx</code>，那么这条 disclosure 也会被移除——因为它们的身份重叠。这种设计确保了不同数据源（GitHub Advisory 和 NVD）对同一个漏洞的不同编号不会导致去重失效。</p>
+<h3 id="从-set-到-match"><a class="markdownIt-Anchor" href="#从-set-到-match"></a> 从 Set 到 Match</h3>
+<p><code>Set.ToMatches()</code> 将中间结果转换为最终的 Match 列表。对于同一个 ID 下的多个 Result，它会先通过 <code>unionIntoResult()</code> 将它们合并为一个 Result（合并 Details 和 Vulnerabilities），然后将每个 Vulnerability 与 Package 和合并后的 Details 组合成一个 Match。这意味着：</p>
+<ul>
+<li>如果同一个漏洞 ID 有 3 条 Vulnerability 记录（不同的版本范围），会产生 3 个 Match；</li>
+<li>而这 3 个 Match 共享相同的 Details（合并了所有搜索路径的发现证据）。</li>
+</ul>
+<h2 id="合并与去重从-resultset-到-matchmatches"><a class="markdownIt-Anchor" href="#合并与去重从-resultset-到-matchmatches"></a> 合并与去重：从 result.Set 到 match.Matches</h2>
+<p><code>result.Set.ToMatches()</code> 输出的还是 <code>[]match.Match</code>，它们还需要经过最后一道关卡——<code>match.Matches</code> 集合的去重。</p>
+<h3 id="为什么需要二次去重"><a class="markdownIt-Anchor" href="#为什么需要二次去重"></a> 为什么需要二次去重</h3>
+<p>在 <code>searchDBForMatches()</code> 的循环中，每个包可能被多个 Matcher 处理（例如一个 deb 类型的包同时被 <code>dpkg-matcher</code> 直接匹配，其上游源包又被 <code>apk-matcher</code> 间接匹配）。同一个漏洞可能通过不同路径被发现，如果不做去重，报告中将出现重复行。</p>
+<p>更重要的是，Grype 还支持通过不同的匹配维度（直接包名、上游包名、CPE）找到同一条漏洞记录。这些匹配结果的 <code>Vulnerability</code> 可能相同也可能不同（版本约束、修复版本可能不同），但它们的 Fingerprint 是相同的，因此应该被合并。</p>
+<h3 id="fingerprint-与-matchesadd"><a class="markdownIt-Anchor" href="#fingerprint-与-matchesadd"></a> Fingerprint 与 Matches.Add()</h3>
+<p><code>match.Matches</code> 的 <code>Add()</code> 方法实现了三种情况的合并策略（在第四篇文章中已有分析，这里不再展开）。核心思路是：完整指纹相同则合并 Details；核心指纹相同但完整指纹不同时，优先保留直接匹配替换间接匹配；指纹完全不存在则直接插入。</p>
+<h3 id="ignorefilter-的跨-matcher-去重"><a class="markdownIt-Anchor" href="#ignorefilter-的跨-matcher-去重"></a> IgnoreFilter 的跨 Matcher 去重</h3>
+<p>除了 Match 级别的去重，Grype 还有一个更隐蔽的去重机制——IgnoreFilter 的跨 Matcher 传播。</p>
+<p>回顾发行版匹配中，<code>OwnershipIgnores()</code> 为已修复的发行版漏洞生成了 <code>IgnoreRelatedPackage</code> 类型的过滤器。这个过滤器的作用超出了当前 Matcher 的范围：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(i IgnoreRelatedPackage)</span></span> IgnoreMatch(m Match) []IgnoreRule &#123;</span><br><span class="line">    <span class="comment">// 检查当前 Match 的漏洞 ID 是否与过滤器的 ID 匹配</span></span><br><span class="line">    <span class="keyword">if</span> m.Vulnerability.ID != i.VulnerabilityID &#123; ... &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 检查当前 Match 的包是否与过滤器中声明的包有文件所有权关系</span></span><br><span class="line">    relatedPackages := m.Package.RelatedPackages[i.RelationshipType]</span><br><span class="line">    <span class="keyword">for</span> _, ownerPkg := <span class="keyword">range</span> relatedPackages &#123;</span><br><span class="line">        <span class="keyword">if</span> ownerPkg.ID == i.RelatedPackageID &#123; overlaps = <span class="literal">true</span> &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在 <code>searchDBForMatches()</code> 的最后阶段，所有 Matcher 产生的 IgnoreFilter 被收集到一起，通过 <code>match.ApplyIgnoreFilters()</code> 对全部匹配进行统一过滤。<code>ignoredMatchFilter()</code> 函数还进一步将这些过滤器按漏洞 ID、包名和文件路径做了索引，以提升大量规则下的过滤性能。</p>
+<p>这就实现了一个跨 Matcher 的协同机制：<code>dpkg-matcher</code> 发现 <code>libssl3</code> 已经修复了 CVE-X，它不仅在自己的匹配中排除了这条记录，还通过 IgnoreFilter 让 <code>javascript-matcher</code> 和 <code>stock-matcher</code> 在同文件位置的包上也排除同一个 CVE，避免了同一漏洞被多次报告。</p>
+<h2 id="不同生态-matcher-的差异化策略"><a class="markdownIt-Anchor" href="#不同生态-matcher-的差异化策略"></a> 不同生态 Matcher 的差异化策略</h2>
+<p>虽然大多数 Matcher 复用了 <code>internal</code> 包中的公共匹配函数，但它们在&quot;如何组合这些函数&quot;上表现出了各自的策略差异。理解这些差异，有助于理解为什么不同生态不能共用一种匹配规则。</p>
+<h3 id="简单生态-matcherjavascript-python-ruby-等"><a class="markdownIt-Anchor" href="#简单生态-matcherjavascript-python-ruby-等"></a> 简单生态 Matcher：javascript、python、ruby 等</h3>
+<p>以 <code>JavascriptMatcher</code> 为例，它的 <code>Match()</code> 方法只有一行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> internal.MatchPackageByEcosystemAndCPEs(store, p, m.Type(), m.cfg.UseCPEs)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>MatchPackageByEcosystemAndCPEs()</code> 组合了语言生态匹配和 CPE 匹配两条路径：先按语言生态（包名 + npm 生态）搜索，再按 CPE 搜索，将结果合并。这种简单策略适用于不涉及发行版信息的纯语言生态包——npm 包不存在&quot;发行版修复忽略&quot;这种概念。</p>
+<p>与之相同模式的还有：Python、Ruby、Rust、Go、Java、Dotnet、Hex（Elixir）等。</p>
+<h3 id="带-upstream-的发行版-matcherdpkg"><a class="markdownIt-Anchor" href="#带-upstream-的发行版-matcherdpkg"></a> 带 Upstream 的发行版 Matcher：dpkg</h3>
+<p><code>DpkgMatcher</code> 的匹配逻辑更加复杂。它首先通过 <code>matchUpstreamPackages()</code> 为每个上游源包（如从 <code>libssl3</code> 推导出的 <code>openssl</code>）执行间接匹配，然后再用 <code>MatchPackageByDistro()</code> 执行直接匹配。如果发行版已经 EOL（End of Life，生命周期终止），还会额外走 CPE 路径：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 1. 上游包间接匹配</span></span><br><span class="line">    matches, ignores, err := m.matchUpstreamPackages(store, p)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 直接包名匹配</span></span><br><span class="line">    exactMatches, exactIgnores, err := internal.MatchPackageByDistro(store, p, <span class="literal">nil</span>, m.Type(), &amp;versionConfig)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. EOL 发行版的 CPE 兜底匹配</span></span><br><span class="line">    <span class="keyword">if</span> m.cfg.UseCPEsForEOL &amp;&amp; internal.IsDistroEOL(store, p.Distro) &#123;</span><br><span class="line">        cpeMatches, ignored, err := internal.MatchPackageByCPEs(store, p, m.Type())</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>EOL 兜底匹配的动机是：当发行版停止维护后，它的安全数据库不再更新。但 NVD 等通用漏洞库仍在收录新漏洞。此时通过 CPE 路径可以为 EOL 发行版的包补充发现那些发行版安全团队不再追踪的漏洞。</p>
+<h3 id="alpine-matcher最复杂的策略编排"><a class="markdownIt-Anchor" href="#alpine-matcher最复杂的策略编排"></a> Alpine Matcher：最复杂的策略编排</h3>
+<p><code>ApkMatcher</code> 是所有 Matcher 中逻辑最复杂的一个，因为它需要协调安全数据库（SecDB）和 CPE 两个数据源，并且引入了 <strong>NAK 机制</strong>和 <strong>SecDB 优先策略</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *Matcher)</span></span> Match(store vulnerability.Provider, p pkg.Package) ([]match.Match, []match.IgnoreFilter, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// 1. 直接匹配（包自身）</span></span><br><span class="line">    directMatches, directIgnores, err := m.findMatchesForPackage(store, p, <span class="literal">nil</span>)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 间接匹配（包的 origin package）</span></span><br><span class="line">    indirectMatches, indirectIgnores, err := m.findMatchesForOriginPackage(store, p)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. NAK 查询：查找 SecDB 中明确标记为&quot;不受影响&quot;的记录</span></span><br><span class="line">    naks, err := m.findNaksForPackage(store, p)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在 CPE 匹配方面，<code>cpeMatchesWithoutSecDBFixes()</code> 实现了 SecDB 优先策略：如果某个 CVE 在 Alpine 的 SecDB 中有对应记录，并且该记录表明当前包的版本已经修复了此 CVE（<code>!vulnerable</code>），那么来自 CPE 路径的匹配就会被移除——Alpine 安全团队的判断优先于 NVD 的通用数据。只有当 CPE 路径发现了 SecDB 中没有收录的漏洞时，CPE 匹配才会被添加到最终结果中，同时这些&quot;仅存在于 NVD 中&quot;的记录的修复信息也会被清除（因为 NVD 不知道 Alpine 到底什么时候会修复）。</p>
+<h2 id="匹配框架与整体流程的衔接"><a class="markdownIt-Anchor" href="#匹配框架与整体流程的衔接"></a> 匹配框架与整体流程的衔接</h2>
+<p>让我们回到整体扫描流程，看 Matcher 框架如何与前几篇文章中的组件衔接：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">root.go</span><br><span class="line">    │</span><br><span class="line">    ├── pkg.Provide(userInput) → []pkg.Package, pkg.Context</span><br><span class="line">    │</span><br><span class="line">    ├── dbCurator.Reader() → vulnerability.Provider</span><br><span class="line">    │</span><br><span class="line">    ├── matcher.NewDefaultMatchers(config) → []match.Matcher</span><br><span class="line">    │</span><br><span class="line">    └── VulnerabilityMatcher&#123;</span><br><span class="line">            VulnerabilityProvider: vp,</span><br><span class="line">            Matchers:              getMatchers(opts),</span><br><span class="line">            IgnoreRules:           opts.Ignore,</span><br><span class="line">            VexProcessor:          vexProcessor,</span><br><span class="line">        &#125;</span><br><span class="line">            │</span><br><span class="line">            └── FindMatchesContext(pkgs, pkgContext)</span><br><span class="line">                    │</span><br><span class="line">                    ├── findDBMatches()</span><br><span class="line">                    │       │</span><br><span class="line">                    │       ├── searchDBForMatches()</span><br><span class="line">                    │       │       │</span><br><span class="line">                    │       │       ├── newMatcherIndex() → 按包类型映射 Matcher</span><br><span class="line">                    │       │       │</span><br><span class="line">                    │       │       ├── 逐包逐 Matcher 调用 Match()</span><br><span class="line">                    │       │       │       │</span><br><span class="line">                    │       │       │       ├── MatchPackageByLanguage()  → 语言生态</span><br><span class="line">                    │       │       │       ├── MatchPackageByDistro()    → 发行版</span><br><span class="line">                    │       │       │       └── MatchPackageByCPEs()      → CPE</span><br><span class="line">                    │       │       │               │</span><br><span class="line">                    │       │       │               └── result.Set (中间结果)</span><br><span class="line">                    │       │       │                       │</span><br><span class="line">                    │       │       │                       └── ToMatches() → []match.Match</span><br><span class="line">                    │       │       │</span><br><span class="line">                    │       │       ├── ApplyExplicitIgnoreRules()</span><br><span class="line">                    │       │       ├── ApplyIgnoreFilters() (跨 Matcher 去重)</span><br><span class="line">                    │       │       └── match.NewMatches() → Fingerprint 去重</span><br><span class="line">                    │       │</span><br><span class="line">                    │       └── applyIgnoreRules() → 用户 ignore 规则</span><br><span class="line">                    │</span><br><span class="line">                    ├── findVEXMatches() → VEX 文档处理</span><br><span class="line">                    │</span><br><span class="line">                    └── hasSeverityAtOrAbove() → 失败阈值检查</span><br></pre></td></tr></table></figure>
+<p>从这个全景图中可以看到，Matcher 框架的设计遵循了&quot;关注点分离&quot;原则：</p>
+<ul>
+<li><code>VulnerabilityMatcher</code> 只关心调度流程，不关心具体怎么匹配；</li>
+<li>各个 Matcher 只关心搜索条件的选择和组合，不关心数据库怎么实现的；</li>
+<li><code>result.Set</code> 只关心中间结果的收集和集合操作，不关心最终去重；</li>
+<li><code>match.Matches</code> 只关心 Fingerprint 去重和合并策略，不关心匹配是怎么发生的。</li>
+</ul>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>Grype 的 Matcher 匹配框架通过一套分层解耦的架构，将&quot;为不同生态的软件包匹配漏洞&quot;这件复杂的事情拆解为清晰的职责：</p>
+<ol>
+<li><strong>Matcher 接口和索引</strong>提供了可扩展的 Matcher 注册机制，只需实现三个方法即可接入新生态；</li>
+<li><strong>三条匹配路径</strong>（语言生态、发行版、CPE）覆盖了从 npm 包到 Debian 包的全部场景，每条路径有各自的搜索条件和后处理逻辑；</li>
+<li><strong>Criteria 体系</strong>将搜索条件与过滤条件统一为一组可组合的接口，既参与 SQL 构造又参与内存过滤；</li>
+<li><strong>result.Set</strong> 作为数据库查询和最终 Match 之间的中间层，提供了 Merge、Filter、Remove 等集合操作，解决了按身份去重和多路径发现合并的问题；</li>
+<li><strong>IgnoreFilter 跨 Matcher 传播</strong>实现了发行版修复信息向语言生态 Matcher 的传递，避免了同一个漏洞在不同 Matcher 中被重复报告；</li>
+<li><strong>match.Matches 的 Fingerprint 去重</strong>确保了同一个包的同一个漏洞只产生一条结果，而 Details 中保留了所有发现路径的证据。</li>
+</ol>
+<p>掌握了 Matcher 框架的整体架构后，下一篇我们将深入不同软件生态的匹配策略，看 apk、deb、rpm、npm、Go 等生态为什么不能共用一种匹配规则，以及它们各自面临的特殊挑战。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+              <a href="/fuchencong.github.io/tags/%E5%AE%89%E5%85%A8/" rel="tag"># 安全</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/19/go-grype-08/" rel="prev" title="Grype 源码分析 08：不同软件生态的漏洞匹配策略">
+      <i class="fa fa-chevron-left"></i> Grype 源码分析 08：不同软件生态的漏洞匹配策略
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/18/go-grype-06/" rel="next" title="Grype 源码分析 06：漏洞数据库实现原理">
+      Grype 源码分析 06：漏洞数据库实现原理 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#matcher-%E7%9A%84%E7%BB%84%E5%BB%BA%E7%B1%BB%E5%9E%8B%E6%B3%A8%E5%86%8C%E4%B8%8E%E5%88%86%E5%8F%91"><span class="nav-number">1.</span> <span class="nav-text"> Matcher 的组建：类型注册与分发</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#matcher-%E6%8E%A5%E5%8F%A3"><span class="nav-number">1.1.</span> <span class="nav-text"> Matcher 接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#matcher-%E6%B3%A8%E5%86%8C%E4%B8%8E%E7%B4%A2%E5%BC%95"><span class="nav-number">1.2.</span> <span class="nav-text"> Matcher 注册与索引</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8C%B9%E9%85%8D%E7%9A%84%E6%80%BB%E8%B0%83%E5%BA%A6vulnerabilitymatcher"><span class="nav-number">2.</span> <span class="nav-text"> 匹配的总调度：VulnerabilityMatcher</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#findmatchescontext-%E7%9A%84%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B"><span class="nav-number">2.1.</span> <span class="nav-text"> FindMatchesContext 的整体流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#finddbmatches-%E7%9A%84%E5%86%85%E9%83%A8%E9%98%B6%E6%AE%B5"><span class="nav-number">2.2.</span> <span class="nav-text"> findDBMatches 的内部阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#searchdbformatches%E9%80%90%E5%8C%85%E6%90%9C%E7%B4%A2"><span class="nav-number">2.3.</span> <span class="nav-text"> searchDBForMatches：逐包搜索</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%90%9C%E7%B4%A2%E8%B7%AF%E5%BE%84%E4%B8%89%E6%9D%A1%E5%8C%B9%E9%85%8D%E4%B8%BB%E7%BA%BF"><span class="nav-number">3.</span> <span class="nav-text"> 搜索路径：三条匹配主线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%AD%E8%A8%80%E7%94%9F%E6%80%81%E5%8C%B9%E9%85%8Dmatchpackagebylanguage"><span class="nav-number">3.1.</span> <span class="nav-text"> 语言生态匹配：MatchPackageByLanguage</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%91%E8%A1%8C%E7%89%88%E5%8C%B9%E9%85%8Dmatchpackagebydistro"><span class="nav-number">3.2.</span> <span class="nav-text"> 发行版匹配：MatchPackageByDistro</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cpe-%E5%8C%B9%E9%85%8Dmatchpackagebycpes"><span class="nav-number">3.3.</span> <span class="nav-text"> CPE 匹配：MatchPackageByCPEs</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#criteria-%E4%BD%93%E7%B3%BB%E5%B0%86%E6%89%BE%E4%BB%80%E4%B9%88%E6%A0%B7%E7%9A%84%E6%BC%8F%E6%B4%9E%E7%BF%BB%E8%AF%91%E4%B8%BA%E6%9F%A5%E8%AF%A2%E6%9D%A1%E4%BB%B6"><span class="nav-number">4.</span> <span class="nav-text"> Criteria 体系：将&quot;找什么样的漏洞&quot;翻译为查询条件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%92%E8%89%B2%E4%B8%80%E6%95%B0%E6%8D%AE%E5%BA%93%E6%9F%A5%E8%AF%A2%E6%9D%A1%E4%BB%B6%E7%9A%84%E6%9E%84%E9%80%A0"><span class="nav-number">4.1.</span> <span class="nav-text"> 角色一：数据库查询条件的构造</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%92%E8%89%B2%E4%BA%8Candor-%E9%80%BB%E8%BE%91%E7%9A%84%E7%BB%84%E5%90%88"><span class="nav-number">4.2.</span> <span class="nav-text"> 角色二：AND&#x2F;OR 逻辑的组合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%92%E8%89%B2%E4%B8%89%E7%BB%93%E6%9E%9C%E9%9B%86%E7%9A%84%E4%BA%8C%E6%AC%A1%E8%BF%87%E6%BB%A4"><span class="nav-number">4.3.</span> <span class="nav-text"> 角色三：结果集的二次过滤</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#resultset%E4%B8%AD%E9%97%B4%E7%BB%93%E6%9E%9C%E7%9A%84%E5%AE%B9%E5%99%A8"><span class="nav-number">5.</span> <span class="nav-text"> result.Set：中间结果的容器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81%E4%B8%AD%E9%97%B4%E5%B1%82"><span class="nav-number">5.1.</span> <span class="nav-text"> 为什么需要中间层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E-set-%E5%88%B0-match"><span class="nav-number">5.2.</span> <span class="nav-text"> 从 Set 到 Match</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%90%88%E5%B9%B6%E4%B8%8E%E5%8E%BB%E9%87%8D%E4%BB%8E-resultset-%E5%88%B0-matchmatches"><span class="nav-number">6.</span> <span class="nav-text"> 合并与去重：从 result.Set 到 match.Matches</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E9%9C%80%E8%A6%81%E4%BA%8C%E6%AC%A1%E5%8E%BB%E9%87%8D"><span class="nav-number">6.1.</span> <span class="nav-text"> 为什么需要二次去重</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#fingerprint-%E4%B8%8E-matchesadd"><span class="nav-number">6.2.</span> <span class="nav-text"> Fingerprint 与 Matches.Add()</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ignorefilter-%E7%9A%84%E8%B7%A8-matcher-%E5%8E%BB%E9%87%8D"><span class="nav-number">6.3.</span> <span class="nav-text"> IgnoreFilter 的跨 Matcher 去重</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%8D%E5%90%8C%E7%94%9F%E6%80%81-matcher-%E7%9A%84%E5%B7%AE%E5%BC%82%E5%8C%96%E7%AD%96%E7%95%A5"><span class="nav-number">7.</span> <span class="nav-text"> 不同生态 Matcher 的差异化策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AE%80%E5%8D%95%E7%94%9F%E6%80%81-matcherjavascript-python-ruby-%E7%AD%89"><span class="nav-number">7.1.</span> <span class="nav-text"> 简单生态 Matcher：javascript、python、ruby 等</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B8%A6-upstream-%E7%9A%84%E5%8F%91%E8%A1%8C%E7%89%88-matcherdpkg"><span class="nav-number">7.2.</span> <span class="nav-text"> 带 Upstream 的发行版 Matcher：dpkg</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#alpine-matcher%E6%9C%80%E5%A4%8D%E6%9D%82%E7%9A%84%E7%AD%96%E7%95%A5%E7%BC%96%E6%8E%92"><span class="nav-number">7.3.</span> <span class="nav-text"> Alpine Matcher：最复杂的策略编排</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8C%B9%E9%85%8D%E6%A1%86%E6%9E%B6%E4%B8%8E%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B%E7%9A%84%E8%A1%94%E6%8E%A5"><span class="nav-number">8.</span> <span class="nav-text"> 匹配框架与整体流程的衔接</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">276</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
