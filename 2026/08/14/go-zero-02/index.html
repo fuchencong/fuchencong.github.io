@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="这篇文章我们会从仓库顶层结构出发，逐步拆解到四层架构，然后用 REST 和 RPC 两条主调用链示范 请求到底穿过了哪些层，最后归纳出贯穿整个项目的几种设计模式。读完这篇文章后，你对后续任何一篇文章中涉及的模块，都能快速定位到它在整体架构中的位置。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 02：整体架构与源码地图">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/14/go-zero-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="这篇文章我们会从仓库顶层结构出发，逐步拆解到四层架构，然后用 REST 和 RPC 两条主调用链示范 请求到底穿过了哪些层，最后归纳出贯穿整个项目的几种设计模式。读完这篇文章后，你对后续任何一篇文章中涉及的模块，都能快速定位到它在整体架构中的位置。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-14T09:43:45.000Z">
+<meta property="article:modified_time" content="2026-08-14T10:19:54.203Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/14/go-zero-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 02：整体架构与源码地图 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/14/go-zero-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 02：整体架构与源码地图
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-14 17:43:45" itemprop="dateCreated datePublished" datetime="2026-08-14T17:43:45+08:00">2026-08-14</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>这篇文章我们会从仓库顶层结构出发，逐步拆解到四层架构，然后用 REST 和 RPC 两条主调用链示范 <code>请求到底穿过了哪些层</code>，最后归纳出贯穿整个项目的几种设计模式。读完这篇文章后，你对后续任何一篇文章中涉及的模块，都能快速定位到它在整体架构中的位置。</p>
+<span id="more"></span>
+<h2 id="从仓库顶层看分界"><a class="markdownIt-Anchor" href="#从仓库顶层看分界"></a> 从仓库顶层看分界</h2>
+<p>在进入框架内部之前，先看一个最关键的组织决策：<strong>go-zero 仓库包含了两个独立的 Go module</strong>。</p>
+<h3 id="两个-module两种用途"><a class="markdownIt-Anchor" href="#两个-module两种用途"></a> 两个 module，两种用途</h3>
+<p>打开仓库根目录的 <code>go.mod</code>，第一行是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">module github.com/zeromicro/<span class="keyword">go</span>-zero</span><br></pre></td></tr></table></figure>
+<p>再打开 <code>tools/goctl/go.mod</code>，第一行是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">module github.com/zeromicro/<span class="keyword">go</span>-zero/tools/goctl</span><br></pre></td></tr></table></figure>
+<p>这不是一个形式上的拆分——两个 module 有本质区别：</p>
+<ul>
+<li>
+<p><strong>根 module</strong>（<code>github.com/zeromicro/go-zero</code>）：你编写的服务在<strong>编译和运行时</strong>直接依赖的代码。它包含 REST 框架、RPC 框架、配置加载、熔断器、服务发现等高并发生产环境下运行时所需的全部能力。依赖列表中包括了 etcd client、gRPC、OpenTelemetry、Prometheus client、Redis、PostgreSQL driver、MongoDB driver 等&quot;重量级&quot;组件。</p>
+</li>
+<li>
+<p><strong>goctl module</strong>（<code>github.com/zeromicro/go-zero/tools/goctl</code>）：只在<strong>开发阶段</strong>使用的命令行工具。它依赖 ANTLR（语法解析器）、Cobra（CLI 框架）、protobuf 等工具链组件。这个 module 编译出的 <code>goctl</code> 二进制<strong>不包含你的业务代码也不会被你的服务 import</strong>——它只读定义文件、解析 AST、按模板生成 Go 代码。</p>
+</li>
+</ul>
+<p>这里有一个容易被忽略但非常重要的依赖关系：<strong>goctl module 依赖根 module</strong>。注意 <code>tools/goctl/go.mod</code> 这一行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">require (</span><br><span class="line">    github.com/zeromicro/<span class="keyword">go</span>-zero v1<span class="number">.10</span><span class="number">.3</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这不是循环依赖——goctl 生成代码时需要引用根框架的类型定义（比如生成的 config 结构体要嵌入 <code>rest.RestConf</code>）。但你的服务代码不需要依赖 goctl。这个单向依赖保证了工具和框架之间的版本同步：你用 <code>goctl@v1.10.3</code> 生成的代码，一定与 <code>go-zero@v1.10.3</code> 的框架 API 匹配。</p>
+<h3 id="顶层目录速览"><a class="markdownIt-Anchor" href="#顶层目录速览"></a> 顶层目录速览</h3>
+<p>忽略测试辅助目录后，go-zero 仓库的骨架是这样的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">go-zero/</span><br><span class="line">├── core/                # 核心能力层：配置、日志、熔断、限流、并发原语、数据访问</span><br><span class="line">├── rest/                # REST 框架：Server、Router、参数解析、中间件链、响应写入</span><br><span class="line">├── zrpc/                # RPC 框架：服务端、客户端、服务发现、负载均衡、拦截器</span><br><span class="line">├── gateway/             # API 网关：HTTP → gRPC 协议转换，基于 REST Server 构建</span><br><span class="line">├── mcp/                 # MCP 协议支持：将服务能力暴露为 AI 可调用的 Tool</span><br><span class="line">├── internal/            # 跨模块共享的内部实现：健康检查、dev server、profiling</span><br><span class="line">├── tools/goctl/         # 代码生成工具链（独立 Go module）</span><br><span class="line">└── go.mod               # 根 module 定义</span><br></pre></td></tr></table></figure>
+<p>从这个目录结构就能看出 go-zero 的核心设计思路：<strong><code>core</code> 是共享底座，<code>rest</code> 与 <code>zrpc</code> 是两大协议框架，<code>gateway</code> 和 <code>mcp</code> 是在底座上加盖的&quot;上层建筑&quot;</strong>。下一节我们把这六个部分纳入一个更结构化的分层视角。</p>
+<h2 id="四层架构"><a class="markdownIt-Anchor" href="#四层架构"></a> 四层架构</h2>
+<p>从依赖关系和抽象层次出发，go-zero 的代码可以被组织为四层。每一层有明确的职责边界，且依赖方向总是&quot;上层依赖下层&quot;。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────┐</span><br><span class="line">│  工具层 (goctl)                                          │</span><br><span class="line">│  tools/goctl/api/  tools/goctl/rpc/  tools/goctl/model/ │</span><br><span class="line">│  职责：把定义文件解析为 AST，按模板生成 Go 代码              │</span><br><span class="line">└──────────────────────┬──────────────────────────────────┘</span><br><span class="line">        生成代码调用框架 API (不在运行时执行)</span><br><span class="line">┌──────────────────────▼──────────────────────────────────┐</span><br><span class="line">│  框架层 (REST / zRPC / Gateway / MCP)                    │</span><br><span class="line">│  rest/  zrpc/  gateway/  mcp/                            │</span><br><span class="line">│  职责：HTTP/RPC 协议处理、路由、参数绑定、中间件/拦截器      │</span><br><span class="line">└──────────────────────┬──────────────────────────────────┘</span><br><span class="line">                        import</span><br><span class="line">┌──────────────────────▼──────────────────────────────────┐</span><br><span class="line">│  核心能力层 (core/)                                       │</span><br><span class="line">│  conf  logx  breaker  load  limit  discov  syncx        │</span><br><span class="line">│  stores  collection  stat  trace  prometheus  threading  │</span><br><span class="line">│  职责：配置、弹性、并发、数据访问、可观测性等共享底座        │</span><br><span class="line">└──────────────────────┬──────────────────────────────────┘</span><br><span class="line">                        import (仅限框架内部)</span><br><span class="line">┌──────────────────────▼──────────────────────────────────┐</span><br><span class="line">│  内部实现层 (internal/)                                   │</span><br><span class="line">│  health  devserver  profiling  trace  encoding           │</span><br><span class="line">│  职责：跨模块共享但不应对外开放的实现细节                    │</span><br><span class="line">└─────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<p>下面我们逐层展开。</p>
+<h3 id="核心能力层core所有上层能力的共享底座"><a class="markdownIt-Anchor" href="#核心能力层core所有上层能力的共享底座"></a> 核心能力层：<code>core/</code>——所有上层能力的共享底座</h3>
+<p><code>core/</code> 是 go-zero 最大的目录，包含 40 多个子包。这些包可以被 <code>rest/</code>、<code>zrpc/</code>、<code>gateway/</code> 和 <code>mcp/</code> 自由引用，但它们之间互相独立，不存在循环依赖。按照功能领域，可以归为五组：</p>
+<p><strong>配置与日志</strong></p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core/conf</code></td>
+<td>配置文件的加载与映射。<code>MustLoad</code> 读取 YAML/JSON/TOML 文件，通过 struct tag 驱动默认值填充和环境变量覆盖。</td>
+</tr>
+<tr>
+<td><code>core/logx</code></td>
+<td>上下文 Logger，支持 JSON 编码、文件轮转、按级别过滤、带 trace 信息的 WithContext。</td>
+</tr>
+<tr>
+<td><code>core/logc</code></td>
+<td>logx 的精简封装，提供 <code>logc.Infof(ctx, ...)</code> 式的调用，让业务代码写日志更简洁。</td>
+</tr>
+<tr>
+<td><code>core/mapping</code></td>
+<td>通用的&quot;map → struct&quot;映射引擎。<code>rest/httpx</code> 用它把 path/query/form/header 参数映射到请求结构体，<code>core/conf</code> 用它把 YAML map 映射到配置结构体。</td>
+</tr>
+</tbody>
+</table>
+<p><strong>弹性保护</strong></p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core/breaker</code></td>
+<td>Google SRE 熔断算法实现。提供 <code>Breaker</code> 接口和基于滑动窗口的熔断策略。</td>
+</tr>
+<tr>
+<td><code>core/load</code></td>
+<td>自适应降载（BBR 思路），根据 CPU 使用率、请求延时和并发量决定是否丢弃请求。</td>
+</tr>
+<tr>
+<td><code>core/limit</code></td>
+<td>基于 Redis 的固定窗口和令牌桶限流器。</td>
+</tr>
+</tbody>
+</table>
+<p><strong>数据访问与缓存</strong></p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core/stores/sqlx</code></td>
+<td>MySQL 数据库访问层，提供连接管理、事务、bulk insert、慢查询日志和 trace 集成。</td>
+</tr>
+<tr>
+<td><code>core/stores/redis</code></td>
+<td>Redis 客户端封装，支持单机和 cluster 模式，提供 hook、分布式锁和 Lua 脚本缓存。</td>
+</tr>
+<tr>
+<td><code>core/stores/mon</code></td>
+<td>MongoDB 访问封装。</td>
+</tr>
+<tr>
+<td><code>core/stores/cache</code></td>
+<td>缓存一致性框架。<code>CacheNode</code> 实现了 Cache-Aside 模式：读时先查缓存，未命中则回源 DB 并回填；写时先更新 DB 再删除缓存。配合占位值防穿透、SingleFlight 防击穿、随机过期防雪崩。</td>
+</tr>
+<tr>
+<td><code>core/stores/sqlc</code></td>
+<td>带缓存的 MySQL 访问。在 <code>sqlx</code> 基础上集成 <code>cache</code>，自动处理读写时的缓存一致性。</td>
+</tr>
+<tr>
+<td><code>core/stores/postgres</code></td>
+<td>PostgreSQL 访问，与 <code>sqlx</code> 类似的设计。</td>
+</tr>
+</tbody>
+</table>
+<p><strong>并发与集合</strong></p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core/syncx</code></td>
+<td>高级同步原语：<code>Pool</code>（对象池）、<code>Limit</code>（本地限并发）、<code>SingleFlight</code>（请求合并）、<code>Barrier</code>（栅栏）、<code>SpinLock</code>（自旋锁）。</td>
+</tr>
+<tr>
+<td><code>core/threading</code></td>
+<td>并发执行辅助：<code>RoutineGroup</code>（goroutine 组）、<code>RunSafe</code>（带 recover 的 goroutine）。</td>
+</tr>
+<tr>
+<td><code>core/collection</code></td>
+<td>高性能数据结构：<code>RollingWindow</code>（滑动窗口，熔断/降载的数据来源）、<code>TimingWheel</code>（时间轮，超时/延迟任务调度）。</td>
+</tr>
+<tr>
+<td><code>core/mr</code></td>
+<td>MapReduce 框架，支持并行 map 和串行/并行 reduce，带 context 取消和错误传播。</td>
+</tr>
+<tr>
+<td><code>core/fx</code></td>
+<td>函数式编程辅助，流式处理管道。</td>
+</tr>
+</tbody>
+</table>
+<p><strong>基础设施</strong></p>
+<table>
+<thead>
+<tr>
+<th>包</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>core/service</code></td>
+<td>服务生命周期管理。<code>ServiceConf</code> 定义服务的通用配置，<code>ServiceGroup</code> 管理多服务的协同启停。</td>
+</tr>
+<tr>
+<td><code>core/proc</code></td>
+<td>进程优雅退出。监听 OS 信号，依次调用 wrapUp listeners → sleep → shutdown listeners → 超时强制退出。</td>
+</tr>
+<tr>
+<td><code>core/discov</code></td>
+<td>服务发现抽象。publisher 将服务注册到 etcd，subscriber 通过 etcd watch 实时获取实例变更。</td>
+</tr>
+<tr>
+<td><code>core/stat</code></td>
+<td>运行时指标收集。<code>Metrics</code> 记录 QPS 和延迟分位值，<code>RemoteWriter</code> 将指标上报到远程。</td>
+</tr>
+<tr>
+<td><code>core/metric</code></td>
+<td>更细粒度的指标定义和 Counter/Vec 抽象。</td>
+</tr>
+<tr>
+<td><code>core/trace</code></td>
+<td>OpenTelemetry 集成。Agent 封装了 trace exporter、propagator、sampler 的初始化和停止。</td>
+</tr>
+<tr>
+<td><code>core/prometheus</code></td>
+<td>Prometheus 指标采集启动器。</td>
+</tr>
+<tr>
+<td><code>core/queue</code></td>
+<td>消息队列抽象，支持多分区消费者组。</td>
+</tr>
+</tbody>
+</table>
+<p>这些包都定位为&quot;纯机制&quot;——它们不关心 REST 还是 RPC，不关心 <code>http.Request</code> 还是 protobuf 消息。这种与协议无关的设计，使得 <code>rest/</code> 和 <code>zrpc/</code> 可以复用同一套熔断器、同一套服务发现、同一个 <code>ServiceGroup</code>。</p>
+<h3 id="框架层rest-zrpc-gateway-和-mcp四种服务形态"><a class="markdownIt-Anchor" href="#框架层rest-zrpc-gateway-和-mcp四种服务形态"></a> 框架层：<code>rest/</code>、<code>zrpc/</code>、<code>gateway/</code> 和 <code>mcp/</code>——四种服务形态</h3>
+<p>如果说 <code>core/</code> 提供的是&quot;砖块&quot;，框架层就是用这些砖砌成的&quot;建筑&quot;。</p>
+<h4 id="rest-框架rest"><a class="markdownIt-Anchor" href="#rest-框架rest"></a> REST 框架：<code>rest/</code></h4>
+<p><code>rest/</code> 是 go-zero 中最完整的框架实现。它对外暴露的核心 API 可以浓缩为三个类型和一个函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 配置——嵌入 ServiceConf，叠加 HTTP 特有字段</span></span><br><span class="line"><span class="keyword">type</span> RestConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    service.ServiceConf</span><br><span class="line">    Host     <span class="type">string</span> <span class="string">`json:&quot;,default=0.0.0.0&quot;`</span></span><br><span class="line">    Port     <span class="type">int</span></span><br><span class="line">    MaxConns <span class="type">int</span>    <span class="string">`json:&quot;,default=10000&quot;`</span></span><br><span class="line">    MaxBytes <span class="type">int64</span>  <span class="string">`json:&quot;,default=1048576&quot;`</span></span><br><span class="line">    Timeout  <span class="type">int64</span>  <span class="string">`json:&quot;,default=3000&quot;`</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 服务器——组合 engine 和 router</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">struct</span> &#123;</span><br><span class="line">    ngin   *engine</span><br><span class="line">    router httpx.Router</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 创建</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServer</span><span class="params">(c RestConf, opts ...RunOption)</span></span> (*Server, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+<p><code>Server</code> 不直接处理 HTTP，而是持有 <code>engine</code> 和 <code>router</code>：</p>
+<ul>
+<li><strong><code>engine</code></strong>：负责配置、中间件链的构建和 HTTP 服务器的实际启动。它不关心路由是用哪种算法匹配的，只关心&quot;把路由绑定到某个 Router 上&quot;。</li>
+<li><strong><code>router</code></strong>：实现了 <code>httpx.Router</code> 接口，基于 radix tree 做路径匹配和变量提取。</li>
+</ul>
+<p>这种&quot;服务器 = 配置与生命周期管理（engine）+ 路由匹配（router）&quot;的拆分，使得你可以通过 <code>WithRouter</code> 这个 <code>RunOption</code> 替换底层路由实现，而不影响中间件链和启动流程。</p>
+<p>REST 框架内部的子包关系如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">rest/</span><br><span class="line">├── server.go          # Server 公开 API + RunOption</span><br><span class="line">├── config.go          # RestConf、MiddlewaresConf</span><br><span class="line">├── engine.go          # engine 内部：路由绑定、中间件链构建、HTTP 启动</span><br><span class="line">├── types.go           # Route、Middleware、RouteOption</span><br><span class="line">├── chain/chain.go     # 中间件链抽象（Chain 接口）</span><br><span class="line">├── router/            # 路由匹配实现（patRouter，基于 radix tree）</span><br><span class="line">├── httpx/             # HTTP 参数解析（Parse）与响应写入（OkJson/Error）</span><br><span class="line">├── handler/           # 22 个中间件 handler（trace、breaker、shedding...）</span><br><span class="line">├── pathvar/           # 路径变量提取与注入</span><br><span class="line">├── httpc/             # HTTP 客户端工具</span><br><span class="line">├── token/             # JWT 相关工具</span><br><span class="line">└── internal/          # REST 专属的内部实现（cors、encoding、starter...）</span><br></pre></td></tr></table></figure>
+<p>注意到 <code>rest/internal/</code> 和根目录的 <code>internal/</code> 不是一回事——前者的包只能被 <code>rest/</code> 及其子包 import，后者的包可以被 <code>rest/</code>、<code>zrpc/</code> 等多个框架模块共用。两者都是 internal 包，但作用域不同。</p>
+<h4 id="rpc-框架zrpc"><a class="markdownIt-Anchor" href="#rpc-框架zrpc"></a> RPC 框架：<code>zrpc/</code></h4>
+<p><code>zrpc/</code> 的结构与 <code>rest/</code> 对仗工整，但它并非从零编写，而是<strong>在标准 gRPC 之上叠加 go-zero 的生产能力</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 服务端配置</span></span><br><span class="line"><span class="keyword">type</span> RpcServerConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    service.ServiceConf</span><br><span class="line">    ListenOn      <span class="type">string</span></span><br><span class="line">    Etcd          discov.EtcdConf    <span class="string">`json:&quot;,optional,inherit&quot;`</span></span><br><span class="line">    Timeout       <span class="type">int64</span>              <span class="string">`json:&quot;,default=2000&quot;`</span></span><br><span class="line">    CpuThreshold  <span class="type">int64</span>              <span class="string">`json:&quot;,default=900,range=[0:1000)&quot;`</span></span><br><span class="line">    Health        <span class="type">bool</span>               <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Middlewares   ServerMiddlewaresConf</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 客户端配置</span></span><br><span class="line"><span class="keyword">type</span> RpcClientConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    Etcd          discov.EtcdConf <span class="string">`json:&quot;,optional,inherit&quot;`</span></span><br><span class="line">    Endpoints     []<span class="type">string</span>        <span class="string">`json:&quot;,optional&quot;`</span></span><br><span class="line">    Target        <span class="type">string</span>          <span class="string">`json:&quot;,optional&quot;`</span></span><br><span class="line">    Timeout       <span class="type">int64</span>           <span class="string">`json:&quot;,default=2000&quot;`</span></span><br><span class="line">    BalancerName  <span class="type">string</span>          <span class="string">`json:&quot;,default=p2c_ewma&quot;`</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>RpcServerConf</code> 同样嵌入 <code>ServiceConf</code>，这意味着启动一个 RPC 服务时，日志、Prometheus、链路追踪和优雅退出这些基础设施同样会被自动初始化——与 REST 服务完全一致。</p>
+<p><code>zrpc/</code> 的目录结构比 <code>rest/</code> 更紧凑：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">zrpc/</span><br><span class="line">├── server.go          # RpcServer 公开 API</span><br><span class="line">├── client.go          # RpcClient 公开 API</span><br><span class="line">├── config.go          # RpcServerConf、RpcClientConf</span><br><span class="line">├── resolver/          # gRPC name resolver：直连、etcd、Kubernetes</span><br><span class="line">└── internal/</span><br><span class="line">    ├── server.go      # Server 接口（内部抽象）</span><br><span class="line">    ├── rpcserver.go   # 标准 RPC server 实现</span><br><span class="line">    ├── rpcpubserver.go # 带 etcd 注册的 RPC server 实现</span><br><span class="line">    ├── client.go      # 客户端实现</span><br><span class="line">    ├── auth/          # 服务间认证</span><br><span class="line">    ├── serverinterceptors/ # 服务端拦截器（trace/breaker/shedding/...）</span><br><span class="line">    ├── clientinterceptors/ # 客户端拦截器（trace/timeout/breaker/...）</span><br><span class="line">    ├── balancer/</span><br><span class="line">    │   ├── p2c/       # P2C + EWMA 负载均衡</span><br><span class="line">    │   └── consistenthash/ # 一致性哈希</span><br><span class="line">    └── codes/         # gRPC 状态码处理</span><br></pre></td></tr></table></figure>
+<p>与 <code>rest/internal/</code> 相比，<code>zrpc/internal/</code> 集中了更多 RPC 专属实现：除了服务端和客户端的底层封装，还包括认证、拦截器和负载均衡器等。P2C 放在 <code>zrpc/internal/balancer/</code> 下，恰恰是因为它只服务于 <code>zrpc/</code>，且不需要作为公共 API 暴露。按照 Go 的 <code>internal</code> 包规则，<code>zrpc/internal/</code> 只能被 <code>zrpc/</code> 目录树中的代码导入；根目录的 <code>internal/</code> 则可以供 <code>rest/</code>、<code>zrpc/</code> 等共同使用。因此，跨框架复用的内部能力放在根 <code>internal/</code>，RPC 专属能力则放在 <code>zrpc/internal/</code>。</p>
+<h4 id="两种上层建筑gateway-和-mcp"><a class="markdownIt-Anchor" href="#两种上层建筑gateway-和-mcp"></a> 两种上层建筑：<code>gateway/</code> 和 <code>mcp/</code></h4>
+<p>如果你理解了 REST 和 zRPC 的拆分，那么 <code>gateway/</code> 和 <code>mcp/</code> 的定位就很直观了——它们都是在现有框架上<strong>复用而非重写</strong>的上层建筑：</p>
+<ul>
+<li>
+<p><strong><code>gateway/</code></strong>：一个 API 网关。它的 <code>Server</code> 嵌入了 <code>*rest.Server</code>——这意味着网关本身就是一个 REST 服务，只不过它的 handler 不调用本地 logic，而是把 HTTP 请求转换为 gRPC 调用转发到下游。于是网关天然继承了 REST 的中间件链、限流、熔断和优雅退出。</p>
+</li>
+<li>
+<p><strong><code>mcp/</code></strong>：将服务能力暴露为 Model Context Protocol 的 Tool。它的内部也创建了一个 <code>*rest.Server</code> 作为 HTTP 传输层——MCP 的 SSE 和 Streamable HTTP 两种传输模式都复用了 REST 的 HTTP 服务器能力。</p>
+</li>
+</ul>
+<p><strong>这种 <code>组合优先、而非继承</code> 的复用方式，是理解 go-zero 框架层设计的关键</strong>。</p>
+<h3 id="内部实现层internal跨模块共享但不对外承诺"><a class="markdownIt-Anchor" href="#内部实现层internal跨模块共享但不对外承诺"></a> 内部实现层：<code>internal/</code>——跨模块共享但不对外承诺</h3>
+<p>根目录的 <code>internal/</code> 包是 Go 语言 <code>只对内可见</code> 机制的刻意应用：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">internal/</span><br><span class="line">├── health/            # 健康检查探针管理器</span><br><span class="line">├── devserver/         # 开发服务器（提供调试端点）</span><br><span class="line">├── profiling/         # 持续 profiling（Pyroscope）</span><br><span class="line">├── encoding/          # 编码/解码工具</span><br><span class="line">├── mock/              # mock proto 文件</span><br><span class="line">└── trace/             # trace 相关辅助</span><br></pre></td></tr></table></figure>
+<p><code>internal/</code> 中每个子包都是&quot;应该共享&quot;又&quot;不应对用户暴露&quot;：</p>
+<ul>
+<li><code>health</code> 同时被 REST 的 starter 和 zRPC 的健康检查机制使用，但对用户而言，它只是一个实现细节——用户只需要在配置中写 <code>Health: true</code>。</li>
+<li><code>devserver</code> 为 REST 和 RPC 服务统一提供 pprof 端点、健康检查和指标查询的 HTTP 路由，但它只在开发/调试环境中启用。</li>
+<li><code>profiling</code> 封装了 Pyroscope 持续 profiling 的启动和停止，同样是&quot;REST 和 RPC 都需要，但用户不需要直接操作它的 API&quot;。</li>
+</ul>
+<h3 id="工具层不在运行时"><a class="markdownIt-Anchor" href="#工具层不在运行时"></a> 工具层不在运行时</h3>
+<p>最后回顾工具层——<code>tools/goctl/</code>。它与运行时框架的唯一关联是：<strong>生成的代码 import 了框架的公开包</strong>。比如 <code>goctl api new greet</code> 生成的主入口会写：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> (</span><br><span class="line">    <span class="string">&quot;github.com/zeromicro/go-zero/core/conf&quot;</span></span><br><span class="line">    <span class="string">&quot;github.com/zeromicro/go-zero/rest&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这种 <code>生成代码调用框架 API</code> 的衔接方式，使得 goctl 和框架可以独立发布、独立演化——只要你保持公开 API 的向后兼容，goctl 的升级不会影响已上线的服务，反之亦然。</p>
+<h2 id="一条-rest-请求穿过四层"><a class="markdownIt-Anchor" href="#一条-rest-请求穿过四层"></a> 一条 REST 请求穿过四层</h2>
+<p>有了四层结构的认知，我们再来看一次具体的调用——不是看单个函数做了什么（第一篇已经讲过），而是看<strong>调用链路如何串联不同层的模块</strong>。以 <code>GET /from/you</code> 为例：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line">main() greet.go</span><br><span class="line">  │</span><br><span class="line">  ├─ conf.MustLoad(...)                       【核心能力层：core/conf】</span><br><span class="line">  │</span><br><span class="line">  ├─ rest.MustNewServer(c.RestConf)           【框架层：rest/server.go】</span><br><span class="line">  │   └─ c.SetUp()                            【核心能力层：core/service】</span><br><span class="line">  │       ├─ logx.SetUp(...)                  【核心能力层：core/logx】</span><br><span class="line">  │       ├─ prometheus.StartAgent(...)        【核心能力层：core/prometheus】</span><br><span class="line">  │       ├─ trace.StartAgent(...)            【核心能力层：core/trace】</span><br><span class="line">  │       ├─ proc.Setup(...)                  【核心能力层：core/proc】</span><br><span class="line">  │       ├─ devserver.StartAgent(...)         【内部实现层：internal/devserver】</span><br><span class="line">  │       └─ profiling.Start(...)             【内部实现层：internal/profiling】</span><br><span class="line">  │   └─ newEngine(c)                         【框架层：rest/engine.go】</span><br><span class="line">  │       └─ load.NewAdaptiveShedder(...)      【核心能力层：core/load】</span><br><span class="line">  │</span><br><span class="line">  ├─ handler.RegisterHandlers(server, ctx)    【生成的 handler 代码】</span><br><span class="line">  │   └─ server.AddRoutes(...)                【框架层：rest/server.go】</span><br><span class="line">  │       └─ engine.addRoutes(...)            【框架层：rest/engine.go】</span><br><span class="line">  │</span><br><span class="line">  └─ server.Start()                           【框架层：rest/server.go】</span><br><span class="line">      └─ engine.start(router)                 【框架层：rest/engine.go】</span><br><span class="line">          ├─ engine.bindRoutes(router)         【框架层：rest/engine.go】</span><br><span class="line">          │   └─ engine.buildChainWithNativeMiddlewares()</span><br><span class="line">          │       ├─ handler.TraceHandler     【框架层：rest/handler】</span><br><span class="line">          │       ├─ handler.LogHandler</span><br><span class="line">          │       ├─ handler.PrometheusHandler</span><br><span class="line">          │       ├─ handler.MaxConnsHandler   【核心能力层：core/syncx】</span><br><span class="line">          │       ├─ handler.BreakerHandler    【核心能力层：core/breaker】</span><br><span class="line">          │       ├─ handler.SheddingHandler   【核心能力层：core/load】</span><br><span class="line">          │       ├─ handler.TimeoutHandler</span><br><span class="line">          │       ├─ handler.RecoverHandler</span><br><span class="line">          │       ├─ handler.MetricHandler     【核心能力层：core/stat】</span><br><span class="line">          │       ├─ handler.MaxBytesHandler</span><br><span class="line">          │       └─ handler.GunzipHandler</span><br><span class="line">          └─ internal.StartHttp(...)           【框架层：rest/internal】</span><br><span class="line">              ├─ healthManager.MarkReady()     【内部实现层：internal/health】</span><br><span class="line">              └─ svr.ListenAndServe()</span><br><span class="line"></span><br><span class="line">── HTTP 请求到达 ──</span><br><span class="line"></span><br><span class="line">router.ServeHTTP(w, r)                        【框架层：rest/router】</span><br><span class="line">  └─ patRouter.ServeHTTP                      【框架层：rest/router】</span><br><span class="line">      └─ tree.Search(reqPath)                 【核心能力层：core/search】</span><br><span class="line">          └─ 匹配到 /from/:name</span><br><span class="line"></span><br><span class="line">[中间件链依次执行]</span><br><span class="line">  ├─ TraceHandler → LogHandler → PrometheusHandler</span><br><span class="line">  ├─ MaxConnsHandler → BreakerHandler → SheddingHandler</span><br><span class="line">  ├─ TimeoutHandler</span><br><span class="line">  ├─ RecoverHandler</span><br><span class="line">  ├─ MetricHandler → MaxBytesHandler → GunzipHandler</span><br><span class="line">  └─ GreetHandler(w, r)                      【生成的 handler 代码】</span><br><span class="line">      ├─ httpx.Parse(r, &amp;req)                 【框架层：rest/httpx】</span><br><span class="line">      │   ├─ pathvar.Vars(r)                  【框架层：rest/pathvar】</span><br><span class="line">      │   └─ mapping.Unmarshaler              【核心能力层：core/mapping】</span><br><span class="line">      ├─ logic.NewGreetLogic(ctx, svcCtx)     【业务代码：logic】</span><br><span class="line">      └─ httpx.OkJsonCtx(w, resp)             【框架层：rest/httpx】</span><br></pre></td></tr></table></figure>
+<p>这个调用链清晰地展示了四层架构的协作方式：<strong>框架层处理协议（HTTP/Router/Middleware），核心能力层提供机制（Conf/Log/Breaker/Load/Mapping），内部实现层支撑基础设施（Health/DevServer/Profiling），而工具层负责将这一切组织成可编译的工程代码</strong>。</p>
+<h2 id="一条-rpc-请求穿过四层"><a class="markdownIt-Anchor" href="#一条-rpc-请求穿过四层"></a> 一条 RPC 请求穿过四层</h2>
+<p>现在看 RPC 侧。虽然 zRPC 的协议不同，但它穿过四层的方式与 REST 高度对称：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line">main()</span><br><span class="line">  │</span><br><span class="line">  ├─ zrpc.MustNewServer(c, register)          【框架层：zrpc/server.go】</span><br><span class="line">  │   ├─ c.Validate()                          【框架层：zrpc/config.go】</span><br><span class="line">  │   ├─ internal.NewRpcPubServer(...)         【框架层：zrpc/internal】</span><br><span class="line">  │   │   └─ discov.NewPublisher(...)          【核心能力层：core/discov】</span><br><span class="line">  │   ├─ setupUnaryInterceptors(server, c)     【框架层：zrpc/server.go】</span><br><span class="line">  │   │   ├─ UnaryTracingInterceptor           【核心能力层：core/trace】</span><br><span class="line">  │   │   ├─ UnaryRecoverInterceptor</span><br><span class="line">  │   │   ├─ UnaryStatInterceptor              【核心能力层：core/stat】</span><br><span class="line">  │   │   ├─ UnaryPrometheusInterceptor        【核心能力层：core/prometheus】</span><br><span class="line">  │   │   ├─ UnaryBreakerInterceptor           【核心能力层：core/breaker】</span><br><span class="line">  │   │   ├─ UnarySheddingInterceptor           【核心能力层：core/load】</span><br><span class="line">  │   │   └─ UnaryTimeoutInterceptor</span><br><span class="line">  │   └─ c.SetUp()                             【核心能力层：core/service】</span><br><span class="line">  │       └─ (同 REST——日志、trace、prometheus...)</span><br><span class="line">  │</span><br><span class="line">  └─ server.Start()                            【框架层：zrpc/server.go】</span><br><span class="line">      └─ server.Start(register)                【框架层：zrpc/internal】</span><br><span class="line">          ├─ publisher.Register(...)            【核心能力层：core/discov】</span><br><span class="line">          └─ grpcServer.Serve(listener)         【gRPC 标准库】</span><br><span class="line"></span><br><span class="line">── RPC 请求到达 ──</span><br><span class="line"></span><br><span class="line">[拦截器链依次执行]</span><br><span class="line">  ├─ UnaryTracingInterceptor</span><br><span class="line">  ├─ UnaryRecoverInterceptor</span><br><span class="line">  ├─ UnaryStatInterceptor</span><br><span class="line">  ├─ UnaryPrometheusInterceptor</span><br><span class="line">  ├─ UnaryBreakerInterceptor</span><br><span class="line">  ├─ UnarySheddingInterceptor</span><br><span class="line">  ├─ UnaryTimeoutInterceptor</span><br><span class="line">  └─ 业务 gRPC handler</span><br></pre></td></tr></table></figure>
+<p>对比 REST 和 RPC 的调用链，你会发现核心能力层的复用程度惊人：<code>core/breaker</code>（熔断）、<code>core/load</code>（降载）、<code>core/stat</code>（指标）、<code>core/trace</code>（链路追踪）、<code>core/prometheus</code>（Prometheus）、<code>core/service</code>（配置与优雅退出）——这六个核心包在 REST 和 RPC 两侧被完全相同的方式集成。区别只在于封装方式：REST 侧用中间件函数（<code>func(http.Handler) http.Handler</code>），RPC 侧用 gRPC 拦截器（<code>grpc.UnaryServerInterceptor</code>）。</p>
+<h2 id="贯穿各层的三种设计模式"><a class="markdownIt-Anchor" href="#贯穿各层的三种设计模式"></a> 贯穿各层的三种设计模式</h2>
+<p>看完 REST 和 RPC 的调用链，你可能已经注意到一些反复出现的代码形态。go-zero 中有三种设计模式贯穿几乎所有模块，理解它们是阅读任何源码的前提。</p>
+<h3 id="配置组合嵌入而非继承"><a class="markdownIt-Anchor" href="#配置组合嵌入而非继承"></a> 配置组合：嵌入而非继承</h3>
+<p>go-zero 的配置结构体从不使用深层继承，而是通过 <strong>struct 嵌入</strong>来实现配置的组合：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/service/serviceconf.go</span></span><br><span class="line"><span class="keyword">type</span> ServiceConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    Name       <span class="type">string</span></span><br><span class="line">    Log        logx.LogConf</span><br><span class="line">    Mode       <span class="type">string</span> <span class="string">`json:&quot;,default=pro&quot;`</span></span><br><span class="line">    Telemetry  trace.Config</span><br><span class="line">    DevServer  DevServerConfig</span><br><span class="line">    Shutdown   proc.ShutdownConf</span><br><span class="line">    Profiling  profiling.Config</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// rest/config.go</span></span><br><span class="line"><span class="keyword">type</span> RestConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    service.ServiceConf              <span class="comment">// ← 嵌入</span></span><br><span class="line">    Host     <span class="type">string</span> <span class="string">`json:&quot;,default=0.0.0.0&quot;`</span></span><br><span class="line">    Port     <span class="type">int</span></span><br><span class="line">    MaxConns <span class="type">int</span>    <span class="string">`json:&quot;,default=10000&quot;`</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// zrpc/config.go</span></span><br><span class="line"><span class="keyword">type</span> RpcServerConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    service.ServiceConf              <span class="comment">// ← 嵌入</span></span><br><span class="line">    ListenOn      <span class="type">string</span></span><br><span class="line">    Etcd          discov.EtcdConf</span><br><span class="line">    Timeout       <span class="type">int64</span> <span class="string">`json:&quot;,default=2000&quot;`</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这带来两个关键好处：</p>
+<ul>
+<li><strong>一次配置，全局生效</strong>：<code>ServiceConf.SetUp()</code> 中的日志、trace、prometheus 等初始化逻辑，对 REST 和 RPC 完全相同——因为它们都通过嵌入 <code>ServiceConf</code> 获得了这些字段和 <code>SetUp()</code> 方法。</li>
+<li><strong>同一进程可以混合使用</strong>：如果你需要同时启动 REST 和 RPC 服务，配置结构体可以这样写：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Config <span class="keyword">struct</span> &#123;</span><br><span class="line">    rest.RestConf</span><br><span class="line">    zrpc.RpcServerConf</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>两个嵌入的结构体共享同一个 <code>ServiceConf</code> 的设施（只初始化一次），各自管理自己的协议层配置。</p>
+<h3 id="函数选项灵活且可扩展"><a class="markdownIt-Anchor" href="#函数选项灵活且可扩展"></a> 函数选项：灵活且可扩展</h3>
+<p>go-zero 大量使用 functional options 模式来定制行为。这种模式的核心是：<strong>不定义复杂的配置结构体，而是让调用方传入零或多个函数来修改服务器的内部状态</strong>。</p>
+<p>在 REST 侧，<code>RunOption</code> 和 <code>RouteOption</code> 分别在两个粒度上工作：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 服务器级别的选项：在 MustNewServer / NewServer 时生效</span></span><br><span class="line"><span class="keyword">type</span> RunOption <span class="function"><span class="keyword">func</span><span class="params">(*Server)</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithCors</span><span class="params">(origin ...<span class="type">string</span>)</span></span> RunOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithNotFoundHandler</span><span class="params">(handler http.Handler)</span></span> RunOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithChain</span><span class="params">(chn chain.Chain)</span></span> RunOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithTLSConfig</span><span class="params">(cfg *tls.Config)</span></span> RunOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithRouter</span><span class="params">(router httpx.Router)</span></span> RunOption</span><br><span class="line"></span><br><span class="line"><span class="comment">// 路由级别的选项：在 AddRoutes 时生效</span></span><br><span class="line"><span class="keyword">type</span> RouteOption <span class="function"><span class="keyword">func</span><span class="params">(r *featuredRoutes)</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithJwt</span><span class="params">(secret <span class="type">string</span>)</span></span> RouteOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithSignature</span><span class="params">(signature SignatureConf)</span></span> RouteOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithTimeout</span><span class="params">(timeout time.Duration)</span></span> RouteOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithMaxBytes</span><span class="params">(maxBytes <span class="type">int64</span>)</span></span> RouteOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithPrefix</span><span class="params">(group <span class="type">string</span>)</span></span> RouteOption</span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithSSE</span><span class="params">()</span></span> RouteOption</span><br></pre></td></tr></table></figure>
+<p>使用示例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">server := rest.MustNewServer(c.RestConf,</span><br><span class="line">    rest.WithCors(<span class="string">&quot;https://example.com&quot;</span>),</span><br><span class="line">    rest.WithNotFoundHandler(customNotFound),</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">server.AddRoutes(</span><br><span class="line">    []rest.Route&#123;...&#125;,</span><br><span class="line">    rest.WithJwt(<span class="string">&quot;my-secret&quot;</span>),</span><br><span class="line">    rest.WithTimeout(<span class="number">5</span>*time.Second),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>RunOption</code> 和 <code>RouteOption</code> 的分层很精妙：前者影响整个服务器的行为（CORS、TLS、not found handler），后者只影响特定路由组（JWT、签名、超时）。这避免了 <code>全局配置覆盖路由配置</code> 或 <code>路由配置需要重复全局信息</code> 的两难。</p>
+<p>在 RPC 侧，对应的是 <code>ClientOption</code>（调用 <code>NewClient</code> 时使用）和 gRPC 标准库的 <code>grpc.ServerOption</code>（调用 <code>AddOptions</code> 时使用）——模式一致，只是术语不同。</p>
+<h3 id="中间件链洋葱模型的不可变链"><a class="markdownIt-Anchor" href="#中间件链洋葱模型的不可变链"></a> 中间件链：洋葱模型的不可变链</h3>
+<p>go-zero 的 REST 中间件链实现是一个修改版的 <a target="_blank" rel="noopener" href="https://github.com/justinas/alice">Alice</a>，核心类型定义在 <code>rest/chain/chain.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Chain <span class="keyword">interface</span> &#123;</span><br><span class="line">    Append(middlewares ...Middleware) Chain</span><br><span class="line">    Prepend(middlewares ...Middleware) Chain</span><br><span class="line">    Then(h http.Handler) http.Handler</span><br><span class="line">    ThenFunc(fn http.HandlerFunc) http.Handler</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Middleware <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler</span><br></pre></td></tr></table></figure>
+<p>这个设计有三个特点：</p>
+<p><strong>不可变性。</strong> <code>Append</code> 和 <code>Prepend</code> 返回新的 <code>Chain</code> 实例，不会修改原实例。这意味着同一个基础 chain 可以被多个路由安全复用——每个路由调用 <code>Then</code> 时得到的是独立的中间件实例。</p>
+<p><strong>洋葱模型。</strong> 调用 <code>chain.New(m1, m2).Then(h)</code> 等价于 <code>m1(m2(h))</code>。请求进入时先经过 <code>m1</code>、再经过 <code>m2</code>、最后到达 <code>h</code>；响应返回时则反向穿过——先经过 <code>m2</code>、再经过 <code>m1</code>。这正是标准 HTTP 中间件的执行方式。</p>
+<p><strong>类型转换。</strong> REST 的 <code>Middleware</code> 类型是 <code>func(next http.HandlerFunc) http.HandlerFunc</code>，与 chain 的 <code>func(http.Handler) http.Handler</code> 不完全一致。<code>engine</code> 中的 <code>convertMiddleware</code> 负责桥接这两种签名：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">convertMiddleware</span><span class="params">(ware Middleware)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> ware(next.ServeHTTP)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在 RPC 侧，对等设计是 gRPC 拦截器链。<code>UnaryServerInterceptor</code> 和 <code>StreamServerInterceptor</code> 本身就是&quot;洋葱&quot;——传入 handler，返回包装后的 handler。<code>setupUnaryInterceptors</code> 通过多次 <code>AddUnaryInterceptors</code> 以固定顺序叠加它们。</p>
+<h2 id="公开包与-internal-包的边界设计"><a class="markdownIt-Anchor" href="#公开包与-internal-包的边界设计"></a> 公开包与 internal 包的边界设计</h2>
+<p>最后我们梳理一下 go-zero 的可见性边界。在任何一个 Go 项目中，&quot;什么包能 import 什么包&quot;直接影响代码的组织方式和读者的学习路径。</p>
+<h3 id="三层边界"><a class="markdownIt-Anchor" href="#三层边界"></a> 三层边界</h3>
+<p>go-zero 中有三道可见性边界：</p>
+<p><strong>第一道：module 边界。</strong> <code>github.com/zeromicro/go-zero</code> 和 <code>github.com/zeromicro/go-zero/tools/goctl</code> 是两个独立 module。前者可以被任何项目的 <code>go.mod</code> 引用，后者通常通过 <code>go install</code> 安装为命令行工具。</p>
+<p><strong>第二道：公开 / internal 边界。</strong> 根 module 内的 <code>internal/</code> 树只能被根 module 内部的包 import。具体来说：</p>
+<ul>
+<li><code>internal/devserver</code> 被 <code>core/service/serviceconf.go</code> import——它通过 <code>ServiceConf.SetUp()</code> 被集成到服务生命周期中。</li>
+<li><code>internal/health</code> 被 <code>rest/internal/starter.go</code> 和 <code>zrpc/internal/rpcserver.go</code> 引用——REST 和 RPC 的服务启动都共用同一个健康检查机制。</li>
+<li><code>internal/profiling</code> 同样在 <code>ServiceConf.SetUp()</code> 中被启用。</li>
+</ul>
+<p>这些 <code>internal/</code> 下的包有一个共同特征：<strong>如果把它们变成公开包，用户可以直接 import，但这不仅没有必要，而且会让 API 表面积翻倍</strong>。比如你永远不需要在自己的代码里直接操作 <code>health.HealthManager</code>——你只需要在配置中写 <code>Health: true</code>。</p>
+<p><strong>第三道：模块内 internal 边界。</strong> <code>rest/internal/</code> 和 <code>zrpc/internal/</code> 的包各自只能被自己的模块 import。例如：</p>
+<ul>
+<li><code>rest/internal/cors</code> 处理 CORS 头部，它是 <code>WithCors</code> 的实现依赖。</li>
+<li><code>rest/internal/starter.go</code> 封装了 <code>http.Server</code> 的创建和优雅关闭。</li>
+<li><code>zrpc/internal/balancer/p2c</code> 实现了 P2C 负载均衡算法。</li>
+</ul>
+<p>这些包的粒度比根 <code>internal/</code> 更细——它们不是&quot;所有框架模块都需要&quot;，而是&quot;只属于 REST 或只属于 zRPC&quot;。</p>
+<h3 id="一个实用准则"><a class="markdownIt-Anchor" href="#一个实用准则"></a> 一个实用准则</h3>
+<p>当你在源码中追踪某个类型的定义时，可以从它的 import 路径快速判断它的定位：</p>
+<table>
+<thead>
+<tr>
+<th>路径特征</th>
+<th>含义</th>
+<th>你能依赖它吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>以 <code>core/</code> 开头</td>
+<td>共享核心能力，REST 和 RPC 都可以用</td>
+<td>✅ 可以</td>
+</tr>
+<tr>
+<td>以 <code>rest/</code> 开头但不含 <code>internal</code></td>
+<td>REST 框架的公开 API</td>
+<td>✅ 可以</td>
+</tr>
+<tr>
+<td>以 <code>zrpc/</code> 开头但不含 <code>internal</code></td>
+<td>RPC 框架的公开 API</td>
+<td>✅ 可以</td>
+</tr>
+<tr>
+<td>含有 <code>/internal/</code></td>
+<td>实现细节，不对外承诺兼容性</td>
+<td>❌ 不建议</td>
+</tr>
+<tr>
+<td><code>github.com/zeromicro/go-zero/tools/goctl/...</code></td>
+<td>另一个 module</td>
+<td>❌ 不建议在服务代码中 import</td>
+</tr>
+</tbody>
+</table>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>这篇文章画出了 go-zero 的&quot;源码地图&quot;。现在回顾我们已经建立的三层认知：</p>
+<ol>
+<li>
+<p><strong>四层架构</strong>：工具层（goctl）→ 框架层（rest/zrpc/gateway/mcp）→ 核心能力层（core/）→ 内部实现层（internal/）。依赖方向自上而下，每层有明确的职责边界。</p>
+</li>
+<li>
+<p><strong>REST 和 RPC 的对称设计</strong>：虽然协议不同——一个走 HTTP 中间件，一个走 gRPC 拦截器——但它们共享同一套核心能力层。<code>ServiceConf</code> 的嵌入使得日志、trace、弹性保护和服务发现&quot;一次配置，两端生效&quot;。</p>
+</li>
+<li>
+<p><strong>三种设计模式贯穿始终</strong>：配置组合（struct 嵌入）、函数选项（RunOption / RouteOption）和不可变中间件链（chain.Chain）。掌握了这三种模式，你就可以自信地阅读框架层任何模块的源码——代码形态是一致的。</p>
+</li>
+</ol>
+<p>有了这张地图，从下一篇开始我们就可以逐步深入各个模块的具体实现。下一篇主题是用 <code>goctl</code> 将 <code>.api</code> 文件展开为可运行的工程——你将看到解析器如何把 DSL 文本转化为 AST、生成器如何把 AST 映射为 Go 代码，以及框架为什么用&quot;生成代码调用公开 API&quot;而不是&quot;反射 + 运行时注册&quot;来衔接工具层和运行时。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/14/go-zero-03/" rel="prev" title="go-zero 源码分析 03：goctl 的解析与代码生成">
+      <i class="fa fa-chevron-left"></i> go-zero 源码分析 03：goctl 的解析与代码生成
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/14/go-zero-01/" rel="next" title="go-zero 源码分析 01：go-zero 是什么">
+      go-zero 源码分析 01：go-zero 是什么 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E%E4%BB%93%E5%BA%93%E9%A1%B6%E5%B1%82%E7%9C%8B%E5%88%86%E7%95%8C"><span class="nav-number">1.</span> <span class="nav-text"> 从仓库顶层看分界</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%A4%E4%B8%AA-module%E4%B8%A4%E7%A7%8D%E7%94%A8%E9%80%94"><span class="nav-number">1.1.</span> <span class="nav-text"> 两个 module，两种用途</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A1%B6%E5%B1%82%E7%9B%AE%E5%BD%95%E9%80%9F%E8%A7%88"><span class="nav-number">1.2.</span> <span class="nav-text"> 顶层目录速览</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E5%B1%82%E6%9E%B6%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> 四层架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E8%83%BD%E5%8A%9B%E5%B1%82core%E6%89%80%E6%9C%89%E4%B8%8A%E5%B1%82%E8%83%BD%E5%8A%9B%E7%9A%84%E5%85%B1%E4%BA%AB%E5%BA%95%E5%BA%A7"><span class="nav-number">2.1.</span> <span class="nav-text"> 核心能力层：core&#x2F;——所有上层能力的共享底座</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A1%86%E6%9E%B6%E5%B1%82rest-zrpc-gateway-%E5%92%8C-mcp%E5%9B%9B%E7%A7%8D%E6%9C%8D%E5%8A%A1%E5%BD%A2%E6%80%81"><span class="nav-number">2.2.</span> <span class="nav-text"> 框架层：rest&#x2F;、zrpc&#x2F;、gateway&#x2F; 和 mcp&#x2F;——四种服务形态</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#rest-%E6%A1%86%E6%9E%B6rest"><span class="nav-number">2.2.1.</span> <span class="nav-text"> REST 框架：rest&#x2F;</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#rpc-%E6%A1%86%E6%9E%B6zrpc"><span class="nav-number">2.2.2.</span> <span class="nav-text"> RPC 框架：zrpc&#x2F;</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%A4%E7%A7%8D%E4%B8%8A%E5%B1%82%E5%BB%BA%E7%AD%91gateway-%E5%92%8C-mcp"><span class="nav-number">2.2.3.</span> <span class="nav-text"> 两种上层建筑：gateway&#x2F; 和 mcp&#x2F;</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%85%E9%83%A8%E5%AE%9E%E7%8E%B0%E5%B1%82internal%E8%B7%A8%E6%A8%A1%E5%9D%97%E5%85%B1%E4%BA%AB%E4%BD%86%E4%B8%8D%E5%AF%B9%E5%A4%96%E6%89%BF%E8%AF%BA"><span class="nav-number">2.3.</span> <span class="nav-text"> 内部实现层：internal&#x2F;——跨模块共享但不对外承诺</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E5%B1%82%E4%B8%8D%E5%9C%A8%E8%BF%90%E8%A1%8C%E6%97%B6"><span class="nav-number">2.4.</span> <span class="nav-text"> 工具层不在运行时</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%9D%A1-rest-%E8%AF%B7%E6%B1%82%E7%A9%BF%E8%BF%87%E5%9B%9B%E5%B1%82"><span class="nav-number">3.</span> <span class="nav-text"> 一条 REST 请求穿过四层</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%9D%A1-rpc-%E8%AF%B7%E6%B1%82%E7%A9%BF%E8%BF%87%E5%9B%9B%E5%B1%82"><span class="nav-number">4.</span> <span class="nav-text"> 一条 RPC 请求穿过四层</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B4%AF%E7%A9%BF%E5%90%84%E5%B1%82%E7%9A%84%E4%B8%89%E7%A7%8D%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F"><span class="nav-number">5.</span> <span class="nav-text"> 贯穿各层的三种设计模式</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E7%BB%84%E5%90%88%E5%B5%8C%E5%85%A5%E8%80%8C%E9%9D%9E%E7%BB%A7%E6%89%BF"><span class="nav-number">5.1.</span> <span class="nav-text"> 配置组合：嵌入而非继承</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%BD%E6%95%B0%E9%80%89%E9%A1%B9%E7%81%B5%E6%B4%BB%E4%B8%94%E5%8F%AF%E6%89%A9%E5%B1%95"><span class="nav-number">5.2.</span> <span class="nav-text"> 函数选项：灵活且可扩展</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%AD%E9%97%B4%E4%BB%B6%E9%93%BE%E6%B4%8B%E8%91%B1%E6%A8%A1%E5%9E%8B%E7%9A%84%E4%B8%8D%E5%8F%AF%E5%8F%98%E9%93%BE"><span class="nav-number">5.3.</span> <span class="nav-text"> 中间件链：洋葱模型的不可变链</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%AC%E5%BC%80%E5%8C%85%E4%B8%8E-internal-%E5%8C%85%E7%9A%84%E8%BE%B9%E7%95%8C%E8%AE%BE%E8%AE%A1"><span class="nav-number">6.</span> <span class="nav-text"> 公开包与 internal 包的边界设计</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%89%E5%B1%82%E8%BE%B9%E7%95%8C"><span class="nav-number">6.1.</span> <span class="nav-text"> 三层边界</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%AE%9E%E7%94%A8%E5%87%86%E5%88%99"><span class="nav-number">6.2.</span> <span class="nav-text"> 一个实用准则</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">279</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
