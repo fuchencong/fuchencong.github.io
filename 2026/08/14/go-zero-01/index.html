@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在日常的后端开发里，无论是刚开始写一个新的微服务，还是在已有系统上增加接口，我们都要面对一连串 通用但琐碎 的事情：启动配置、参数校验、错误处理、日志、超时、限流、熔断、服务注册与发现、链路追踪。go-zero 的定位是一个集成了各种工程实践的 Web 和 RPC 框架，它把这些通用能力下沉到框架层面，让开发者把精力集中在业务逻辑上。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 01：go-zero 是什么">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/14/go-zero-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在日常的后端开发里，无论是刚开始写一个新的微服务，还是在已有系统上增加接口，我们都要面对一连串 通用但琐碎 的事情：启动配置、参数校验、错误处理、日志、超时、限流、熔断、服务注册与发现、链路追踪。go-zero 的定位是一个集成了各种工程实践的 Web 和 RPC 框架，它把这些通用能力下沉到框架层面，让开发者把精力集中在业务逻辑上。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-14T08:34:28.000Z">
+<meta property="article:modified_time" content="2026-08-14T09:02:24.929Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/14/go-zero-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 01：go-zero 是什么 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/14/go-zero-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 01：go-zero 是什么
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-14 16:34:28" itemprop="dateCreated datePublished" datetime="2026-08-14T16:34:28+08:00">2026-08-14</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在日常的后端开发里，无论是刚开始写一个新的微服务，还是在已有系统上增加接口，我们都要面对一连串 <code>通用但琐碎</code> 的事情：启动配置、参数校验、错误处理、日志、超时、限流、熔断、服务注册与发现、链路追踪。go-zero 的定位是一个<strong>集成了各种工程实践的 Web 和 RPC 框架</strong>，它把这些通用能力下沉到框架层面，让开发者把精力集中在业务逻辑上。</p>
+<span id="more"></span>
+<h2 id="go-zero-简介"><a class="markdownIt-Anchor" href="#go-zero-简介"></a> go-zero 简介</h2>
+<p>它的名字里带有&quot;zero&quot;，背后是两条核心信念：</p>
+<ul>
+<li><strong>从零到一应该足够快</strong>：通过极简的 API 定义语法和 <code>goctl</code> 命令行工具，一份 <code>.api</code> 文件就能生成完整的 REST 服务工程——不是空壳，而是编译后就能直接接收请求。</li>
+<li><strong>生产环境不应该从零搭起</strong>：框架内置了超时、限流、熔断、降载（自适应负载 shedding）、服务发现、链路追踪等机制，并把这些能力串联在默认的中间件链里——你不需要额外配置才获得保护。</li>
+</ul>
+<p>与熟悉的 Web 框架（如 Gin、Echo）相比，go-zero 不是只关心路由和中间件，它的覆盖面大得多：</p>
+<table>
+<thead>
+<tr>
+<th>层次</th>
+<th>典型 Web 框架</th>
+<th>go-zero</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>路由与参数绑定</td>
+<td>✅ 手动编写</td>
+<td>✅ <code>.api</code> DSL 一键生成，强类型</td>
+</tr>
+<tr>
+<td>配置加载</td>
+<td>通常靠 <code>viper</code> 等第三方库</td>
+<td>✅ 内建，含校验与环境变量</td>
+</tr>
+<tr>
+<td>中间件链</td>
+<td>需手动组合</td>
+<td>✅ 默认链覆盖 trace / log / 限并发 / 熔断 / 降载 / 超时 / recover / metrics</td>
+</tr>
+<tr>
+<td>RPC 调用</td>
+<td>需额外引入 gRPC</td>
+<td>✅ <code>zrpc</code> 封装，含服务发现与负载均衡</td>
+</tr>
+<tr>
+<td>数据访问</td>
+<td>需自行集成 ORM</td>
+<td>✅ <code>sqlx</code> / <code>sqlc</code> / <code>monc</code>，内置缓存一致性</td>
+</tr>
+<tr>
+<td>代码生成</td>
+<td>无</td>
+<td>✅ <code>goctl</code> 覆盖 API、RPC、Model、Docker、K8s</td>
+</tr>
+<tr>
+<td>微服务治理</td>
+<td>需独立组件</td>
+<td>✅ 内建 etcd 服务发现、P2C 负载均衡、自适应降载</td>
+</tr>
+</tbody>
+</table>
+<p>简单来说，如果你只需要一个轻量 HTTP 路由层，go-zero 可能显得&quot;重&quot;；但如果你要的是<strong>一套可以直接上生产的微服务基础设施</strong>，它的集成度和一致性优势会非常明显。</p>
+<h2 id="项目总体结构"><a class="markdownIt-Anchor" href="#项目总体结构"></a> 项目总体结构</h2>
+<p>先看一眼 go-zero 仓库的顶层目录，对项目的模块边界有一个整体认识：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">go-zero/</span><br><span class="line">├── core/          # 核心能力：配置、日志、熔断、限流、同步原语、集合、并发等</span><br><span class="line">├── rest/          # REST 框架：Server、Router、参数解析、中间件、响应写入</span><br><span class="line">├── zrpc/          # RPC 框架：基于 gRPC 的 server/client，含拦截器、服务发现</span><br><span class="line">├── gateway/       # API 网关：HTTP 转 gRPC，动态调用</span><br><span class="line">├── mcp/           # MCP 协议支持：将 go-zero 服务注册为 AI Tool</span><br><span class="line">├── internal/      # 跨模块共享的内部实现（健康检查、dev server、profiling）</span><br><span class="line">├── tools/goctl/   # 代码生成工具（独立 Go module）：API、RPC、Model、Docker 等</span><br><span class="line">├── go.mod         # 根框架 module</span><br><span class="line">└── readme-cn.md   # 项目中文说明</span><br></pre></td></tr></table></figure>
+<p>从职责上看，这些模块分成两层：</p>
+<ul>
+<li><strong>运行时框架</strong>（<code>core</code>、<code>rest</code>、<code>zrpc</code>、<code>gateway</code>、<code>mcp</code>）：你的服务在编译和运行时直接依赖它们。</li>
+<li><strong>编译期工具</strong>（<code>tools/goctl</code>）：在开发阶段把定义文件（<code>.api</code>、<code>.proto</code>、SQL）转化为 Go 工程代码。它是一个独立的 Go module，编译成 <code>goctl</code> 命令行工具，与运行时框架通过&quot;生成调用框架 API 的代码&quot;来衔接。</li>
+</ul>
+<p>把这两层串起来，一个完整的开发工作流是这样的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">.api / .proto / SQL 定义</span><br><span class="line">        ↓</span><br><span class="line">      goctl（编译期）</span><br><span class="line">        ↓</span><br><span class="line">  生成 REST / RPC / Model 工程</span><br><span class="line">        ↓</span><br><span class="line">  开发者填充业务逻辑</span><br><span class="line">        ↓</span><br><span class="line">  go run / go build（运行时）</span><br><span class="line">        ↓</span><br><span class="line">  配置加载 → 服务启动 → 请求处理 → 服务发现 → 弹性保护</span><br></pre></td></tr></table></figure>
+<p>这套工作流的关键在于：<strong>工具不侵入运行时</strong>。<code>goctl</code> 生成的是标准 Go 代码，它 import 框架包、调用 <code>rest.MustNewServer</code>、注册 handler——这些调用和你手写的完全一样。如果你愿意，完全可以脱离 goctl 手动编写，只是效率会低不少。</p>
+<h2 id="快速上手从一个可运行的-greet-服务开始"><a class="markdownIt-Anchor" href="#快速上手从一个可运行的-greet-服务开始"></a> 快速上手：从一个可运行的 greet 服务开始</h2>
+<p>理论说再多都不如跑起来看一眼。下面我们按照 <code>安装 goctl → 生成工程 → 启动服务 → 发起请求 → 修改逻辑</code> 的路径，快速体验一遍 go-zero 的完整开发流程。</p>
+<h3 id="安装-goctl"><a class="markdownIt-Anchor" href="#安装-goctl"></a> 安装 goctl</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">GO111MODULE=on GOPROXY=https://goproxy.cn/,direct \</span><br><span class="line">  go install github.com/zeromicro/go-zero/tools/goctl@latest</span><br><span class="line">goctl --version</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p><code>goctl</code> 是一个独立的 Go module（<code>tools/goctl/go.mod</code>），安装后的二进制不包含运行时框架的代码，它只负责&quot;读定义文件、解析 AST、按模板写出 Go 文件&quot;。</p>
+</blockquote>
+<h3 id="一键生成-greet-服务"><a class="markdownIt-Anchor" href="#一键生成-greet-服务"></a> 一键生成 greet 服务</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">goctl api new greet</span><br></pre></td></tr></table></figure>
+<p>这条命令做了两件事：</p>
+<ol>
+<li><strong>生成 <code>.api</code> 定义文件</strong>（<code>greet.api</code>）；</li>
+<li><strong>调用代码生成器</strong>，把 <code>.api</code> 展开成一个完整的 Go 工程。</li>
+</ol>
+<p>生成的目录结构如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">greet/</span><br><span class="line">├── greet.api                   # API 定义文件</span><br><span class="line">├── greet.go                    # 入口 main</span><br><span class="line">├── etc/</span><br><span class="line">│   └── greet-api.yaml          # 服务配置文件</span><br><span class="line">└── internal/</span><br><span class="line">    ├── config/</span><br><span class="line">    │   └── config.go           # 配置结构体</span><br><span class="line">    ├── handler/</span><br><span class="line">    │   ├── routes.go           # 路由注册</span><br><span class="line">    │   └── greethandler.go     # HTTP handler</span><br><span class="line">    ├── logic/</span><br><span class="line">    │   └── greetlogic.go       # 业务逻辑</span><br><span class="line">    ├── svc/</span><br><span class="line">    │   └── servicecontext.go   # 服务上下文（持有依赖）</span><br><span class="line">    └── types/</span><br><span class="line">        └── types.go            # 请求/响应类型</span><br></pre></td></tr></table></figure>
+<h3 id="启动服务"><a class="markdownIt-Anchor" href="#启动服务"></a> 启动服务</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cd</span> greet</span><br><span class="line">go mod tidy</span><br><span class="line">go run greet.go -f etc/greet-api.yaml</span><br></pre></td></tr></table></figure>
+<p>控制台输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Starting server at 0.0.0.0:8888...</span><br></pre></td></tr></table></figure>
+<p>服务已经在 <code>8888</code> 端口上监听了。</p>
+<h3 id="34-发起第一个请求"><a class="markdownIt-Anchor" href="#34-发起第一个请求"></a> 3.4 发起第一个请求</h3>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl -i http://localhost:8888/from/you</span><br></pre></td></tr></table></figure>
+<p>响应：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">HTTP/<span class="number">1.1</span> <span class="number">200</span> OK</span><br><span class="line">Content-Type<span class="punctuation">:</span> application/json; charset=utf<span class="number">-8</span></span><br><span class="line">...</span><br><span class="line"></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;message&quot;</span><span class="punctuation">:</span><span class="string">&quot;&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>请求成功了，但返回的 <code>message</code> 是空的。这是因为生成器只给了骨架，业务逻辑需要我们自己填。</p>
+<h3 id="填充业务逻辑"><a class="markdownIt-Anchor" href="#填充业务逻辑"></a> 填充业务逻辑</h3>
+<p>打开 <code>internal/logic/greetlogic.go</code>，把 <code>Greet</code> 方法改成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(l *GreetLogic)</span></span> Greet(req *types.Request) (resp *types.Response, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;types.Response&#123;</span><br><span class="line">        Message: fmt.Sprintf(<span class="string">&quot;hello, %s!&quot;</span>, req.Name),</span><br><span class="line">    &#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>重新启动服务后再次请求：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">curl -i http://localhost:8888/from/you</span><br><span class="line"><span class="comment"># &#123;&quot;message&quot;:&quot;hello, you!&quot;&#125;</span></span><br></pre></td></tr></table></figure>
+<p>现在，我们有了一个完全可用的 REST 服务：它可以接收带路径参数的 HTTP 请求，解析出强类型的 <code>Request</code>，经过业务逻辑处理后，返回 JSON 响应。整个过程我们没有写任何路由绑定、参数解析或 JSON 序列化的代码——这些都由框架和 <code>goctl</code> 代劳了。</p>
+<h3 id="从单路由示例到多业务域-api"><a class="markdownIt-Anchor" href="#从单路由示例到多业务域-api"></a> 从单路由示例到多业务域 API</h3>
+<p><code>goctl api new greet</code> 的内置模板只放了一个 route，目的是让最小示例容易理解。这不是 goctl 对路由数量的限制：真正决定工程中有哪些接口的是 <code>.api</code> 文件，修改定义后使用 <code>goctl api go</code> 即可生成任意多个 route。</p>
+<p>当一个 REST 进程同时承载用户、订单等多个业务域时，go-zero 的 DSL 命名容易造成误解。在通常的架构语境中，server 往往代表一个独立进程，service 可能代表进程内的业务服务；但在 <code>.api</code> DSL 中：</p>
+<table>
+<thead>
+<tr>
+<th>架构概念</th>
+<th>go-zero <code>.api</code> DSL</th>
+<th>生成结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>REST 进程/API 应用</td>
+<td>一个 goctl 生成的 Go 工程</td>
+<td>一个 <code>main</code> 和一个 <code>rest.Server</code></td>
+</tr>
+<tr>
+<td>API 应用名称</td>
+<td><code>service app-api</code></td>
+<td><code>etc/app-api.yaml</code> 等生成文件及服务配置名</td>
+</tr>
+<tr>
+<td>业务域</td>
+<td><code>@server(group: user)</code></td>
+<td><code>internal/handler/user</code>、<code>internal/logic/user</code></td>
+</tr>
+<tr>
+<td>业务域 URL 前缀</td>
+<td><code>@server(prefix: /users)</code></td>
+<td><code>rest.WithPrefix(&quot;/users&quot;)</code></td>
+</tr>
+<tr>
+<td>API</td>
+<td><code>get</code>、<code>post</code> 等 route</td>
+<td>对应的 handler 和 logic</td>
+</tr>
+<tr>
+<td>API 实现入口</td>
+<td><code>@handler GetUser</code></td>
+<td><code>GetUserHandler</code>、<code>GetUserLogic</code></td>
+</tr>
+</tbody>
+</table>
+<p>这里最重要的区别是：<strong><code>@server</code> 不是一个 server 实体，而是路由组注解；<code>service</code> 也不是业务域，而更接近整个 API 应用的接口契约。真正用于划分业务域的是 <code>group</code>。</strong></p>
+<p>下面定义一个同时包含 <code>user</code> 和 <code>order</code> 两个业务域的 API 应用，每个业务域各有两个接口：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line">syntax = &quot;v1&quot;</span><br><span class="line"></span><br><span class="line">type CreateUserReq &#123;</span><br><span class="line">    Name string `json:&quot;name&quot;`</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">type UserResp &#123;</span><br><span class="line">    Id   int64  `json:&quot;id&quot;`</span><br><span class="line">    Name string `json:&quot;name&quot;`</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">type CreateOrderReq &#123;</span><br><span class="line">    UserId int64 `json:&quot;userId&quot;`</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">type OrderResp &#123;</span><br><span class="line">    Id     int64 `json:&quot;id&quot;`</span><br><span class="line">    UserId int64 `json:&quot;userId&quot;`</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">@server(</span><br><span class="line">    group: user</span><br><span class="line">    prefix: /users</span><br><span class="line">)</span><br><span class="line">service app-api &#123;</span><br><span class="line">    @handler CreateUser</span><br><span class="line">    post /create(CreateUserReq) returns (UserResp)</span><br><span class="line"></span><br><span class="line">    @handler GetUser</span><br><span class="line">    get /:id returns (UserResp)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">@server(</span><br><span class="line">    group: order</span><br><span class="line">    prefix: /orders</span><br><span class="line">)</span><br><span class="line">service app-api &#123;</span><br><span class="line">    @handler CreateOrder</span><br><span class="line">    post /create(CreateOrderReq) returns (OrderResp)</span><br><span class="line"></span><br><span class="line">    @handler GetOrder</span><br><span class="line">    get /:id returns (OrderResp)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>两个 block 都使用 <code>service app-api</code>，表示它们属于同一个 API 应用；两个 <code>@server</code> 分别提供业务域的代码分组和 URL 前缀。最终对外路由是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">app-api 进程</span><br><span class="line">├── user 业务域</span><br><span class="line">│   ├── POST /users/create</span><br><span class="line">│   └── GET  /users/:id</span><br><span class="line">└── order 业务域</span><br><span class="line">    ├── POST /orders/create</span><br><span class="line">    └── GET  /orders/:id</span><br></pre></td></tr></table></figure>
+<p>写在 <code>service</code> block 前面的 <code>@server</code> 配置作用于整组路由。除了 <code>group</code> 和 <code>prefix</code>，还可以统一声明 <code>middleware</code>、<code>jwt</code>、<code>timeout</code>、<code>maxBytes</code>、<code>signature</code>、<code>sse</code> 等能力。它们会被生成器转换成 <code>server.AddRoutes</code> 的 options，但不会创建新的监听端口或进程。真正的监听地址和端口仍位于生成后的 YAML 配置中：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">Name:</span> <span class="string">app-api</span></span><br><span class="line"><span class="attr">Host:</span> <span class="number">0.0</span><span class="number">.0</span><span class="number">.0</span></span><br><span class="line"><span class="attr">Port:</span> <span class="number">8888</span></span><br></pre></td></tr></table></figure>
+<p>通过如下命令生成代码：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">goctl api validate --api app.api</span><br><span class="line">goctl api go --api app.api --<span class="built_in">dir</span> .</span><br></pre></td></tr></table></figure>
+<p>goctl 会创建一个入口、一个 <code>ServiceContext</code> 和一个 <code>rest.Server</code>，并按业务域生成 handler/logic 目录：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># tree .</span></span><br><span class="line">.</span><br><span class="line">├── app.api</span><br><span class="line">├── app.go</span><br><span class="line">├── etc</span><br><span class="line">│   └── app-api.yaml</span><br><span class="line">├── internal</span><br><span class="line">│   ├── config</span><br><span class="line">│   │   └── config.go</span><br><span class="line">│   ├── handler</span><br><span class="line">│   │   ├── order</span><br><span class="line">│   │   │   ├── createorderhandler.go</span><br><span class="line">│   │   │   └── getorderhandler.go</span><br><span class="line">│   │   ├── routes.go</span><br><span class="line">│   │   └── user</span><br><span class="line">│   │       ├── createuserhandler.go</span><br><span class="line">│   │       └── getuserhandler.go</span><br><span class="line">│   ├── logic</span><br><span class="line">│   │   ├── order</span><br><span class="line">│   │   │   ├── createorderlogic.go</span><br><span class="line">│   │   │   └── getorderlogic.go</span><br><span class="line">│   │   └── user</span><br><span class="line">│   │       ├── createuserlogic.go</span><br><span class="line">│   │       └── getuserlogic.go</span><br><span class="line">│   ├── svc</span><br><span class="line">│   │   └── servicecontext.go</span><br><span class="line">│   └── types</span><br><span class="line">│       └── types.go</span><br><span class="line">└── README.md</span><br></pre></td></tr></table></figure>
+<p>生成的 <code>routes.go</code> 会把两个路由组注册到同一个 <code>rest.Server</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RegisterHandlers</span><span class="params">(server *rest.Server, serverCtx *svc.ServiceContext)</span></span> &#123;</span><br><span class="line">    server.AddRoutes(</span><br><span class="line">        []rest.Route&#123;</span><br><span class="line">            <span class="comment">// order handlers</span></span><br><span class="line">        &#125;,</span><br><span class="line">        rest.WithPrefix(<span class="string">&quot;/orders&quot;</span>),</span><br><span class="line">    )</span><br><span class="line"></span><br><span class="line">    server.AddRoutes(</span><br><span class="line">        []rest.Route&#123;</span><br><span class="line">            <span class="comment">// user handlers</span></span><br><span class="line">        &#125;,</span><br><span class="line">        rest.WithPrefix(<span class="string">&quot;/users&quot;</span>),</span><br><span class="line">    )</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>一个 <code>.api</code> 入口可以有多个同名的 <code>service</code> block，但不能混用 <code>book-api</code>、<code>user-api</code> 之类的不同 service 名称。可以用下面的判断方式选择组织方案：</p>
+<ul>
+<li>同一进程中的多个业务域：保持相同的 service 名称，用不同的 <code>group</code> 和 <code>prefix</code> 区分。</li>
+<li>独立部署、独立扩缩容的服务：分别建立 <code>.api</code> 入口，生成两个项目。</li>
+<li>单个定义文件过大：按业务域拆成 <code>user.api</code>、<code>order.api</code>，由根 <code>.api</code> 统一 import；被合并的 service 名称仍保持一致。</li>
+<li>希望请求和响应类型也按业务域拆分：生成时增加 <code>--type-group</code>。</li>
+</ul>
+<p>因此，这个示例的准确运行模型是：<strong>一个进程、一个 <code>rest.Server</code>、多个业务域、每个业务域多个 API</strong>。关于 go-zero API DSL 的详细用法，可以参考 <a target="_blank" rel="noopener" href="https://go-zero.dev/zh-cn/reference/api-dsl/route-group/">官方文档</a>。</p>
+<p>关于 go-zero 的更多使用示例，也可以参考 go-zero 的<a target="_blank" rel="noopener" href="https://go-zero.dev/zh-cn/examples/microservice-system/">官方文档</a>。</p>
+<h2 id="一个请求穿过哪些文件"><a class="markdownIt-Anchor" href="#一个请求穿过哪些文件"></a> 一个请求穿过哪些文件</h2>
+<p>上面几行代码就让服务跑起来了，但&quot;魔法&quot;是怎么发生的？我们把一次 <code>GET /from/you</code> 的完整路径梳理一遍，看请求经过了哪些文件、每个文件承担了什么职责。</p>
+<h3 id="入口greetgo"><a class="markdownIt-Anchor" href="#入口greetgo"></a> 入口：greet.go</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    flag.Parse()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> c config.Config</span><br><span class="line">    conf.MustLoad(*configFile, &amp;c)</span><br><span class="line"></span><br><span class="line">    server := rest.MustNewServer(c.RestConf)</span><br><span class="line">    <span class="keyword">defer</span> server.Stop()</span><br><span class="line"></span><br><span class="line">    ctx := svc.NewServiceContext(c)</span><br><span class="line">    handler.RegisterHandlers(server, ctx)</span><br><span class="line"></span><br><span class="line">    fmt.Printf(<span class="string">&quot;Starting server at %s:%d...\n&quot;</span>, c.Host, c.Port)</span><br><span class="line">    server.Start()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>入口做了四件事：</p>
+<ol>
+<li><strong>加载配置</strong>：<code>conf.MustLoad</code> 读取 YAML 配置并映射到 <code>config.Config</code> 结构体。</li>
+<li><strong>创建 Server</strong>：<code>rest.MustNewServer</code> 根据配置创建 HTTP 服务器。</li>
+<li><strong>初始化 ServiceContext</strong>：<code>svc.NewServiceContext(c)</code> 创建服务上下文，它持有整个服务的共享依赖（配置、数据库连接、Redis 客户端等）。</li>
+<li><strong>注册路由并启动</strong>：<code>handler.RegisterHandlers(server, ctx)</code> 把所有路由绑定到 server 上，然后 <code>server.Start()</code> 开始监听。</li>
+</ol>
+<h3 id="配置文件etcgreet-apiyaml"><a class="markdownIt-Anchor" href="#配置文件etcgreet-apiyaml"></a> 配置文件：etc/greet-api.yaml</h3>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">Name:</span> <span class="string">greet-api</span></span><br><span class="line"><span class="attr">Host:</span> <span class="number">0.0</span><span class="number">.0</span><span class="number">.0</span></span><br><span class="line"><span class="attr">Port:</span> <span class="number">8888</span></span><br></pre></td></tr></table></figure>
+<p>这个 YAML 会被映射到 <code>config.Config</code> 结构体。由于 <code>Config</code> 嵌入了 <code>rest.RestConf</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/config/config.go</span></span><br><span class="line"><span class="keyword">type</span> Config <span class="keyword">struct</span> &#123;</span><br><span class="line">    rest.RestConf</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>而 <code>RestConf</code> 又嵌入了 <code>service.ServiceConf</code>，每个字段都有 struct tag 声明了默认值和校验规则：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/config.go</span></span><br><span class="line">RestConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    service.ServiceConf</span><br><span class="line">    Host     <span class="type">string</span> <span class="string">`json:&quot;,default=0.0.0.0&quot;`</span></span><br><span class="line">    Port     <span class="type">int</span></span><br><span class="line">    MaxConns <span class="type">int</span>    <span class="string">`json:&quot;,default=10000&quot;`</span></span><br><span class="line">    MaxBytes <span class="type">int64</span>  <span class="string">`json:&quot;,default=1048576&quot;`</span></span><br><span class="line">    Timeout  <span class="type">int64</span>  <span class="string">`json:&quot;,default=3000&quot;`</span></span><br><span class="line">    CpuThreshold <span class="type">int64</span> <span class="string">`json:&quot;,default=900,range=[0:1000)&quot;`</span></span><br><span class="line">    Middlewares MiddlewaresConf</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这意味着你只需要在 YAML 中写 <code>Host</code> 和 <code>Port</code>，其他字段——超时、最大连接数、CPU 降载阈值、一整套中间件开关——全部有合理默认值。这种&quot;零配置即可运行，按需覆盖&quot;的设计贯穿了 go-zero 的整个配置体系。</p>
+<h3 id="类型定义internaltypestypesgo"><a class="markdownIt-Anchor" href="#类型定义internaltypestypesgo"></a> 类型定义：internal/types/types.go</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Request <span class="keyword">struct</span> &#123;</span><br><span class="line">    Name <span class="type">string</span> <span class="string">`path:&quot;name,options=you|me&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Response <span class="keyword">struct</span> &#123;</span><br><span class="line">    Message <span class="type">string</span> <span class="string">`json:&quot;message&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这两个类型完全由 <code>.api</code> 文件中的 <code>type</code> 声明生成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// greet.api</span></span><br><span class="line"><span class="keyword">type</span> Request &#123;</span><br><span class="line">    Name <span class="type">string</span> <span class="string">`path:&quot;name,options=you|me&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">type</span> Response &#123;</span><br><span class="line">    Message <span class="type">string</span> <span class="string">`json:&quot;message&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>path:&quot;name&quot;</code> 告诉框架&quot;从 URL 路径中提取名为 <code>name</code> 的参数&quot;；<code>options=you|me</code> 则启用了内置的参数校验——如果传入的值不是 <code>you</code> 或 <code>me</code>，框架会直接返回参数错误，不会进入业务逻辑。</p>
+<h3 id="handlerinternalhandlergreethandlergo"><a class="markdownIt-Anchor" href="#handlerinternalhandlergreethandlergo"></a> Handler：internal/handler/greethandler.go</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GreetHandler</span><span class="params">(svcCtx *svc.ServiceContext)</span></span> http.HandlerFunc &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        <span class="keyword">var</span> req types.Request</span><br><span class="line">        <span class="keyword">if</span> err := httpx.Parse(r, &amp;req); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            httpx.ErrorCtx(r.Context(), w, err)</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        l := logic.NewGreetLogic(r.Context(), svcCtx)</span><br><span class="line">        resp, err := l.Greet(&amp;req)</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            httpx.ErrorCtx(r.Context(), w, err)</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            httpx.OkJsonCtx(r.Context(), w, resp)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Handler 是按照<strong>标准库 <code>net/http</code> 的签名</strong>生成的——它是一个 <code>http.HandlerFunc</code>。这让 go-zero 的 handler 兼容所有标准的 HTTP 中间件生态。每个 handler 做三件事：</p>
+<ol>
+<li><strong>解析参数</strong>：<code>httpx.Parse(r, &amp;req)</code> 从 path、query、header、body 中提取参数并填充到 <code>req</code> 中——同时执行 struct tag 声明的校验。</li>
+<li><strong>调用 logic</strong>：<code>logic.NewGreetLogic(r.Context(), svcCtx)</code> 创建业务逻辑实例，然后调用 <code>l.Greet(&amp;req)</code>。</li>
+<li><strong>写入响应</strong>：业务成功返回时用 <code>httpx.OkJsonCtx</code> 写 JSON，出错时用 <code>httpx.ErrorCtx</code> 写错误信息。</li>
+</ol>
+<p>这种 handler 与 logic 的分离是 go-zero 工程结构中一个刻意的设计决策，我们马上会看到原因。</p>
+<h3 id="路由注册internalhandlerroutesgo"><a class="markdownIt-Anchor" href="#路由注册internalhandlerroutesgo"></a> 路由注册：internal/handler/routes.go</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RegisterHandlers</span><span class="params">(server *rest.Server, serverCtx *svc.ServiceContext)</span></span> &#123;</span><br><span class="line">    server.AddRoutes(</span><br><span class="line">        []rest.Route&#123;</span><br><span class="line">            &#123;</span><br><span class="line">                Method:  http.MethodGet,</span><br><span class="line">                Path:    <span class="string">&quot;/from/:name&quot;</span>,</span><br><span class="line">                Handler: GreetHandler(serverCtx),</span><br><span class="line">            &#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">    )</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>RegisterHandlers</code> 是 goctl 生成的&quot;接线代码&quot;——它把每个 handler 函数绑定到对应的 HTTP 方法 + 路径上。注意这里的方法、路径和 handler 都是一一对应 <code>.api</code> 中的 <code>@handler</code> 和 <code>service</code> 声明的，不存在任何运行时反射来&quot;猜&quot;路由。</p>
+<h3 id="业务逻辑internallogicgreetlogicgo"><a class="markdownIt-Anchor" href="#业务逻辑internallogicgreetlogicgo"></a> 业务逻辑：internal/logic/greetlogic.go</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> GreetLogic <span class="keyword">struct</span> &#123;</span><br><span class="line">    logx.Logger</span><br><span class="line">    ctx    context.Context</span><br><span class="line">    svcCtx *svc.ServiceContext</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewGreetLogic</span><span class="params">(ctx context.Context, svcCtx *svc.ServiceContext)</span></span> *GreetLogic &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;GreetLogic&#123;</span><br><span class="line">        Logger: logx.WithContext(ctx),</span><br><span class="line">        ctx:    ctx,</span><br><span class="line">        svcCtx: svcCtx,</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(l *GreetLogic)</span></span> Greet(req *types.Request) (resp *types.Response, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;types.Response&#123;</span><br><span class="line">        Message: fmt.Sprintf(<span class="string">&quot;hello, %s!&quot;</span>, req.Name),</span><br><span class="line">    &#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Logic 是开发者的&quot;主战场&quot;。每个 Logic 结构体预置了三个关键元素：</p>
+<ul>
+<li><strong><code>logx.Logger</code></strong>：嵌入了携带 trace 信息的 logger，日志会自动关联到当前请求。</li>
+<li><strong><code>ctx context.Context</code></strong>：标准库 context，支持超时和取消传播。</li>
+<li><strong><code>svcCtx *svc.ServiceContext</code></strong>：可以拿到所有共享依赖——配置、数据库连接、其他服务的 RPC 客户端等。</li>
+</ul>
+<p>这里有一个重要的设计考量：<strong>为什么 handler 和 logic 要分开？</strong> 因为 handler 负责 HTTP 层面的&quot;翻译&quot;工作（把 HTTP 请求变成 Go 结构体，再把 Go 结构体变成 HTTP 响应），而 logic 是纯 Go 函数——它不依赖 <code>http.Request</code> 或 <code>http.ResponseWriter</code>。这意味着 logic 可以：</p>
+<ul>
+<li><strong>直接在单元测试中调用</strong>，不需要启动 HTTP 服务器；</li>
+<li><strong>被 RPC 服务复用</strong>——RPC handler 解析 protobuf 消息后，可以直接调用同一个 logic 方法；</li>
+<li><strong>被定时任务或消息队列消费者调用</strong>。</li>
+</ul>
+<h3 id="串联图"><a class="markdownIt-Anchor" href="#串联图"></a> 串联图</h3>
+<p>把这些文件串起来，一次请求的完整路径是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">HTTP 请求 GET /from/you</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  greet.go main()</span><br><span class="line">    └── rest.MustNewServer(c.RestConf)  ← 配置</span><br><span class="line">    └── handler.RegisterHandlers(...)    ← 路由注册</span><br><span class="line">    └── server.Start()                  ← 开始监听</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  [rest.Server]</span><br><span class="line">    └── router.ServeHTTP                ← 匹配路由</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  [中间件链: trace → log → breaker → timeout → recover → ...]</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">  handler/GreetHandler</span><br><span class="line">    ├── httpx.Parse(r, &amp;req)            ← 参数解析+校验</span><br><span class="line">    ├── logic.NewGreetLogic(ctx, svcCtx)</span><br><span class="line">    └── l.Greet(&amp;req)                   ← 业务逻辑</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">    ├── httpx.OkJsonCtx(w, resp)        ← 成功: 写 JSON</span><br><span class="line">    └── httpx.ErrorCtx(w, err)          ← 失败: 写错误</span><br></pre></td></tr></table></figure>
+<h2 id="挖得再深一点server-的创建与启动"><a class="markdownIt-Anchor" href="#挖得再深一点server-的创建与启动"></a> 挖得再深一点：Server 的创建与启动</h2>
+<p>上面我们看到了业务层面的调用链，现在我们稍微深入框架层，看看 <code>rest.MustNewServer</code> 和 <code>server.Start()</code> 内部做了什么。不要求全部理解——后续文章会逐一展开——但建立一个大体印象有助于理解架构。</p>
+<h3 id="newserver"><a class="markdownIt-Anchor" href="#newserver"></a> NewServer</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServer</span><span class="params">(c RestConf, opts ...RunOption)</span></span> (*Server, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> err := c.SetUp(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    server := &amp;Server&#123;</span><br><span class="line">        ngin:   newEngine(c),</span><br><span class="line">        router: router.NewRouter(),</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    opts = <span class="built_in">append</span>([]RunOption&#123;WithNotFoundHandler(<span class="literal">nil</span>)&#125;, opts...)</span><br><span class="line">    <span class="keyword">for</span> _, opt := <span class="keyword">range</span> opts &#123;</span><br><span class="line">        opt(server)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> server, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>第一步 <code>c.SetUp()</code> 来自嵌入的 <code>ServiceConf</code>，它会：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/service/serviceconf.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(sc ServiceConf)</span></span> SetUp() <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := logx.SetUp(sc.Log); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    sc.initMode()</span><br><span class="line">    prometheus.StartAgent(sc.Prometheus)</span><br><span class="line">    trace.StartAgent(sc.Telemetry)</span><br><span class="line">    proc.Setup(sc.Shutdown)</span><br><span class="line">    proc.AddShutdownListener(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        trace.StopAgent()</span><br><span class="line">    &#125;)</span><br><span class="line">    devserver.StartAgent(sc.DevServer)</span><br><span class="line">    profiling.Start(sc.Profiling)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>也就是说，在创建 HTTP Server 之前，日志、Prometheus、链路追踪、优雅退出、dev server 和持续 profiling 都已经初始化好了。这些是 <code>一次配置，全局生效</code> 的基础设施——你不需要在每个路由、每个 handler 中重复处理它们。</p>
+<p>第二步 <code>newEngine(c)</code> 创建 engine，它持有配置和中间件链信息。如果配置了 <code>CpuThreshold</code>，还会初始化自适应降载器（adaptive shedder）——这是 go-zero 弹性保护的&quot;压舱石&quot;之一。</p>
+<h3 id="start"><a class="markdownIt-Anchor" href="#start"></a> Start</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ng *engine)</span></span> start(router httpx.Router, opts ...StartOption) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := ng.bindRoutes(router); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    opts = <span class="built_in">append</span>([]StartOption&#123;ng.withNetworkTimeout()&#125;, opts...)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(ng.conf.CertFile) == <span class="number">0</span> &amp;&amp; <span class="built_in">len</span>(ng.conf.KeyFile) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> internal.StartHttp(ng.conf.Host, ng.conf.Port, router, opts...)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> internal.StartHttps(ng.conf.Host, ng.conf.Port, ng.conf.CertFile,</span><br><span class="line">        ng.conf.KeyFile, router, opts...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>start</code> 先调用 <code>bindRoutes</code> 把之前注册的路由——连同它们的中间件链——绑定到底层 router 上，然后根据是否配置了证书走 HTTP 或 HTTPS 启动。启动时默认会注入 <code>withNetworkTimeout()</code> 这个 option，它根据配置的 <code>Timeout</code> 设置 <code>http.Server</code> 的读写超时：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ng *engine)</span></span> withNetworkTimeout() internal.StartOption &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(svr *http.Server)</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> !ng.hasTimeout() &#123;</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">        svr.ReadTimeout = <span class="number">4</span> * ng.timeout / <span class="number">5</span>    <span class="comment">// 略小于业务超时</span></span><br><span class="line">        svr.WriteTimeout = <span class="number">11</span> * ng.timeout / <span class="number">10</span>  <span class="comment">// 略大于业务超时</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的设计很有意思：读超时取业务超时的 80%，是为了防止客户端发完 Content-Length 后缓慢发送 body 导致服务器一直等待；写超时取 110%，是为了给服务器留出足够的响应写入时间。这都是生产环境中的细节，普通的 Web 框架很少替你考虑这些。</p>
+<h2 id="框架的默认保护机制以中间件链的形式"><a class="markdownIt-Anchor" href="#框架的默认保护机制以中间件链的形式"></a> 框架的默认保护机制：以中间件链的形式</h2>
+<p>go-zero 为每个路由绑定了<strong>一整套默认开启的中间件</strong>。在 <code>engine.buildChainWithNativeMiddlewares</code> 中可以看到完整的顺序：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ng *engine)</span></span> buildChainWithNativeMiddlewares(fr featuredRoutes, route Route,</span><br><span class="line">    metrics *stat.Metrics) chain.Chain &#123;</span><br><span class="line">    chn := chain.New()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Trace      &#123; chn = chn.Append(handler.TraceHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Log        &#123; chn = chn.Append(ng.getLogHandler()) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Prometheus &#123; chn = chn.Append(handler.PrometheusHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.MaxConns   &#123; chn = chn.Append(handler.MaxConnsHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Breaker    &#123; chn = chn.Append(handler.BreakerHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Shedding   &#123; chn = chn.Append(handler.SheddingHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Timeout    &#123; chn = chn.Append(handler.TimeoutHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Recover    &#123; chn = chn.Append(handler.RecoverHandler) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Metrics    &#123; chn = chn.Append(handler.MetricHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.MaxBytes   &#123; chn = chn.Append(handler.MaxBytesHandler(...)) &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Gunzip     &#123; chn = chn.Append(handler.GunzipHandler) &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> chn</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>所有中间件默认都是开着的（<code>MiddlewaresConf</code> 中每个字段都标了 <code>default=true</code>）。这意味着在没有任何手动配置的情况下，你的每个接口都已经获得了：</p>
+<table>
+<thead>
+<tr>
+<th>中间件</th>
+<th>能力</th>
+<th>为什么放在这个位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trace</td>
+<td>生成/传播 trace ID</td>
+<td>最外层，最早拿到请求，trace 覆盖整个链路</td>
+</tr>
+<tr>
+<td>Log</td>
+<td>记录请求耗时和状态码</td>
+<td>紧随 trace，日志可以带上 trace ID</td>
+</tr>
+<tr>
+<td>Prometheus</td>
+<td>记录 QPS 和延迟</td>
+<td>在关键保护机制之前，确保 metrics 总是被记录</td>
+</tr>
+<tr>
+<td>MaxConns</td>
+<td>限制并发连接数</td>
+<td>在资源消耗大的操作之前做入口拦截</td>
+</tr>
+<tr>
+<td>Breaker</td>
+<td>熔断（Google SRE 算法）</td>
+<td>在下游不可用时快速失败，不积累耗时</td>
+</tr>
+<tr>
+<td>Shedding</td>
+<td>自适应降载（BBR 思路）</td>
+<td>CPU 过高时丢弃部分请求以保护服务</td>
+</tr>
+<tr>
+<td>Timeout</td>
+<td>控制单请求最大耗时</td>
+<td>防止慢请求占用连接</td>
+</tr>
+<tr>
+<td>Recover</td>
+<td>panic 恢复</td>
+<td>兜底保护，避免单个请求 panic 导致进程退出</td>
+</tr>
+<tr>
+<td>Metrics</td>
+<td>上报 QPS/延迟/错误率</td>
+<td>在 recover 之后，保证异常请求的 metrics 也能收集到</td>
+</tr>
+<tr>
+<td>MaxBytes</td>
+<td>限制请求 body 大小</td>
+<td>最后的入站检查</td>
+</tr>
+<tr>
+<td>Gunzip</td>
+<td>自动解压 gzip body</td>
+<td>在业务 handler 之前解压，handler 只管读原始数据</td>
+</tr>
+</tbody>
+</table>
+<p>这个顺序不是随意排列的——每条都有它在这个位置的理由。比如说 Breaker 必须在 Shedding 之前，因为如果下游已经熔断了，根本不需要经过 CPU 降载的判定就能直接返回错误——这叫&quot;快速失败&quot;。详细的设计理由会在后面&quot;REST 中间件链&quot;的文章中展开。</p>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>通过这篇文章，你应该已经建立起了对 go-zero 的三个层次的认识：</p>
+<ol>
+<li>
+<p><strong>它是什么</strong>：一个集成了工程实践的微服务框架，覆盖从代码生成到运行时治理的完整链路。与普通 Web 框架的区别在于它的集成度和设计目标——不只是&quot;把请求路由到函数&quot;，而是&quot;开箱即用的生产级服务&quot;。</p>
+</li>
+<li>
+<p><strong>它怎么用</strong>：安装 goctl → <code>goctl api new greet</code> 生成工程 → 改 logic → <code>go run</code> 启动 → curl 验证。整个过程清晰、可复现。</p>
+</li>
+<li>
+<p><strong>它的内部轮廓</strong>：配置通过 struct tag 驱动默认值和校验 → Server 创建时自动初始化日志、trace、metrics、优雅退出 → 路由绑定自动装配中间件链 → 请求经过中间件链到达 handler → handler 做 HTTP 翻译，logic 做纯业务处理 → 响应原路返回。</p>
+</li>
+</ol>
+<p><strong>特别需要注意，由于不同的框架对不同层次的名称可能不同，例如 domain/logic、controller/handler、server/service 这些术语在不同框架中可能指代不同的东西</strong>。所以在阅读 go-zero 代码时，需要注意每个术语代表的不同层次。一般在 go-zero 中 service 指代的是整个应用，所以代码中看到的 <code>ServiceContext</code> 等其实是整个应用的 Context 数据。</p>
+<p>下一篇我们将展开项目的整体架构：仓库如何分层、编译期工具与运行时框架怎样衔接、REST 和 RPC 的宏观调用链长什么样，以及公开发与 <code>internal</code> 包的边界设计。这会为后面的源码深入分析建立一个可靠的&quot;地图&quot;。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/07/20/go-grype-12/" rel="next" title="Grype 源码分析 12：整体总结 Grype 项目">
+      Grype 源码分析 12：整体总结 Grype 项目 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#go-zero-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> go-zero 简介</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE%E6%80%BB%E4%BD%93%E7%BB%93%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> 项目总体结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BF%AB%E9%80%9F%E4%B8%8A%E6%89%8B%E4%BB%8E%E4%B8%80%E4%B8%AA%E5%8F%AF%E8%BF%90%E8%A1%8C%E7%9A%84-greet-%E6%9C%8D%E5%8A%A1%E5%BC%80%E5%A7%8B"><span class="nav-number">3.</span> <span class="nav-text"> 快速上手：从一个可运行的 greet 服务开始</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%89%E8%A3%85-goctl"><span class="nav-number">3.1.</span> <span class="nav-text"> 安装 goctl</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E9%94%AE%E7%94%9F%E6%88%90-greet-%E6%9C%8D%E5%8A%A1"><span class="nav-number">3.2.</span> <span class="nav-text"> 一键生成 greet 服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8%E6%9C%8D%E5%8A%A1"><span class="nav-number">3.3.</span> <span class="nav-text"> 启动服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#34-%E5%8F%91%E8%B5%B7%E7%AC%AC%E4%B8%80%E4%B8%AA%E8%AF%B7%E6%B1%82"><span class="nav-number">3.4.</span> <span class="nav-text"> 3.4 发起第一个请求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A1%AB%E5%85%85%E4%B8%9A%E5%8A%A1%E9%80%BB%E8%BE%91"><span class="nav-number">3.5.</span> <span class="nav-text"> 填充业务逻辑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E%E5%8D%95%E8%B7%AF%E7%94%B1%E7%A4%BA%E4%BE%8B%E5%88%B0%E5%A4%9A%E4%B8%9A%E5%8A%A1%E5%9F%9F-api"><span class="nav-number">3.6.</span> <span class="nav-text"> 从单路由示例到多业务域 API</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E8%AF%B7%E6%B1%82%E7%A9%BF%E8%BF%87%E5%93%AA%E4%BA%9B%E6%96%87%E4%BB%B6"><span class="nav-number">4.</span> <span class="nav-text"> 一个请求穿过哪些文件</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%A5%E5%8F%A3greetgo"><span class="nav-number">4.1.</span> <span class="nav-text"> 入口：greet.go</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E6%96%87%E4%BB%B6etcgreet-apiyaml"><span class="nav-number">4.2.</span> <span class="nav-text"> 配置文件：etc&#x2F;greet-api.yaml</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B1%BB%E5%9E%8B%E5%AE%9A%E4%B9%89internaltypestypesgo"><span class="nav-number">4.3.</span> <span class="nav-text"> 类型定义：internal&#x2F;types&#x2F;types.go</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#handlerinternalhandlergreethandlergo"><span class="nav-number">4.4.</span> <span class="nav-text"> Handler：internal&#x2F;handler&#x2F;greethandler.go</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B7%AF%E7%94%B1%E6%B3%A8%E5%86%8Cinternalhandlerroutesgo"><span class="nav-number">4.5.</span> <span class="nav-text"> 路由注册：internal&#x2F;handler&#x2F;routes.go</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E9%80%BB%E8%BE%91internallogicgreetlogicgo"><span class="nav-number">4.6.</span> <span class="nav-text"> 业务逻辑：internal&#x2F;logic&#x2F;greetlogic.go</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%B2%E8%81%94%E5%9B%BE"><span class="nav-number">4.7.</span> <span class="nav-text"> 串联图</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8C%96%E5%BE%97%E5%86%8D%E6%B7%B1%E4%B8%80%E7%82%B9server-%E7%9A%84%E5%88%9B%E5%BB%BA%E4%B8%8E%E5%90%AF%E5%8A%A8"><span class="nav-number">5.</span> <span class="nav-text"> 挖得再深一点：Server 的创建与启动</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#newserver"><span class="nav-number">5.1.</span> <span class="nav-text"> NewServer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#start"><span class="nav-number">5.2.</span> <span class="nav-text"> Start</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A1%86%E6%9E%B6%E7%9A%84%E9%BB%98%E8%AE%A4%E4%BF%9D%E6%8A%A4%E6%9C%BA%E5%88%B6%E4%BB%A5%E4%B8%AD%E9%97%B4%E4%BB%B6%E9%93%BE%E7%9A%84%E5%BD%A2%E5%BC%8F"><span class="nav-number">6.</span> <span class="nav-text"> 框架的默认保护机制：以中间件链的形式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">277</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
