@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上一篇文章中，我们把 goctl 最核心的能力——从 .api 到 REST 工程的解析与代码生成——完整地走了一遍。但一个生产级的微服务系统远不止 REST 接口。你还需要：  RPC 服务：内部服务间的通信不走 HTTP，而是走 gRPC——接口用 protobuf 定义，生成类型安全的客户端和服务端桩代码。 数据访问层：业务逻辑最终要读写数据库。表结构定义好了，对应的 model 代码怎么">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 04：RPC、Model 与部署生成">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/15/go-zero-04/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上一篇文章中，我们把 goctl 最核心的能力——从 .api 到 REST 工程的解析与代码生成——完整地走了一遍。但一个生产级的微服务系统远不止 REST 接口。你还需要：  RPC 服务：内部服务间的通信不走 HTTP，而是走 gRPC——接口用 protobuf 定义，生成类型安全的客户端和服务端桩代码。 数据访问层：业务逻辑最终要读写数据库。表结构定义好了，对应的 model 代码怎么">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-15T02:23:09.000Z">
+<meta property="article:modified_time" content="2026-08-15T05:42:17.579Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/15/go-zero-04/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 04：RPC、Model 与部署生成 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/15/go-zero-04/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 04：RPC、Model 与部署生成
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-15 10:23:09" itemprop="dateCreated datePublished" datetime="2026-08-15T10:23:09+08:00">2026-08-15</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上一篇文章中，我们把 goctl 最核心的能力——从 <code>.api</code> 到 REST 工程的解析与代码生成——完整地走了一遍。但一个生产级的微服务系统远不止 REST 接口。你还需要：</p>
+<ul>
+<li><strong>RPC 服务</strong>：内部服务间的通信不走 HTTP，而是走 gRPC——接口用 protobuf 定义，生成类型安全的客户端和服务端桩代码。</li>
+<li><strong>数据访问层</strong>：业务逻辑最终要读写数据库。表结构定义好了，对应的 model 代码怎么来？缓存怎么自动集成？</li>
+<li><strong>部署描述文件</strong>：服务写好了，Dockerfile 怎么生成？Kubernetes 的 Deployment、Service、HPA 清单怎么来？Gateway 的骨架怎么搭？</li>
+</ul>
+<span id="more"></span>
+<p>同样是 <code>定义驱动生成</code> 的模式——你提供 proto 文件、数据库连接、几个关键参数，goctl 负责把标准化、模板化的代码和配置生成出来。本文就沿着这三条线展开：先看 goctl 如何从 <code>.proto</code> 文件中提取结构化信息并生成 gRPC 服务工程，再深入 model 生成，重点看缓存模型的 Cache-Aside 模式是怎样在代码生成阶段就嵌入的，最后看 Docker、Kubernetes 和 Gateway 这些部署相关文件是怎样从模板中渲染出来的。</p>
+<p>整篇文章的逻辑是：<strong>输入定义 → 信息提取 → 模板渲染 → 工程产出</strong>。无论是 proto 文件、数据库 schema、还是一组命令行参数，goctl 都用同一套&quot;解析（或查询） + 模板渲染&quot;的方法将它们变成工程文件。</p>
+<h2 id="从-proto-到-grpc-工程goctl-rpc"><a class="markdownIt-Anchor" href="#从-proto-到-grpc-工程goctl-rpc"></a> 从 .proto 到 gRPC 工程：goctl rpc</h2>
+<h3 id="为什么包装-protoc-而不是直接生成全部代码"><a class="markdownIt-Anchor" href="#为什么包装-protoc-而不是直接生成全部代码"></a> 为什么包装 protoc 而不是直接生成全部代码？</h3>
+<p>说到 gRPC 服务的代码生成，protobuf 官方已经提供了 <code>protoc</code> 编译器以及 <code>protoc-gen-go</code>、<code>protoc-gen-go-grpc</code> 两个插件。它们负责的是 <code>协议层</code> 的代码——将 <code>.proto</code> 中的 message 编译成 Go 结构体，将 service 定义编译成 gRPC 的客户端和服务端接口。<strong>这些是标准化的、与框架无关的代码</strong>。</p>
+<p>但光有协议层代码还不够。一个可运行的 gRPC 服务还需要：</p>
+<ul>
+<li><strong>配置文件</strong>（YAML 和对应的 Go 结构体）</li>
+<li><strong>服务上下文</strong>（<code>ServiceContext</code>，承载依赖注入）</li>
+<li><strong>业务逻辑骨架</strong>（每个 RPC 方法对应一个 logic 文件）</li>
+<li><strong>服务端注册代码</strong>（将 logic 挂载到 gRPC server 上）</li>
+<li><strong>客户端封装</strong>（调用方不需要直接面对 <code>protoc-gen-go-grpc</code> 生成的 raw client）</li>
+<li><strong>入口 main 函数</strong></li>
+</ul>
+<p>这些就是 goctl rpc 在 <code>protoc</code> 之上增加的那一层。它不是替代 protoc，而是<strong>先调用 protoc 生成协议层代码，再基于协议层的元数据生成框架层代码</strong>。</p>
+<h3 id="两种入口new-和-protoc"><a class="markdownIt-Anchor" href="#两种入口new-和-protoc"></a> 两种入口：new 和 protoc</h3>
+<p>goctl rpc 提供了两种使用方式，对应两种不同的工作流：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">方式一：从零开始（goctl rpc new &lt;service&gt;）</span><br><span class="line">  自动生成 .proto 模板 → 用户填充 → 一键生成全部代码</span><br><span class="line"></span><br><span class="line">方式二：已有 proto（goctl rpc protoc &lt;file.proto&gt;）</span><br><span class="line">  用户提供 proto 文件 + protoc 参数 → 生成框架层代码</span><br></pre></td></tr></table></figure>
+<p>两种方式的命令注册在 <code>tools/goctl/rpc/cmd.go</code> 中，最终都走到同一个函数：<code>generator.NewGenerator(style, verbose).Generate(&amp;ctx)</code>。区别只在于 <code>ZRpcContext</code> 的构建方式不同。</p>
+<p>在 <code>new</code> 模式（<code>tools/goctl/rpc/cli/cli.go</code>）中，goctl 先生成一个 <code>.proto</code> 模板文件，然后构造一个合成版的 protoc 命令字符串：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// tools/goctl/rpc/cli/cli.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RPCNew</span><span class="params">(_ *cobra.Command, args []<span class="type">string</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    rpcname := args[<span class="number">0</span>]</span><br><span class="line">    protoName := rpcname + <span class="string">&quot;.proto&quot;</span></span><br><span class="line">    filename := filepath.Join(<span class="string">&quot;.&quot;</span>, rpcname, protoName)</span><br><span class="line">    src, _ := filepath.Abs(filename)</span><br><span class="line"></span><br><span class="line">    err = generator.ProtoTmpl(src)  <span class="comment">// 先生成 .proto 模板</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> ctx generator.ZRpcContext</span><br><span class="line">    ctx.Src = src</span><br><span class="line">    ctx.GoOutput = filepath.Dir(src)</span><br><span class="line">    ctx.GrpcOutput = filepath.Dir(src)</span><br><span class="line">    ctx.IsGooglePlugin = <span class="literal">true</span></span><br><span class="line">    ctx.Output = filepath.Dir(src)</span><br><span class="line">    ctx.ProtocCmd = fmt.Sprintf(<span class="string">&quot;protoc -I=%s %s --go_out=%s --go-grpc_out=%s&quot;</span>,</span><br><span class="line">        filepath.Dir(src), filepath.Base(src), filepath.Dir(src), filepath.Dir(src))</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line"></span><br><span class="line">    g := generator.NewGenerator(style, verbose)</span><br><span class="line">    <span class="keyword">return</span> g.Generate(&amp;ctx)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在 <code>protoc</code> 模式（<code>tools/goctl/rpc/cli/zrpc.go</code>）中，<code>wrapProtocCmd()</code> 函数解析用户传入的 <code>--go_out</code>、<code>--go-grpc_out</code>、<code>--proto_path</code> 等参数，组装成真正的 protoc 命令。本质上，<code>goctl rpc protoc</code> 是一个 protoc 的包装器——它替你执行 protoc，然后接管后续的框架代码生成。</p>
+<h3 id="proto-解析纯-go-实现不依赖-protoc"><a class="markdownIt-Anchor" href="#proto-解析纯-go-实现不依赖-protoc"></a> Proto 解析：纯 Go 实现，不依赖 protoc</h3>
+<p>在动手解析之前，先抛出一个问题：protoc 本身就是最权威的 proto 文件解析器，为什么 goctl 不直接调用 protoc 来提取元数据，而是自己实现了一套？</p>
+<p>答案是<strong>速度和控制粒度</strong>。调用 protoc 是一个外部进程调用，需要启动子进程、等待退出、解析输出——这在批量生成大量文件时开销不可忽视。更重要的是，protoc 的输出格式（<code>FileDescriptorProto</code>）虽然完整，但也非常冗长，goctl 只需要其中的一部分信息（package、go_package、service、rpc、message、import），自己解析能拿到更精确、更精简的数据结构。</p>
+<p><strong>goctl 选择了 <code>github.com/emicklei/proto</code> 这个纯 Go 库来做 proto 文件解析</strong>。核心逻辑在 <code>tools/goctl/rpc/parser/parser.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// tools/goctl/rpc/parser/parser.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *DefaultProtoParser)</span></span> Parse(src <span class="type">string</span>, multiple ...<span class="type">bool</span>) (Proto, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> ret Proto</span><br><span class="line">    abs, _ := filepath.Abs(src)</span><br><span class="line">    r, _ := os.Open(abs)</span><br><span class="line">    <span class="keyword">defer</span> r.Close()</span><br><span class="line"></span><br><span class="line">    parser := proto.NewParser(r)</span><br><span class="line">    set, _ := parser.Parse()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> serviceList Services</span><br><span class="line">    proto.Walk(set,</span><br><span class="line">        proto.WithImport(<span class="function"><span class="keyword">func</span><span class="params">(i *proto.Import)</span></span> &#123;</span><br><span class="line">            ret.Import = <span class="built_in">append</span>(ret.Import, Import&#123;Import: i&#125;)</span><br><span class="line">        &#125;),</span><br><span class="line">        proto.WithMessage(<span class="function"><span class="keyword">func</span><span class="params">(message *proto.Message)</span></span> &#123;</span><br><span class="line">            ret.Message = <span class="built_in">append</span>(ret.Message, Message&#123;Message: message&#125;)</span><br><span class="line">        &#125;),</span><br><span class="line">        proto.WithPackage(<span class="function"><span class="keyword">func</span><span class="params">(p *proto.Package)</span></span> &#123;</span><br><span class="line">            ret.Package = Package&#123;Package: p&#125;</span><br><span class="line">        &#125;),</span><br><span class="line">        proto.WithService(<span class="function"><span class="keyword">func</span><span class="params">(service *proto.Service)</span></span> &#123;</span><br><span class="line">            serv := Service&#123;Service: service&#125;</span><br><span class="line">            elements := service.Elements</span><br><span class="line">            <span class="keyword">for</span> _, el := <span class="keyword">range</span> elements &#123;</span><br><span class="line">                v, _ := el.(*proto.RPC)</span><br><span class="line">                <span class="keyword">if</span> v == <span class="literal">nil</span> &#123;</span><br><span class="line">                    <span class="keyword">continue</span></span><br><span class="line">                &#125;</span><br><span class="line">                serv.RPC = <span class="built_in">append</span>(serv.RPC, &amp;RPC&#123;RPC: v&#125;)</span><br><span class="line">            &#125;</span><br><span class="line">            serviceList = <span class="built_in">append</span>(serviceList, serv)</span><br><span class="line">        &#125;),</span><br><span class="line">        proto.WithOption(<span class="function"><span class="keyword">func</span><span class="params">(option *proto.Option)</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> option.Name == <span class="string">&quot;go_package&quot;</span> &#123;</span><br><span class="line">                ret.GoPackage = option.Constant.Source</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;),</span><br><span class="line">    )</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    ret.PbPackage = GoSanitized(filepath.Base(ret.GoPackage))</span><br><span class="line">    ret.Src = abs</span><br><span class="line">    ret.Name = filepath.Base(abs)</span><br><span class="line">    ret.Service = serviceList</span><br><span class="line">    <span class="keyword">return</span> ret, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>emicklei/proto</code> 库将 proto 文件解析为一棵 AST，然后通过 <code>proto.Walk</code> 遍历。goctl 注册了五个回调：<code>WithImport</code>、<code>WithMessage</code>、<code>WithPackage</code>、<code>WithService</code>、<code>WithOption</code>，分别提取 import 列表、message 定义、package 声明、service 中的 RPC 方法定义、以及 <code>go_package</code> 选项。</p>
+<p>最终产出的 <code>Proto</code> 结构体（<code>tools/goctl/rpc/parser/proto.go</code>）是后续所有代码生成的数据源：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Proto <span class="keyword">struct</span> &#123;</span><br><span class="line">    Src           <span class="type">string</span>           <span class="comment">// proto 文件绝对路径</span></span><br><span class="line">    Name          <span class="type">string</span>           <span class="comment">// 文件名</span></span><br><span class="line">    Package       Package          <span class="comment">// proto package 声明</span></span><br><span class="line">    PbPackage     <span class="type">string</span>           <span class="comment">// 净化后的 pb package 名（用于 Go 代码）</span></span><br><span class="line">    GoPackage     <span class="type">string</span>           <span class="comment">// go_package 选项的值</span></span><br><span class="line">    Import        []Import         <span class="comment">// import 列表</span></span><br><span class="line">    Message       []Message        <span class="comment">// message 列表</span></span><br><span class="line">    Service       Services         <span class="comment">// 所有 service 定义（含 RPC 列表）</span></span><br><span class="line">    ImportedProtos []ImportedProto <span class="comment">// 传递导入的依赖 proto 文件元数据</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有一个容易被忽略但对跨文件引用至关重要的步骤：<strong>传递 import 解析</strong>。<code>parser.ParseImportedProtos()</code> 函数递归地解析所有 import 语句引用的 proto 文件，提取它们各自的 <code>go_package</code> 路径。这个信息用在一个叫 <code>resolveRPCTypeRef</code> 的函数中——当你的 RPC 方法使用了 <code>import</code> 进来的 message 类型作为请求或响应时，生成器需要知道这个类型最终在 Go 代码中对应的 import 路径和类型名。</p>
+<h3 id="单服务模式和多服务模式"><a class="markdownIt-Anchor" href="#单服务模式和多服务模式"></a> 单服务模式和多服务模式</h3>
+<p>goctl rpc 支持两种 proto 文件的组织方式：</p>
+<ul>
+<li><strong>单服务模式（默认）</strong>：一个 <code>.proto</code> 文件只定义一个 service。生成的代码放在 <code>internal/logic/</code> 和 <code>internal/server/</code> 下，文件命名直接对应 RPC 方法名。</li>
+<li><strong>多服务模式（<code>--multiple</code> / <code>-m</code>）</strong>：一个 <code>.proto</code> 文件可以定义多个 service。每个 service 在 <code>internal/logic/&lt;service&gt;/</code> 和 <code>internal/server/&lt;service&gt;/</code> 下拥有独立的子目录，client 代码也一样。</li>
+</ul>
+<p>多服务模式在微服务拆分初期特别有用——你可以先在一个 proto 文件中定义所有服务接口，后续再逐步拆分为独立的 proto 文件和服务。</p>
+<h3 id="generate-管线十步生成一个-grpc-服务"><a class="markdownIt-Anchor" href="#generate-管线十步生成一个-grpc-服务"></a> Generate 管线：十步生成一个 gRPC 服务</h3>
+<p>一切汇聚在 <code>Generator.Generate()</code> 方法（<code>tools/goctl/rpc/generator/gen.go</code>）。这个方法定义了一条严格的顺序管线：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// tools/goctl/rpc/generator/gen.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g *Generator)</span></span> Generate(zctx *ZRpcContext) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="comment">// 1. 环境准备：检查 go、protoc、protoc-gen-go、protoc-gen-go-grpc 是否可用</span></span><br><span class="line">    err = g.Prepare()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 项目上下文：解析 go.mod，确定模块路径</span></span><br><span class="line">    projectCtx, err = ctx.Prepare(abs)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. Proto 解析：将 .proto 文件解析为 parser.Proto 结构体</span></span><br><span class="line">    proto, err := p.Parse(zctx.Src, zctx.Multiple)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 传递导入解析：递归解析 import 依赖</span></span><br><span class="line">    proto.ImportedProtos, err = resolveImportedProtos(zctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 5. 创建目录结构</span></span><br><span class="line">    dirCtx, err = mkdir(projectCtx, proto, g.cfg, zctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 6. 生成 etc/&lt;service&gt;.yaml         （YAML 配置）</span></span><br><span class="line">    err = g.GenEtc(dirCtx, proto, g.cfg)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 7. 生成 pb.go + _grpc.pb.go        （调用 protoc）</span></span><br><span class="line">    err = g.GenPb(dirCtx, zctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 8. 生成 internal/config/config.go  （配置结构体）</span></span><br><span class="line">    err = g.GenConfig(dirCtx, proto, g.cfg)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 9. 生成 internal/svc/service_context.go</span></span><br><span class="line">    err = g.GenSvc(dirCtx, proto, g.cfg)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 10. 生成 internal/logic/&lt;rpc&gt;_logic.go  （业务逻辑骨架）</span></span><br><span class="line">    err = g.GenLogic(dirCtx, proto, g.cfg, zctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 11. 生成 internal/server/&lt;service&gt;_server.go （服务端注册）</span></span><br><span class="line">    err = g.GenServer(dirCtx, proto, g.cfg, zctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 12. 生成 main.go              （服务入口）</span></span><br><span class="line">    err = g.GenMain(dirCtx, proto, g.cfg, zctx)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 13. [可选] 生成 client/        （客户端封装）</span></span><br><span class="line">    <span class="keyword">if</span> zctx.IsGenClient &#123;</span><br><span class="line">        err = g.GenCall(dirCtx, proto, g.cfg, zctx)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这十来步的排列有内在的依赖逻辑。先做环境检查，确保 <code>protoc</code> 和必要的 Go 插件存在；再解析 go.mod 获取模块路径（后续生成 import 语句需要）；解析 proto 文件和它的 import 依赖；创建目录结构；然后才逐个生成文件。其中 <code>GenPb</code>——调用 protoc 生成协议层代码——必须在 <code>GenConfig</code>、<code>GenSvc</code>、<code>GenLogic</code>、<code>GenServer</code> 之前执行，因为后续的框架代码需要 import 生成的 pb 包。</p>
+<h3 id="生成的文件及其角色"><a class="markdownIt-Anchor" href="#生成的文件及其角色"></a> 生成的文件及其角色</h3>
+<p>一个典型的 <code>goctl rpc new greet</code> 会生成如下目录结构：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">greet/</span><br><span class="line">  etc/</span><br><span class="line">    greet.yaml                     ← 服务 YAML 配置</span><br><span class="line">  internal/</span><br><span class="line">    config/</span><br><span class="line">      config.go                    ← Config 结构体（嵌入 zrpc.RpcServerConf）</span><br><span class="line">    logic/</span><br><span class="line">      sayhello_logic.go            ← 每个 RPC 方法的业务逻辑骨架</span><br><span class="line">    server/</span><br><span class="line">      greet_server.go              ← gRPC 服务端实现（委托给 logic）</span><br><span class="line">    svc/</span><br><span class="line">      service_context.go           ← 服务上下文</span><br><span class="line">  greet/</span><br><span class="line">    greet.pb.go                    ← protoc-gen-go 生成的消息结构体</span><br><span class="line">    greet_grpc.pb.go               ← protoc-gen-go-grpc 生成的 gRPC 接口</span><br><span class="line">  greet.proto                      ← proto 定义文件</span><br><span class="line">  main.go                          ← 服务入口</span><br><span class="line">  [client/]                        ← 客户端封装（可选）</span><br></pre></td></tr></table></figure>
+<p>我们挑其中几个关键文件展开来看。</p>
+<p><strong>入口文件 <code>main.go</code></strong>（模板 <code>main.tpl</code>）和 REST 服务的入口结构非常相似：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 生成自 main.tpl</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">    flag.Parse()</span><br><span class="line">    <span class="keyword">var</span> c config.Config</span><br><span class="line">    conf.MustLoad(*configFile, &amp;c)</span><br><span class="line">    ctx := svc.NewServiceContext(c)</span><br><span class="line"></span><br><span class="line">    s := zrpc.MustNewServer(c.RpcServerConf, <span class="function"><span class="keyword">func</span><span class="params">(grpcServer *grpc.Server)</span></span> &#123;</span><br><span class="line">        greet.RegisterGreetServer(grpcServer, server.NewGreetServer(ctx))</span><br><span class="line">        <span class="keyword">if</span> c.Mode == service.DevMode || c.Mode == service.TestMode &#123;</span><br><span class="line">            reflection.Register(grpcServer)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">defer</span> s.Stop()</span><br><span class="line"></span><br><span class="line">    fmt.Printf(<span class="string">&quot;Starting rpc server at %s...\n&quot;</span>, c.ListenOn)</span><br><span class="line">    s.Start()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>zrpc.MustNewServer</code> 接收一个回调，在回调中执行 <code>RegisterGreetServer</code>——这个函数来自 <code>protoc-gen-go-grpc</code> 生成的 <code>_grpc.pb.go</code> 文件。<code>server.NewGreetServer(ctx)</code> 返回的 <code>GreetServer</code> 则是 goctl 生成的 server 代码。注意它加了一个小细节：在 <code>DevMode</code> 或 <code>TestMode</code> 下注册 gRPC reflection，便于用 <code>grpcurl</code> 调试。</p>
+<p><strong>Server 层</strong>（<code>server.tpl</code>）的逻辑非常薄——它是一个纯粹的转发层：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 生成自 server.tpl</span></span><br><span class="line"><span class="keyword">type</span> GreetServer <span class="keyword">struct</span> &#123;</span><br><span class="line">    svcCtx *svc.ServiceContext</span><br><span class="line">    greet.UnimplementedGreetServer   <span class="comment">// 嵌入 gRPC 的未实现接口，保证向前兼容性</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *GreetServer)</span></span> SayHello(ctx context.Context, in *greet.HelloReq) (*greet.HelloResp, <span class="type">error</span>) &#123;</span><br><span class="line">    l := logic.NewSayHelloLogic(ctx, s.svcCtx)</span><br><span class="line">    <span class="keyword">return</span> l.SayHello(in)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个 RPC 方法的实现只做一件事：创建对应的 logic 实例，调用其同名方法。这种&quot;Server → Logic&quot;的两层结构是 go-zero 的惯用模式：Server 层负责实现 gRPC 接口并持有 <code>ServiceContext</code>，Logic 层负责业务逻辑并持有 <code>context</code>、<code>logger</code> 和 <code>svcCtx</code>。两者之间的边界很清晰——你只需要在 logic 文件中写业务代码。</p>
+<p><strong>Logic 层</strong>（<code>logic.tpl</code>）是业务代码的容器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 生成自 logic.tpl</span></span><br><span class="line"><span class="keyword">type</span> SayHelloLogic <span class="keyword">struct</span> &#123;</span><br><span class="line">    ctx    context.Context</span><br><span class="line">    svcCtx *svc.ServiceContext</span><br><span class="line">    logx.Logger</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewSayHelloLogic</span><span class="params">(ctx context.Context, svcCtx *svc.ServiceContext)</span></span> *SayHelloLogic &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;SayHelloLogic&#123;</span><br><span class="line">        ctx:    ctx,</span><br><span class="line">        svcCtx: svcCtx,</span><br><span class="line">        Logger: logx.WithContext(ctx),</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(l *SayHelloLogic)</span></span> SayHello(in *greet.HelloReq) (*greet.HelloResp, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// todo: add your logic here and delete this line</span></span><br><span class="line">    <span class="keyword">return</span> &amp;greet.HelloResp&#123;&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意 logic 文件的结构和上一篇文章中 REST 的 logic 是一致的：<code>私有结构体 + 构造函数 + 方法</code>。这正是 goctl 的设计哲学——<strong>跨通信协议的统一编程模型</strong>。无论你写的是 HTTP handler 还是 gRPC handler，你面对的都是同一套&quot;从 ServiceContext 取依赖、在 Logic 中实现业务&quot;的模式。</p>
+<p><strong>客户端封装</strong>（<code>call.tpl</code>）是 goctl 在 <code>protoc-gen-go-grpc</code> 生成的 raw gRPC client 之上又包了一层：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 生成自 call.tpl</span></span><br><span class="line"><span class="keyword">type</span> Greet <span class="keyword">interface</span> &#123;</span><br><span class="line">    SayHello(ctx context.Context, in *greet.HelloReq, opts ...grpc.CallOption) (*greet.HelloResp, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> defaultGreet <span class="keyword">struct</span> &#123;</span><br><span class="line">    cli zrpc.Client</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultGreet)</span></span> SayHello(ctx context.Context, in *greet.HelloReq, opts ...grpc.CallOption) (*greet.HelloResp, <span class="type">error</span>) &#123;</span><br><span class="line">    client := greet.NewGreetClient(m.cli.Conn())</span><br><span class="line">    <span class="keyword">return</span> client.SayHello(ctx, in, opts...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这一层封装的价值在于：它将 <code>zrpc.Client</code>（go-zero 自己的客户端抽象，携带了服务发现、负载均衡、熔断等能力）和 gRPC 的桩代码连接起来。调用方只需要 <code>NewGreet(zrpcClient)</code> 就能拿到一个携带全部治理能力的客户端，而不需要手动管理 gRPC 连接。</p>
+<p>最后如果对上述流程有不清楚的地方，可以参考下 <a target="_blank" rel="noopener" href="https://fuchencong.com/2026/06/03/go-kratos-06/">Kratos 源码分析 06：gRPC Transport（1）</a> 关于原生 gRPC Server 的开发流程，可以对 go-zero 的封装有更直观的理解。</p>
+<h3 id="一个具体的例子"><a class="markdownIt-Anchor" href="#一个具体的例子"></a> 一个具体的例子</h3>
+<p>我们用 <code>goctl rpc new greetzrpc</code> 来验证整条管线：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1. 生成 RPC 服务</span></span><br><span class="line">goctl rpc new greetzrpc</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 查看生成的文件</span></span><br><span class="line">find greetzrpc -<span class="built_in">type</span> f | <span class="built_in">sort</span></span><br></pre></td></tr></table></figure>
+<p>生成的文件结构如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">greetzrpc/</span><br><span class="line">  etc/greetzrpc.yaml              ← Name: greetzrpc.rpc, ListenOn: 0.0.0.0:8080, Etcd...</span><br><span class="line">  greetzrpc.go                    ← main 入口</span><br><span class="line">  greetzrpc.proto                 ← proto 模板（包含 SayHello RPC）</span><br><span class="line">  internal/</span><br><span class="line">    config/config.go              ← Config 嵌入 zrpc.RpcServerConf</span><br><span class="line">    logic/sayhello_logic.go       ← 业务逻辑骨架（待填充）</span><br><span class="line">    server/greetzrpc_server.go    ← gRPC 服务端实现</span><br><span class="line">    svc/service_context.go        ← ServiceContext</span><br><span class="line">  greetzrpc/</span><br><span class="line">    greetzrpc.pb.go               ← protoc-gen-go 产出</span><br><span class="line">    greetzrpc_grpc.pb.go          ← protoc-gen-go-grpc 产出</span><br></pre></td></tr></table></figure>
+<p>从一份 proto 模板到九个 Go 文件，整个过程不到一秒。和 <code>goctl api go</code> 一样，logic 文件是&quot;生成了就不再覆盖&quot;的安全编辑区——你可以在其中填充业务逻辑，后续修改 proto 重新生成时，已修改的 logic 文件保持不变，而 server、config、client 等会自动同步。</p>
+<h2 id="从-sql-到数据访问层goctl-model"><a class="markdownIt-Anchor" href="#从-sql-到数据访问层goctl-model"></a> 从 SQL 到数据访问层：goctl model</h2>
+<p>理解了 RPC 生成的管线后，我们转向数据访问层的生成。这里的问题域有所不同：输入不是一份 DSL 文本，而是<strong>数据库中的实际表结构</strong>（或者描述表结构的 DDL 文件）；输出不是 RPC handler，而是<strong>类型安全的 CRUD 代码和缓存层</strong>。</p>
+<h3 id="命令结构与数据源"><a class="markdownIt-Anchor" href="#命令结构与数据源"></a> 命令结构与数据源</h3>
+<p>goctl model 的命令树由三级组成（<code>tools/goctl/model/cmd.go</code>）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">goctl model</span><br><span class="line">  ├── mysql</span><br><span class="line">  │     ├── ddl        ← 从 .sql DDL 文件生成</span><br><span class="line">  │     └── datasource  ← 从在线 MySQL 数据库生成</span><br><span class="line">  ├── pg</span><br><span class="line">  │     └── datasource  ← 从在线 PostgreSQL 数据库生成</span><br><span class="line">  └── mongo             ← 从类型名生成 MongoDB model</span><br></pre></td></tr></table></figure>
+<p>MySQL 提供了两种获取表结构的方式，分别适用于不同的工作流：</p>
+<ul>
+<li><strong>DDL 模式</strong>：<code>goctl model mysql ddl -src user.sql -dir .</code>——你手头有建表 SQL 文件，goctl 解析这些 SQL 语句提取表结构。适用于&quot;先设计表、再生成代码&quot;的场景。</li>
+<li><strong>Datasource 模式</strong>：<code>goctl model mysql datasource -url &quot;user:pass@tcp(localhost:3306)/db&quot; -table user</code>——goctl 连接到你指定的数据库，通过 <code>information_schema</code> 查询表结构。适用于&quot;已有数据库、需要快速补代码&quot;的场景。</li>
+</ul>
+<p>PostgreSQL 也支持 datasource 模式，原理类似，只是查询的是 <code>pg_catalog</code> 和 <code>information_schema</code> 这两个 PG 专用的系统元数据表。MongoDB 则完全不同——MongoDB 没有 schema 概念，所以 goctl 只需要类型名称就能生成对应的 CRUD 封装。</p>
+<p>不论哪种模式，最终都收归到同一个生成器——<code>gen.NewDefaultGenerator</code>。DDL 模式走 <code>StartFromDDL</code>，datasource 模式走 <code>StartFromInformationSchema</code>，两者只是入口不同，内部的模板渲染完全一致。</p>
+<h3 id="ddl-解析从-sql-到-table-结构体"><a class="markdownIt-Anchor" href="#ddl-解析从-sql-到-table-结构体"></a> DDL 解析：从 SQL 到 Table 结构体</h3>
+<p>DDL 解析的核心在 <code>tools/goctl/model/sql/parser/parser.go</code>，它使用了外部库 <code>github.com/zeromicro/ddl-parser/parser</code> 来解析建表 SQL。</p>
+<p>解析的结果是一个 <code>Table</code> 结构体，包含了代码生成需要的关键信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// tools/goctl/model/sql/parser/parser.go</span></span><br><span class="line"><span class="keyword">type</span> Table <span class="keyword">struct</span> &#123;</span><br><span class="line">    Name        stringx.String          <span class="comment">// 表名</span></span><br><span class="line">    Db          stringx.String          <span class="comment">// 数据库名</span></span><br><span class="line">    PrimaryKey  Primary                <span class="comment">// 主键（字段 + 是否自增）</span></span><br><span class="line">    UniqueIndex <span class="keyword">map</span>[<span class="type">string</span>][]*Field    <span class="comment">// 唯一索引（索引名 → 字段列表）</span></span><br><span class="line">    Fields      []*Field               <span class="comment">// 所有字段</span></span><br><span class="line">    ContainsPQ  <span class="type">bool</span>                   <span class="comment">// 是否包含 PostgreSQL 特有类型</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>解析过程中有几个关键的提取逻辑：</p>
+<ul>
+<li><strong>主键识别</strong>：既检查列级约束（<code>Constraint.Primary</code>），也检查表级约束（<code>Constraints.ColumnPrimaryKey</code>）。联合主键会被拒绝——go-zero 的缓存模型要求单一主键。</li>
+<li><strong>唯一索引提取</strong>：从列级约束（<code>Constraint.Unique</code>）和表级约束（<code>Constraints.ColumnUniqueKey</code>）中收集。注意，如果某一列既是主键又在唯一索引声明中，主键优先——<code>checkDuplicateUniqueIndex</code> 会去重。</li>
+<li><strong>类型转换</strong>：调用 converter（<code>tools/goctl/model/sql/converter/types.go</code>），将 SQL 类型映射为 Go 类型。比如 <code>tinyint → int64</code>、<code>datetime → time.Time</code>、<code>varchar → string</code>。可空字段自动映射为 <code>sql.NullInt64</code>、<code>sql.NullString</code> 等；如果开启了 <code>--strict</code> 且字段是无符号的，则映射为 <code>uint64</code>、<code>uint32</code> 等。</li>
+</ul>
+<p>对于 datasource 模式，<code>tools/goctl/model/sql/model/infoschemamodel.go</code> 通过查询 <code>information_schema.TABLES</code>、<code>COLUMNS</code>、<code>STATISTICS</code> 获取表结构，然后通过 <code>ColumnData.Convert()</code> 和 <code>parser.ConvertDataType()</code> 转换为与 DDL 模式相同的 <code>Table</code> 结构体。这是统一入口的关键：不管数据源是什么，代码生成阶段看到的都是同一套数据结构。</p>
+<h3 id="缓存模型的核心cache-aside-模式的代码生成"><a class="markdownIt-Anchor" href="#缓存模型的核心cache-aside-模式的代码生成"></a> 缓存模型的核心：Cache-Aside 模式的代码生成</h3>
+<p>go-zero model 的一个独到设计是：<strong>缓存并不是运行时通过配置动态开启的，而是在代码生成阶段就&quot;编织&quot;进去了</strong>。当你执行 <code>goctl model mysql ddl -src user.sql -dir . -c</code> 时，<code>-c</code> 标志会让生成器为每个表生成两套版本的代码路径——带缓存和不带缓存——放在同一个 <code>_gen.go</code> 文件中。</p>
+<p>为什么要这样做？<strong>因为缓存的开启会改变代码的结构，而不仅仅是行为</strong>。带缓存的 Insert 方法需要生成缓存失效的 key，FindOne 需要先查缓存再查数据库，Update 和 Delete 需要先查出旧数据（用于计算旧的缓存 key）再执行操作。如果这些逻辑放在运行时，就需要反射和动态代码生成，既慢又不类型安全。goctl 的选择是把这些在编译期就确定下来。</p>
+<p>这一切的起点在 <code>genCacheKeys</code> 函数（<code>tools/goctl/model/sql/gen/keys.go</code>）。它为一个表生成三类缓存 key：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">genCacheKeys</span><span class="params">(prefix <span class="type">string</span>, table parser.Table)</span></span> (Key, []Key) &#123;</span><br><span class="line">    <span class="comment">// 主键缓存 key</span></span><br><span class="line">    primaryKey = genCacheKey(prefix, table.Db, table.Name,</span><br><span class="line">        []*parser.Field&#123;&amp;table.PrimaryKey.Field&#125;)</span><br><span class="line">    <span class="comment">// 每个唯一索引一个缓存 key</span></span><br><span class="line">    <span class="keyword">for</span> _, each := <span class="keyword">range</span> table.UniqueIndex &#123;</span><br><span class="line">        uniqueKey = <span class="built_in">append</span>(uniqueKey, genCacheKey(prefix, table.Db, table.Name, each))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> primaryKey, uniqueKey</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>genCacheKey</code> 生成的命名遵循固定约定。假设表名为 <code>user</code>，数据库名为 <code>user_center</code>，主键为 <code>id</code>，前缀为 <code>cache</code>，那么：</p>
+<ul>
+<li>变量名：<code>cacheUserCenterUserIdPrefix = &quot;cache:userCenter:user:id:&quot;</code></li>
+<li>运行时 key：<code>userCenterUserIdKey := fmt.Sprintf(&quot;%s%v&quot;, cacheUserCenterUserIdPrefix, userId)</code></li>
+</ul>
+<p>如果还有一个 <code>UNIQUE(email)</code> 索引，还会多出一组：</p>
+<ul>
+<li><code>cacheUserCenterUserEmailPrefix = &quot;cache:userCenter:user:email:&quot;</code></li>
+<li><code>userCenterUserEmailKey := fmt.Sprintf(&quot;%s%v&quot;, cacheUserCenterUserEmailPrefix, email)</code></li>
+</ul>
+<p>缓存的 key 是<code>固定前缀 + 字段值</code>：前缀（db 名 + 表名 + 字段名）在生成时确定，值在运行时才有。问题在于，同一个 key 在不同方法里，值是以不同形式拿到手的——<code>FindOne(ctx, id)</code> 手里是裸入参 <code>id</code>，而 <code>Insert(ctx, data *User)</code> 手里是结构体，只能写 <code>data.Id</code>。于是同一个 key 需要三种写法，<code>genCacheKey</code> 一次性算好塞进 <code>Key</code>：</p>
+<ul>
+<li><code>VarExpression</code>：声明前缀常量（vars.go 里，用 <code>=</code>）——<code>cacheUserCenterUserIdPrefix = &quot;cache:userCenter:user:id:&quot;</code></li>
+<li><code>KeyExpression</code>：值来自裸入参——<code>userCenterUserIdKey := fmt.Sprintf(&quot;%s%v&quot;, prefix, id)</code></li>
+<li><code>DataKeyExpression</code>：值来自 <code>data.</code> 字段——<code>userCenterUserIdKey := fmt.Sprintf(&quot;%s%v&quot;, prefix, data.Id)</code></li>
+</ul>
+<p>两者生成的变量名相同，唯一区别是 <code>fmt.Sprintf</code> 的参数来源（入参 vs <code>data.Xxx</code>）。最直观的证据是带唯一索引的 <code>Delete</code>：主键 key 用 <code>KeyExpression</code>（<code>id</code> 就是入参），唯一索引 key 用 <code>DataKeyExpression</code>（要先 <code>FindOne</code> 查旧行，再取 <code>data.Email</code>）。</p>
+<h3 id="缓存如何影响每个-crud-方法"><a class="markdownIt-Anchor" href="#缓存如何影响每个-crud-方法"></a> 缓存如何影响每个 CRUD 方法</h3>
+<p>前文说缓存&quot;改变的是代码的结构，而不仅是行为&quot;，落到方法上就是：方法体从「直接拿 <code>conn</code> 执行 SQL」变成「先算 key，再调带缓存的连接」。本小节看最基本的两侧——Insert 和 FindOne；一旦表有唯一索引，FindOneByField、Update、Delete 会多出更复杂的结构变化，放到后面两节。</p>
+<p>先看生成器侧。<code>genInsert</code>（<code>tools/goctl/model/sql/gen/insert.go</code>）为带缓存版本收集两类东西：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 伪代码：Insert 的带缓存逻辑</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">genInsert</span><span class="params">(table Table, withCache, postgreSql <span class="type">bool</span>)</span></span> (<span class="type">string</span>, <span class="type">string</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// keySet 收「表达式文本」：xxxKey := fmt.Sprintf(...) 这一整行</span></span><br><span class="line">    keySet.Add(table.PrimaryCacheKey.DataKeyExpression)</span><br><span class="line">    <span class="keyword">for</span> _, key := <span class="keyword">range</span> table.UniqueCacheKey &#123;</span><br><span class="line">        keySet.Add(key.DataKeyExpression)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// keyVariableSet 收「变量名」：xxxKey</span></span><br><span class="line">    keyVariableSet.Add(table.PrimaryCacheKey.KeyLeft)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>渲染时，<code>keySet</code> 里的每一行被拼成模板的 <code>.keys</code>，<code>keyVariableSet</code> 里的变量名被拼成 <code>.keyValues</code>（逗号分隔）。前者出现在方法体开头，后者作为缓存连接方法的尾参。</p>
+<p>把带缓存和不带缓存两个版本并排看，差异一目了然：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 不带缓存（未加 -c）</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> Insert(ctx context.Context, data *User) (sql.Result, <span class="type">error</span>) &#123;</span><br><span class="line">    query := fmt.Sprintf(<span class="string">&quot;insert into %s (...) values (...)&quot;</span>, m.table)</span><br><span class="line">    ret, err := m.conn.ExecCtx(ctx, query, data.Name, data.Email) <span class="comment">// 直接执行</span></span><br><span class="line">    <span class="keyword">return</span> ret, err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 带缓存</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> Insert(ctx context.Context, data *User) (sql.Result, <span class="type">error</span>) &#123;</span><br><span class="line">    userCenterUserIdKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserIdPrefix, data.Id)      <span class="comment">// 先算 key</span></span><br><span class="line">    userCenterUserEmailKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserEmailPrefix, data.Email)</span><br><span class="line">    ret, err := m.ExecCtx(ctx, <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, conn sqlx.SqlConn)</span></span> (sql.Result, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> conn.ExecCtx(ctx, <span class="string">&quot;insert into user ...&quot;</span>, data.Name, data.Email)</span><br><span class="line">    &#125;, userCenterUserIdKey, userCenterUserEmailKey)                                       <span class="comment">// 多传一组 key</span></span><br><span class="line">    <span class="keyword">return</span> ret, err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>两处差异源于同一个事实：<strong>带缓存时 <code>defaultUserModel</code> 嵌入的是 <code>core/stores/sqlc</code> 包的 <code>CachedConn</code>，不带缓存时只是一个 <code>sqlx.SqlConn</code> 字段</strong>。所以带缓存版调的是提升上来的 <code>m.ExecCtx</code>（多收一组 key 尾参），不带缓存版调的是 <code>m.conn.ExecCtx</code>。<code>ExecCtx</code> 的语义是&quot;先执行 SQL，成功后按 key 删缓存&quot;——这就是 Cache-Aside 的写后删除。</p>
+<p>FindOne 是镜像的另一侧。带缓存版调 <code>m.QueryRowCtx</code>，语义是&quot;先按 key 读缓存，未命中再查库并回填&quot;：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 带缓存</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> FindOne(ctx context.Context, id <span class="type">int64</span>) (*User, <span class="type">error</span>) &#123;</span><br><span class="line">    userCenterUserIdKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserIdPrefix, id) <span class="comment">// 值来自裸入参</span></span><br><span class="line">    <span class="keyword">var</span> resp User</span><br><span class="line">    err := m.QueryRowCtx(ctx, &amp;resp, userCenterUserIdKey, <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, conn sqlx.SqlConn, v any)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> conn.QueryRowCtx(ctx, v, <span class="string">&quot;select ... where id = ? limit 1&quot;</span>, id)</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> &amp;resp, err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>到这里只有主键一个 key，缓存逻辑还算简单。真正的复杂度出现在表有唯一索引之后：<code>FindOneByEmail</code> 要引入两级缓存，<code>Update</code> / <code>Delete</code> 要先回查旧值才能算出要失效的索引 key——这正是下面两节的内容。</p>
+<h3 id="findonebyfield-与两级缓存"><a class="markdownIt-Anchor" href="#findonebyfield-与两级缓存"></a> FindOneByField 与两级缓存</h3>
+<p>当表有唯一索引时，goctl 会额外生成 <code>FindOneBy&lt;Field&gt;</code> 方法。比如 <code>UNIQUE(email)</code> 会生成 <code>FindOneByEmail</code>。它比 <code>FindOne</code> 难在：缓存的 key 里嵌着主键值（<code>cache:userCenter:user:id:1</code>），而 <code>FindOneByEmail</code> 手里只有 <code>email</code>，拼不出这个主键 key，所以没法直接去数据缓存里命中。</p>
+<p>解决办法是加一层<strong>索引缓存</strong>，让 email 也能先查到主键值：</p>
+<ol>
+<li><strong>索引缓存</strong>：<code>email</code> → 主键值（key 形如 <code>cache:userCenter:user:email:xxx@yy.com</code>）</li>
+<li><strong>数据缓存</strong>：主键值 → 行数据（key 形如 <code>cache:userCenter:user:id:1</code>，和 <code>FindOne</code> 用的是同一份）</li>
+</ol>
+<p>查询时先走 1 拿到主键，再走 2 拿行数据。但要澄清一点：<strong>这两级不是生成代码里的两个独立调用</strong>，生成代码只调了一次 <code>m.QueryRowIndexCtx</code>，第二级是框架在这个方法内部完成的。看 <code>find-one-by-field.tpl</code> 渲染出来的代码就清楚了：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> FindOneByEmail(ctx context.Context, email <span class="type">string</span>) (*User, <span class="type">error</span>) &#123;</span><br><span class="line">    userCenterUserEmailKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserEmailPrefix, email)</span><br><span class="line">    <span class="keyword">var</span> resp User</span><br><span class="line">    err := m.QueryRowIndexCtx(ctx, &amp;resp, userCenterUserEmailKey, m.formatPrimary,</span><br><span class="line">        <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, conn sqlx.SqlConn, v any)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">            <span class="comment">// 索引缓存 miss：按 email 查库，返回主键值</span></span><br><span class="line">            query := fmt.Sprintf(<span class="string">&quot;select %s from %s where `email` = ? limit 1&quot;</span>, userRows, m.table)</span><br><span class="line">            <span class="keyword">if</span> err := conn.QueryRowCtx(ctx, &amp;resp, query, email); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> resp.Id, <span class="literal">nil</span></span><br><span class="line">        &#125;,</span><br><span class="line">        m.queryPrimary) <span class="comment">// 索引缓存命中后：拿主键值去数据缓存/数据库查行数据</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>传给 <code>QueryRowIndexCtx</code> 的除了 email 的 key，还有两个回调，它们由 <code>find-one-by-field-extra-method.tpl</code> 生成：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// keyer：把主键值拼成数据缓存的 key，框架用它把「索引 miss 时查到的行」回填到主键 key 下</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> formatPrimary(primary any) <span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserIdPrefix, primary)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// primaryQuery：数据缓存也 miss 时，按主键值查库</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> queryPrimary(ctx context.Context, conn sqlx.SqlConn, v, primary any) <span class="type">error</span> &#123;</span><br><span class="line">    query := fmt.Sprintf(<span class="string">&quot;select %s from %s where `id` = ? limit 1&quot;</span>, userRows, m.table)</span><br><span class="line">    <span class="keyword">return</span> conn.QueryRowCtx(ctx, v, query, primary)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>QueryRowIndexCtx</code>（<code>core/stores/sqlc/cachedsql.go</code>）内部把两级串起来：先用 email 的 key 去索引缓存 <code>TakeWithExpireCtx</code>，命中了拿到主键值；miss 了就执行上面的匿名函数查库，顺手把整行数据用 <code>formatPrimary(主键值)</code> 回填到数据缓存。索引命中后，再用主键 key 走一次数据缓存（<code>TakeCtx</code>），这时才轮到 <code>queryPrimary</code> 在数据缓存也 miss 时查库。所以 <code>formatPrimary</code> 负责&quot;两级之间怎么接&quot;，<code>queryPrimary</code> 负责&quot;最后兜底查库&quot;。</p>
+<h3 id="update-和-delete-中的旧值回查"><a class="markdownIt-Anchor" href="#update-和-delete-中的旧值回查"></a> Update 和 Delete 中的旧值回查</h3>
+<p>这个回查不是所有 Update / Delete 都有：只有在<strong>开启缓存，且表上存在唯一索引缓存</strong>时，模板才会先生成 <code>FindOne</code>。如果只有主键缓存，Update 可以从 <code>newData.Id</code> 拼出 key，Delete 也可以从入参 <code>id</code> 拼出 key，都不需要回查整行。</p>
+<p>先明确“旧值”指什么。假设 <code>user</code> 表的主键是 <code>id</code>，<code>email</code> 上有唯一索引，并且数据库中 <code>id = 1</code> 的当前记录是 <code>email = old@email.com</code>。此时可能有两类缓存 key：</p>
+<ul>
+<li>数据缓存 key：<code>cache:userCenter:user:id:1</code>，指向整行数据；</li>
+<li>索引缓存 key：<code>cache:userCenter:user:email:old@email.com</code>，指向主键 <code>1</code>。</li>
+</ul>
+<p>执行 <code>UPDATE user SET email = 'new@email.com' WHERE id = 1</code> 后，主键 key 下的整行数据已经失效，旧 email key 下的 <code>email -&gt; id</code> 关系也已经失效，所以两者都要删除。主键 <code>1</code> 可以直接从 Update 入参中取到；但入参中只有新 email 值，没有旧 email 值，因而拼不出 <code>...:email:old@email.com</code> 这个旧索引 key。这就是 Update 必须先调用 <code>FindOne(ctx, newData.Id)</code> 回查修改前整行数据的原因。这里的“查”会正常经过缓存，不代表每次都会访问数据库。</p>
+<p>Delete 的原因更直接：<code>Delete(ctx, id)</code> 只接收主键，它能拼出主键 key，却不知道这行的 email，因而也必须先通过 <code>FindOne(ctx, id)</code> 取得旧行，才能把该行对应的所有唯一索引 key 一起删掉。</p>
+<p>把模板渲染后的核心流程简化一下，大致是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> Update(ctx context.Context, newData *User) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="comment">// data 是修改前的数据，newData 是待写入的新数据</span></span><br><span class="line">    data, err := m.FindOne(ctx, newData.Id)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    userIdKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserIdPrefix, data.Id)</span><br><span class="line">    oldEmailKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserEmailPrefix, data.Email)</span><br><span class="line"></span><br><span class="line">    _, err = m.ExecCtx(ctx, <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, conn sqlx.SqlConn)</span></span> (sql.Result, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="comment">// SQL 使用 newData 中的新值</span></span><br><span class="line">        <span class="keyword">return</span> conn.ExecCtx(ctx, <span class="string">&quot;update user set email = ? where id = ?&quot;</span>, newData.Email, newData.Id)</span><br><span class="line">    &#125;, userIdKey, oldEmailKey)</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *defaultUserModel)</span></span> Delete(ctx context.Context, id <span class="type">int64</span>) <span class="type">error</span> &#123;</span><br><span class="line">    data, err := m.FindOne(ctx, id)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    userIdKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserIdPrefix, id)</span><br><span class="line">    oldEmailKey := fmt.Sprintf(<span class="string">&quot;%s%v&quot;</span>, cacheUserCenterUserEmailPrefix, data.Email)</span><br><span class="line"></span><br><span class="line">    _, err = m.ExecCtx(ctx, <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, conn sqlx.SqlConn)</span></span> (sql.Result, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> conn.ExecCtx(ctx, <span class="string">&quot;delete from user where id = ?&quot;</span>, id)</span><br><span class="line">    &#125;, userIdKey, oldEmailKey)</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>有两个顺序容易看反。第一，key 在执行 SQL <strong>之前</strong>就已经根据旧行计算好；第二，<code>ExecCtx</code> 内部先执行 SQL，只有 SQL 成功后才删除传入的缓存 key。它不会计算新旧 key 的 diff，也不会在写操作中回填新数据；做的是无条件失效“主键 key + 由旧行拼出的所有唯一索引 key”，后续读取再按需回填。</p>
+<p>这正是代码生成在这里的价值：goctl 在生成阶段已经知道表上有哪些唯一索引、每个 key 需要哪些字段，因此直接生成确定的 <code>fmt.Sprintf</code> 和 <code>ExecCtx(..., keys...)</code> 调用，运行时不需要用反射去遍历索引定义。</p>
+<h3 id="postgresql-和-mongodb-的生成"><a class="markdownIt-Anchor" href="#postgresql-和-mongodb-的生成"></a> PostgreSQL 和 MongoDB 的生成</h3>
+<p>PostgreSQL 的 datasource 模式流程和 MySQL 几乎一致，区别只在于 <code>PostgreSqlModel</code>（<code>tools/goctl/model/sql/model/postgresqlmodel.go</code>）查询的是 <code>pg_class</code>、<code>pg_attribute</code>、<code>pg_index</code> 等 PG 系统表。一个巧妙的做法是：PostgreSQL 的类型（<code>int8</code>、<code>float8</code>、<code>timestamptz</code>、<code>uuid</code> 等）在查询阶段就被映射为 MySQL 兼容的类型名（<code>bigint</code>、<code>double</code>、<code>timestamp</code>、<code>varchar</code>），然后复用同一套类型转换器。这样一来，后续的代码生成逻辑完全不需要感知数据库差异——唯一的区别只在 SQL 占位符上（MySQL 用 <code>?</code>，PostgreSQL 用 <code>$1</code>、<code>$2</code>……）。</p>
+<p>MongoDB 的生成（<code>tools/goctl/model/mongo/mongo.go</code>）则完全是另一条路。MongoDB 本身没有 schema，所以 goctl 走的是&quot;按类型名生成&quot;的路径——给一个类型名（如 <code>User</code>），生成 <code>UserModel</code> 接口和 <code>customUserModel</code> 实现。模板位于 <code>tools/goctl/model/mongo/generate/</code> 下，逻辑和 SQL model 生成类似，只是底层调用的是 MongoDB 的 client。</p>
+<h3 id="生成文件的全貌"><a class="markdownIt-Anchor" href="#生成文件的全貌"></a> 生成文件的全貌</h3>
+<p>以带缓存模式的 <code>user</code> 表为例，最终生成的文件包括：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">model/</span><br><span class="line">  user_model_gen.go      ← 每次覆盖，DO NOT EDIT：interface + struct + CRUD 方法</span><br><span class="line">  user_model.go          ← 仅生成一次，Safe to edit：custom struct + 构造函数</span><br><span class="line">  vars.go                ← 仅生成一次：ErrNotFound 等错误变量</span><br></pre></td></tr></table></figure>
+<p><code>user_model_gen.go</code> 包含完整的 interface 定义、<code>defaultUserModel</code> 结构体、以及 Insert/FindOne/FindOneByXxx/Update/Delete 方法。<code>user_model.go</code> 是按 “MaybeCreateFile” 策略仅生成一次的文件，你可以在这里添加自定义方法。这和 REST 的 handler/logic 文件的策略一脉相承。</p>
+<h2 id="部署生成docker-kubernetes-与-gateway"><a class="markdownIt-Anchor" href="#部署生成docker-kubernetes-与-gateway"></a> 部署生成：Docker、Kubernetes 与 Gateway</h2>
+<p>RPC 和 model 解决了&quot;写什么代码&quot;的问题，但一个完整的工程实践还需要回答&quot;怎么部署&quot;。goctl 提供了 docker、kube 和 gateway 三个命令，帮助你快速生成部署相关的文件。</p>
+<h3 id="dockerfile-生成多阶段构建的智能模板"><a class="markdownIt-Anchor" href="#dockerfile-生成多阶段构建的智能模板"></a> Dockerfile 生成：多阶段构建的智能模板</h3>
+<p><code>goctl docker -go greet.go -port 8888</code> 会根据你的 Go 文件路径和参数，生成一个多阶段构建的 Dockerfile（<code>tools/goctl/docker/docker.go</code>）。</p>
+<p>生成逻辑有两个值得注意的智能判断：</p>
+<p><strong>自动查找配置文件</strong>。<code>findConfig</code> 函数在 <code>etc/</code> 目录中搜索 <code>.yaml</code> 文件，优先匹配与 Go 文件名相同的前缀（比如 <code>greet.go</code> 会匹配 <code>etc/greet-api.yaml</code>）。如果找到，<code>CMD</code> 指令会自动带上 <code>-f etc/xxx.yaml</code>；如果没找到，只复制二进制文件。</p>
+<p><strong>自动推导项目路径</strong>。<code>getFilePath</code> 函数通过查找 <code>go.mod</code> 文件来推导项目的相对路径，避免使用绝对路径。</p>
+<p>生成的 Dockerfile 采用标准的双阶段构建：</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> golang:<span class="number">1.21</span>-alpine AS builder           <span class="comment"># 阶段一：编译</span></span><br><span class="line"><span class="keyword">RUN</span><span class="language-bash"> apk add --no-cache tzdata</span></span><br><span class="line"><span class="keyword">WORKDIR</span><span class="language-bash"> /build</span></span><br><span class="line"><span class="keyword">ADD</span><span class="language-bash"> go.mod .; ADD go.sum .; RUN go mod download</span></span><br><span class="line"><span class="keyword">COPY</span><span class="language-bash"> . .</span></span><br><span class="line"><span class="keyword">RUN</span><span class="language-bash"> go build -ldflags=<span class="string">&quot;-s -w&quot;</span> -o /app/greet ./greet.go</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">FROM</span> scratch                                <span class="comment"># 阶段二：运行</span></span><br><span class="line"><span class="keyword">COPY</span><span class="language-bash"> --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/</span></span><br><span class="line"><span class="keyword">COPY</span><span class="language-bash"> --from=builder /usr/share/zoneinfo/Asia/Shanghai /usr/share/zoneinfo/Asia/Shanghai</span></span><br><span class="line"><span class="keyword">WORKDIR</span><span class="language-bash"> /app</span></span><br><span class="line"><span class="keyword">COPY</span><span class="language-bash"> --from=builder /app/greet /app/greet</span></span><br><span class="line"><span class="keyword">COPY</span><span class="language-bash"> ./etc /app/etc</span></span><br><span class="line"><span class="keyword">EXPOSE</span> <span class="number">8888</span></span><br><span class="line"><span class="keyword">CMD</span><span class="language-bash"> [<span class="string">&quot;./greet&quot;</span>, <span class="string">&quot;-f&quot;</span>, <span class="string">&quot;etc/greet-api.yaml&quot;</span>]</span></span><br></pre></td></tr></table></figure>
+<h3 id="kubernetes-部署清单一站式生成"><a class="markdownIt-Anchor" href="#kubernetes-部署清单一站式生成"></a> Kubernetes 部署清单：一站式生成</h3>
+<p><code>goctl kube deploy</code> 是一个&quot;输入参数、输出 YAML&quot;的工具。它生成的是一份<strong>四合一</strong>的多文档 YAML（<code>tools/goctl/kube/kube.go</code> + <code>deployment.tpl</code>）：</p>
+<ul>
+<li><strong>Deployment</strong>：包含资源限制、健康检查探针（TCP）、时区挂载和可选的 image pull secret。</li>
+<li><strong>Service</strong>：支持 ClusterIP 和 NodePort 两种类型，通过 <code>--nodePort</code> 参数切换。</li>
+<li><strong>HorizontalPodAutoscaler（CPU）</strong>：基于 CPU 利用率的自动扩缩容，目标为 80%。</li>
+<li><strong>HorizontalPodAutoscaler（Memory）</strong>：基于内存利用率的自动扩缩容，同样目标 80%。</li>
+</ul>
+<p>你只需要提供几个必要参数：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">goctl kube deploy -name greet -namespace default -image greet:v1 -o greet.yaml -port 8888</span><br></pre></td></tr></table></figure>
+<p>就能输出一份包含所有 Kubernetes 资源的 YAML 文件。这种&quot;一份输入、四份输出&quot;的设计非常务实——在微服务场景下，这四个资源总是配套使用的。</p>
+<h3 id="gateway-骨架一行命令搭起-http-to-grpc-网关"><a class="markdownIt-Anchor" href="#gateway-骨架一行命令搭起-http-to-grpc-网关"></a> Gateway 骨架：一行命令搭起 HTTP-to-gRPC 网关</h3>
+<p><code>goctl gateway --dir gateway</code>（<code>tools/goctl/gateway/cmd.go</code>）生成的是一个极简的 Gateway 入口。它只产出两个文件：</p>
+<ul>
+<li><code>main.go</code>：加载配置、创建 <code>gateway.Server</code>、启动。</li>
+<li><code>etc/gateway.yaml</code>：包含带注释的示例配置——如何定义 Upstream（直连或 etcd 发现），如何配置 ProtoSets（proto 描述文件路径），如何配置 Mappings（HTTP 路由到 gRPC 方法的映射）。</li>
+</ul>
+<p>Gateway 的本质是一个 HTTP-to-gRPC 的协议转换网关。它的代码生成量很少——框架的 <code>gateway</code> 包已经封装了大部分逻辑，goctl 只需要生成启动代码和带注释的参考配置。</p>
+<h2 id="模板定制的边界内建-覆盖与安全编辑"><a class="markdownIt-Anchor" href="#模板定制的边界内建-覆盖与安全编辑"></a> 模板定制的边界：内建、覆盖与安全编辑</h2>
+<p>无论是 RPC、model 还是部署生成，goctl 的模板系统都遵循同一套机制：<strong>内建模板作为默认 + 用户模板覆盖 + 部分文件永不覆盖</strong>。</p>
+<p>模板加载的入口是 <code>pathx.LoadTemplate(category, filename, builtin)</code>（<code>tools/goctl/util/pathx/file.go</code>），它先检查 <code>~/.goctl/&lt;version&gt;/&lt;category&gt;/&lt;filename&gt;</code> 是否存在，存在就用用户的，否则用编译进二进制的内建模板。你可以通过 <code>goctl template init</code> 初始化模板目录，修改后重新执行生成命令即可。</p>
+<p>对于生成的文件，有两类覆盖策略：</p>
+<ul>
+<li><strong>始终覆盖</strong>（删了重建）：routes、types、server、client、main 等。这些文件必须与定义文件保持同步。</li>
+<li><strong>仅创建不覆盖</strong>（<code>MaybeCreateFile</code>）：logic、handler、config（RPC 的 config.go）、model.go（用户自定义部分）。这些文件是你写业务代码的地方。</li>
+</ul>
+<p>理解这个边界很重要——它决定了你在修改生成代码时哪些可以放心改、哪些需要回到定义文件中修改。</p>
+<h2 id="总结goctl-的统一生成范式"><a class="markdownIt-Anchor" href="#总结goctl-的统一生成范式"></a> 总结：goctl 的统一生成范式</h2>
+<p>现在我们可以把本文和上一篇文章串起来，抽象出 goctl 的统一生成范式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">输入定义（.api / .proto / SQL / 命令行参数）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">信息提取（ANTLR 解析 / emicklei 解析 / information_schema 查询 / 参数收集）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">中间表示（spec.ApiSpec / parser.Proto / parser.Table / 模板数据结构体）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">模板渲染（Go text/template + 内建/用户模板 + MaybeCreateFile 策略）</span><br><span class="line">        │</span><br><span class="line">        ▼</span><br><span class="line">工程产出（Go 源文件 / YAML / Dockerfile）</span><br></pre></td></tr></table></figure>
+<p>无论是 REST 还是 RPC，无论是 model 还是 Kubernetes 清单，<strong>goctl 都在遵循这条&quot;解析 → 中间表示 → 模板渲染的管线</strong>。差异只存在于&quot;解析&quot;这一步——不同的输入类型需要不同的解析器——但一旦进入中间表示阶段，后续的模板渲染和文件写入策略高度统一。</p>
+<p>理解了这个统一范式后，你可以做到：</p>
+<ul>
+<li><strong>自定义生成模板</strong>：通过修改 <code>~/.goctl/</code> 下的模板文件来控制生成代码的风格和结构。</li>
+<li><strong>区分安全的编辑区域</strong>：logic、handler、model.go 是你的地盘，可以随意修改；而 routes、types、server 则需要回到定义文件去改。</li>
+<li><strong>理解不同生成命令之间的关系</strong>：<code>goctl api</code> 和 <code>goctl rpc</code> 生成的服务虽然通信协议不同，但它们的工程结构（config、svc、logic、handler/server）是统一的——这正是&quot;统一编程模型&quot;在工具链层面的体现。</li>
+</ul>
+<p>至此，goctl 工具链的全部核心能力——API/REST、RPC、model、部署——我们都走了一遍。从下一篇开始，我们将转向框架的运行时：一个由 goctl 生成的工程，在 <code>go run</code> 之后是怎么启动的、配置是怎么加载的、多个服务是怎么协同启停的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/14/go-zero-03/" rel="next" title="go-zero 源码分析 03：goctl 的解析与代码生成">
+      go-zero 源码分析 03：goctl 的解析与代码生成 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E-proto-%E5%88%B0-grpc-%E5%B7%A5%E7%A8%8Bgoctl-rpc"><span class="nav-number">1.</span> <span class="nav-text"> 从 .proto 到 gRPC 工程：goctl rpc</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E5%8C%85%E8%A3%85-protoc-%E8%80%8C%E4%B8%8D%E6%98%AF%E7%9B%B4%E6%8E%A5%E7%94%9F%E6%88%90%E5%85%A8%E9%83%A8%E4%BB%A3%E7%A0%81"><span class="nav-number">1.1.</span> <span class="nav-text"> 为什么包装 protoc 而不是直接生成全部代码？</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%A4%E7%A7%8D%E5%85%A5%E5%8F%A3new-%E5%92%8C-protoc"><span class="nav-number">1.2.</span> <span class="nav-text"> 两种入口：new 和 protoc</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#proto-%E8%A7%A3%E6%9E%90%E7%BA%AF-go-%E5%AE%9E%E7%8E%B0%E4%B8%8D%E4%BE%9D%E8%B5%96-protoc"><span class="nav-number">1.3.</span> <span class="nav-text"> Proto 解析：纯 Go 实现，不依赖 protoc</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8D%95%E6%9C%8D%E5%8A%A1%E6%A8%A1%E5%BC%8F%E5%92%8C%E5%A4%9A%E6%9C%8D%E5%8A%A1%E6%A8%A1%E5%BC%8F"><span class="nav-number">1.4.</span> <span class="nav-text"> 单服务模式和多服务模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#generate-%E7%AE%A1%E7%BA%BF%E5%8D%81%E6%AD%A5%E7%94%9F%E6%88%90%E4%B8%80%E4%B8%AA-grpc-%E6%9C%8D%E5%8A%A1"><span class="nav-number">1.5.</span> <span class="nav-text"> Generate 管线：十步生成一个 gRPC 服务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E7%9A%84%E6%96%87%E4%BB%B6%E5%8F%8A%E5%85%B6%E8%A7%92%E8%89%B2"><span class="nav-number">1.6.</span> <span class="nav-text"> 生成的文件及其角色</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E5%85%B7%E4%BD%93%E7%9A%84%E4%BE%8B%E5%AD%90"><span class="nav-number">1.7.</span> <span class="nav-text"> 一个具体的例子</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E-sql-%E5%88%B0%E6%95%B0%E6%8D%AE%E8%AE%BF%E9%97%AE%E5%B1%82goctl-model"><span class="nav-number">2.</span> <span class="nav-text"> 从 SQL 到数据访问层：goctl model</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E7%BB%93%E6%9E%84%E4%B8%8E%E6%95%B0%E6%8D%AE%E6%BA%90"><span class="nav-number">2.1.</span> <span class="nav-text"> 命令结构与数据源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ddl-%E8%A7%A3%E6%9E%90%E4%BB%8E-sql-%E5%88%B0-table-%E7%BB%93%E6%9E%84%E4%BD%93"><span class="nav-number">2.2.</span> <span class="nav-text"> DDL 解析：从 SQL 到 Table 结构体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E6%A8%A1%E5%9E%8B%E7%9A%84%E6%A0%B8%E5%BF%83cache-aside-%E6%A8%A1%E5%BC%8F%E7%9A%84%E4%BB%A3%E7%A0%81%E7%94%9F%E6%88%90"><span class="nav-number">2.3.</span> <span class="nav-text"> 缓存模型的核心：Cache-Aside 模式的代码生成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E5%A6%82%E4%BD%95%E5%BD%B1%E5%93%8D%E6%AF%8F%E4%B8%AA-crud-%E6%96%B9%E6%B3%95"><span class="nav-number">2.4.</span> <span class="nav-text"> 缓存如何影响每个 CRUD 方法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#findonebyfield-%E4%B8%8E%E4%B8%A4%E7%BA%A7%E7%BC%93%E5%AD%98"><span class="nav-number">2.5.</span> <span class="nav-text"> FindOneByField 与两级缓存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#update-%E5%92%8C-delete-%E4%B8%AD%E7%9A%84%E6%97%A7%E5%80%BC%E5%9B%9E%E6%9F%A5"><span class="nav-number">2.6.</span> <span class="nav-text"> Update 和 Delete 中的旧值回查</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#postgresql-%E5%92%8C-mongodb-%E7%9A%84%E7%94%9F%E6%88%90"><span class="nav-number">2.7.</span> <span class="nav-text"> PostgreSQL 和 MongoDB 的生成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%9F%E6%88%90%E6%96%87%E4%BB%B6%E7%9A%84%E5%85%A8%E8%B2%8C"><span class="nav-number">2.8.</span> <span class="nav-text"> 生成文件的全貌</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%83%A8%E7%BD%B2%E7%94%9F%E6%88%90docker-kubernetes-%E4%B8%8E-gateway"><span class="nav-number">3.</span> <span class="nav-text"> 部署生成：Docker、Kubernetes 与 Gateway</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#dockerfile-%E7%94%9F%E6%88%90%E5%A4%9A%E9%98%B6%E6%AE%B5%E6%9E%84%E5%BB%BA%E7%9A%84%E6%99%BA%E8%83%BD%E6%A8%A1%E6%9D%BF"><span class="nav-number">3.1.</span> <span class="nav-text"> Dockerfile 生成：多阶段构建的智能模板</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kubernetes-%E9%83%A8%E7%BD%B2%E6%B8%85%E5%8D%95%E4%B8%80%E7%AB%99%E5%BC%8F%E7%94%9F%E6%88%90"><span class="nav-number">3.2.</span> <span class="nav-text"> Kubernetes 部署清单：一站式生成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#gateway-%E9%AA%A8%E6%9E%B6%E4%B8%80%E8%A1%8C%E5%91%BD%E4%BB%A4%E6%90%AD%E8%B5%B7-http-to-grpc-%E7%BD%91%E5%85%B3"><span class="nav-number">3.3.</span> <span class="nav-text"> Gateway 骨架：一行命令搭起 HTTP-to-gRPC 网关</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A8%A1%E6%9D%BF%E5%AE%9A%E5%88%B6%E7%9A%84%E8%BE%B9%E7%95%8C%E5%86%85%E5%BB%BA-%E8%A6%86%E7%9B%96%E4%B8%8E%E5%AE%89%E5%85%A8%E7%BC%96%E8%BE%91"><span class="nav-number">4.</span> <span class="nav-text"> 模板定制的边界：内建、覆盖与安全编辑</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93goctl-%E7%9A%84%E7%BB%9F%E4%B8%80%E7%94%9F%E6%88%90%E8%8C%83%E5%BC%8F"><span class="nav-number">5.</span> <span class="nav-text"> 总结：goctl 的统一生成范式</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">280</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
