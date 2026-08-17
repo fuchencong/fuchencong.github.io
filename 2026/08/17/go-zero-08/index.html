@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="我们完整走完了 REST 服务的全部链路——从 goctl 生成代码、配置加载与服务启动，到路由匹配、参数解析、响应写入，再到 11 个中间件的协同配合。现在把视角转到微服务架构的另一端：RPC。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 08：zRPC 调用链">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/17/go-zero-08/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="我们完整走完了 REST 服务的全部链路——从 goctl 生成代码、配置加载与服务启动，到路由匹配、参数解析、响应写入，再到 11 个中间件的协同配合。现在把视角转到微服务架构的另一端：RPC。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-17T08:06:22.000Z">
+<meta property="article:modified_time" content="2026-08-17T08:08:33.721Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/17/go-zero-08/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 08：zRPC 调用链 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/17/go-zero-08/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 08：zRPC 调用链
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-17 16:06:22" itemprop="dateCreated datePublished" datetime="2026-08-17T16:06:22+08:00">2026-08-17</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>我们完整走完了 REST 服务的全部链路——从 goctl 生成代码、配置加载与服务启动，到路由匹配、参数解析、响应写入，再到 11 个中间件的协同配合。现在把视角转到微服务架构的另一端：RPC。</p>
+<span id="more"></span>
+<h2 id="zrpc-增加了什么"><a class="markdownIt-Anchor" href="#zrpc-增加了什么"></a> zRPC 增加了什么</h2>
+<p>gRPC 本身已经是一个功能完备的框架——protobuf 定义了接口契约，<code>protoc-gen-go-grpc</code> 生成了 stub 代码，<code>grpc.Server</code> 和 <code>grpc.ClientConn</code> 封装了网络传输、序列化和流控。那么问题来了：<strong>go-zero 在标准 gRPC 之上到底增加了什么？</strong> 如果只是 <code>MustNewServer</code> 和 <code>MustNewClient</code> 两个工厂函数，那跟直接调用 gRPC 原生 API 没有本质区别。</p>
+<p>答案藏在一个关键词里：<strong>拦截器（Interceptor）</strong>。gRPC 的拦截器机制相当于 REST 框架的中间件链——它们都能在请求处理的前后插入横切逻辑。但 gRPC 原生只提供了拦截器的注册入口，没有提供开箱即用的<strong>生产级拦截器组合</strong>。go-zero 的 zRPC 模块补上的正是这一层：</p>
+<ul>
+<li><strong>服务端</strong>：自动装配 Trace、Recover、Stat、Prometheus、Breaker、Shedding、Timeout 和 Auth 共 8 个拦截器，它们的顺序设计和职责分工与 REST 中间件一脉相承，但又因为 gRPC 的协议特性而有了不同的侧重点。</li>
+<li><strong>客户端</strong>：自动装配 Trace、Duration、Prometheus、Breaker 和 Timeout 共 5 个拦截器，保证每次 RPC 调用都有完整的遥测、保护和超时控制。</li>
+<li><strong>基础设施</strong>：配置驱动的服务注册发现集成、健康检查、代理模式等，让 gRPC 服务从&quot;能跑&quot;升级为&quot;能在生产环境中可靠运行&quot;。</li>
+</ul>
+<p>接下来我们先用 goctl 生成并运行一个带业务服务分组的 RPC 工程，让后文中的 server、logic、注册函数和全限定方法名都有实际落点；然后以 <code>RpcServer</code> 和 <code>RpcClient</code> 的创建为入口，分别展开服务端和客户端的拦截器链。在文章最后，我们会用一次成功调用和一次超时调用，串联起客户端和服务端的完整拦截器时序。</p>
+<h2 id="先跑起来goctl-生成带业务分组的-rpc-服务"><a class="markdownIt-Anchor" href="#先跑起来goctl-生成带业务分组的-rpc-服务"></a> 先跑起来：goctl 生成带业务分组的 RPC 服务</h2>
+<p>这个示例只有一个进程和一个监听端口，但业务上分成用户与订单两组，每组各有两个方法。</p>
+<h3 id="先说清楚这里的服务分组是什么"><a class="markdownIt-Anchor" href="#先说清楚这里的服务分组是什么"></a> 先说清楚：这里的“服务分组”是什么</h3>
+<p>本文采用 <a target="_blank" rel="noopener" href="https://go-zero.dev/zh-cn/reference/proto-dsl/services-group/">go-zero Proto DSL 服务分组</a> 中的定义：<strong>一个 protobuf <code>service</code> 块就是一个业务分组，块内的 <code>rpc</code> 声明是该分组下的方法</strong>。两个业务分组、每组两个方法落实到 proto 语法中，就是两个 <code>service</code>、每个 <code>service</code> 两个 <code>rpc</code>：</p>
+<table>
+<thead>
+<tr>
+<th>业务分组（proto <code>service</code>）</th>
+<th>组内 RPC 方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UserService</code></td>
+<td><code>CreateUser</code>、<code>GetUser</code></td>
+</tr>
+<tr>
+<td><code>OrderService</code></td>
+<td><code>CreateOrder</code>、<code>GetOrder</code></td>
+</tr>
+</tbody>
+</table>
+<p>这里的 <code>业务服务分组</code> 之前讲的 <code>core/service.ServiceGroup</code> 不是同一个概念：</p>
+<ul>
+<li>proto 服务分组解决的是<strong>生成代码如何按业务边界拆目录</strong>；</li>
+<li><code>core/service.ServiceGroup</code> 解决的是<strong>一个进程如何编排多个可启动组件的生命周期</strong>。</li>
+</ul>
+<p>本例最终只创建一个 <code>zrpc.RpcServer</code>，两个业务分组都注册到它内部的同一个 <code>grpc.Server</code>，并不会启动两个 RPC server。</p>
+<p><strong>在 go-zero 中，RPC 的 <code>业务分组</code> 是通过在 proto 文件中以 service 为维度来进行文件分组，而 Rest 的 <code>业务分组</code> 是通过在 <code>@server</code> 注解中以 <code>group</code> 关键字来进行<a target="_blank" rel="noopener" href="https://go-zero.dev/zh-cn/reference/api-dsl/route-group/">服务分组</a>的</strong>。</p>
+<p>完整的 <code>shop.proto</code> 如下：</p>
+<figure class="highlight protobuf"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line">syntax = <span class="string">&quot;proto3&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">package</span> shop;</span><br><span class="line"></span><br><span class="line"><span class="keyword">option</span> go_package = <span class="string">&quot;github.com/zeromicro/go-zero/ai_demo/rpc_service_group/pb&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">CreateUserRequest</span> &#123;</span><br><span class="line">  <span class="type">string</span> name = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">UserResponse</span> &#123;</span><br><span class="line">  <span class="type">int64</span> id = <span class="number">1</span>;</span><br><span class="line">  <span class="type">string</span> name = <span class="number">2</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">GetUserRequest</span> &#123;</span><br><span class="line">  <span class="type">int64</span> id = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">service </span><span class="title class_">UserService</span> &#123;</span><br><span class="line">  <span class="function"><span class="keyword">rpc</span> CreateUser(CreateUserRequest) <span class="keyword">returns</span> (UserResponse)</span>;</span><br><span class="line">  <span class="function"><span class="keyword">rpc</span> GetUser(GetUserRequest) <span class="keyword">returns</span> (UserResponse)</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">CreateOrderRequest</span> &#123;</span><br><span class="line">  <span class="type">int64</span> user_id = <span class="number">1</span>;</span><br><span class="line">  <span class="type">string</span> product = <span class="number">2</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">OrderResponse</span> &#123;</span><br><span class="line">  <span class="type">int64</span> id = <span class="number">1</span>;</span><br><span class="line">  <span class="type">int64</span> user_id = <span class="number">2</span>;</span><br><span class="line">  <span class="type">string</span> product = <span class="number">3</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">message </span><span class="title class_">GetOrderRequest</span> &#123;</span><br><span class="line">  <span class="type">int64</span> id = <span class="number">1</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">service </span><span class="title class_">OrderService</span> &#123;</span><br><span class="line">  <span class="function"><span class="keyword">rpc</span> CreateOrder(CreateOrderRequest) <span class="keyword">returns</span> (OrderResponse)</span>;</span><br><span class="line">  <span class="function"><span class="keyword">rpc</span> GetOrder(GetOrderRequest) <span class="keyword">returns</span> (OrderResponse)</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="用-m-生成分组目录"><a class="markdownIt-Anchor" href="#用-m-生成分组目录"></a> 用 <code>-m</code> 生成分组目录</h3>
+<p>在 <code>ai_demo/rpc_service_group</code> 目录执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">goctl rpc protoc shop.proto \</span><br><span class="line">  --go_out=. \</span><br><span class="line">  --go-grpc_out=. \</span><br><span class="line">  --zrpc_out=. \</span><br><span class="line">  --go_opt=module=github.com/zeromicro/go-zero/ai_demo/rpc_service_group \</span><br><span class="line">  --go-grpc_opt=module=github.com/zeromicro/go-zero/ai_demo/rpc_service_group \</span><br><span class="line">  --module=github.com/zeromicro/go-zero/ai_demo/rpc_service_group \</span><br><span class="line">  -m</span><br></pre></td></tr></table></figure>
+<p>关键参数是 <code>-m</code>，也就是 <code>--multiple</code>。它告诉 goctl 当前 proto 包含多个 <code>service</code>，需要启用多服务模式；三个 module 参数让 protobuf 文件落到当前示例的 <code>pb</code> 目录，并生成正确的 Go import path。</p>
+<p>生成后的核心目录如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">ai_demo/rpc_service_group/</span><br><span class="line">├── shop.proto</span><br><span class="line">├── shop.go</span><br><span class="line">├── etc/</span><br><span class="line">│   └── shop.yaml</span><br><span class="line">├── pb/</span><br><span class="line">│   ├── shop.pb.go</span><br><span class="line">│   └── shop_grpc.pb.go</span><br><span class="line">├── client/</span><br><span class="line">│   ├── userservice/</span><br><span class="line">│   │   └── userservice.go</span><br><span class="line">│   └── orderservice/</span><br><span class="line">│       └── orderservice.go</span><br><span class="line">└── internal/</span><br><span class="line">    ├── logic/</span><br><span class="line">    │   ├── userservice/</span><br><span class="line">    │   │   ├── createuserlogic.go</span><br><span class="line">    │   │   └── getuserlogic.go</span><br><span class="line">    │   └── orderservice/</span><br><span class="line">    │       ├── createorderlogic.go</span><br><span class="line">    │       └── getorderlogic.go</span><br><span class="line">    ├── server/</span><br><span class="line">    │   ├── userservice/</span><br><span class="line">    │   │   └── userserviceserver.go</span><br><span class="line">    │   └── orderservice/</span><br><span class="line">    │       └── orderserviceserver.go</span><br><span class="line">    └── svc/</span><br><span class="line">        └── servicecontext.go</span><br></pre></td></tr></table></figure>
+<p>分组体现在三处：<code>client</code>、<code>internal/logic</code> 和 <code>internal/server</code> 都以 proto service 名拆出子目录。与此同时，两组仍然共享 <code>shop.go</code> 入口、<code>shop.yaml</code> 配置、protobuf 消息和 <code>ServiceContext</code>。<strong>这正是 <code>按业务隔离代码、按进程共享基础设施</code> 的效果</strong>。</p>
+<p>goctl 生成的 logic 默认返回空响应。为了让例子可以实际调用，本文在生成代码上补了一个并发安全的内存存储：<code>CreateUser</code> 生成用户 ID，<code>CreateOrder</code> 校验用户并生成订单 ID，两个 Get 方法按 ID 查询。重启进程后数据清空，不引入数据库，以免干扰本文对 zRPC 调用链的观察。</p>
+<h3 id="一个端口怎样承载两个业务分组"><a class="markdownIt-Anchor" href="#一个端口怎样承载两个业务分组"></a> 一个端口怎样承载两个业务分组</h3>
+<p>打开 goctl 生成的 <code>shop.go</code>，可以看到两个分组的 server 被注册到同一个原生 <code>grpc.Server</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">s := zrpc.MustNewServer(c.RpcServerConf, <span class="function"><span class="keyword">func</span><span class="params">(grpcServer *grpc.Server)</span></span> &#123;</span><br><span class="line">    pb.RegisterUserServiceServer(</span><br><span class="line">        grpcServer, userserviceServer.NewUserServiceServer(ctx))</span><br><span class="line">    pb.RegisterOrderServiceServer(</span><br><span class="line">        grpcServer, orderserviceServer.NewOrderServiceServer(ctx))</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> c.Mode == service.DevMode || c.Mode == service.TestMode &#123;</span><br><span class="line">        reflection.Register(grpcServer)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;)</span><br><span class="line"><span class="keyword">defer</span> s.Stop()</span><br><span class="line">s.Start()</span><br></pre></td></tr></table></figure>
+<ul>
+<li>这里的注册函数来自 <code>protoc-gen-go-grpc</code>，两个 server 实现来自 goctl</li>
+<li><code>zrpc.MustNewServer</code> 只创建一次，因此配置里也只有一个 <code>ListenOn: 0.0.0.0:20091</code></li>
+<li>gRPC 根据全限定方法名 <code>/shop.UserService/CreateUser</code> 或 <code>/shop.OrderService/CreateOrder</code>，把请求分发到对应的 service handler</li>
+</ul>
+<p>在仓库根目录启动服务：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">go run ./ai_demo/rpc_service_group \</span><br><span class="line">  -f ai_demo/rpc_service_group/etc/shop.yaml</span><br></pre></td></tr></table></figure>
+<p>开发模式会开启 reflection。下面依次调用两个分组中的四个方法：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">grpcurl -plaintext -d <span class="string">&#x27;&#123;&quot;name&quot;:&quot;Alice&quot;&#125;&#x27;</span> \</span><br><span class="line">  127.0.0.1:20091 shop.UserService/CreateUser</span><br><span class="line"></span><br><span class="line">grpcurl -plaintext -d <span class="string">&#x27;&#123;&quot;id&quot;:&quot;1&quot;&#125;&#x27;</span> \</span><br><span class="line">  127.0.0.1:20091 shop.UserService/GetUser</span><br><span class="line"></span><br><span class="line">grpcurl -plaintext -d <span class="string">&#x27;&#123;&quot;userId&quot;:&quot;1&quot;,&quot;product&quot;:&quot;go-zero book&quot;&#125;&#x27;</span> \</span><br><span class="line">  127.0.0.1:20091 shop.OrderService/CreateOrder</span><br><span class="line"></span><br><span class="line">grpcurl -plaintext -d <span class="string">&#x27;&#123;&quot;id&quot;:&quot;1&quot;&#125;&#x27;</span> \</span><br><span class="line">  127.0.0.1:20091 shop.OrderService/GetOrder</span><br></pre></td></tr></table></figure>
+<p>两组的 Create/Get 调用分别返回同一个用户和订单：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;id&quot;</span><span class="punctuation">:</span><span class="string">&quot;1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span><span class="string">&quot;Alice&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;id&quot;</span><span class="punctuation">:</span><span class="string">&quot;1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span><span class="string">&quot;Alice&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;id&quot;</span><span class="punctuation">:</span><span class="string">&quot;1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;userId&quot;</span><span class="punctuation">:</span><span class="string">&quot;1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;product&quot;</span><span class="punctuation">:</span><span class="string">&quot;go-zero book&quot;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;id&quot;</span><span class="punctuation">:</span><span class="string">&quot;1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;userId&quot;</span><span class="punctuation">:</span><span class="string">&quot;1&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;product&quot;</span><span class="punctuation">:</span><span class="string">&quot;go-zero book&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>以创建订单为例，接下来要分析的真实链路已经出现了：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">grpcurl</span><br><span class="line">  → /shop.OrderService/CreateOrder</span><br><span class="line">  → zRPC 服务端拦截器链</span><br><span class="line">  → OrderServiceServer.CreateOrder</span><br><span class="line">  → CreateOrderLogic.CreateOrder</span><br><span class="line">  → ServiceContext</span><br></pre></td></tr></table></figure>
+<p>有了这个可运行工程作坐标，下面从配置开始拆解：<code>zrpc.MustNewServer</code> 如何创建原生 gRPC server、注册两个业务分组，并在请求到达 logic 之前装配完整的生产级拦截器链。</p>
+<h2 id="服务端与客户端各需要什么"><a class="markdownIt-Anchor" href="#服务端与客户端各需要什么"></a> 服务端与客户端各需要什么</h2>
+<p>在进入拦截器链之前，先理解 zRPC 的配置结构。服务端和客户端的配置需求不同，但它们共享一个核心模式：<strong>配置即契约</strong>——配置文件中的每个字段都直接对应一个拦截器或一个基础设施行为的开关。</p>
+<h3 id="服务端配置"><a class="markdownIt-Anchor" href="#服务端配置"></a> 服务端配置</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/config.go</span></span><br><span class="line"><span class="keyword">type</span> RpcServerConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    service.ServiceConf                <span class="comment">// 内嵌通用服务配置（Name、Log、Mode 等）</span></span><br><span class="line">    ListenOn      <span class="type">string</span>               <span class="comment">// 监听地址，如 &quot;0.0.0.0:8080&quot;</span></span><br><span class="line">    Etcd          discov.EtcdConf      <span class="comment">// etcd 服务发现配置（可选）</span></span><br><span class="line">    Auth          <span class="type">bool</span>                 <span class="comment">// 是否开启认证</span></span><br><span class="line">    Redis         redis.RedisKeyConf   <span class="comment">// 认证所需的 Redis 配置</span></span><br><span class="line">    StrictControl <span class="type">bool</span>                 <span class="comment">// 认证的严格模式：Redis 不可用是否拒绝请求</span></span><br><span class="line">    Timeout       <span class="type">int64</span>                <span class="comment">// 默认超时时间（毫秒），0 表示不限制</span></span><br><span class="line">    CpuThreshold  <span class="type">int64</span>                <span class="comment">// 降载 CPU 阈值（0-1000，默认 900 即 90%）</span></span><br><span class="line">    Health        <span class="type">bool</span>                 <span class="comment">// 是否启用 gRPC 健康检查（默认开启）</span></span><br><span class="line">    Middlewares   ServerMiddlewaresConf <span class="comment">// 拦截器开关</span></span><br><span class="line">    MethodTimeouts []MethodTimeoutConf <span class="comment">// 按方法粒度的超时时间</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有两个嵌套结构值得注意。<code>service.ServiceConf</code> 是第 05 篇中详细讲解过的通用服务配置——它提供了 <code>Name</code>、<code>Mode</code>（开发/测试/生产）、<code>Log</code> 等基础字段，以及关键的 <code>SetUp()</code> 方法（初始化日志、Prometheus、链路追踪等基础设施）。zRPC 服务端嵌入了它，意味着所有 REST 部分享受到的基础设施能力，zRPC 服务器也天然具备。</p>
+<p><code>ServerMiddlewaresConf</code> 定义了拦截器的开关：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/config.go</span></span><br><span class="line"><span class="keyword">type</span> ServerMiddlewaresConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    Trace      <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Recover    <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Stat       <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    StatConf   StatConf</span><br><span class="line">    Prometheus <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Breaker    <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>五个拦截器全部默认开启。注意服务端没有 Timeout 和 Shedding 的开关——它们由 <code>RpcServerConf.Timeout</code> 和 <code>RpcServerConf.CpuThreshold</code> 的值是否大于零来隐式控制。Timeout=0 表示不限制超时，CpuThreshold=0 表示不启用降载。这种&quot;值即开关&quot;的设计比显式的布尔字段更直接——配置了阈值就启用，没配置就不启用，不存在&quot;配置了阈值却忘记开开关&quot;的错误。</p>
+<h3 id="客户端配置"><a class="markdownIt-Anchor" href="#客户端配置"></a> 客户端配置</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/config.go</span></span><br><span class="line"><span class="keyword">type</span> RpcClientConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    Etcd          discov.EtcdConf      <span class="comment">// etcd 服务发现配置（三选一）</span></span><br><span class="line">    Endpoints     []<span class="type">string</span>             <span class="comment">// 直连地址列表</span></span><br><span class="line">    Target        <span class="type">string</span>               <span class="comment">// 自定义 target 字符串</span></span><br><span class="line">    App           <span class="type">string</span>               <span class="comment">// 认证：应用标识</span></span><br><span class="line">    Token         <span class="type">string</span>               <span class="comment">// 认证：令牌</span></span><br><span class="line">    NonBlock      <span class="type">bool</span>                 <span class="comment">// 是否非阻塞连接（默认 true）</span></span><br><span class="line">    Timeout       <span class="type">int64</span>                <span class="comment">// 默认调用超时（毫秒，默认 2000）</span></span><br><span class="line">    KeepaliveTime time.Duration        <span class="comment">// 连接保活间隔</span></span><br><span class="line">    Middlewares   ClientMiddlewaresConf <span class="comment">// 拦截器开关</span></span><br><span class="line">    BalancerName  <span class="type">string</span>               <span class="comment">// 负载均衡策略（默认 &quot;p2c_ewma&quot;）</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>客户端配置中最关键的字段是<strong>目标寻址的三选一</strong>：<code>Endpoints</code>（直连地址列表）、<code>Etcd</code>（服务发现）、<code>Target</code>（自定义 gRPC target 字符串）。<code>BuildTarget()</code> 方法的解析顺序也是这个优先级——先看直连，再看 Target，最后 fallback 到 etcd：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(cc RpcClientConf)</span></span> BuildTarget() (<span class="type">string</span>, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(cc.Endpoints) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> resolver.BuildDirectTarget(cc.Endpoints), <span class="literal">nil</span></span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> <span class="built_in">len</span>(cc.Target) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> cc.Target, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ... 用 Etcd 配置构建 discov target</span></span><br><span class="line">    <span class="keyword">return</span> resolver.BuildDiscovTarget(cc.Etcd.Hosts, cc.Etcd.Key), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>客户端拦截器开关同样有五个：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ClientMiddlewaresConf <span class="keyword">struct</span> &#123;</span><br><span class="line">    Trace      <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Duration   <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Prometheus <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Breaker    <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">    Timeout    <span class="type">bool</span> <span class="string">`json:&quot;,default=true&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意客户端没有 Recover——客户端不执行服务端的业务逻辑，没有&quot;服务端 handler panic&quot;这样的场景需要 recover。取而代之的是 Duration，它类似于 REST 的 LogHandler 和 MetricHandler 的合体——记录每次调用的耗时、解析慢调用、串联请求内容和错误日志。</p>
+<p>配置就绪后，我们分别进入服务端和客户端的创建流程。</p>
+<h2 id="服务端从-newserver-到-grpc-server-启动"><a class="markdownIt-Anchor" href="#服务端从-newserver-到-grpc-server-启动"></a> 服务端：从 NewServer 到 gRPC Server 启动</h2>
+<h3 id="server-的类型选择rpcserver-vs-rpcpubserver"><a class="markdownIt-Anchor" href="#server-的类型选择rpcserver-vs-rpcpubserver"></a> Server 的类型选择：RpcServer vs RpcPubServer</h3>
+<p><code>NewServer</code> 的核心逻辑只有三步：校验配置、创建 server 实例、装配拦截器。但&quot;创建 server 实例&quot;这一步有一个关键分支——是否配置了 etcd：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewServer</span><span class="params">(c RpcServerConf, register internal.RegisterFn)</span></span> (*RpcServer, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> err = c.Validate(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> server internal.Server</span><br><span class="line">    metrics := stat.NewMetrics(c.ListenOn)</span><br><span class="line">    serverOptions := []internal.ServerOption&#123;</span><br><span class="line">        internal.WithRpcHealth(c.Health),</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> c.HasEtcd() &#123;</span><br><span class="line">        server, err = internal.NewRpcPubServer(c.Etcd, c.ListenOn, serverOptions...)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        server = internal.NewRpcServer(c.ListenOn, serverOptions...)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个 <code>Server</code> 接口是对 gRPC 原生 <code>grpc.Server</code> 的抽象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/server.go</span></span><br><span class="line"><span class="keyword">type</span> Server <span class="keyword">interface</span> &#123;</span><br><span class="line">    AddOptions(options ...grpc.ServerOption)</span><br><span class="line">    AddStreamInterceptors(interceptors ...grpc.StreamServerInterceptor)</span><br><span class="line">    AddUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor)</span><br><span class="line">    SetName(<span class="type">string</span>)</span><br><span class="line">    Start(register RegisterFn) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>两种实现——<code>rpcServer</code> 和通过 <code>keepAliveServer</code> 装饰的 <code>rpcServer</code>——共享完全相同的拦截器装配和启动流程，区别仅在于 <code>keepAliveServer</code> 在 <code>Start</code> 之前多了一步 <strong>etcd 注册</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/rpcpubserver.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s keepAliveServer)</span></span> Start(fn RegisterFn) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := s.registerEtcd(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> s.Server.Start(fn)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>registerEtcd</code> 内部创建了一个 <code>discov.Publisher</code>，它会将自己的地址注册到 etcd 并启动 KeepAlive 协程。这里有一个细节：注册到 etcd 的地址不是配置文件中的 <code>listenOn</code> 原文，而是经过了 <code>figureOutListenOn</code> 的转换——如果绑定地址是 <code>0.0.0.0:8080</code>，框架会先尝试 <code>POD_IP</code> 环境变量（Kubernetes 场景），再尝试获取内网 IP，最终替换为真实可路由的 IP。如果不做这个转换，其他服务从 etcd 拿到的地址是 <code>0.0.0.0:8080</code>，根本无法建立连接。</p>
+<h3 id="拦截器的装配顺序"><a class="markdownIt-Anchor" href="#拦截器的装配顺序"></a> 拦截器的装配顺序</h3>
+<p>回到 <code>NewServer</code>，server 实例创建完毕后，依次装配三类拦截器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/server.go</span></span><br><span class="line">server.SetName(c.Name)</span><br><span class="line">metrics.SetName(c.Name)</span><br><span class="line"></span><br><span class="line">setupStreamInterceptors(server, c)   <span class="comment">// ① Stream 拦截器</span></span><br><span class="line">setupUnaryInterceptors(server, c, metrics) <span class="comment">// ② Unary 拦截器</span></span><br><span class="line">setupAuthInterceptors(server, c)     <span class="comment">// ③ 认证拦截器</span></span><br></pre></td></tr></table></figure>
+<p>为什么是这个顺序？因为 <code>AddStreamInterceptors</code> 和 <code>AddUnaryInterceptors</code> 都是追加到已有的拦截器列表末尾。先装配基础拦截器，再追加认证拦截器，最终形成的顺序是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">【Unary 拦截器链（服务端）】</span><br><span class="line">Tracing → Recover → Stat → Prometheus → Breaker → Shedding → Timeout → Auth → Handler</span><br></pre></td></tr></table></figure>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">【Stream 拦截器链（服务端）】</span><br><span class="line">Tracing → Recover → Breaker → Auth → Handler</span><br></pre></td></tr></table></figure>
+<p>对比 REST 中间件链（Trace → Log → Prometheus → MaxConns → Breaker → Shedding → Timeout → Recover → Metrics → MaxBytes → Gunzip），zRPC 的拦截器顺序有几个值得注意的差异：</p>
+<p><strong>Recover 从倒数第二移到了第二。</strong> REST 中 Recover 在 Timeout 的内侧，因为 Timeout 启动了新 goroutine，Recover 必须在这个新 goroutine 里才能捕获到 handler panic。而 zRPC 的 TimeoutInterceptor 自己已经内置了 panic 保护（通过 <code>panicChan</code> 机制），所以 Recover 可以放到更外层——但这并不意味着 Recover 不重要，因为 Timeout 可能被关闭（<code>Timeout=0</code>），此时 Recover 就是唯一的 panic 防线。</p>
+<p><strong>Stat 同时承担了日志和指标的双重角色。</strong> REST 中 Log 和 Metrics 是两个独立的中间件，而 zRPC 用 Stat 一个拦截器完成了两件事——收集延迟指标到 <code>stat.Metrics</code>，同时打日志并标记慢调用。这种合并是合理的：gRPC 的调用比 HTTP 更&quot;结构化&quot;，不需要区分&quot;请求日志&quot;和&quot;请求指标&quot;两条管线。</p>
+<p><strong>没有 MaxConns。</strong></p>
+<p><strong>没有 MaxBytes 和 Gunzip。</strong> gRPC 使用 protobuf 序列化，天然的 schema 约束替代了 body 大小限制的手工校验；而 gRPC 本身不基于 HTTP Content-Encoding 做压缩（gRPC 在传输层有自己的压缩机制），所以不需要 Gunzip。</p>
+<h3 id="start监听-注册-健康检查-优雅停止"><a class="markdownIt-Anchor" href="#start监听-注册-健康检查-优雅停止"></a> Start：监听、注册、健康检查、优雅停止</h3>
+<p>拦截器装配完毕后，<code>RpcServer.Start()</code> 调用 <code>server.Start(register)</code>。这个方法的实现简洁但有层次：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/rpcserver.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *rpcServer)</span></span> Start(register RegisterFn) <span class="type">error</span> &#123;</span><br><span class="line">    lis, err := net.Listen(<span class="string">&quot;tcp&quot;</span>, s.address)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line"></span><br><span class="line">    unaryInterceptorOption := grpc.ChainUnaryInterceptor(s.unaryInterceptors...)</span><br><span class="line">    streamInterceptorOption := grpc.ChainStreamInterceptor(s.streamInterceptors...)</span><br><span class="line">    options := <span class="built_in">append</span>(s.options, unaryInterceptorOption, streamInterceptorOption)</span><br><span class="line">    server := grpc.NewServer(options...)</span><br><span class="line">    register(server)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// health check</span></span><br><span class="line">    <span class="keyword">if</span> s.health != <span class="literal">nil</span> &#123;</span><br><span class="line">        grpc_health_v1.RegisterHealthServer(server, s.health)</span><br><span class="line">        s.health.Resume()</span><br><span class="line">    &#125;</span><br><span class="line">    s.healthManager.MarkReady()</span><br><span class="line">    health.AddProbe(s.healthManager)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// graceful stop</span></span><br><span class="line">    waitForCalled := proc.AddShutdownListener(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> s.health != <span class="literal">nil</span> &#123;</span><br><span class="line">            s.health.Shutdown()</span><br><span class="line">        &#125;</span><br><span class="line">        server.GracefulStop()</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">defer</span> waitForCalled()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> server.Serve(lis)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>逐层来看这个方法做了几件事：</p>
+<p><strong>第一，<code>grpc.ChainUnaryInterceptor</code> 和 <code>grpc.ChainStreamInterceptor</code> 将拦截器列表融合为两个 <code>grpc.ServerOption</code>。</strong> 注意这不是简单的逐个链式调用——gRPC 的 <code>ChainUnaryInterceptor</code> 返回一个&quot;将多个拦截器串联为一个&quot;的选项，框架免去了手工拼接的麻烦。</p>
+<p><strong>第二，<code>register(server)</code> 是 goctl 生成的代码中提供的注册函数。</strong> 以 greet 服务为例，生成的 <code>register</code> 函数长这样：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RegisterGreetServer</span><span class="params">(s *grpc.Server, svr GreetServer)</span></span> &#123;</span><br><span class="line">    s.RegisterService(&amp;Greet_ServiceDesc, svr)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这遵循了 gRPC 标准模式——protobuf 生成的 <code>RegisterXxxServer</code> 函数将服务实现注册到 <code>grpc.Server</code> 中。go-zero 没有在这一层做魔改，完全保持与 gRPC 生态的兼容。</p>
+<p><strong>第三，健康检查分两套。</strong> gRPC 标准的 <code>grpc_health_v1.HealthServer</code> 暴露的是 gRPC 协议的健康检查服务（供 gRPC 客户端调用 <code>Check</code> 方法）。而 <code>healthManager</code> 是 go-zero 内部的探针接口（第 05 篇中介绍的 <code>Probe</code> 接口），供 <code>health.AddProbe</code> 注册为 Kubernetes 的 liveness/readiness 探针端点。两者互补——一个对外，一个对内。</p>
+<p><strong>第四，优雅停止通过 <code>proc.AddShutdownListener</code> 注册。</strong> 先关闭健康检查（标记服务不可用，从负载均衡中摘除），再调用 <code>server.GracefulStop()</code>（等待正在处理的请求完成后再关闭连接）。这个流程与 REST 的优雅停止设计完全一致。</p>
+<h3 id="嵌套启动grpc-日志接管"><a class="markdownIt-Anchor" href="#嵌套启动grpc-日志接管"></a> 嵌套启动：gRPC 日志接管</h3>
+<p>还有一个难以察觉但影响日常运维的细节——gRPC 的日志接管。在 <code>internal/rpclogger.go</code> 的 <code>init()</code> 函数中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    grpclog.SetLoggerV2(<span class="built_in">new</span>(Logger))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>go-zero 用自定义的 <code>Logger</code> 替换了 gRPC 内置的日志输出器。gRPC 原生日志会打印大量 transport 层的 debug 和 info 日志，在生产环境中是噪音。go-zero 的做法是：Error 和 Fatal 级别的日志转发到 <code>logx.Error</code>（不丢失关键错误信息），Info 和 Warning 级别的日志<strong>直接丢弃</strong>。这意味着你在生产日志中看到的每一条 gRPC 相关记录，都是框架有意为之的行为日志，而不是传输层的噪音。</p>
+<h2 id="服务端拦截器逐个剖析"><a class="markdownIt-Anchor" href="#服务端拦截器逐个剖析"></a> 服务端拦截器逐个剖析</h2>
+<h3 id="tracinginterceptor在-span-中串联跨服务调用链"><a class="markdownIt-Anchor" href="#tracinginterceptor在-span-中串联跨服务调用链"></a> TracingInterceptor：在 Span 中串联跨服务调用链</h3>
+<p>服务端的 Tracing 拦截器与 REST 的 TraceHandler 功能一致，但实现方式因 gRPC 的 metadata 机制而有所不同：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/tracinginterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryTracingInterceptor</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">    handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">    ctx, span := startSpan(ctx, info.FullMethod)</span><br><span class="line">    <span class="keyword">defer</span> span.End()</span><br><span class="line"></span><br><span class="line">    ztrace.MessageReceived.Event(ctx, <span class="number">1</span>, req)</span><br><span class="line">    resp, err := handler(ctx, req)</span><br><span class="line">    <span class="comment">// ... 设置 span 状态和属性 ...</span></span><br><span class="line">    <span class="keyword">return</span> resp, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>startSpan</code> 的实现揭示了一个关键差异——trace context 的传播方式。REST 中使用 HTTP Header 做 propagation，而 gRPC 使用 <strong>gRPC metadata</strong>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">startSpan</span><span class="params">(ctx context.Context, method <span class="type">string</span>)</span></span> (context.Context, trace.Span) &#123;</span><br><span class="line">    md, ok := metadata.FromIncomingContext(ctx)</span><br><span class="line">    <span class="comment">// ...提取 trace context 从 metadata 中...</span></span><br><span class="line">    tr := otel.Tracer(ztrace.TraceName)</span><br><span class="line">    <span class="keyword">return</span> tr.Start(trace.ContextWithRemoteSpanContext(ctx, spanCtx), name, ...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>gRPC metadata 等价于 HTTP Header 的 key-value 结构，但它是通过 gRPC 协议原生传递的，不依赖 HTTP/2 帧头。OpenTelemetry 的 propagator 能将一个 <code>metadata.MD</code> 当作 <code>TextMapCarrier</code> 来处理，所以 REST 和 gRPC 之间的 trace context 可以无缝传播——这正是第 11 篇会深入讲解的主题。</p>
+<p><strong>Stream 版本的 Tracing 拦截器</strong>需要更多工作。因为流式 RPC 可能跨越多条消息，仅仅在拦截器入口处创建 span 是不够的——还需要追踪每条消息的收发：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(w *serverStream)</span></span> RecvMsg(m any) <span class="type">error</span> &#123;</span><br><span class="line">    err := w.ServerStream.RecvMsg(m)</span><br><span class="line">    <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">        w.receivedMessageID++</span><br><span class="line">        ztrace.MessageReceived.Event(w.Context(), w.receivedMessageID, m)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(w *serverStream)</span></span> SendMsg(m any) <span class="type">error</span> &#123;</span><br><span class="line">    err := w.ServerStream.SendMsg(m)</span><br><span class="line">    w.sentMessageID++</span><br><span class="line">    ztrace.MessageSent.Event(w.Context(), w.sentMessageID, m)</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>通过包装 <code>grpc.ServerStream</code>，在每次 <code>RecvMsg</code> 和 <code>SendMsg</code> 时记录 trace event，最终在 span 中可以看到流式调用的每条消息的时间和内容。</p>
+<h3 id="recoverinterceptor比-rest-版本更简洁"><a class="markdownIt-Anchor" href="#recoverinterceptor比-rest-版本更简洁"></a> RecoverInterceptor：比 REST 版本更简洁</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/recoverinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryRecoverInterceptor</span><span class="params">(ctx context.Context, req any, _ *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">    handler grpc.UnaryHandler)</span></span> (resp any, err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">defer</span> handleCrash(<span class="function"><span class="keyword">func</span><span class="params">(r any)</span></span> &#123;</span><br><span class="line">        err = toPanicError(ctx, r)</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>两个差异值得注意。第一，不像 REST 的 RecoverHandler 那样写 <code>http.StatusInternalServerError</code> 和堆栈到 ResponseWriter，这里的 <code>toPanicError</code> 返回的是 <code>status.Errorf(codes.Internal, &quot;panic: %v&quot;, r)</code>——将一个 recover 到的 panic 转换为标准的 gRPC 错误。gRPC 框架会自动将这个 <code>status.Error</code> 序列化为 <code>grpc-status</code> 和 <code>grpc-message</code> trailer，客户端通过 <code>status.FromError(err)</code> 就能还原出状态码和消息。</p>
+<p>第二，这里的 Recover 在服务端拦截器链的第二位，在 Timeout 的外面。还记得为什么吗？我们稍后在 Timeout 拦截器中会看到，它内部已经通过 <code>panicChan</code> 做了一次 panic 捕获。但 Timeout 是可开关的——当 <code>Timeout=0</code> 时超时被禁用，此时 Recover 就是唯一的 panic 防线。所以放在 Stat 等拦截器外面是正确的——Cover 的范围最大化。</p>
+<h3 id="statinterceptor日志与指标的双重身份"><a class="markdownIt-Anchor" href="#statinterceptor日志与指标的双重身份"></a> StatInterceptor：日志与指标的双重身份</h3>
+<p>Stat 拦截器相当于 REST 中 LogHandler + MetricHandler 的合体：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/statinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryStatInterceptor</span><span class="params">(metrics *stat.Metrics, conf StatConf)</span></span> grpc.UnaryServerInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">        handler grpc.UnaryHandler)</span></span> (resp any, err <span class="type">error</span>) &#123;</span><br><span class="line">        startTime := timex.Now()</span><br><span class="line">        <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            duration := timex.Since(startTime)</span><br><span class="line">            metrics.Add(stat.Task&#123;Duration: duration&#125;)        <span class="comment">// 指标收集</span></span><br><span class="line">            logDuration(ctx, info.FullMethod, req, duration,</span><br><span class="line">                staticNotLoggingContentMethods, conf.SlowThreshold) <span class="comment">// 日志记录</span></span><br><span class="line">        &#125;()</span><br><span class="line">        <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>metrics.Add</code> 将请求耗时写入 <code>stat.Metrics</code>，供后台每分钟聚合一次并打印统计报告（QPS、延迟分位数等）。<code>logDuration</code> 则提供了请求级别的日志：</p>
+<ul>
+<li><strong>正常请求</strong>（耗时 &lt; 慢阈值）：记录请求内容和耗时。</li>
+<li><strong>慢请求</strong>（耗时 &gt;= 慢阈值，默认 500ms）：以 <code>Slowf</code> 级别记录，日志中带上 <code>slowcall</code> 标记。生产中可以通过 grep slowcall 快速发现性能瓶颈。</li>
+<li><strong>忽略内容的请求</strong>：通过 <code>IgnoreContentMethods</code> 配置指定的方法（通常是大请求体或二进制数据的方法），日志中只记录方法名和耗时，不记录请求体。</li>
+</ul>
+<p>慢请求日志还附带客户端地址——通过 <code>peer.FromContext(ctx)</code> 从 gRPC 上下文中提取对端 IP，方便定位是哪个客户端触发的慢调用。</p>
+<h3 id="prometheusinterceptor面向-prometheus-的标准化指标"><a class="markdownIt-Anchor" href="#prometheusinterceptor面向-prometheus-的标准化指标"></a> PrometheusInterceptor：面向 Prometheus 的标准化指标</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/prometheusinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryPrometheusInterceptor</span><span class="params">(ctx context.Context, req any,</span></span></span><br><span class="line"><span class="params"><span class="function">    info *grpc.UnaryServerInfo, handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">    startTime := timex.Now()</span><br><span class="line">    resp, err := handler(ctx, req)</span><br><span class="line">    metricServerReqDur.Observe(timex.Since(startTime).Milliseconds(), info.FullMethod)</span><br><span class="line">    metricServerReqCodeTotal.Inc(info.FullMethod, strconv.Itoa(<span class="type">int</span>(status.Code(err))))</span><br><span class="line">    <span class="keyword">return</span> resp, err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>暴露 <code>rpc_server_requests_duration_ms</code> 和 <code>rpc_server_requests_code_total</code> 两个指标。与 REST 版本的关键区别在于标签维度——这里只按 <code>method</code>（gRPC 完整方法名，如 <code>/greet.GreetService/SayHello</code>）和 <code>code</code>（gRPC 状态码）切分，没有 HTTP path 和 HTTP method 的维度。gRPC 的全限定方法名已经包含了足够的信息，不需要像 REST 那样需要 path+method 双重标签。</p>
+<p><strong>为什么在 Stat 之后？</strong> Prometheus 和 Stat 都会统计延迟，但它们的作用不同。Prometheus 是&quot;拉模式&quot;的标准化指标——通过 <code>/metrics</code> 端点被 Prometheus Server 定时抓取，适合 Grafana 图表和 PromQL 告警。Stat 是&quot;推模式&quot;的本地统计——每分钟打印一行聚合报告，适合开发阶段快速扫一眼终端。两者放在相近的位置（都在 Trace/Recover 内侧），保证了它们测量的范围一致——都只统计真正进入 handler 的请求。</p>
+<h3 id="breakerinterceptor基于方法名的独立熔断"><a class="markdownIt-Anchor" href="#breakerinterceptor基于方法名的独立熔断"></a> BreakerInterceptor：基于方法名的独立熔断</h3>
+<p>服务端断路器与 REST 版本的差异体现在两个地方：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/breakerinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryBreakerInterceptor</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">    handler grpc.UnaryHandler)</span></span> (resp any, err <span class="type">error</span>) &#123;</span><br><span class="line">    breakerName := info.FullMethod</span><br><span class="line">    err = breaker.DoWithAcceptableCtx(ctx, breakerName, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="keyword">var</span> err <span class="type">error</span></span><br><span class="line">        resp, err = handler(ctx, req)</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;, serverSideAcceptable)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> resp, convertError(err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>第一，断路器的命名。</strong> REST 断路器以 <code>method + path</code> 命名，zRPC 直接使用 <code>info.FullMethod</code>（如 <code>/greet.GreetService/SayHello</code>）。这是 gRPC 的优点——全限定方法名就是天然的、唯一的断路器标识。</p>
+<p><strong>第二，错误可接受性判断。</strong> <code>serverSideAcceptable</code> 是一个函数，它决定了哪些错误是&quot;可接受的&quot;（不计入断路器失败计数）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">serverSideAcceptable</span><span class="params">(err <span class="type">error</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> errorx.In(err, context.DeadlineExceeded, breaker.ErrServiceUnavailable) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> codes.Acceptable(err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个分两步判断：</p>
+<ul>
+<li><code>context.DeadlineExceeded</code>：超时错误不可接受。函数式调用超时通常意味着下游处理能力不足——这不是偶然错误，是真实的容量信号。</li>
+<li><code>breaker.ErrServiceUnavailable</code>：断路器本身的&quot;熔断中&quot;错误不可接受。如果不排除这类错误，熔断器自身的拒绝行为会被计为新的失败，导致熔断器永远无法恢复。</li>
+<li><code>codes.Acceptable(err)</code>：对其他 gRPC 错误做分类判定。具体规则是——<code>DeadlineExceeded</code>、<code>Internal</code>、<code>Unavailable</code>、<code>DataLoss</code>、<code>Unimplemented</code>、<code>ResourceExhausted</code> 这些错误码是<strong>不可接受的</strong>；其他错误码（如 <code>InvalidArgument</code>、<code>NotFound</code>、<code>PermissionDenied</code>、<code>OK</code>）是<strong>可接受的</strong>。</li>
+</ul>
+<p>这个分类背后的设计思想是：<strong>断路器关心的是&quot;服务是否健康&quot;，而不是&quot;请求是否正确&quot;。</strong> 客户端传入非法参数导致的 <code>InvalidArgument</code> 不应该触发熔断——那只是客户端的错误，不代表服务端出了问题。而 <code>Internal</code>（服务端内部错误）和 <code>Unavailable</code>（服务不可用）是真正的健康信号。</p>
+<p>特别要注意 <code>Unimplemented</code> 也在不可接受列表中。如果客户端调了一个服务端没有实现的方法，这可能意味着版本不匹配——在滚动更新期间，旧服务端可能还没有部署新方法。将这种错误视为不可接受，可以在版本不一致时触发熔断，保护客户端不被持续的协议错误拖垮。</p>
+<p><strong>第三，错误转换。</strong> 断路器拒绝请求时返回的是 <code>breaker.ErrServiceUnavailable</code>，这个错误对 gRPC 客户端是需要被正确理解的：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">convertError</span><span class="params">(err <span class="type">error</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> errors.Is(err, breaker.ErrServiceUnavailable) &#123;</span><br><span class="line">        <span class="keyword">return</span> status.Error(gcodes.Unavailable, err.Error())</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>将其转换为 gRPC 标准的 <code>codes.Unavailable</code> 状态码，客户端才能通过 <code>status.Code(err)</code> 正确识别并触发自己的 retry 或 fallback 逻辑。</p>
+<h3 id="sheddinginterceptorcpu-过载时的自适应降载"><a class="markdownIt-Anchor" href="#sheddinginterceptorcpu-过载时的自适应降载"></a> SheddingInterceptor：CPU 过载时的自适应降载</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/sheddinginterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnarySheddingInterceptor</span><span class="params">(shedder load.Shedder, metrics *stat.Metrics)</span></span> grpc.UnaryServerInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">        handler grpc.UnaryHandler)</span></span> (val any, err <span class="type">error</span>) &#123;</span><br><span class="line">        sheddingStat.IncrementTotal()</span><br><span class="line">        promise, err = shedder.Allow()</span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            metrics.AddDrop()</span><br><span class="line">            sheddingStat.IncrementDrop()</span><br><span class="line">            err = status.Error(codes.ResourceExhausted, err.Error())</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>降载器被拒绝时返回 gRPC 标准的 <code>codes.ResourceExhausted</code>，语义上非常准确——“服务器资源耗尽，无法处理请求”。与 REST 中降载失败返回 HTTP 503 一样，这里返回的 <code>ResourceExhausted</code> 也进入了 <code>codes.Acceptable</code> 的判定——它是不可接受的，会被断路器计为失败。这是正确的——如果 CPU 持续过载导致大部分请求被降载，断路器也应该最终跳闸，形成一个整体性的保护。</p>
+<p>降载器的成功/失败判定与 REST 一致：<code>context.DeadlineExceeded</code> 算失败（可能是 CPU 过高导致处理超时），其他情况算通过。</p>
+<h3 id="timeoutinterceptor比-rest-更优雅的超时处理"><a class="markdownIt-Anchor" href="#timeoutinterceptor比-rest-更优雅的超时处理"></a> TimeoutInterceptor：比 REST 更优雅的超时处理</h3>
+<p>zRPC 服务端的超时拦截器有完整的 panic 安全机制和方法级超时定制：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/timeoutinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryTimeoutInterceptor</span><span class="params">(timeout time.Duration,</span></span></span><br><span class="line"><span class="params"><span class="function">    methodTimeouts ...MethodTimeoutConf)</span></span> grpc.UnaryServerInterceptor &#123;</span><br><span class="line">    timeouts := buildMethodTimeouts(methodTimeouts)</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">        handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        t := getTimeoutByUnaryServerInfo(info.FullMethod, timeouts, timeout)</span><br><span class="line">        ctx, cancel := context.WithTimeout(ctx, t)</span><br><span class="line">        <span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">var</span> resp any</span><br><span class="line">        <span class="keyword">var</span> err <span class="type">error</span></span><br><span class="line">        <span class="keyword">var</span> lock sync.Mutex</span><br><span class="line">        done := <span class="built_in">make</span>(<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span><br><span class="line">        panicChan := <span class="built_in">make</span>(<span class="keyword">chan</span> any, <span class="number">1</span>)</span><br><span class="line">        <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                <span class="keyword">if</span> p := <span class="built_in">recover</span>(); p != <span class="literal">nil</span> &#123;</span><br><span class="line">                    panicChan &lt;- fmt.Sprintf(<span class="string">&quot;%+v\n\n%s&quot;</span>, p,</span><br><span class="line">                        strings.TrimSpace(<span class="type">string</span>(debug.Stack())))</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;()</span><br><span class="line">            lock.Lock()</span><br><span class="line">            <span class="keyword">defer</span> lock.Unlock()</span><br><span class="line">            resp, err = handler(ctx, req)</span><br><span class="line">            <span class="built_in">close</span>(done)</span><br><span class="line">        &#125;()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">select</span> &#123;</span><br><span class="line">        <span class="keyword">case</span> p := &lt;-panicChan:</span><br><span class="line">            <span class="built_in">panic</span>(p)</span><br><span class="line">        <span class="keyword">case</span> &lt;-done:</span><br><span class="line">            lock.Lock()</span><br><span class="line">            <span class="keyword">defer</span> lock.Unlock()</span><br><span class="line">            <span class="keyword">return</span> resp, err</span><br><span class="line">        <span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">            <span class="comment">// ... 返回 Canceled 或 DeadlineExceeded 状态码</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个实现有三个值得深入的点：</p>
+<p><strong>第一，方法级超时。</strong> 通过 <code>MethodTimeouts</code> 配置，可以为不同方法设置不同的超时时间。例如：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">Timeout:</span> <span class="number">2000</span>  <span class="comment"># 全局默认 2 秒</span></span><br><span class="line"><span class="attr">MethodTimeouts:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">FullMethod:</span> <span class="string">/greet.GreetService/LongRunningTask</span></span><br><span class="line">    <span class="attr">Timeout:</span> <span class="string">10s</span></span><br></pre></td></tr></table></figure>
+<p><code>getTimeoutByUnaryServerInfo</code> 先查找方法级配置，找不到再用全局默认值。这是一个比 REST 更灵活的机制——REST 的超时只能按路由组设置，zRPC 可以精确到每个方法。</p>
+<p><strong>第二，内置 panic 保护。</strong> 注意 <code>defer recover()</code> 在 goroutine 内部——与 REST 的 TimeoutHandler 不同，zRPC 的 TimeoutInterceptor 自己在 handler goroutine 中捕获 panic，通过 <code>panicChan</code> 传递给主 goroutine 后重新抛出。但这并不会让 Recover 变成多余——当 <code>Timeout=0</code>（超时被禁用）时，TimeouterInterceptor 根本不会被注册，Recover 仍是唯一的防线。</p>
+<p><strong>第三，<code>context.Canceled</code> 和 <code>context.DeadlineExceeded</code> 的区分。</strong> 与 REST 中 499 vs 503 的区分一样，zRPC 将 <code>Canceled</code> 映射为 gRPC 的 <code>codes.Canceled</code>，将 <code>DeadlineExceeded</code> 映射为 <code>codes.DeadlineExceeded</code>。这两个错误码在 <code>codes.Acceptable</code> 中有不同的待遇——<code>DeadlineExceeded</code> 不可接受（触发断路器），但 <code>Canceled</code> 不在列表中（实际上它不在 <code>serverSideAcceptable</code> 的检查范围内，会被 <code>codes.Acceptable</code> 中的 default 分支标记为可接受）。等一下——让我再确认一下。</p>
+<p>实际上 <code>Canceled</code> 不在 <code>codes.Acceptable</code> 的显式匹配列表中（<code>codes.Canceled</code> 没有被列在 <code>DeadlineExceeded, Internal, Unavailable, DataLoss, Unimplemented, ResourceExhausted</code> 中），所以它走到 <code>default</code> 分支返回 <code>true</code>——可接受。这与 REST 的设计一致——客户端主动取消连接（用户关闭了浏览器/客户端超时了）不应该计为服务端的失败。</p>
+<h3 id="authinterceptorapptoken-认证"><a class="markdownIt-Anchor" href="#authinterceptorapptoken-认证"></a> AuthInterceptor：App/Token 认证</h3>
+<p>认证拦截器的实现本身很简单——从 gRPC metadata 中提取 app 和 token，验证通过后放行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/authinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryAuthorizeInterceptor</span><span class="params">(authenticator *auth.Authenticator)</span></span> grpc.UnaryServerInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">        handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">if</span> err := authenticator.Authenticate(ctx); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> handler(ctx, req)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>但认证器的内部实现更值得关注：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/auth/auth.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(a *Authenticator)</span></span> validate(app, token <span class="type">string</span>) <span class="type">error</span> &#123;</span><br><span class="line">    expect, err := a.cache.Take(app, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> a.store.Hget(a.key, app)</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里使用 <code>collection.Cache</code>（基于 TimingWheel 的本地缓存）缓存 app→token 的映射关系，默认过期时间 5 分钟。每次认证请求不直接查 Redis，而是先从本地缓存拿——<code>Take</code> 方法集成了 SingleFlight，保证同一个 app 的并发请求只会查一次 Redis。缓存未命中或过期时才回源 Redis。</p>
+<p>严格模式（<code>StrictControl: true</code>）下，如果 Redis 不可达，认证直接失败——这是一种&quot;宁可拒绝所有请求也不放过未认证请求&quot;的安全策略。非严格模式下，Redis 不可达时认证通过（放行）——优先保障可用性，适用于内部服务间调用的场景。</p>
+<h2 id="客户端从-target-解析到连接建立"><a class="markdownIt-Anchor" href="#客户端从-target-解析到连接建立"></a> 客户端：从 Target 解析到连接建立</h2>
+<p>看完了服务端，把视角切换到调用方。<code>NewClient</code> 的创建流程主要做四件事：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/client.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewClient</span><span class="params">(c RpcClientConf, options ...ClientOption)</span></span> (Client, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> opts []ClientOption</span><br><span class="line">    <span class="comment">// 1. 认证凭证</span></span><br><span class="line">    <span class="keyword">if</span> c.HasCredential() &#123;</span><br><span class="line">        opts = <span class="built_in">append</span>(opts, WithDialOption(grpc.WithPerRPCCredentials(&amp;auth.Credential&#123;...&#125;)))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 2. 阻塞/非阻塞模式</span></span><br><span class="line">    <span class="keyword">if</span> c.NonBlock &#123; opts = <span class="built_in">append</span>(opts, WithNonBlock())</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123; opts = <span class="built_in">append</span>(opts, WithBlock()) &#125;</span><br><span class="line">    <span class="comment">// 3. 超时</span></span><br><span class="line">    <span class="keyword">if</span> c.Timeout &gt; <span class="number">0</span> &#123; opts = <span class="built_in">append</span>(opts, WithTimeout(...)) &#125;</span><br><span class="line">    <span class="comment">// 4. Keepalive</span></span><br><span class="line">    <span class="keyword">if</span> c.KeepaliveTime &gt; <span class="number">0</span> &#123; opts = <span class="built_in">append</span>(opts, WithDialOption(...)) &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 5. 负载均衡策略</span></span><br><span class="line">    svcCfg := makeLBServiceConfig(c.BalancerName)</span><br><span class="line">    opts = <span class="built_in">append</span>(opts, WithDialOption(grpc.WithDefaultServiceConfig(svcCfg)))</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 6. 构建 target</span></span><br><span class="line">    target, err := c.BuildTarget()</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 7. 建立连接</span></span><br><span class="line">    client, err := internal.NewClient(target, c.Middlewares, opts...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="target-的构建与-resolver-注册"><a class="markdownIt-Anchor" href="#target-的构建与-resolver-注册"></a> Target 的构建与 Resolver 注册</h3>
+<p><code>BuildTarget</code> 我们已经在配置部分讨论过——三选一：直连 target、自定义 target、etcd target。但这里的 target 字符串并不是最终传给 <code>grpc.DialContext</code> 的直连地址，而是 gRPC 的 <strong>URI 格式</strong>：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">// 直连模式</span><br><span class="line">direct:///127.0.0.1:8080,127.0.0.1:8081</span><br><span class="line"></span><br><span class="line">// etcd 模式</span><br><span class="line">discov://etcd-host:2379/greet.rpc</span><br></pre></td></tr></table></figure>
+<p>gRPC 根据 target 的 scheme（<code>direct://</code>、<code>discov://</code> 等）选择对应的 resolver。go-zero 在 <code>init()</code> 中注册了所有这些 resolver：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/client.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    resolver.Register()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>resolver.Register()</code> 内部调用了所有 builder 的注册函数，将 <code>direct</code>、<code>discov</code>、<code>etcd</code>、<code>k8s</code> 等 scheme 绑定到各自的 resolver builder。这部分细节我们留到下一篇（第 09 篇服务发现与负载均衡）中深入展开。</p>
+<h3 id="连接建立与-dial-流程"><a class="markdownIt-Anchor" href="#连接建立与-dial-流程"></a> 连接建立与 dial 流程</h3>
+<p><code>internal.NewClient</code> 调用 <code>dial</code> 建立连接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/client.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *client)</span></span> dial(server <span class="type">string</span>, opts ...ClientOption) <span class="type">error</span> &#123;</span><br><span class="line">    options := c.buildDialOptions(opts...)</span><br><span class="line">    timeCtx, cancel := context.WithTimeout(context.Background(), dialTimeout)</span><br><span class="line">    <span class="keyword">defer</span> cancel()</span><br><span class="line">    conn, err := grpc.DialContext(timeCtx, server, options...)</span><br><span class="line">    <span class="comment">// ... 错误处理 ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>dialTimeout</code> 固定为 3 秒——不是配置中的 <code>Timeout</code>。<code>Timeout</code> 是每次 RPC 调用的超时，而 <code>dialTimeout</code> 是连接建立阶段的超时。如果 3 秒内连不上目标地址，直接报错。这避免了在服务发现失败或网络不可达时无限期阻塞。</p>
+<p>错误信息中有一个巧妙的处理——当超时发生时，把 target 字符串的最后一段（<code>/</code> 之后的部分，即服务名）提取出来，生成更友好的错误提示：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> errors.Is(err, context.DeadlineExceeded) &#123;</span><br><span class="line">    pos := strings.LastIndexByte(server, separator)</span><br><span class="line">    <span class="keyword">if</span> <span class="number">0</span> &lt; pos &amp;&amp; pos &lt; <span class="built_in">len</span>(server)<span class="number">-1</span> &#123;</span><br><span class="line">        service = server[pos+<span class="number">1</span>:]</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;rpc dial: %s, error: %s, make sure rpc service %q is already started&quot;</span>,</span><br><span class="line">    server, err.Error(), service)</span><br></pre></td></tr></table></figure>
+<p>这让排查连接问题更容易——日志中能看到具体的服务名而不是冗长的 etcd 地址。</p>
+<h3 id="客户端拦截器的装配"><a class="markdownIt-Anchor" href="#客户端拦截器的装配"></a> 客户端拦截器的装配</h3>
+<p><code>buildUnaryInterceptors</code> 按固定顺序装配五个客户端拦截器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *client)</span></span> buildUnaryInterceptors(timeout time.Duration) []grpc.UnaryClientInterceptor &#123;</span><br><span class="line">    <span class="keyword">var</span> interceptors []grpc.UnaryClientInterceptor</span><br><span class="line">    <span class="keyword">if</span> c.middlewares.Trace &#123; interceptors = <span class="built_in">append</span>(interceptors, clientinterceptors.UnaryTracingInterceptor) &#125;</span><br><span class="line">    <span class="keyword">if</span> c.middlewares.Duration &#123; interceptors = <span class="built_in">append</span>(interceptors, clientinterceptors.DurationInterceptor) &#125;</span><br><span class="line">    <span class="keyword">if</span> c.middlewares.Prometheus &#123; interceptors = <span class="built_in">append</span>(interceptors, clientinterceptors.PrometheusInterceptor) &#125;</span><br><span class="line">    <span class="keyword">if</span> c.middlewares.Breaker &#123; interceptors = <span class="built_in">append</span>(interceptors, clientinterceptors.BreakerInterceptor) &#125;</span><br><span class="line">    <span class="keyword">if</span> c.middlewares.Timeout &#123; interceptors = <span class="built_in">append</span>(interceptors, clientinterceptors.TimeoutInterceptor(timeout)) &#125;</span><br><span class="line">    <span class="keyword">return</span> interceptors</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>最终形成的客户端拦截器链：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">【Unary 拦截器链（客户端）】</span><br><span class="line">Tracing → Duration → Prometheus → Breaker → Timeout → Invoker（实际发起 RPC 调用）</span><br></pre></td></tr></table></figure>
+<p>注意这个顺序与服务端不完全对称。服务端是 Trace → Recover → Stat → Prometheus → Breaker → Shedding → Timeout → Auth，而客户端是 Trace → Duration → Prometheus → Breaker → Timeout。我们逐个对比。</p>
+<h3 id="客户端拦截器逐个剖析"><a class="markdownIt-Anchor" href="#客户端拦截器逐个剖析"></a> 客户端拦截器逐个剖析</h3>
+<p><strong>TracingInterceptor（客户端）</strong> 创建 client span，将 trace context inject 到 gRPC outgoing metadata 中——这是跨服务链路追踪的另一半。服务端的 TracingInterceptor 做 extract，客户端的 TracingInterceptor 做 inject，两者配合完成 trace context 的跨进程传播：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/clientinterceptors/tracinginterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">startSpan</span><span class="params">(ctx context.Context, method, target <span class="type">string</span>)</span></span> (context.Context, trace.Span) &#123;</span><br><span class="line">    md, ok := metadata.FromOutgoingContext(ctx)</span><br><span class="line">    tr := otel.Tracer(ztrace.TraceName)</span><br><span class="line">    name, attr := ztrace.SpanInfo(method, target)</span><br><span class="line">    ctx, span := tr.Start(ctx, name, trace.WithSpanKind(trace.SpanKindClient), ...)</span><br><span class="line">    ztrace.Inject(ctx, otel.GetTextMapPropagator(), &amp;md)</span><br><span class="line">    ctx = metadata.NewOutgoingContext(ctx, md)</span><br><span class="line">    <span class="keyword">return</span> ctx, span</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>DurationInterceptor（客户端）</strong> 相当于服务端 Stat 中日志部分的&quot;镜像&quot;。它记录每次调用的耗时、解析慢调用、在失败时打印完整错误日志：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">DurationInterceptor</span><span class="params">(ctx context.Context, method <span class="type">string</span>, req, reply any,</span></span></span><br><span class="line"><span class="params"><span class="function">    cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    start := timex.Now()</span><br><span class="line">    err := invoker(ctx, method, req, reply, cc, opts...)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="comment">// 失败：记录请求内容 + 错误</span></span><br><span class="line">        logger.Errorf(<span class="string">&quot;fail - %s - %v - %s&quot;</span>, serverName, req, err.Error())</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> elapsed &gt; slowThreshold.Load() &#123;</span><br><span class="line">        <span class="comment">// 慢调用：记录请求和响应</span></span><br><span class="line">        logger.Slowf(<span class="string">&quot;[RPC] ok - slowcall - %s - %v - %v&quot;</span>, serverName, req, reply)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在调用失败时，Duration 记录了完整的请求内容——这对于排查&quot;下游收到了什么导致失败&quot;非常有用。而对于忽略日志内容的方法名（通过 <code>DontLogClientContentForMethod</code> 设置），失败时只记录方法名和错误信息。</p>
+<p><strong>PrometheusInterceptor（客户端）</strong> 暴露 <code>rpc_client_requests_duration_ms</code> 和 <code>rpc_client_requests_code_total</code>，与服务端的 <code>rpc_server_requests_*</code> 形成对称的指标对。两者结合可以在 Prometheus 中构建&quot;客户端视角 vs 服务端视角&quot;的延迟和错误率对比——如果客户端 p99 远高于服务端 p99，说明网络延迟是瓶颈，而非服务端处理能力。</p>
+<p><strong>BreakerInterceptor（客户端）</strong> 使用的是 gRPC 拦截器的签名，但它复用了同一个 <code>breaker</code> 实现和同一套 <code>codes.Acceptable</code> 判定：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BreakerInterceptor</span><span class="params">(ctx context.Context, method <span class="type">string</span>, req, reply any,</span></span></span><br><span class="line"><span class="params"><span class="function">    cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    breakerName := path.Join(cc.Target(), method)</span><br><span class="line">    <span class="keyword">return</span> breaker.DoWithAcceptableCtx(ctx, breakerName, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> invoker(ctx, method, req, reply, cc, opts...)</span><br><span class="line">    &#125;, codes.Acceptable)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意断路器名字是用 <code>cc.Target()</code> 和 method 拼接的——<code>etcd-host:2379/greet.rpc/greet.GreetService/SayHello</code>。这与服务端的 <code>info.FullMethod</code> 不同——客户端熔断是<strong>按目标服务+方法</strong>粒度的，同一个方法调用不同下游实例不会被熔断连累。</p>
+<p>这里直接使用 <code>codes.Acceptable</code>（不经过 <code>serverSideAcceptable</code> 的 <code>context.DeadlineExceeded</code> 额外排除）。这意味着客户端侧，<code>DeadlineExceeded</code> 仍然是不可接受的——客户端超时通常意味着下游响应太慢，这正是断路器应该保护的场景。</p>
+<p><strong>TimeoutInterceptor（客户端）</strong> 实现比服务端简单，但支持一个独特的&quot;单次调用覆盖&quot;能力：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TimeoutInterceptor</span><span class="params">(timeout time.Duration)</span></span> grpc.UnaryClientInterceptor &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, method <span class="type">string</span>, req, reply any, cc *grpc.ClientConn,</span></span></span><br><span class="line"><span class="params"><span class="function">        invoker grpc.UnaryInvoker, opts ...grpc.CallOption)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        t := getTimeoutFromCallOptions(opts, timeout)</span><br><span class="line">        ctx, cancel := context.WithTimeout(ctx, t)</span><br><span class="line">        <span class="keyword">defer</span> cancel()</span><br><span class="line">        <span class="keyword">return</span> invoker(ctx, method, req, reply, cc, opts...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>getTimeoutFromCallOptions</code> 遍历 <code>grpc.CallOption</code> 列表，检查是否有 <code>TimeoutCallOption</code>（通过 <code>WithCallTimeout</code> 传入）。如果有，就用单次调用的超时时间覆盖默认值。这意味着同一客户端可以在<strong>每次调用时动态决定超时时间</strong>——不需要为长查询和短查询分别创建客户端实例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 短查询使用默认超时（配置中的 500ms）</span></span><br><span class="line">client.SayHello(ctx, &amp;req)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 长查询使用 10 秒超时</span></span><br><span class="line">client.SayHello(ctx, &amp;req, zrpc.WithCallTimeout(<span class="number">10</span>*time.Second))</span><br></pre></td></tr></table></figure>
+<h2 id="错误码判定断路器决策的核心依据"><a class="markdownIt-Anchor" href="#错误码判定断路器决策的核心依据"></a> 错误码判定：断路器决策的核心依据</h2>
+<p>在服务端和客户端的断路器拦截器中，我们多次提到了 <code>codes.Acceptable</code>——它决定了哪些 gRPC 错误不计入断路器的失败计数。这里集中深入分析一下。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/codes/accept.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Acceptable</span><span class="params">(err <span class="type">error</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> status.Code(err) &#123;</span><br><span class="line">    <span class="keyword">case</span> codes.DeadlineExceeded, codes.Internal, codes.Unavailable,</span><br><span class="line">         codes.DataLoss, codes.Unimplemented, codes.ResourceExhausted:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个函数区分了两类错误：</p>
+<p><strong>不可接受的错误（6 个），计入断路器失败计数：</strong></p>
+<table>
+<thead>
+<tr>
+<th>错误码</th>
+<th>含义</th>
+<th>为什么不可接受</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DeadlineExceeded</code></td>
+<td>处理超时</td>
+<td>通常是下游处理能力不足的信号</td>
+</tr>
+<tr>
+<td><code>Internal</code></td>
+<td>服务端内部错误</td>
+<td>服务本身出了问题</td>
+</tr>
+<tr>
+<td><code>Unavailable</code></td>
+<td>服务不可达</td>
+<td>服务健康状态的直接信号</td>
+</tr>
+<tr>
+<td><code>DataLoss</code></td>
+<td>数据丢失</td>
+<td>严重错误，可能磁盘或存储故障</td>
+</tr>
+<tr>
+<td><code>Unimplemented</code></td>
+<td>方法未实现</td>
+<td>版本不匹配信号，可能整个服务需要更新</td>
+</tr>
+<tr>
+<td><code>ResourceExhausted</code></td>
+<td>资源耗尽（被降载）</td>
+<td>CPU 或内存过载，需要容量保护</td>
+</tr>
+</tbody>
+</table>
+<p><strong>可接受的错误（其余所有），不计入断路器失败计数：</strong></p>
+<table>
+<thead>
+<tr>
+<th>错误码示例</th>
+<th>含义</th>
+<th>为什么可接受</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>InvalidArgument</code></td>
+<td>参数错误</td>
+<td>客户端问题，不是服务端故障</td>
+</tr>
+<tr>
+<td><code>NotFound</code></td>
+<td>资源不存在</td>
+<td>正常的业务结果</td>
+</tr>
+<tr>
+<td><code>PermissionDenied</code></td>
+<td>权限不足</td>
+<td>认证/授权问题，非故障</td>
+</tr>
+<tr>
+<td><code>OK</code></td>
+<td>成功</td>
+<td>当然可接受</td>
+</tr>
+<tr>
+<td><code>Canceled</code></td>
+<td>客户端取消</td>
+<td>客户端行为，非故障</td>
+</tr>
+</tbody>
+</table>
+<p>这个分类的精妙之处在于：<strong>断路器只关心&quot;服务是否健康&quot;，不关心&quot;请求是否正确&quot;。</strong> 如果客户端每天传 100 次非法参数，每次都返回 <code>InvalidArgument</code>，把它们计为失败会导致断路器跳闸，正常请求也被拒绝——这就产生了&quot;错误参数的级联故障&quot;。区分两类错误，保证了断路器的准确性。</p>
+<h2 id="rpcproxy为不同的-apptoken-缓存连接"><a class="markdownIt-Anchor" href="#rpcproxy为不同的-apptoken-缓存连接"></a> RpcProxy：为不同的 App/Token 缓存连接</h2>
+<p>除了标准的 <code>RpcClient</code>，zRPC 还提供了一个 <code>RpcProxy</code>——它为每次带有不同认证凭证的请求自动管理连接池：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/proxy.go</span></span><br><span class="line"><span class="keyword">type</span> RpcProxy <span class="keyword">struct</span> &#123;</span><br><span class="line">    backend      <span class="type">string</span></span><br><span class="line">    clients      <span class="keyword">map</span>[<span class="type">string</span>]Client</span><br><span class="line">    options      []internal.ClientOption</span><br><span class="line">    singleFlight syncx.SingleFlight</span><br><span class="line">    lock         sync.Mutex</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *RpcProxy)</span></span> TakeConn(ctx context.Context) (*grpc.ClientConn, <span class="type">error</span>) &#123;</span><br><span class="line">    cred := auth.ParseCredential(ctx)</span><br><span class="line">    key := cred.App + <span class="string">&quot;/&quot;</span> + cred.Token</span><br><span class="line">    val, err := p.singleFlight.Do(key, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        p.lock.Lock()</span><br><span class="line">        client, ok := p.clients[key]</span><br><span class="line">        p.lock.Unlock()</span><br><span class="line">        <span class="keyword">if</span> ok &#123; <span class="keyword">return</span> client, <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line">        client, err := NewClientWithTarget(p.backend, opts...)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        p.clients[key] = client</span><br><span class="line">        <span class="keyword">return</span> client, <span class="literal">nil</span></span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> val.(Client).Conn(), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>设计思路很清晰：每个 <code>App/Token</code> 组合对应一个连接，通过 SingleFlight 保证并发安全且不重复创建。<code>ParseCredential</code> 从 gRPC incoming metadata 中提取 app 和 token——这个函数定义在 <code>auth/credential.go</code> 中，与认证拦截器共享同一套 metadata key。</p>
+<p>当 Gateway 或 HTTP 代理层需要将多个租户的请求转发到同一个后端 RPC 服务时，<code>RpcProxy</code> 比每次创建新的 <code>RpcClient</code> 更高效——连接复用，不会因为请求量大而耗尽文件描述符。</p>
+<h2 id="两种调用走一遍成功与超时"><a class="markdownIt-Anchor" href="#两种调用走一遍成功与超时"></a> 两种调用走一遍：成功与超时</h2>
+<h3 id="成功的-unary-rpc-调用"><a class="markdownIt-Anchor" href="#成功的-unary-rpc-调用"></a> 成功的 Unary RPC 调用</h3>
+<p>现在把客户端和服务端串联起来，追踪一次完整的 RPC 调用：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">【客户端】</span><br><span class="line">  业务代码: client.SayHello(ctx, &amp;req)</span><br><span class="line">    → Tracing: 创建 client span, inject trace context 到 outgoing metadata</span><br><span class="line">    → Duration: 启动计时</span><br><span class="line">    → Prometheus: 启动计时</span><br><span class="line">    → Breaker: Allow() 成功, 放行</span><br><span class="line">    → Timeout: ctx.WithTimeout(2 秒)</span><br><span class="line">      → invoker (gRPC 底层): 序列化 protobuf → 发送 HTTP/2 DATA 帧</span><br><span class="line">        ...</span><br><span class="line"></span><br><span class="line">【网络传输】 gRPC metadata + protobuf body 通过 HTTP/2 传输</span><br><span class="line"></span><br><span class="line">【服务端】</span><br><span class="line">  gRPC Server 接收请求</span><br><span class="line">    → Tracing: extract trace context 从 incoming metadata, 创建 server span</span><br><span class="line">    → Recover: defer recover</span><br><span class="line">    → Stat: 启动计时</span><br><span class="line">    → Prometheus: 启动计时</span><br><span class="line">    → Breaker: Allow() 成功</span><br><span class="line">    → Shedding: Allow() 成功</span><br><span class="line">    → Timeout: ctx.WithTimeout(2 秒), 启动 handler goroutine</span><br><span class="line">      → Auth: app/token 验证通过</span><br><span class="line">        → Handler: 业务逻辑执行 (~15ms)</span><br><span class="line">        ← 返回 resp, nil</span><br><span class="line">      ← 返回</span><br><span class="line">    ← promise.Pass() (无错误)</span><br><span class="line">    ← promise.Accept()</span><br><span class="line">    ← Prometheus: observe duration + code=&quot;0&quot; (OK)</span><br><span class="line">    ← Stat: metrics.Add(duration); logDuration: [RPC] 127.0.0.1:52341 - /greet.GreetService/SayHello - 15ms</span><br><span class="line">    ← (recover 未触发)</span><br><span class="line">    ← span: SetStatus(OK), End()</span><br><span class="line"></span><br><span class="line">【网络传输】 gRPC response + trailer (grpc-status: 0)</span><br><span class="line"></span><br><span class="line">【客户端】</span><br><span class="line">      ← invoker 返回</span><br><span class="line">    ← Timeout: cancel()</span><br><span class="line">    ← Breaker: promise.Accept() (err == nil)</span><br><span class="line">    ← Prometheus: observe duration + code=&quot;0&quot;</span><br><span class="line">    ← Duration: elapsed=15ms &lt; slow threshold, 不打印日志</span><br><span class="line">    ← Tracing: MessageReceived event, span.SetStatus(OK), End()</span><br><span class="line">  业务代码: resp, err := ... ← err == nil</span><br></pre></td></tr></table></figure>
+<p>这个流程展示了 zRPC 拦截器链的核心价值——一次业务调用在框架层面上自动获得了 trace 传播、Prometheus 指标、熔断保护、降载保护、超时控制和结构化日志。业务代码只需要写 <code>client.SayHello(ctx, &amp;req)</code> 和 <code>return &amp;resp, nil</code>。</p>
+<h3 id="超时的-unary-rpc-调用"><a class="markdownIt-Anchor" href="#超时的-unary-rpc-调用"></a> 超时的 Unary RPC 调用</h3>
+<p>如果下游服务处理太慢，2 秒后超时触发：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">【服务端 Timeout goroutine 内】</span><br><span class="line">  Handler 执行中... → 2 秒超时触发</span><br><span class="line">    → ctx.Done() ← context.DeadlineExceeded</span><br><span class="line">    → 返回 status.Error(codes.DeadlineExceeded, ...)</span><br><span class="line">    → handler goroutine 中的 lock 最终释放（handler 返回）</span><br><span class="line">    → Shedding: errors.Is(err, context.DeadlineExceeded) → promise.Fail()</span><br><span class="line">    → Breaker: serverSideAcceptable → context.DeadlineExceeded → false (不可接受) → promise.Reject()</span><br><span class="line">    → Prometheus: code=&quot;4&quot; (DeadlineExceeded)</span><br><span class="line">    → Stat: 记录 slowcall 日志 (elapsed &gt;= 500ms)</span><br><span class="line"></span><br><span class="line">【客户端】</span><br><span class="line">  invoker 返回 DeadlineExceeded 错误</span><br><span class="line">    → Breaker: codes.Acceptable → DeadlineExceeded → false (不可接受) → promise.Reject()</span><br><span class="line">    → Prometheus: code=&quot;4&quot;</span><br><span class="line">    → Duration: logger.Errorf(&quot;fail - ... - context deadline exceeded&quot;)</span><br><span class="line">    → Tracing: span.SetStatus(Error, &quot;context deadline exceeded&quot;)</span><br></pre></td></tr></table></figure>
+<p>这里的关键观察是：<strong>一个超时触发了双方断路器的失败计数。</strong> 服务端断路器收到 <code>DeadlineExceeded</code> → Reject，客户端断路器也收到 <code>DeadlineExceeded</code> → Reject。如果下游持续超时，双方的断路器会先后跳闸——服务端先跳（因为超时发生在服务端处理过程中），客户端接着跳（因为后续调用被服务端断路器直接拒绝返回 <code>Unavailable</code>）。这是一套自洽的保护链路。</p>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>本文以 <code>RpcServer</code> 和 <code>RpcClient</code> 的创建为入口，完整走完了 zRPC 的服务端和客户端调用链：</p>
+<p><strong>服务端配置驱动拦截器链。</strong> 8 个拦截器按 Tracing → Recover → Stat → Prometheus → Breaker → Shedding → Timeout → Auth 的顺序叠加。这个顺序与 REST 中间件链共享同一套分层逻辑——观测层在最外（Tracing、Stat、Prometheus），保护层在中间（Breaker、Shedding、Timeout），恢复层内嵌在保护层中（Recover 在 Timeout 可能被关闭时提供兜底），认证层在最内（Auth 决定&quot;是否能访问&quot;，在一切保护之后）。</p>
+<p><strong>客户端拦截器链是服务端的简化镜像。</strong> 5 个拦截器（Tracing → Duration → Prometheus → Breaker → Timeout）保证了每次调用的可观测性和弹性保护。客户端不需要 Recover（不执行业务逻辑）、不需要 Shedding（降载是服务端的事）、不需要 Auth（认证凭证在连接建立时通过 <code>WithPerRPCCredentials</code> 注入）。</p>
+<p><strong>错误码判定是断路器准确性的核心。</strong> <code>codes.Acceptable</code> 将 6 个 gRPC 错误码标记为&quot;不可接受&quot;，其余为&quot;可接受&quot;。这个分类体现了&quot;断路器关心服务健康，不关心请求是否正确&quot;的设计原则，避免了参数错误等客户端问题触发级联熔断。</p>
+<p><strong>zRPC 与标准 gRPC 的关系。</strong> zRPC 没有魔改 gRPC 的 stub 生成、序列化或传输层——它完全在拦截器这个 gRPC 原生的扩展点之上构建增值能力。这保证了与 gRPC 生态的完全兼容——你可以继续使用 <code>protoc</code> 生成的代码、标准的 <code>grpc.ClientConn</code> 和任何 gRPC 工具链。</p>
+<p>从下一篇开始，我们将深入服务发现与负载均衡——在客户端拦截器链的 Timeout 和 invoker 之间，gRPC 的 resolver 和 balancer 是如何根据 etcd watch 结果更新地址列表、P2C 算法如何选择最优节点的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/17/go-zero-07/" rel="next" title="go-zero 源码分析 07：REST 中间件链">
+      go-zero 源码分析 07：REST 中间件链 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#zrpc-%E5%A2%9E%E5%8A%A0%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">1.</span> <span class="nav-text"> zRPC 增加了什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%88%E8%B7%91%E8%B5%B7%E6%9D%A5goctl-%E7%94%9F%E6%88%90%E5%B8%A6%E4%B8%9A%E5%8A%A1%E5%88%86%E7%BB%84%E7%9A%84-rpc-%E6%9C%8D%E5%8A%A1"><span class="nav-number">2.</span> <span class="nav-text"> 先跑起来：goctl 生成带业务分组的 RPC 服务</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%88%E8%AF%B4%E6%B8%85%E6%A5%9A%E8%BF%99%E9%87%8C%E7%9A%84%E6%9C%8D%E5%8A%A1%E5%88%86%E7%BB%84%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">2.1.</span> <span class="nav-text"> 先说清楚：这里的“服务分组”是什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8-m-%E7%94%9F%E6%88%90%E5%88%86%E7%BB%84%E7%9B%AE%E5%BD%95"><span class="nav-number">2.2.</span> <span class="nav-text"> 用 -m 生成分组目录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E4%B8%AA%E7%AB%AF%E5%8F%A3%E6%80%8E%E6%A0%B7%E6%89%BF%E8%BD%BD%E4%B8%A4%E4%B8%AA%E4%B8%9A%E5%8A%A1%E5%88%86%E7%BB%84"><span class="nav-number">2.3.</span> <span class="nav-text"> 一个端口怎样承载两个业务分组</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E4%B8%8E%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%90%84%E9%9C%80%E8%A6%81%E4%BB%80%E4%B9%88"><span class="nav-number">3.</span> <span class="nav-text"> 服务端与客户端各需要什么</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E9%85%8D%E7%BD%AE"><span class="nav-number">3.1.</span> <span class="nav-text"> 服务端配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E9%85%8D%E7%BD%AE"><span class="nav-number">3.2.</span> <span class="nav-text"> 客户端配置</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E4%BB%8E-newserver-%E5%88%B0-grpc-server-%E5%90%AF%E5%8A%A8"><span class="nav-number">4.</span> <span class="nav-text"> 服务端：从 NewServer 到 gRPC Server 启动</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#server-%E7%9A%84%E7%B1%BB%E5%9E%8B%E9%80%89%E6%8B%A9rpcserver-vs-rpcpubserver"><span class="nav-number">4.1.</span> <span class="nav-text"> Server 的类型选择：RpcServer vs RpcPubServer</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8B%A6%E6%88%AA%E5%99%A8%E7%9A%84%E8%A3%85%E9%85%8D%E9%A1%BA%E5%BA%8F"><span class="nav-number">4.2.</span> <span class="nav-text"> 拦截器的装配顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#start%E7%9B%91%E5%90%AC-%E6%B3%A8%E5%86%8C-%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5-%E4%BC%98%E9%9B%85%E5%81%9C%E6%AD%A2"><span class="nav-number">4.3.</span> <span class="nav-text"> Start：监听、注册、健康检查、优雅停止</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B5%8C%E5%A5%97%E5%90%AF%E5%8A%A8grpc-%E6%97%A5%E5%BF%97%E6%8E%A5%E7%AE%A1"><span class="nav-number">4.4.</span> <span class="nav-text"> 嵌套启动：gRPC 日志接管</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%8B%A6%E6%88%AA%E5%99%A8%E9%80%90%E4%B8%AA%E5%89%96%E6%9E%90"><span class="nav-number">5.</span> <span class="nav-text"> 服务端拦截器逐个剖析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#tracinginterceptor%E5%9C%A8-span-%E4%B8%AD%E4%B8%B2%E8%81%94%E8%B7%A8%E6%9C%8D%E5%8A%A1%E8%B0%83%E7%94%A8%E9%93%BE"><span class="nav-number">5.1.</span> <span class="nav-text"> TracingInterceptor：在 Span 中串联跨服务调用链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#recoverinterceptor%E6%AF%94-rest-%E7%89%88%E6%9C%AC%E6%9B%B4%E7%AE%80%E6%B4%81"><span class="nav-number">5.2.</span> <span class="nav-text"> RecoverInterceptor：比 REST 版本更简洁</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#statinterceptor%E6%97%A5%E5%BF%97%E4%B8%8E%E6%8C%87%E6%A0%87%E7%9A%84%E5%8F%8C%E9%87%8D%E8%BA%AB%E4%BB%BD"><span class="nav-number">5.3.</span> <span class="nav-text"> StatInterceptor：日志与指标的双重身份</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#prometheusinterceptor%E9%9D%A2%E5%90%91-prometheus-%E7%9A%84%E6%A0%87%E5%87%86%E5%8C%96%E6%8C%87%E6%A0%87"><span class="nav-number">5.4.</span> <span class="nav-text"> PrometheusInterceptor：面向 Prometheus 的标准化指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#breakerinterceptor%E5%9F%BA%E4%BA%8E%E6%96%B9%E6%B3%95%E5%90%8D%E7%9A%84%E7%8B%AC%E7%AB%8B%E7%86%94%E6%96%AD"><span class="nav-number">5.5.</span> <span class="nav-text"> BreakerInterceptor：基于方法名的独立熔断</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sheddinginterceptorcpu-%E8%BF%87%E8%BD%BD%E6%97%B6%E7%9A%84%E8%87%AA%E9%80%82%E5%BA%94%E9%99%8D%E8%BD%BD"><span class="nav-number">5.6.</span> <span class="nav-text"> SheddingInterceptor：CPU 过载时的自适应降载</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#timeoutinterceptor%E6%AF%94-rest-%E6%9B%B4%E4%BC%98%E9%9B%85%E7%9A%84%E8%B6%85%E6%97%B6%E5%A4%84%E7%90%86"><span class="nav-number">5.7.</span> <span class="nav-text"> TimeoutInterceptor：比 REST 更优雅的超时处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#authinterceptorapptoken-%E8%AE%A4%E8%AF%81"><span class="nav-number">5.8.</span> <span class="nav-text"> AuthInterceptor：App&#x2F;Token 认证</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%BB%8E-target-%E8%A7%A3%E6%9E%90%E5%88%B0%E8%BF%9E%E6%8E%A5%E5%BB%BA%E7%AB%8B"><span class="nav-number">6.</span> <span class="nav-text"> 客户端：从 Target 解析到连接建立</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#target-%E7%9A%84%E6%9E%84%E5%BB%BA%E4%B8%8E-resolver-%E6%B3%A8%E5%86%8C"><span class="nav-number">6.1.</span> <span class="nav-text"> Target 的构建与 Resolver 注册</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5%E5%BB%BA%E7%AB%8B%E4%B8%8E-dial-%E6%B5%81%E7%A8%8B"><span class="nav-number">6.2.</span> <span class="nav-text"> 连接建立与 dial 流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8B%A6%E6%88%AA%E5%99%A8%E7%9A%84%E8%A3%85%E9%85%8D"><span class="nav-number">6.3.</span> <span class="nav-text"> 客户端拦截器的装配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8B%A6%E6%88%AA%E5%99%A8%E9%80%90%E4%B8%AA%E5%89%96%E6%9E%90"><span class="nav-number">6.4.</span> <span class="nav-text"> 客户端拦截器逐个剖析</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%94%99%E8%AF%AF%E7%A0%81%E5%88%A4%E5%AE%9A%E6%96%AD%E8%B7%AF%E5%99%A8%E5%86%B3%E7%AD%96%E7%9A%84%E6%A0%B8%E5%BF%83%E4%BE%9D%E6%8D%AE"><span class="nav-number">7.</span> <span class="nav-text"> 错误码判定：断路器决策的核心依据</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#rpcproxy%E4%B8%BA%E4%B8%8D%E5%90%8C%E7%9A%84-apptoken-%E7%BC%93%E5%AD%98%E8%BF%9E%E6%8E%A5"><span class="nav-number">8.</span> <span class="nav-text"> RpcProxy：为不同的 App&#x2F;Token 缓存连接</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%A4%E7%A7%8D%E8%B0%83%E7%94%A8%E8%B5%B0%E4%B8%80%E9%81%8D%E6%88%90%E5%8A%9F%E4%B8%8E%E8%B6%85%E6%97%B6"><span class="nav-number">9.</span> <span class="nav-text"> 两种调用走一遍：成功与超时</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%88%90%E5%8A%9F%E7%9A%84-unary-rpc-%E8%B0%83%E7%94%A8"><span class="nav-number">9.1.</span> <span class="nav-text"> 成功的 Unary RPC 调用</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B6%85%E6%97%B6%E7%9A%84-unary-rpc-%E8%B0%83%E7%94%A8"><span class="nav-number">9.2.</span> <span class="nav-text"> 超时的 Unary RPC 调用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">284</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

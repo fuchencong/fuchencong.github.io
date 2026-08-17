@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="中间件是 go-zero REST 框架中最容易 凭感觉使用 却最难 准确理解 的部分。它的本质不难——每个中间件都是一个 func(http.Handler) http.Handler，层层包裹业务逻辑。本文从 chain.Chain 的不可变链表机制出发，依次分析每个默认中间件的职责和位置原因，再展开 JWT 认证、签名校验、CORS、SSE 和文件服务这些 附加能力 如何挂载到主链之上。文中">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 07：REST 中间件链">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/17/go-zero-07/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="中间件是 go-zero REST 框架中最容易 凭感觉使用 却最难 准确理解 的部分。它的本质不难——每个中间件都是一个 func(http.Handler) http.Handler，层层包裹业务逻辑。本文从 chain.Chain 的不可变链表机制出发，依次分析每个默认中间件的职责和位置原因，再展开 JWT 认证、签名校验、CORS、SSE 和文件服务这些 附加能力 如何挂载到主链之上。文中">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-17T07:27:43.000Z">
+<meta property="article:modified_time" content="2026-08-17T07:28:55.851Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/17/go-zero-07/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 07：REST 中间件链 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/17/go-zero-07/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 07：REST 中间件链
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-17 15:27:43" itemprop="dateCreated datePublished" datetime="2026-08-17T15:27:43+08:00">2026-08-17</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>中间件是 go-zero REST 框架中最容易 <code>凭感觉使用</code> 却最难 <code>准确理解</code> 的部分。它的本质不难——每个中间件都是一个 <code>func(http.Handler) http.Handler</code>，层层包裹业务逻辑。本文从 <code>chain.Chain</code> 的不可变链表机制出发，依次分析每个默认中间件的职责和位置原因，再展开 JWT 认证、签名校验、CORS、SSE 和文件服务这些 <code>附加能力</code> 如何挂载到主链之上。文中会用成功、超时、panic、未认证四种典型请求贯穿讲解，帮你建立&quot;请求穿过中间件链&quot;的肌肉记忆。</p>
+<span id="more"></span>
+<h2 id="chainchain不可变的中间件链表"><a class="markdownIt-Anchor" href="#chainchain不可变的中间件链表"></a> chain.Chain：不可变的中间件链表</h2>
+<p>在深入每个中间件之前，先理解承载它们的容器——<code>chain.Chain</code>。这是 go-zero 基于 <a target="_blank" rel="noopener" href="https://github.com/justinas/alice">justinas/alice</a> 魔改的中间件链实现，相比原版增加了 <code>Prepend</code> 方法和 <code>Chain</code> 接口。</p>
+<h3 id="基本用法"><a class="markdownIt-Anchor" href="#基本用法"></a> 基本用法</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/chain/chain.go</span></span><br><span class="line"><span class="keyword">type</span> Middleware <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Chain <span class="keyword">interface</span> &#123;</span><br><span class="line">    Append(middlewares ...Middleware) Chain</span><br><span class="line">    Prepend(middlewares ...Middleware) Chain</span><br><span class="line">    Then(h http.Handler) http.Handler</span><br><span class="line">    ThenFunc(fn http.HandlerFunc) http.Handler</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>用法非常简洁：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">chn := chain.New(m1, m2)  <span class="comment">// m1 → m2</span></span><br><span class="line">chn = chn.Append(m3)       <span class="comment">// m1 → m2 → m3</span></span><br><span class="line">handler := chn.Then(businessHandler)</span><br></pre></td></tr></table></figure>
+<p>请求到达时，执行顺序是 <code>m1 → m2 → m3 → businessHandler</code>。这与直觉一致：<code>New</code> 中先传入的在外层，<code>Append</code> 追加的在内层。每个中间件内部调用 <code>next.ServeHTTP(w, r)</code> 将控制权交给下一层。</p>
+<h3 id="不可变性的意义"><a class="markdownIt-Anchor" href="#不可变性的意义"></a> 不可变性的意义</h3>
+<p>注意 <code>chain</code> 结构体是小写开头的——它不对外暴露内部字段。每次 <code>Append</code> 或 <code>Prepend</code> 都返回一个<strong>新的</strong> <code>chain</code> 实例，原有实例不受影响：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c chain)</span></span> Append(middlewares ...Middleware) Chain &#123;</span><br><span class="line">    <span class="keyword">return</span> chain&#123;middlewares: join(c.middlewares, middlewares)&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">join</span><span class="params">(a, b []Middleware)</span></span> []Middleware &#123;</span><br><span class="line">    mids := <span class="built_in">make</span>([]Middleware, <span class="number">0</span>, <span class="built_in">len</span>(a)+<span class="built_in">len</span>(b))</span><br><span class="line">    mids = <span class="built_in">append</span>(mids, a...)</span><br><span class="line">    mids = <span class="built_in">append</span>(mids, b...)</span><br><span class="line">    <span class="keyword">return</span> mids</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每次都会创建新的 slice，所以一个 <code>Chain</code> 可以派生多个子链来分别使用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">base := chain.New(logMiddleware, authMiddleware)</span><br><span class="line">indexRoute := base.Then(indexHandler)   <span class="comment">// log → auth → index</span></span><br><span class="line">adminRoute := base.Append(adminOnly)    <span class="comment">// log → auth → adminOnly → admin</span></span><br></pre></td></tr></table></figure>
+<p>这种不可变性在 go-zero 的 <code>bindRoute</code> 中发挥得淋漓尽致：默认链 → 追加 JWT → 追加用户中间件 → 再 <code>.ThenFunc</code>，每一步都产生新链，完全不会相互污染。</p>
+<h3 id="then-的构造过程"><a class="markdownIt-Anchor" href="#then-的构造过程"></a> Then 的构造过程</h3>
+<p><code>Then</code> 将中间件链和最终 handler 收拢为一个 <code>http.Handler</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c chain)</span></span> Then(h http.Handler) http.Handler &#123;</span><br><span class="line">    <span class="keyword">for</span> i := <span class="keyword">range</span> c.middlewares &#123;</span><br><span class="line">        h = c.middlewares[<span class="built_in">len</span>(c.middlewares)<span class="number">-1</span>-i](h)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> h</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意遍历方向是<strong>从后往前</strong>——这决定了&quot;先加到链上的中间件在外层&quot;。假设链是 <code>[m1, m2, m3]</code>，遍历过程是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">h = handler</span><br><span class="line">h = m3(h)    // m3 包裹 handler</span><br><span class="line">h = m2(h)    // m2 包裹 m3</span><br><span class="line">h = m1(h)    // m1 包裹 m2</span><br></pre></td></tr></table></figure>
+<p>请求流 = m1 → m2 → m3 → handler。<code>Prepend</code> 则相反，在链首插入，新加入的中间件跑到最外层。</p>
+<p>理解了 chain 的机制后，我们再来看 go-zero 的 11 个默认中间件是怎样逐个叠加起来的。</p>
+<h2 id="默认中间件链的组装buildchainwithnativemiddlewares"><a class="markdownIt-Anchor" href="#默认中间件链的组装buildchainwithnativemiddlewares"></a> 默认中间件链的组装：buildChainWithNativeMiddlewares</h2>
+<p>所有默认中间件的装配入口在 <code>engine.buildChainWithNativeMiddlewares</code>。它被 <code>bindRoute</code> 调用——每次绑定的路由是一组共享属性的路由（<code>featuredRoutes</code>），它们复用同一个中间件链。但如果某组路由的超时、优先级或 maxBytes 不同，<code>checkedTimeout</code>、<code>getShedder</code> 和 <code>checkedMaxBytes</code> 会取路由组级别的值，而非全局默认值。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/engine.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ng *engine)</span></span> buildChainWithNativeMiddlewares(fr featuredRoutes, route Route,</span><br><span class="line">    metrics *stat.Metrics) chain.Chain &#123;</span><br><span class="line">    chn := chain.New()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Trace &#123;</span><br><span class="line">        chn = chn.Append(handler.TraceHandler(ng.conf.Name, route.Path, ...))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Log &#123;</span><br><span class="line">        chn = chn.Append(ng.getLogHandler())</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Prometheus &#123;</span><br><span class="line">        chn = chn.Append(handler.PrometheusHandler(route.Path, route.Method))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.MaxConns &#123;</span><br><span class="line">        chn = chn.Append(handler.MaxConnsHandler(ng.conf.MaxConns))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Breaker &#123;</span><br><span class="line">        chn = chn.Append(handler.BreakerHandler(route.Method, route.Path, metrics))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Shedding &#123;</span><br><span class="line">        chn = chn.Append(handler.SheddingHandler(ng.getShedder(fr.priority), metrics))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Timeout &#123;</span><br><span class="line">        chn = chn.Append(handler.TimeoutHandler(ng.checkedTimeout(fr.timeout)))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Recover &#123;</span><br><span class="line">        chn = chn.Append(handler.RecoverHandler)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Metrics &#123;</span><br><span class="line">        chn = chn.Append(handler.MetricHandler(metrics))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.MaxBytes &#123;</span><br><span class="line">        chn = chn.Append(handler.MaxBytesHandler(ng.checkedMaxBytes(fr.maxBytes)))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> ng.conf.Middlewares.Gunzip &#123;</span><br><span class="line">        chn = chn.Append(handler.GunzipHandler)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> chn</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>11 个中间件，每个都可以在配置中按需关闭。最终形成的处理链，从外到内依次是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Trace → Log → Prometheus → MaxConns → Breaker → Shedding →</span><br><span class="line">  Timeout → Recover → Metrics → MaxBytes → Gunzip → Handler</span><br></pre></td></tr></table></figure>
+<p>光看名字很容易产生&quot;需要这么多吗&quot;的疑问。下面逐个分析每个中间件<strong>保护什么、为什么在这个位置</strong>，你就会发现每个位置都有它的设计约束。</p>
+<h2 id="逐一剖析每个默认中间件的职责与位置理由"><a class="markdownIt-Anchor" href="#逐一剖析每个默认中间件的职责与位置理由"></a> 逐一剖析：每个默认中间件的职责与位置理由</h2>
+<h3 id="tracehandler在大门外安上监控摄像头"><a class="markdownIt-Anchor" href="#tracehandler在大门外安上监控摄像头"></a> TraceHandler：在大门外安上监控摄像头</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/tracehandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TraceHandler</span><span class="params">(serviceName, path <span class="type">string</span>, opts ...TraceOption)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        tracer := otel.Tracer(trace.TraceName)</span><br><span class="line">        propagator := otel.GetTextMapPropagator()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="comment">// ... skip ignored paths ...</span></span><br><span class="line"></span><br><span class="line">            ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))</span><br><span class="line">            spanCtx, span := tracer.Start(ctx, spanName, ...)</span><br><span class="line">            <span class="keyword">defer</span> span.End()</span><br><span class="line"></span><br><span class="line">            propagator.Inject(spanCtx, propagation.HeaderCarrier(w.Header()))</span><br><span class="line">            trw := response.NewWithCodeResponseWriter(w)</span><br><span class="line">            next.ServeHTTP(trw, r.WithContext(spanCtx))</span><br><span class="line"></span><br><span class="line">            span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(trw.Code)...)</span><br><span class="line">            span.SetStatus(semconv.SpanStatusFromHTTPStatusCodeAndSpanKind(</span><br><span class="line">                trw.Code, oteltrace.SpanKindServer))</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>TraceHandler 做了 OpenTelemetry 的标准三件事：</p>
+<ul>
+<li><strong>Extract</strong>：从上游请求头中提取 trace context（如果有的话），建立父子 span 关系。这是分布式链路追踪的基础——<code>REST → RPC</code> 调用链能串联起来，靠的就是这一步 propagation。</li>
+<li><strong>Start span</strong>：以路由路径为 span name 创建服务端 span。请求完成后通过 <code>defer span.End()</code> 关闭 span，并设置状态码属性。</li>
+<li><strong>Inject</strong>：将 trace context 注入响应头，方便下游继续传播。</li>
+</ul>
+<p><strong>为什么在最外层？</strong> TraceHandler 需要测量整个请求的生命周期——包括所有中间件的耗时和最终的业务处理耗时。如果把它放在中间层的某个位置，Span 就覆盖不到外层的中间件了。另外，OpenTelemetry 的 <code>extract/inject</code> 需要在请求的入口和出口处执行，放在最外层天然契合这个语义。</p>
+<p>TraceHandler 也会处理 404 请求——在 <code>notFoundHandler</code> 中单独构建了一条 Trace → Log 的短链，保证未匹配路由的请求也能被追踪。</p>
+<h3 id="loghandler记录每一个请求的呼吸"><a class="markdownIt-Anchor" href="#loghandler记录每一个请求的呼吸"></a> LogHandler：记录每一个请求的呼吸</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/loghandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">LogHandler</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        timer := utils.NewElapsedTimer()</span><br><span class="line">        logs := <span class="built_in">new</span>(internal.LogCollector)</span><br><span class="line">        lrw := response.NewWithCodeResponseWriter(w)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">var</span> dup io.ReadCloser</span><br><span class="line">        r.Body, dup = iox.LimitDupReadCloser(r.Body, limitBodyBytes)</span><br><span class="line">        next.ServeHTTP(lrw, r.WithContext(internal.WithLogCollector(r.Context(), logs)))</span><br><span class="line">        r.Body = dup</span><br><span class="line">        logBrief(r, lrw.Code, timer, logs)</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>LogHandler 做三件事：</p>
+<p><strong>第一，启动计时器，记录响应状态码。</strong> 它用 <code>WithCodeResponseWriter</code> 包裹原始的 <code>ResponseWriter</code>，这样在 <code>next.ServeHTTP</code> 返回后，就能从 <code>lrw.Code</code> 中获取实际写入的 HTTP 状态码——而不需要 hook <code>WriteHeader</code>。</p>
+<p><strong>第二，注入 LogCollector 到 context。</strong> 业务代码内部或其他中间件可以通过 <code>internal.Infof(r, &quot;blah&quot;)</code> 写入日志，这些日志被收集到 <code>LogCollector</code> 中，在请求结束时随主日志一起刷新。这是一种<strong>请求级日志聚合</strong>——不是每条 <code>Infof</code> 都单独输出，而是全部挂在一条请求日志下面。</p>
+<p><strong>第三，慢请求检测。</strong> 当请求耗时超过阈值（默认普通请求 500ms，SSE 请求 3 分钟），日志级别升级为 <code>Slowf</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> duration &gt; getSlowThreshold(r) &#123;</span><br><span class="line">    logger.Slowf(<span class="string">&quot;[HTTP] %s - %s %s - %s - %s - slowcall(%s)&quot;</span>, ...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>普通请求 200ms 就算慢？SSE 为什么要 3 分钟？因为 SSE 连接天然是长连接——可能在几分钟内都没有数据推送，如果在 500ms 时就报 slow call，日志里会充满误报。框架为 SSE 单独设置了 <code>sseSlowThreshold</code>，这是一个细心实用的设计。</p>
+<p>LogHandler 还支持 <code>DetailedLogHandler</code> 模式（通过配置中的 <code>Verbose</code> 开关）。与简洁模式只记录请求元信息不同，详细模式会 dump 完整的 HTTP 请求和响应体，适合开发环境和问题排查。但生产环境务必关掉——dump body 有性能开销，且可能泄露敏感数据。</p>
+<p><strong>为什么紧挨着 Trace？</strong> 日志和追踪是观测性的姐妹——Trace 负责跨服务的因果关系，Log 负责单服务的明细记录。两者都在最外层，保证覆盖完整的请求生命周期。如果把它们放在中间，其他中间件中写入的 <code>internal.Infof</code> 就无法被 LogCollector 收集了。</p>
+<h3 id="prometheushandler为每个请求打上指标标签"><a class="markdownIt-Anchor" href="#prometheushandler为每个请求打上指标标签"></a> PrometheusHandler：为每个请求打上指标标签</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/prometheushandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">PrometheusHandler</span><span class="params">(path, method <span class="type">string</span>)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            startTime := timex.Now()</span><br><span class="line">            cw := response.NewWithCodeResponseWriter(w)</span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                code := strconv.Itoa(cw.Code)</span><br><span class="line">                metricServerReqDur.Observe(timex.Since(startTime).Milliseconds(), path, method, code)</span><br><span class="line">                metricServerReqCodeTotal.Inc(path, method, code)</span><br><span class="line">            &#125;()</span><br><span class="line">            next.ServeHTTP(cw, r)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它暴露两个指标：</p>
+<ul>
+<li><code>http_server_requests_duration_ms</code>：请求耗时（Histogram），按 path × method × status_code 三维切分，桶值为 5/10/25/50/100/250/500/750/1000ms。</li>
+<li><code>http_server_requests_code_total</code>：请求计数（Counter），同样三维切分。</li>
+</ul>
+<p><strong>为什么在 Log 之后、保护类中间件之前？</strong> 这个位置很微妙——Prometheus 包裹了它内部的所有中间件和业务逻辑。这意味着：</p>
+<ul>
+<li>被 MaxConns 拒绝的请求（503）<strong>会被</strong> Prometheus 记录——因为拒绝发生在它里面。</li>
+<li>被 Breaker/Shedding 拒绝的请求（503）<strong>也会被</strong> Prometheus 记录——同理。</li>
+<li>如果 Prometheus 放在 Breaker 里面，熔断期间的请求就会从监控中&quot;消失&quot;，你看到的是&quot;请求量突然降为零&quot;而不是&quot;全部返回 503&quot;——前者会让你以为服务没人用，后者会让你立刻发现故障。</li>
+</ul>
+<p>所以 Prometheus 在保护类中间件<strong>外层</strong>，是一个正确的观测位置决策：你要看到所有的请求，包括被拒绝的。</p>
+<h3 id="maxconnshandler在门口数人头"><a class="markdownIt-Anchor" href="#maxconnshandler在门口数人头"></a> MaxConnsHandler：在门口数人头</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/maxconnshandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MaxConnsHandler</span><span class="params">(n <span class="type">int</span>)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        latch := syncx.NewLimit(n)</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> latch.TryBorrow() &#123;</span><br><span class="line">                <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                    <span class="keyword">if</span> err := latch.Return(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                        logx.WithContext(r.Context()).Error(err)</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;()</span><br><span class="line">                next.ServeHTTP(w, r)</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                w.WriteHeader(http.StatusServiceUnavailable)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>用 <code>syncx.Limit</code> 实现了并发连接数的信号量控制。<code>TryBorrow()</code> 成功拿到令牌就继续（请求结束后归还），拿不到就直接返回 503。</p>
+<p><strong>为什么在保护类中间件的最外层？</strong> MaxConns 的限制对象是<strong>当前进程的并发连接数</strong>，与下游是否故障、CPU 是否高负载都无关。它是第一条防线——门都关了就不要再放人进来了，连后面断路器检查都多余。</p>
+<p>默认值是 <code>MaxConns: 10000</code>，你可以在配置中调整。注意这个值要和系统文件描述符上限对齐——如果 <code>MaxConns</code> 设得过高，可能会先打到 OS 的 fd 限制。</p>
+<h3 id="breakerhandler下游坏了就别再打"><a class="markdownIt-Anchor" href="#breakerhandler下游坏了就别再打"></a> BreakerHandler：下游坏了就别再打</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/breakerhandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BreakerHandler</span><span class="params">(method, path <span class="type">string</span>, metrics *stat.Metrics)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    brk := breaker.NewBreaker(breaker.WithName(strings.Join([]<span class="type">string</span>&#123;method, path&#125;, breakerSeparator)))</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            promise, err := brk.Allow()</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                metrics.AddDrop()</span><br><span class="line">                w.WriteHeader(http.StatusServiceUnavailable)</span><br><span class="line">                <span class="keyword">return</span></span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            cw := response.NewWithCodeResponseWriter(w)</span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                <span class="keyword">if</span> cw.Code &lt; http.StatusInternalServerError &#123;</span><br><span class="line">                    promise.Accept()</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    promise.Reject(fmt.Sprintf(<span class="string">&quot;%d %s&quot;</span>, cw.Code, http.StatusText(cw.Code)))</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;()</span><br><span class="line">            next.ServeHTTP(cw, r)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每条路由（method + path）拥有一个独立的断路器实例。每当响应码 <code>&gt;= 500</code>，断路器收到一个 Reject 信号；响应码 <code>&lt; 500</code>，收到 Accept。当失败率超过阈值，断路器跳闸，后续请求直接被拒绝返回 503，不再打到下游。</p>
+<p>关于断路器算法的细节（Google SRE 熔断、滑动窗口等），我们留到第 10 篇&quot;熔断、降载与限流&quot;中专门展开。这里先关注它在链中的位置。</p>
+<p><strong>为什么在 Shedding 外侧？</strong> 断路器保护的是&quot;下游服务是否健康&quot;，而降载保护的是&quot;当前服务 CPU 是否过载&quot;。从优先级上说，如果下游已经明确故障，就应该在前置环节就拒绝请求，不要等到后面的降载判断。这与 HTTP 代理的设计逻辑一致——先看目标可达不可达，再考虑自身负载够不够。</p>
+<h3 id="sheddinghandlercpu-扛不住了就择优放行"><a class="markdownIt-Anchor" href="#sheddinghandlercpu-扛不住了就择优放行"></a> SheddingHandler：CPU 扛不住了就择优放行</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/sheddinghandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">SheddingHandler</span><span class="params">(shedder load.Shedder, metrics *stat.Metrics)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            sheddingStat.IncrementTotal()</span><br><span class="line">            promise, err := shedder.Allow()</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                metrics.AddDrop()</span><br><span class="line">                sheddingStat.IncrementDrop()</span><br><span class="line">                w.WriteHeader(http.StatusServiceUnavailable)</span><br><span class="line">                <span class="keyword">return</span></span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            cw := response.NewWithCodeResponseWriter(w)</span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                <span class="keyword">if</span> cw.Code == http.StatusServiceUnavailable &#123;</span><br><span class="line">                    promise.Fail()</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    sheddingStat.IncrementPass()</span><br><span class="line">                    promise.Pass()</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;()</span><br><span class="line">            next.ServeHTTP(cw, r)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>降载器使用基于 BBR 思路的自适应算法。它不依赖固定阈值，而是根据 CPU 负载和请求通过率动态决定&quot;允许多少请求通过&quot;。在上一篇中我们提到，engine 创建了两个降载器——普通路由使用配置的 CPU 阈值（默认 90%），标记了 <code>WithPriority()</code> 的高优先级路由使用更高的阈值（默认 95%），给核心接口留出更多&quot;容错空间&quot;。</p>
+<p><strong>为什么在 Breaker 内侧、Timeout 外侧？</strong> Shedding 的判断依据是<strong>当前服务的 CPU 负载</strong>，而非下游状态。如果下游断路器已经跳闸，说明故障在下游——应在前置环节就拦截。而 Shedding 应该在判定&quot;下游可达&quot;之后、开启超时计时之前执行——降载本身是极快的（内存操作），不消耗实际业务时间。</p>
+<p>另一个细节：<code>promise.Fail()</code> vs <code>promise.Pass()</code> 的判断依据是<strong>响应码是否等于 503</strong>。这与 Breaker 的 <code>code &gt;= 500</code> 判断不同——降载器认为只有&quot;服务不可用&quot;才算失败，而 500（内部错误）不算降载器的失败（那可能是业务代码的 bug，不是容量问题）。这一区分使得降载器对&quot;自身过载&quot;的判断更加精确。</p>
+<p>降载算法的内部实现（BBR、maxPass、minRt、在途请求等）同样会在第 10 篇中详细剖析。</p>
+<h3 id="timeouthandler为请求装上倒数计时"><a class="markdownIt-Anchor" href="#timeouthandler为请求装上倒数计时"></a> TimeoutHandler：为请求装上倒数计时</h3>
+<p>在标准库的 <code>http.TimeoutHandler</code> 之上，go-zero 做了自己的实现，原因有两点：</p>
+<p><strong>第一，区分客户端取消和服务端超时。</strong> Go 标准库的 <code>http.TimeoutHandler</code> 把所有超时情况一律返回 <code>503 Service Unavailable</code>。但 <code>context.Canceled</code> 和 <code>context.DeadlineExceeded</code> 的语义完全不同——前者可能是客户端主动断开，后者才是服务端处理超时。go-zero 将客户端取消映射为 <code>499</code>（nginx 风格状态码）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/timeouthandler.go</span></span><br><span class="line"><span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">    httpx.ErrorCtx(r.Context(), w, ctx.Err(), <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, err <span class="type">error</span>)</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> errors.Is(err, context.Canceled) &#123;</span><br><span class="line">            w.WriteHeader(statusClientClosedRequest) <span class="comment">// 499</span></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            w.WriteHeader(http.StatusServiceUnavailable) <span class="comment">// 503</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;)</span><br></pre></td></tr></table></figure>
+<p>这种区分对监控非常关键——499 代表客户端行为（可能是用户关了浏览器），503 代表服务端容量问题（需要扩容或排查），混淆二者会导致错误的告警和运维决策。</p>
+<p><strong>第二，自定义 timeoutWriter 的缓冲设计。</strong> 超时后不能直接向 <code>http.ResponseWriter</code> 写入——此时底层连接可能已经被标准库释放。go-zero 的 <code>timeoutWriter</code> 采用&quot;先写 header 到临时 Header map、后写 body 到 <code>bytes.Buffer</code>&quot;的策略：请求正常完成时，在主 goroutine 中将缓冲的 header 和 body 复制到真实的 ResponseWriter；请求超时时，只是设置 <code>timedOut = true</code> 标志，后续 handler 的任何写入操作被直接拒绝。这样实现了两个 goroutine（handler goroutine 和 timeout goroutine）之间的安全隔离。</p>
+<p>代码中还有一个巧妙的保护：WebSocket 和 SSE 请求<strong>完全绕过超时</strong>。这两种长连接会设置 <code>Upgrade: websocket</code> 或 <code>Accept: text/event-stream</code> 头，TimeoutHandler 检测到后直接透传不做超时控制——长连接的超时应该由业务层面（心跳、空闲超时）来处理，而不是一刀切的 HTTP 超时。</p>
+<p><strong>为什么在 Recover 外侧？</strong> TimeoutHandler 通过 <code>go func()</code> 启动了一个新 goroutine 来执行后续中间件和业务 handler。如果这个 goroutine 中发生 panic，它需要被外层的 Recover 捕获。如果 Recover 放在 Timeout 外面，那 TimeoutHandler 内部 goroutine 的 panic 就收不到保护了——所以 Timeout 必须在 Recover 外面。</p>
+<h3 id="recoverhandler最后的安全网"><a class="markdownIt-Anchor" href="#recoverhandler最后的安全网"></a> RecoverHandler：最后的安全网</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/recoverhandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">RecoverHandler</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> result := <span class="built_in">recover</span>(); result != <span class="literal">nil</span> &#123;</span><br><span class="line">                internal.Error(r, fmt.Sprintf(<span class="string">&quot;%v\n%s&quot;</span>, result, debug.Stack()))</span><br><span class="line">                w.WriteHeader(http.StatusInternalServerError)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;()</span><br><span class="line">        next.ServeHTTP(w, r)</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它做的事极其简单却不可或缺——recover any panic，记录堆栈，返回 500。<strong>不要依赖其他中间件的 defer recover</strong>——Go 的 <code>recover</code> 只能捕获当前 goroutine 中直接发生的 panic，而 TimeoutHandler 已经在不同 goroutine 中了。RecoverHandler 必须在 TimeoutHandler 的内侧 goroutine 中执行，才能捕获业务 handler 及其内侧中间件的 panic。</p>
+<h3 id="metrichandler在弹性保护之后精准度量"><a class="markdownIt-Anchor" href="#metrichandler在弹性保护之后精准度量"></a> MetricHandler：在弹性保护之后精准度量</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/metrichandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MetricHandler</span><span class="params">(metrics *stat.Metrics)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            startTime := timex.Now()</span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                metrics.Add(stat.Task&#123;</span><br><span class="line">                    Duration: timex.Since(startTime),</span><br><span class="line">                &#125;)</span><br><span class="line">            &#125;()</span><br><span class="line">            next.ServeHTTP(w, r)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它把每次请求的耗时记录到一个 <code>stat.Metrics</code> 中。这个 Metrics 在后台以每分钟为周期聚合统计，输出 QPS、平均延迟、中位数、P90、P99、P99.9 等分位数。</p>
+<p><strong>注意 MetricHandler 和 PrometheusHandler 的区别。</strong> PrometheusHandler 提供的是&quot;拉模式&quot;的标准 Prometheus 指标（通过 <code>/metrics</code> 端点暴露），而 MetricHandler 提供的是 go-zero 内置的&quot;推模式&quot;统计日志（每分钟一行）。两者互补——Prometheus 适合集中监控系统的图表和告警，内置统计适合开发阶段快速扫一眼日志了解性能趋势。</p>
+<p><strong>为什么在保护类中间件之后？</strong> Metrics 统计的是&quot;实际通过的请求耗时&quot;。被 Breaker/Shedding/MaxConns 拒绝的请求不应该进入延迟统计——它们耗时接近于零，如果混入统计会把 P99 拉低，让你误以为系统性能很好。Drops 有单独计数（通过 <code>metrics.AddDrop()</code>），这才是衡量保护触发频率的正确方式。</p>
+<h3 id="maxbyteshandler拒绝超大请求体"><a class="markdownIt-Anchor" href="#maxbyteshandler拒绝超大请求体"></a> MaxBytesHandler：拒绝超大请求体</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/maxbyteshandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MaxBytesHandler</span><span class="params">(n <span class="type">int64</span>)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> r.ContentLength &gt; n &#123;</span><br><span class="line">                w.WriteHeader(http.StatusRequestEntityTooLarge)</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                next.ServeHTTP(w, r)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>默认限制 1MB。它只看 <code>Content-Length</code> 头——如果客户端没发这个头，那即使 body 实际超大也无法提前拦截。不过没关系，我们在上一篇中学过 <code>httpx.Parse</code> 中还有一层 <code>maxBodyLen</code>（8MB）的 <code>io.LimitReader</code> 保护。这是纵深防御——<code>MaxBytesHandler</code> 做快速前置拦截（只需要读一个 int64 的 Content-Length 头），<code>io.LimitReader</code> 做实际读取量的硬限制。</p>
+<h3 id="gunziphandler为下游解压"><a class="markdownIt-Anchor" href="#gunziphandler为下游解压"></a> GunzipHandler：为下游解压</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/gunziphandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GunzipHandler</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> strings.Contains(r.Header.Get(httpx.ContentEncoding), gzipEncoding) &#123;</span><br><span class="line">            reader, err := gzip.NewReader(r.Body)</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                w.WriteHeader(http.StatusBadRequest)</span><br><span class="line">                <span class="keyword">return</span></span><br><span class="line">            &#125;</span><br><span class="line">            r.Body = reader</span><br><span class="line">        &#125;</span><br><span class="line">        next.ServeHTTP(w, r)</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这是整个链中最内层的中间件——它替换了 <code>r.Body</code> 为 <code>gzip.Reader</code>，让后续的 <code>httpx.Parse</code> 对透明的解压无感知。<strong>为什么在最里层？</strong> 解压是纯粹的数据转换，不影响任何安全或弹性决策。放在最里层也意味着前面的 MaxBytes 检查的是压缩后的 <code>Content-Length</code>，不会因为解压而导致内存膨胀逃逸——这是合理的，因为内存分配发生在往下传递的 Reader 中。</p>
+<p>至此，11 个默认中间件全部讲解完毕。它们在链中的位置不是随意安排的，而是遵循一条清晰的职责分层：</p>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>中间件</th>
+<th>核心职责</th>
+<th>位置理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>观测层</strong>（最外）</td>
+<td>Trace、Log、Prometheus</td>
+<td>全方位记录请求信息</td>
+<td>必须包裹一切，才能记录完整生命周期和所有被拒的请求</td>
+</tr>
+<tr>
+<td><strong>入口保护层</strong></td>
+<td>MaxConns</td>
+<td>限制并发连接数</td>
+<td>最前置的保护——满员了就别往后走了</td>
+</tr>
+<tr>
+<td><strong>下游保护层</strong></td>
+<td>Breaker</td>
+<td>下游故障熔断</td>
+<td>下游明确坏了就快速失败，不走后续判断</td>
+</tr>
+<tr>
+<td><strong>自保层</strong></td>
+<td>Shedding</td>
+<td>CPU 过载自适应降载</td>
+<td>下游可达时才判断自身容量，且决策极快</td>
+</tr>
+<tr>
+<td><strong>执行控制层</strong></td>
+<td>Timeout、Recover</td>
+<td>超时控制和 panic 恢复</td>
+<td>Timeout 启动新 goroutine，Recover 必须在它里面</td>
+</tr>
+<tr>
+<td><strong>度量层</strong></td>
+<td>Metrics</td>
+<td>记录通过的保护层的请求延迟</td>
+<td>只度量&quot;真正执行的请求&quot;，被前置拒绝的不应计入延迟</td>
+</tr>
+<tr>
+<td><strong>数据转换层</strong>（最内）</td>
+<td>MaxBytes、Gunzip</td>
+<td>请求体的安全检查和解压</td>
+<td>纯数据转换，不影响任何决策</td>
+</tr>
+</tbody>
+</table>
+<p>这张表可以作为你日常调整中间件的参考，你也可以对照这个分层来开发自己的中间件，把它放到正确的层级中。</p>
+<h2 id="认证与安全jwt-密钥过渡和签名校验"><a class="markdownIt-Anchor" href="#认证与安全jwt-密钥过渡和签名校验"></a> 认证与安全：JWT、密钥过渡和签名校验</h2>
+<p>默认中间件链组装完成后，<code>bindRoute</code> 紧接着追加认证和签名校验：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/engine.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ng *engine)</span></span> bindRoute(fr featuredRoutes, router httpx.Router, metrics *stat.Metrics,</span><br><span class="line">    route Route, verifier <span class="function"><span class="keyword">func</span><span class="params">(chain.Chain)</span></span> chain.Chain) <span class="type">error</span> &#123;</span><br><span class="line">    chn := ng.chain</span><br><span class="line">    <span class="keyword">if</span> chn == <span class="literal">nil</span> &#123;</span><br><span class="line">        chn = ng.buildChainWithNativeMiddlewares(fr, route, metrics)</span><br><span class="line">    &#125;</span><br><span class="line">    chn = ng.appendAuthHandler(fr, chn, verifier)          <span class="comment">// JWT + 签名校验</span></span><br><span class="line">    <span class="keyword">for</span> _, middleware := <span class="keyword">range</span> ng.middlewares &#123;</span><br><span class="line">        chn = chn.Append(convertMiddleware(middleware))    <span class="comment">// 用户全局中间件</span></span><br><span class="line">    &#125;</span><br><span class="line">    handle := chn.ThenFunc(route.Handler)</span><br><span class="line">    <span class="keyword">return</span> router.Handle(route.Method, route.Path, handle)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>认证中间件被追加在默认链的内侧，也就是保护层之后、业务 handler 之前。这样设计的逻辑是：<strong>当客户端在安全边界之外，所有保护机制应该对请求一视同仁——超时、熔断、降载保护的是服务器资源，不应该因为客户端没认证就区别对待</strong>。</p>
+<h3 id="jwt-认证和密钥过渡"><a class="markdownIt-Anchor" href="#jwt-认证和密钥过渡"></a> JWT 认证和密钥过渡</h3>
+<p>JWT 认证通过 <code>handler.Authorize</code> 实现。解析 token、验证签名、提取 claims，然后将非标准 claims 注入到 request 的 context 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/authhandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">Authorize</span><span class="params">(secret <span class="type">string</span>, opts ...AuthorizeOption)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    parser := token.NewTokenParser()</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            tok, err := parser.ParseToken(r, secret, authOpts.PrevSecret)</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123; ... &#125;</span><br><span class="line"></span><br><span class="line">            claims, ok := tok.Claims.(jwt.MapClaims)</span><br><span class="line">            <span class="keyword">for</span> k, v := <span class="keyword">range</span> claims &#123;</span><br><span class="line">                <span class="keyword">switch</span> k &#123;</span><br><span class="line">                <span class="keyword">case</span> jwtAudience, jwtExpire, jwtId, jwtIssueAt, jwtIssuer,</span><br><span class="line">                     jwtNotBefore, jwtSubject:</span><br><span class="line">                    <span class="comment">// 忽略 JWT 标准 claims</span></span><br><span class="line">                <span class="keyword">default</span>:</span><br><span class="line">                    ctx = context.WithValue(ctx, k, v)</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            next.ServeHTTP(w, r.WithContext(ctx))</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>把业务定义的 claims 注入 context 是一个很好的设计——业务代码通过 <code>r.Context().Value(&quot;userId&quot;)</code> 就能拿到当前用户，不需要解析 token 两次。</p>
+<p>现在看密钥过渡的支持。在密钥轮转场景中，如果直接替换旧密钥，那旧 token 还没过期的新 token 又已签发的短暂窗口内，会有用户被拒绝。<code>WithPrevSecret</code> 提供了一种平滑过渡：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// go-zero 生成代码中的用法</span></span><br><span class="line">rest.WithJwtTransition(<span class="string">&quot;new-secret-key&quot;</span>, <span class="string">&quot;old-secret-key&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>框架内部，<code>ParseToken</code> 会先尝试用主密钥（新密钥）解析，如果失败再尝试用过渡密钥（旧密钥）。一段时间后确认旧 token 全部过期，再把 <code>WithJwtTransition</code> 改成 <code>WithJwt</code>——零停机切换。</p>
+<p>认证失败时，先调用用户自定义的 <code>UnauthorizedCallback</code>（如果设置了），再做兜底处理——写 401：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">unauthorized</span><span class="params">(w http.ResponseWriter, r *http.Request, err <span class="type">error</span>, callback UnauthorizedCallback)</span></span> &#123;</span><br><span class="line">    writer := response.NewHeaderOnceResponseWriter(w)</span><br><span class="line"></span><br><span class="line">    <span class="comment">// callback 先运行，让用户可以设置自定义响应头</span></span><br><span class="line">    <span class="keyword">if</span> callback != <span class="literal">nil</span> &#123;</span><br><span class="line">        callback(writer, r, err)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 用 HeaderOnceResponseWriter 保证 401 只写一次</span></span><br><span class="line">    writer.WriteHeader(http.StatusUnauthorized)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里用了 <code>HeaderOnceResponseWriter</code>——它只允许第一次 <code>WriteHeader</code> 调用生效，后续调用被静默忽略。这个设计是为了防止认证回调里写了 <code>200</code> 后又被框架兜底写成 <code>401</code>。</p>
+<h3 id="签名校验与-contentsecurity"><a class="markdownIt-Anchor" href="#签名校验与-contentsecurity"></a> 签名校验与 ContentSecurity</h3>
+<p>除了 JWT，go-zero 还提供了一种基于 RSA 非对称加密的内容安全机制——<code>ContentSecurityHandler</code>。它校验请求头 <code>X-Content-Security</code> 中携带的签名信息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/contentsecurityhandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">LimitContentSecurityHandler</span><span class="params">(limitBytes <span class="type">int64</span>, decrypters <span class="keyword">map</span>[<span class="type">string</span>]codec.RsaDecrypter,</span></span></span><br><span class="line"><span class="params"><span class="function">    tolerance time.Duration, strict <span class="type">bool</span>, callbacks ...UnsignedCallback)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="keyword">switch</span> r.Method &#123;</span><br><span class="line">            <span class="keyword">case</span> http.MethodDelete, http.MethodGet, http.MethodPost, http.MethodPut:</span><br><span class="line">                header, err := security.ParseContentSecurity(decrypters, r)</span><br><span class="line">                <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                    executeCallbacks(w, r, next, strict, httpx.CodeSignatureInvalidHeader, callbacks)</span><br><span class="line">                &#125; <span class="keyword">else</span> <span class="keyword">if</span> code := security.VerifySignature(r, header, tolerance); code != httpx.CodeSignaturePass &#123;</span><br><span class="line">                    executeCallbacks(w, r, next, strict, code, callbacks)</span><br><span class="line">                &#125; <span class="keyword">else</span> <span class="keyword">if</span> r.ContentLength &gt; <span class="number">0</span> &amp;&amp; header.Encrypted() &#123;</span><br><span class="line">                    LimitCryptionHandler(limitBytes, header.Key)(next).ServeHTTP(w, r)</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    next.ServeHTTP(w, r)</span><br><span class="line">                &#125;</span><br><span class="line">            <span class="keyword">default</span>:</span><br><span class="line">                next.ServeHTTP(w, r)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>整个校验流程是：解析签名头 → 验证签名是否过期 → 如果 body 已加密，再解密 body。签名校验只在 GET/POST/PUT/DELETE 四种方法上生效（其他方法如 OPTIONS 直接放行，CORS preflight 不能被签名拦截）。解密是与验签配套的能力——<code>CryptionHandler</code> 先 base64 解码 body，再用 AES-ECB 解密，响应也加密后返回。这为需要端到端加密的敏感场景提供了基础能力。</p>
+<p>在严格模式（<code>Strict: true</code>）下，校验失败直接返回 403；非严格模式下，校验失败时继续执行后续 handler——这是一种&quot;记录但不拒绝&quot;的调试友好模式。</p>
+<h2 id="用户全局中间件与路由级中间件的叠加"><a class="markdownIt-Anchor" href="#用户全局中间件与路由级中间件的叠加"></a> 用户全局中间件与路由级中间件的叠加</h2>
+<p>链的最后一环是用户通过 <code>server.Use()</code> 注册的全局中间件，以及通过 <code>WithMiddleware</code> 注册的路由级中间件。二者区别在于生效范围：</p>
+<ul>
+<li><strong>全局中间件</strong>（<code>server.Use(mw)</code>）：对 server 上所有路由生效，追加在 JWT/签名校验之后。</li>
+<li><strong>路由级中间件</strong>（<code>WithMiddleware(mw, routes...)</code>）：仅对指定路由生效，直接包裹在 handler 外围：</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithMiddleware</span><span class="params">(middleware Middleware, rs ...Route)</span></span> []Route &#123;</span><br><span class="line">    routes := <span class="built_in">make</span>([]Route, <span class="built_in">len</span>(rs))</span><br><span class="line">    <span class="keyword">for</span> i := <span class="keyword">range</span> rs &#123;</span><br><span class="line">        route := rs[i]</span><br><span class="line">        routes[i] = Route&#123;</span><br><span class="line">            Method:  route.Method,</span><br><span class="line">            Path:    route.Path,</span><br><span class="line">            Handler: middleware(route.Handler),  <span class="comment">// 直接包裹 handler</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> routes</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>路由级中间件不像全局中间件那样&quot;追加到链尾&quot;，而是直接把 handler 包裹为新的 handler。这意味着路由级中间件在最内层——比全局中间件还要靠近业务代码。</p>
+<p>两者的典型分工是：全局中间件做通用能力（如 CORS header、请求 ID 注入），路由级中间件做特定接口的约束（如角色权限检查、特定接口的限流）。全局中间件能看到 JWT 注入的 context，因为它们位于认证中间件内侧——这是一个隐式的约定，确保了&quot;认证先于授权&quot;的语义。</p>
+<h2 id="特殊传输cors-sse-与文件服务"><a class="markdownIt-Anchor" href="#特殊传输cors-sse-与文件服务"></a> 特殊传输：CORS、SSE 与文件服务</h2>
+<p>除了中间件链内部的能力，go-zero 还为三种特殊传输场景提供了 RouteOption 和 RunOption 级别的支持。</p>
+<h3 id="cors拦截在-router-层面的跨域处理"><a class="markdownIt-Anchor" href="#cors拦截在-router-层面的跨域处理"></a> CORS：拦截在 router 层面的跨域处理</h3>
+<p>CORS 不是以中间件形式存在的，而是通过 <strong>router 装饰器</strong>实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">WithCors</span><span class="params">(origin ...<span class="type">string</span>)</span></span> RunOption &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(server *Server)</span></span> &#123;</span><br><span class="line">        server.router.SetNotAllowedHandler(cors.NotAllowedHandler(<span class="literal">nil</span>, origin...))</span><br><span class="line">        server.router = newCorsRouter(server.router, <span class="literal">nil</span>, origin...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>corsRouter</code> 在 patRouter 外面包裹了一层 <code>cors.Middleware</code>——在路由匹配之前就设置 CORS 响应头。这解决了 CORS 的&quot;鸡和蛋&quot;问题：OPTIONS preflight 请求的路径可能在 radix tree 中找不到，如果在中间件层处理，可能中间件根本跑不到。在 router 外层处理 CORS 保证了 preflight 请求总是能拿到正确的跨域头。</p>
+<p><code>NotAllowedHandler</code> 同时注册为 404 的处理者——保证了即便请求的路径不存在，浏览器也能拿到跨域头，不会因为 CORS 错误掩盖 404。</p>
+<h3 id="sse清除写入超时-设置流式响应头"><a class="markdownIt-Anchor" href="#sse清除写入超时-设置流式响应头"></a> SSE：清除写入超时、设置流式响应头</h3>
+<p>SSE（Server-Sent Events）通过 <code>WithSSE()</code> RouteOption 启用。它的处理分两步：</p>
+<p><strong>路由注册时</strong>，<code>buildSSERoutes</code> 包裹 handler，在原 handler 执行前清除写入超时、设置 SSE 响应头：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/engine.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">buildSSERoutes</span><span class="params">(routes []Route)</span></span> []Route &#123;</span><br><span class="line">    <span class="keyword">for</span> i, route := <span class="keyword">range</span> routes &#123;</span><br><span class="line">        routes[i].Handler = <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            rc := http.NewResponseController(w)</span><br><span class="line">            rc.SetWriteDeadline(time.Time&#123;&#125;)</span><br><span class="line">            w.Header().Set(<span class="string">&quot;Content-Type&quot;</span>, <span class="string">&quot;text/event-stream&quot;</span>)</span><br><span class="line">            w.Header().Set(<span class="string">&quot;Cache-Control&quot;</span>, <span class="string">&quot;no-cache&quot;</span>)</span><br><span class="line">            w.Header().Set(<span class="string">&quot;Connection&quot;</span>, <span class="string">&quot;keep-alive&quot;</span>)</span><br><span class="line">            h(w, r)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> routes</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>请求处理时</strong>，TimeoutHandler 检测 <code>Accept: text/event-stream</code>，跳过超时控制——这和 WebSocket 一样，长连接不应该被 HTTP 超时控制。</p>
+<h3 id="文件服务在-router-层面劫持请求"><a class="markdownIt-Anchor" href="#文件服务在-router-层面劫持请求"></a> 文件服务：在 router 层面劫持请求</h3>
+<p>文件服务同样不是中间件，而是通过 <code>fileServingRouter</code> 在 router 层拦截：当请求路径以指定前缀开头时，直接交给 <code>http.FileServer</code> 处理，不走路由匹配和中间件链。这个设计避免了&quot;为每个静态文件路径注册一条路由&quot;的麻烦，对于前端静态资源、下载文件等场景非常实用。</p>
+<h2 id="四种请求走一遍成功-超时-panic-未认证"><a class="markdownIt-Anchor" href="#四种请求走一遍成功-超时-panic-未认证"></a> 四种请求走一遍：成功、超时、panic、未认证</h2>
+<p>现在我们把前文的分析串起来，追踪四种典型请求在中间件链中的完整旅程。</p>
+<h3 id="成功的正常请求"><a class="markdownIt-Anchor" href="#成功的正常请求"></a> 成功的正常请求</h3>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line">请求到达</span><br><span class="line">  → Trace: 创建 span, inject trace context 到响应头</span><br><span class="line">  → Log: 启动计时器, 注入 LogCollector 到 ctx</span><br><span class="line">  → Prometheus: 启动计时器</span><br><span class="line">  → MaxConns: TryBorrow() 成功</span><br><span class="line">  → Breaker: Allow() 返回 promise</span><br><span class="line">  → Shedding: Allow() 返回 promise</span><br><span class="line">  → Timeout: ctx.WithTimeout, 启动 handler goroutine</span><br><span class="line">    → Recover: defer recover</span><br><span class="line">      → Metrics: 启动计时器</span><br><span class="line">        → MaxBytes: Content-Length &lt;= 1MB ✓</span><br><span class="line">          → Gunzip: Content-Encoding 不是 gzip, 跳过</span><br><span class="line">            → JWT Authorize: 解析 token 成功, 注入 claims 到 ctx</span><br><span class="line">              → 用户全局中间件 (如果有)</span><br><span class="line">                → 业务 Handler</span><br><span class="line">                ← 返回响应</span><br><span class="line">              ← 返回</span><br><span class="line">            ← 返回</span><br><span class="line">          ← 返回</span><br><span class="line">        ← metrics.Add(Duration)</span><br><span class="line">      ← (recover 未触发)</span><br><span class="line">    ← tw.Write + tw.WriteHeader</span><br><span class="line">  ← ctx cancel, promise.Pass()</span><br><span class="line">  ← promise.Accept() (Code=200 &lt; 500)</span><br><span class="line">  ← latch.Return()</span><br><span class="line">  ← Prometheus: observe duration + code_total</span><br><span class="line">  ← logBrief: [HTTP] 200 - GET /api/user - 12ms</span><br><span class="line">  ← span.End() + span.SetStatus</span><br></pre></td></tr></table></figure>
+<h3 id="业务执行超时"><a class="markdownIt-Anchor" href="#业务执行超时"></a> 业务执行超时</h3>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">请求到达</span><br><span class="line">  → Trace/Log/Prometheus/MaxConns 正常通过</span><br><span class="line">  → Breaker: Allow() 返回 promise</span><br><span class="line">  → Shedding: Allow() 返回 promise</span><br><span class="line">  → Timeout: ctx.WithTimeout(3秒), 启动 goroutine</span><br><span class="line">    → Recover → Metrics → MaxBytes → Gunzip → Auth → Handler</span><br><span class="line">      ... 3秒后 ...</span><br><span class="line">    ← ctx.Done()! 超时触发</span><br><span class="line">  → ErrorCtx: 写入 503 (因为 ctx.Err() 是 DeadlineExceeded)</span><br><span class="line">  → tw.timedOut = true (后续 handler 写入被拒绝)</span><br><span class="line">  → promise.Fail() (Code=503)</span><br><span class="line">  → promise.Reject(&quot;503 Service Unavailable&quot;) (Code &gt;= 500)</span><br><span class="line">  → latch.Return()</span><br><span class="line">  → Prometheus: code=&quot;503&quot;</span><br><span class="line">  → Log: [HTTP] 503 - ... slowcall(3000ms) + dumpRequest (因为 code &gt;= 500)</span><br></pre></td></tr></table></figure>
+<p>注意：超时返回 503，它既触发降载器的 Failure 计数又触发断路器的 Reject 计数。这意味着如果大量请求持续超时，断路器最终会跳闸，短路掉后续请求——这是合理的设计，持续超时通常意味着下游出了问题，熔断可以给下游恢复的空间。</p>
+<h3 id="业务代码-panic"><a class="markdownIt-Anchor" href="#业务代码-panic"></a> 业务代码 panic</h3>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">请求到达 → 通过所有外层中间件 → 进入 Timeout goroutine</span><br><span class="line">  → Recover: defer recover()</span><br><span class="line">    → Metrics → MaxBytes → Gunzip → Auth → Handler</span><br><span class="line">      💥 PANIC!</span><br><span class="line">    ← recover 捕获, internal.Error 写入日志 + 堆栈</span><br><span class="line">    ← WriteHeader(500)</span><br><span class="line">  ← tw.WriteHeader 被调用 → tw.code=500 → 主 goroutine 最终写入真实 ResponseWriter</span><br><span class="line">  ← promise.Fail() (Code=503? 不, 这里 Code 是 500)</span><br><span class="line"></span><br><span class="line">等等——SheddingHandler 判断的是 cw.Code == http.StatusServiceUnavailable (503) 才 Fail。</span><br><span class="line">500 不等于 503，所以降载器会 pass 这个请求。这是有意的还是 bug？</span><br><span class="line"></span><br><span class="line">实际上 500 是由于 panic 导致的业务逻辑错误，不是容量问题。降载器的职责是反映&quot;是否因为容量不足而失败&quot;，500 不应该被计为降载失败——这与我们之前的分析一致。</span><br></pre></td></tr></table></figure>
+<p>再确认一次——BreakerHandler 中判断的是 <code>cw.Code &lt; http.StatusInternalServerError</code>（即 code &lt; 500）才 Accept。500 满足的是 <code>&gt;= 500</code>，所以它会进入 Reject。这是正确的——从断路器视角，500 Internal Server Error 是一个失败调用，应该计入失败率。</p>
+<p>所以最终结果：panic 返回 500，断路器 Reject，降载器 Pass，两者各自忠于自己的判断维度。</p>
+<h3 id="jwt-认证失败"><a class="markdownIt-Anchor" href="#jwt-认证失败"></a> JWT 认证失败</h3>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">请求到达 → 通过所有默认中间件</span><br><span class="line">  → JWT Authorize: ParseToken 失败</span><br><span class="line">    → unauthorized:</span><br><span class="line">      → detailAuthLog: dump 完整请求用于排查</span><br><span class="line">      → unauthorizedCallback (如果有自定义回调)</span><br><span class="line">      → writer.WriteHeader(401) ← HeaderOnceResponseWriter 保证只写一次</span><br><span class="line">    ← 返回（没有调用 next.ServeHTTP，handler 不会执行）</span><br><span class="line">  ← 用户全局中间件没机会运行</span><br><span class="line">  ← 返回路径: MaxBytes/Gunzip/Metrics（但没业务执行，耗时极短）</span><br><span class="line">  ← Shedding: cw.Code = 401 ≠ 503 → Pass</span><br><span class="line">  ← Breaker: cw.Code = 401 &lt; 500 → Accept</span><br><span class="line">  ← MaxConns: Return</span><br><span class="line">  ← Prometheus: code=&quot;401&quot;</span><br><span class="line">  ← Log: [HTTP] 401 - GET /api/user - 2ms ... + dumpRequest (code &gt;= 400)</span><br><span class="line">  ← Trace: span.End(), status=Unauthenticated</span><br></pre></td></tr></table></figure>
+<p>这里有一个值得注意的细节：认证失败返回 401，它小于 500，既不被断路器计为失败，也不被降载器计为失败。这符合直觉——认证失败是客户端问题，不是服务端故障，不应该触发弹性保护。</p>
+<h2 id="全景渲染"><a class="markdownIt-Anchor" href="#全景渲染"></a> 全景渲染</h2>
+<p>把上述所有内容整合成一张请求穿过中间件链的全景图：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line">┌──────────────────────────────────────────────────────┐</span><br><span class="line">│                    patRouter                         │</span><br><span class="line">│                 路由匹配 + pathvar 注入                │</span><br><span class="line">└────────────────────────┬─────────────────────────────┘</span><br><span class="line">                         │</span><br><span class="line">          ┌──────────────┴──────────────┐</span><br><span class="line">          │      chain.Chain            │</span><br><span class="line">          │                             │</span><br><span class="line">          │  ┌── Trace ──────────────┐  │  观测层: 全量记录</span><br><span class="line">          │  │  ┌── Log ──────────┐  │  │  启动span、计时、注入ctx</span><br><span class="line">          │  │  │  ┌── Prometheus ┐│  │  │</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  MaxConns ───┼┼──┼──┼── 入口保护: 并发限流</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  Breaker ────┼┼──┼──┼── 下游保护: 熔断</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  Shedding ───┼┼──┼──┼── 自保: CPU过载降载</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  Timeout ────┼┼──┼──┼── 执行控制: 超时 + goroutine</span><br><span class="line">          │  │  │  │  ┌────────┐  ││  │  │</span><br><span class="line">          │  │  │  │  │Recover │  ││  │  │  安全网: panic捕获</span><br><span class="line">          │  │  │  │  │┌──────┐│  ││  │  │</span><br><span class="line">          │  │  │  │  ││Metrics││  ││  │  │  度量层: 仅度量通过的请求</span><br><span class="line">          │  │  │  │  ││┌─────┐││  ││  │  │</span><br><span class="line">          │  │  │  │  │││MaxB │││  ││  │  │</span><br><span class="line">          │  │  │  │  │││ ┌───┐││  ││  │  │</span><br><span class="line">          │  │  │  │  │││ │Gun│││  ││  │  │  数据转换层</span><br><span class="line">          │  │  │  │  │││ └───┘││  ││  │  │</span><br><span class="line">          │  │  │  │  ││└─────┘││  ││  │  │</span><br><span class="line">          │  │  │  │  │└──────┘│  ││  │  │</span><br><span class="line">          │  │  │  │  └────────┘  ││  │  │</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  JWT Auth ───┼┼──┼──┼── 认证: 解析token, 注入claims</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  用户全局中间件 ─┼──┼──┼── 自定义: Use() 注册</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  │  Handler ────┼┼──┼──┼── 业务逻辑</span><br><span class="line">          │  │  │  │              ││  │  │</span><br><span class="line">          │  │  │  └──────────────┘│  │  │</span><br><span class="line">          │  │  └─────────────────┘  │  │</span><br><span class="line">          │  └───────────────────────┘  │</span><br><span class="line">          └─────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>本文从 <code>chain.Chain</code> 的不可变链表机制出发，逐个剖析了 go-zero REST 框架的 11 个默认中间件，以及 JWT 认证、签名校验、CORS、SSE 和文件服务等扩展能力。核心结论可以归纳为三条：</p>
+<p><strong>第一条，中间件顺序有&quot;依赖律&quot;。</strong> 一个中间件的位置取决于它需要保护谁、又依赖谁。Trace 和 Log 需要在最外层才能覆盖完整的请求生命周期；Timeout 需要在 Recover 的外面（因为它在新的 goroutine 中执行业务逻辑）；Metrics 需要在保护层的内侧（只度量通过的请求）。如果你需要插入自定义中间件，也要按这个思路判断——它是观测型的（放外层）、保护型的（对比 Breaker/Shedding 的定位）、还是数据转换型的（放内层）。</p>
+<p><strong>第二条，保护机制各司其职，不可互相替代。</strong> MaxConns 限制并发连接，Breaker 保护下游，Shedding 保护自身 CPU，MaxBytes 和 <code>io.LimitReader</code> 做纵深防御——它们各自攻击不同的失败模式，组合在一起才形成完整的弹性体系。下一篇文章进入 zRPC 领域时，你会发现同样的设计思路也体现在了 RPC 的 interceptor 链中。</p>
+<p><strong>第三条，认证和授权在保护层之后。</strong> JWT 认证和签名校验在默认链的内侧——即保护机制对所有人都生效。这是正确的策略：不管你是谁，都应该享受熔断、降载、超时控制的保护；而认证失败只影响你能不能访问这个接口，不影响服务器的稳定性。</p>
+<p>还有一点值得强调：go-zero 的 11 个默认中间件全部可以通过 <code>MiddlewaresConf</code> 中的开关按需控制。如果不需要某个能力——比如你的服务不接收 gzip 压缩的请求——直接关掉 <code>Gunzip: false</code>，链上就少了一层，比很多框架&quot;必须全部带上再手动移除&quot;的设计要干净。</p>
+<p>下一篇文章我们将开始学习<strong>zRPC 调用链</strong>。在那里，你会看到 REST 中这些中间件的&quot;镜像版本&quot;如何以 gRPC interceptor 的形式再次出现。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/17/go-zero-08/" rel="prev" title="go-zero 源码分析 08：zRPC 调用链">
+      <i class="fa fa-chevron-left"></i> go-zero 源码分析 08：zRPC 调用链
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/17/go-zero-06/" rel="next" title="go-zero 源码分析 06：REST 核心链路">
+      go-zero 源码分析 06：REST 核心链路 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#chainchain%E4%B8%8D%E5%8F%AF%E5%8F%98%E7%9A%84%E4%B8%AD%E9%97%B4%E4%BB%B6%E9%93%BE%E8%A1%A8"><span class="nav-number">1.</span> <span class="nav-text"> chain.Chain：不可变的中间件链表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E7%94%A8%E6%B3%95"><span class="nav-number">1.1.</span> <span class="nav-text"> 基本用法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8D%E5%8F%AF%E5%8F%98%E6%80%A7%E7%9A%84%E6%84%8F%E4%B9%89"><span class="nav-number">1.2.</span> <span class="nav-text"> 不可变性的意义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#then-%E7%9A%84%E6%9E%84%E9%80%A0%E8%BF%87%E7%A8%8B"><span class="nav-number">1.3.</span> <span class="nav-text"> Then 的构造过程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%BB%98%E8%AE%A4%E4%B8%AD%E9%97%B4%E4%BB%B6%E9%93%BE%E7%9A%84%E7%BB%84%E8%A3%85buildchainwithnativemiddlewares"><span class="nav-number">2.</span> <span class="nav-text"> 默认中间件链的组装：buildChainWithNativeMiddlewares</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%80%90%E4%B8%80%E5%89%96%E6%9E%90%E6%AF%8F%E4%B8%AA%E9%BB%98%E8%AE%A4%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9A%84%E8%81%8C%E8%B4%A3%E4%B8%8E%E4%BD%8D%E7%BD%AE%E7%90%86%E7%94%B1"><span class="nav-number">3.</span> <span class="nav-text"> 逐一剖析：每个默认中间件的职责与位置理由</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#tracehandler%E5%9C%A8%E5%A4%A7%E9%97%A8%E5%A4%96%E5%AE%89%E4%B8%8A%E7%9B%91%E6%8E%A7%E6%91%84%E5%83%8F%E5%A4%B4"><span class="nav-number">3.1.</span> <span class="nav-text"> TraceHandler：在大门外安上监控摄像头</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#loghandler%E8%AE%B0%E5%BD%95%E6%AF%8F%E4%B8%80%E4%B8%AA%E8%AF%B7%E6%B1%82%E7%9A%84%E5%91%BC%E5%90%B8"><span class="nav-number">3.2.</span> <span class="nav-text"> LogHandler：记录每一个请求的呼吸</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#prometheushandler%E4%B8%BA%E6%AF%8F%E4%B8%AA%E8%AF%B7%E6%B1%82%E6%89%93%E4%B8%8A%E6%8C%87%E6%A0%87%E6%A0%87%E7%AD%BE"><span class="nav-number">3.3.</span> <span class="nav-text"> PrometheusHandler：为每个请求打上指标标签</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#maxconnshandler%E5%9C%A8%E9%97%A8%E5%8F%A3%E6%95%B0%E4%BA%BA%E5%A4%B4"><span class="nav-number">3.4.</span> <span class="nav-text"> MaxConnsHandler：在门口数人头</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#breakerhandler%E4%B8%8B%E6%B8%B8%E5%9D%8F%E4%BA%86%E5%B0%B1%E5%88%AB%E5%86%8D%E6%89%93"><span class="nav-number">3.5.</span> <span class="nav-text"> BreakerHandler：下游坏了就别再打</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sheddinghandlercpu-%E6%89%9B%E4%B8%8D%E4%BD%8F%E4%BA%86%E5%B0%B1%E6%8B%A9%E4%BC%98%E6%94%BE%E8%A1%8C"><span class="nav-number">3.6.</span> <span class="nav-text"> SheddingHandler：CPU 扛不住了就择优放行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#timeouthandler%E4%B8%BA%E8%AF%B7%E6%B1%82%E8%A3%85%E4%B8%8A%E5%80%92%E6%95%B0%E8%AE%A1%E6%97%B6"><span class="nav-number">3.7.</span> <span class="nav-text"> TimeoutHandler：为请求装上倒数计时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#recoverhandler%E6%9C%80%E5%90%8E%E7%9A%84%E5%AE%89%E5%85%A8%E7%BD%91"><span class="nav-number">3.8.</span> <span class="nav-text"> RecoverHandler：最后的安全网</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#metrichandler%E5%9C%A8%E5%BC%B9%E6%80%A7%E4%BF%9D%E6%8A%A4%E4%B9%8B%E5%90%8E%E7%B2%BE%E5%87%86%E5%BA%A6%E9%87%8F"><span class="nav-number">3.9.</span> <span class="nav-text"> MetricHandler：在弹性保护之后精准度量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#maxbyteshandler%E6%8B%92%E7%BB%9D%E8%B6%85%E5%A4%A7%E8%AF%B7%E6%B1%82%E4%BD%93"><span class="nav-number">3.10.</span> <span class="nav-text"> MaxBytesHandler：拒绝超大请求体</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#gunziphandler%E4%B8%BA%E4%B8%8B%E6%B8%B8%E8%A7%A3%E5%8E%8B"><span class="nav-number">3.11.</span> <span class="nav-text"> GunzipHandler：为下游解压</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A4%E8%AF%81%E4%B8%8E%E5%AE%89%E5%85%A8jwt-%E5%AF%86%E9%92%A5%E8%BF%87%E6%B8%A1%E5%92%8C%E7%AD%BE%E5%90%8D%E6%A0%A1%E9%AA%8C"><span class="nav-number">4.</span> <span class="nav-text"> 认证与安全：JWT、密钥过渡和签名校验</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#jwt-%E8%AE%A4%E8%AF%81%E5%92%8C%E5%AF%86%E9%92%A5%E8%BF%87%E6%B8%A1"><span class="nav-number">4.1.</span> <span class="nav-text"> JWT 认证和密钥过渡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AD%BE%E5%90%8D%E6%A0%A1%E9%AA%8C%E4%B8%8E-contentsecurity"><span class="nav-number">4.2.</span> <span class="nav-text"> 签名校验与 ContentSecurity</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%A8%E6%88%B7%E5%85%A8%E5%B1%80%E4%B8%AD%E9%97%B4%E4%BB%B6%E4%B8%8E%E8%B7%AF%E7%94%B1%E7%BA%A7%E4%B8%AD%E9%97%B4%E4%BB%B6%E7%9A%84%E5%8F%A0%E5%8A%A0"><span class="nav-number">5.</span> <span class="nav-text"> 用户全局中间件与路由级中间件的叠加</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%89%B9%E6%AE%8A%E4%BC%A0%E8%BE%93cors-sse-%E4%B8%8E%E6%96%87%E4%BB%B6%E6%9C%8D%E5%8A%A1"><span class="nav-number">6.</span> <span class="nav-text"> 特殊传输：CORS、SSE 与文件服务</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#cors%E6%8B%A6%E6%88%AA%E5%9C%A8-router-%E5%B1%82%E9%9D%A2%E7%9A%84%E8%B7%A8%E5%9F%9F%E5%A4%84%E7%90%86"><span class="nav-number">6.1.</span> <span class="nav-text"> CORS：拦截在 router 层面的跨域处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sse%E6%B8%85%E9%99%A4%E5%86%99%E5%85%A5%E8%B6%85%E6%97%B6-%E8%AE%BE%E7%BD%AE%E6%B5%81%E5%BC%8F%E5%93%8D%E5%BA%94%E5%A4%B4"><span class="nav-number">6.2.</span> <span class="nav-text"> SSE：清除写入超时、设置流式响应头</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%87%E4%BB%B6%E6%9C%8D%E5%8A%A1%E5%9C%A8-router-%E5%B1%82%E9%9D%A2%E5%8A%AB%E6%8C%81%E8%AF%B7%E6%B1%82"><span class="nav-number">6.3.</span> <span class="nav-text"> 文件服务：在 router 层面劫持请求</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B%E7%A7%8D%E8%AF%B7%E6%B1%82%E8%B5%B0%E4%B8%80%E9%81%8D%E6%88%90%E5%8A%9F-%E8%B6%85%E6%97%B6-panic-%E6%9C%AA%E8%AE%A4%E8%AF%81"><span class="nav-number">7.</span> <span class="nav-text"> 四种请求走一遍：成功、超时、panic、未认证</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%88%90%E5%8A%9F%E7%9A%84%E6%AD%A3%E5%B8%B8%E8%AF%B7%E6%B1%82"><span class="nav-number">7.1.</span> <span class="nav-text"> 成功的正常请求</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E6%89%A7%E8%A1%8C%E8%B6%85%E6%97%B6"><span class="nav-number">7.2.</span> <span class="nav-text"> 业务执行超时</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E4%BB%A3%E7%A0%81-panic"><span class="nav-number">7.3.</span> <span class="nav-text"> 业务代码 panic</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#jwt-%E8%AE%A4%E8%AF%81%E5%A4%B1%E8%B4%A5"><span class="nav-number">7.4.</span> <span class="nav-text"> JWT 认证失败</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%A8%E6%99%AF%E6%B8%B2%E6%9F%93"><span class="nav-number">8.</span> <span class="nav-text"> 全景渲染</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">284</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">37</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
