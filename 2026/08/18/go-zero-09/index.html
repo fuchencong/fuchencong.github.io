@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上一篇文章的最后，我们追踪了一次完整的 zRPC 调用——客户端拦截器从 Tracing 走到 Timeout，然后在 invoker 中将请求发给 gRPC 底层。但这里跳过一个至关重要的问题：invoker 发请求时，到底发给了谁？">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 09：服务发现与负载均衡">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/18/go-zero-09/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上一篇文章的最后，我们追踪了一次完整的 zRPC 调用——客户端拦截器从 Tracing 走到 Timeout，然后在 invoker 中将请求发给 gRPC 底层。但这里跳过一个至关重要的问题：invoker 发请求时，到底发给了谁？">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-18T09:04:48.000Z">
+<meta property="article:modified_time" content="2026-08-18T09:21:42.362Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/18/go-zero-09/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 09：服务发现与负载均衡 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/18/go-zero-09/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 09：服务发现与负载均衡
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-18 17:04:48" itemprop="dateCreated datePublished" datetime="2026-08-18T17:04:48+08:00">2026-08-18</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上一篇文章的最后，我们追踪了一次完整的 zRPC 调用——客户端拦截器从 Tracing 走到 Timeout，然后在 invoker 中将请求发给 gRPC 底层。但这里跳过一个至关重要的问题：<strong>invoker 发请求时，到底发给了谁？</strong></p>
+<span id="more"></span>
+<p>这个问题看似简单。直连模式最简单——配置里写死了 <code>127.0.0.1:8080</code>，直接连就行。但生产环境不可能用直连。服务实例分布在多台机器、多个容器中，IP 地址随 Pod 调度而漂移，端口也可能因为 Sidecar 注入而变化。客户端必须自动发现正确的目标地址列表，并在多个地址之间做出选择。</p>
+<p>这就是本文要解决的三个核心问题：</p>
+<ol>
+<li><strong>服务发现</strong>：当服务端启动后，客户端如何知道它的存在？当服务端下线后，客户端如何感知并剔除它的地址？</li>
+<li><strong>地址更新</strong>：地址列表的动态变更是如何从 etcd 的 watch channel 一路传递到 gRPC 的 connection 层面的？</li>
+<li><strong>负载均衡</strong>：面对 N 个可用节点，客户端选哪个？怎么判断一个节点&quot;好不好&quot;？算法如何平衡负载分配与单点过热？</li>
+</ol>
+<p>三者的关系是一条完整的数据流：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">服务端启动 → Publisher 注册到 etcd → Subscriber Watch 到变化</span><br><span class="line">  → Resolver 更新 gRPC 地址列表 → Balancer 为每个地址建立 SubConn</span><br><span class="line">  → 每次 RPC 调用时 P2C Picker 选择一个 SubConn → 请求发出</span><br></pre></td></tr></table></figure>
+<p>下面我们就沿着这条链路，从服务注册出发，经过 watch 状态机和 resolver 转换，最终到达 P2C 算法的核心。</p>
+<h2 id="服务注册publisher-如何把我在线告诉-etcd"><a class="markdownIt-Anchor" href="#服务注册publisher-如何把我在线告诉-etcd"></a> 服务注册：Publisher 如何把&quot;我在线&quot;告诉 etcd</h2>
+<h3 id="问题服务端重启后-ip-变了怎么办"><a class="markdownIt-Anchor" href="#问题服务端重启后-ip-变了怎么办"></a> 问题：服务端重启后 IP 变了怎么办</h3>
+<p>一个朴素的做法是运维人员手工更新配置中的服务地址列表然后重启客户端。但在微服务架构中，服务实例的数量和位置是随时间动态变化的——扩容、缩容、滚动更新、故障恢复，每一次变化都意味着地址的改变。你不可能靠手工跟上这个节奏。</p>
+<p>go-zero 的答案清晰而直接：<strong>服务端自己告诉注册中心&quot;我在哪&quot;，客户端从注册中心订阅&quot;有哪些&quot;</strong>。在 go-zero 中，这个注册中心就是 etcd——<strong>一个强一致性的分布式键值存储</strong>。服务端启动时，将自己的地址作为 key-value 写入 etcd 的特定前缀下，并以租约（Lease）保持心跳；租约过期，etcd 自动删除这条记录，客户端看到的就是最新的在线实例列表。</p>
+<h3 id="从-keepaliveserver-说起"><a class="markdownIt-Anchor" href="#从-keepaliveserver-说起"></a> 从 KeepAliveServer 说起</h3>
+<p>在之前的服务端启动流程中，我们讲到当 <code>RpcServerConf</code> 配置了 etcd 时，<code>NewServer</code> 会创建 <code>RpcPubServer</code> 而非普通的 <code>RpcServer</code>。<code>RpcPubServer</code> 在 <code>Start</code> 时额外执行了一步 <code>registerEtcd</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/rpcpubserver.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s keepAliveServer)</span></span> Start(fn RegisterFn) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> err := s.registerEtcd(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> s.Server.Start(fn)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>而 <code>registerEtcd</code> 的核心是问 <code>discov.Publisher</code> 注册当前服务实例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/rpcpubserver.go (registerEtcd 内部)</span></span><br><span class="line">pub := discov.NewPublisher(</span><br><span class="line">    s.config.Etcd.Hosts,</span><br><span class="line">    s.config.Etcd.Key,</span><br><span class="line">    listenOn,  <span class="comment">// 经过 figureOutListenOn 处理后的真实可路由地址</span></span><br><span class="line">)</span><br><span class="line">pub.KeepAlive()</span><br></pre></td></tr></table></figure>
+<p>这完成了两条信息的关联：<strong>在 etcd 的 <code>s.config.Etcd.Key</code> 前缀下，注册了一个 key，它的 value 是服务进程的监听地址。</strong> etcd 中实际存储的结构类似：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Key:   /service/greet.rpc/7587844881234567890</span><br><span class="line">Value: 192.168.1.10:8080</span><br></pre></td></tr></table></figure>
+<p>其中 key 的最后一串数字是租约 ID（如果没有指定自定义 ID），value 是经过 <code>figureOutListenOn</code> 转换后的真实地址——不是 <code>0.0.0.0:8080</code>，而是从环境变量 <code>POD_IP</code> 或网卡检测得到的真实 IP。如果 Key 对应的 Value 被其他实例先前注册过，Publisher 的 <code>Exclusive</code> 模式会把旧 Key 移除，保证每个地址只注册一次。</p>
+<h3 id="keepalive-的三个并发循环"><a class="markdownIt-Anchor" href="#keepalive-的三个并发循环"></a> KeepAlive 的三个并发循环</h3>
+<p><code>pub.KeepAlive()</code> 启动了一个异步的 goroutine（通过 <code>threading.GoSafe</code>），在这个 goroutine 中同时维护三个 channel 的监听：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/publisher.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *Publisher)</span></span> keepAliveAsync(cli internal.EtcdClient) <span class="type">error</span> &#123;</span><br><span class="line">    ch, err := cli.KeepAlive(cli.Ctx(), p.lease)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    threading.GoSafe(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        wch := cli.Watch(cli.Ctx(), p.fullKey, clientv3.WithFilterPut())</span><br><span class="line"></span><br><span class="line">        <span class="keyword">for</span> &#123;</span><br><span class="line">            <span class="keyword">select</span> &#123;</span><br><span class="line">            <span class="keyword">case</span> _, ok := &lt;-ch:</span><br><span class="line">                <span class="comment">// 租约心跳 channel 关闭 → 重新注册</span></span><br><span class="line">                <span class="keyword">if</span> !ok &#123;</span><br><span class="line">                    p.revoke(cli)</span><br><span class="line">                    <span class="keyword">if</span> err := p.doKeepAlive(); err != <span class="literal">nil</span> &#123; ... &#125;</span><br><span class="line">                    <span class="keyword">return</span></span><br><span class="line">                &#125;</span><br><span class="line">            <span class="keyword">case</span> c := &lt;-wch:</span><br><span class="line">                <span class="comment">// etcd 上自己的 key 被删除 → 重新 put</span></span><br><span class="line">                <span class="keyword">for</span> _, evt := <span class="keyword">range</span> c.Events &#123;</span><br><span class="line">                    <span class="keyword">if</span> evt.Type == clientv3.EventTypeDelete &#123;</span><br><span class="line">                        cli.Put(cli.Ctx(), p.fullKey, p.value, clientv3.WithLease(p.lease))</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            <span class="keyword">case</span> &lt;-p.pauseChan:</span><br><span class="line">                <span class="comment">// 暂停续约</span></span><br><span class="line">                p.revoke(cli)</span><br><span class="line">                <span class="keyword">select</span> &#123;</span><br><span class="line">                <span class="keyword">case</span> &lt;-p.resumeChan:</span><br><span class="line">                    p.doKeepAlive()</span><br><span class="line">                    <span class="keyword">return</span></span><br><span class="line">                <span class="keyword">case</span> &lt;-p.quit.Done():</span><br><span class="line">                    <span class="keyword">return</span></span><br><span class="line">                &#125;</span><br><span class="line">            <span class="keyword">case</span> &lt;-p.quit.Done():</span><br><span class="line">                <span class="comment">// 优雅退出</span></span><br><span class="line">                p.revoke(cli)</span><br><span class="line">                <span class="keyword">return</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>三个并发循环各司其职：</p>
+<ul>
+<li><strong>租约心跳 channel</strong>：etcd 为每个 key 分配了一个带 TTL 的租约（默认 10 秒），<code>cli.KeepAlive</code> 返回一个只读 channel，etcd 客户端定期向这个 channel 发送心跳续约事件。如果这个 channel 被关闭（可能因为网络分区或 etcd 服务不可达），Publisher 立即撤销旧租约并执行 <code>doKeepAlive</code>——每秒重试一次，直到重新注册成功。</li>
+<li><strong>Watch channel</strong>：即使心跳正常，其他外部因素（如管理员手工删除了 key）也可能导致 key 消失。Publisher 用 <code>clientv3.WithFilterPut()</code> Watch 自己的 key，过滤掉 PUT 事件（自己 put 的，不需要响应），只监听 DELETE——一旦发现被删了，立即重新 put。</li>
+<li><strong>Pause/Resume/Quit</strong>：提供了运行时的生命周期控制。<code>Pause</code> 撤销租约让 key 从服务发现中消失（常用于流量摘除的场景），<code>Resume</code> 重新注册继续接收流量。</li>
+</ul>
+<p>这种&quot;三通道监听&quot;设计的根本原因是：<strong>每一种失败模式都需要独立的感知和恢复策略。</strong> 心跳断了可能是网络闪断（重试即可），key 被删了可能是外部修改（需要立即重建），暂停和退出是主动行为（需要精确的执行路径）。把所有处理塞进一个 <code>recover</code> 包裹的循环里固然能兜底，但丢失了每种场景的准确语义。</p>
+<h3 id="重试的冷静期cooldown-机制"><a class="markdownIt-Anchor" href="#重试的冷静期cooldown-机制"></a> 重试的冷静期：CoolDown 机制</h3>
+<p>注意到租约断开后的 <code>doKeepAlive</code> 并不是疯狂无限重试——它每秒执行一次。而在 <code>cluster</code> 的 <code>watch</code> 重试循环中，还有一个更精细的机制：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/internal/registry.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *cluster)</span></span> watch(cli EtcdClient, key watchKey, rev <span class="type">int64</span>) &#123;</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        err := c.watchStream(cli, key, rev)</span><br><span class="line">        <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        time.Sleep(coolDownUnstable.AroundDuration(coolDownInterval))</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>coolDownUnstable</code> 是一个 <code>mathx.Unstable</code> 实例，偏差为 0.05（5%），基础间隔为 1 秒。所以实际重试间隔在 <code>[0.95s, 1.05s]</code> 之间随机。为什么需要一个带随机因子的冷却间隔？</p>
+<p>设想这样一个场景：100 个服务实例同时从 etcd 断开，它们全部在<strong>同一毫秒</strong>重连——这个&quot;惊群效应&quot;会让 etcd 瞬间压力剧增，可能触发二次断开，形成雪崩。引入 5% 的随机抖动后，每个实例的重连时间会均匀分散在 100ms 的窗口内，etcd 的负载被摊平了。这是一个几十行代码的小机制，但反映了 go-zero 对分布式系统级联风险的系统性思考。</p>
+<h2 id="服务发现subscriber-如何感知实例变化"><a class="markdownIt-Anchor" href="#服务发现subscriber-如何感知实例变化"></a> 服务发现：Subscriber 如何感知实例变化</h2>
+<h3 id="问题如何在全量-return-和增量-push-之间找到平衡"><a class="markdownIt-Anchor" href="#问题如何在全量-return-和增量-push-之间找到平衡"></a> 问题：如何在全量 return 和增量 push 之间找到平衡</h3>
+<p>服务端注册完成后，客户端需要感知到&quot;有哪些服务端在线&quot;。常见的做法有两类：</p>
+<ul>
+<li><strong>轮询</strong>：客户端定时拉取全量服务列表。简单但浪费——无论列表变没变都要查，实例数多时尤其低效。</li>
+<li><strong>长轮询/Watch</strong>：客户端订阅 key 的变化，只在变更时才收到通知。高效但有状态——需要维护连接、处理断连重连。</li>
+</ul>
+<p>go-zero 用的是 etcd 原生的 <strong>Watch 机制</strong>：客户端发起一个 <code>Get</code>（全量同步初始值），再启动一个 <code>Watch</code>（增量接收后续变更），两者之间通过 <code>revision</code> 机制无缝衔接。</p>
+<h3 id="subscriber-的创建与容器的绑定"><a class="markdownIt-Anchor" href="#subscriber-的创建与容器的绑定"></a> Subscriber 的创建与容器的绑定</h3>
+<p><code>Subscriber</code> 的使用模式很简单：指定 etcd 地址和要订阅的 key 前缀，然后通过 <code>Values()</code> 获取当前在线地址列表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/subscriber.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewSubscriber</span><span class="params">(endpoints []<span class="type">string</span>, key <span class="type">string</span>, opts ...SubOption)</span></span> (*Subscriber, <span class="type">error</span>) &#123;</span><br><span class="line">    sub := &amp;Subscriber&#123;</span><br><span class="line">        endpoints: endpoints,</span><br><span class="line">        key:       key,</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">for</span> _, opt := <span class="keyword">range</span> opts &#123;</span><br><span class="line">        opt(sub)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> sub.items == <span class="literal">nil</span> &#123;</span><br><span class="line">        sub.items = newContainer(sub.exclusive)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> err := internal.GetRegistry().Monitor(endpoints, key, sub.exactMatch, sub.items); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> sub, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>internal.GetRegistry()</code> 返回的是一个<strong>全局单例</strong><code>Registry</code>——同一进程内所有 Subscriber 和 Publisher 共享。<code>Monitor</code> 将 <code>sub.items</code>（一个 <code>Container</code> 实例）注册为指定 key 的监听器。这里的核心抽象是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/internal/updatelistener.go</span></span><br><span class="line"><span class="keyword">type</span> UpdateListener <span class="keyword">interface</span> &#123;</span><br><span class="line">    OnAdd(kv KV)</span><br><span class="line">    OnDelete(kv KV)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每当 etcd 上该 key 前缀下的记录有新增或删除，<code>OnAdd</code> 或 <code>OnDelete</code> 就会被调用。而 <code>Container</code>（即 <code>container</code> 实现）正是这个接口的实现者——它维护着一份本地的 <code>values</code> map，反映当前在线实例的完整集合。</p>
+<h3 id="container本地缓存的增量更新"><a class="markdownIt-Anchor" href="#container本地缓存的增量更新"></a> Container：本地缓存的增量更新</h3>
+<p><code>container</code> 保存了两张内存表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/subscriber.go</span></span><br><span class="line"><span class="keyword">type</span> container <span class="keyword">struct</span> &#123;</span><br><span class="line">    exclusive <span class="type">bool</span></span><br><span class="line">    values    <span class="keyword">map</span>[<span class="type">string</span>][]<span class="type">string</span>  <span class="comment">// value → [key1, key2]</span></span><br><span class="line">    mapping   <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span>    <span class="comment">// key → value</span></span><br><span class="line">    snapshot  atomic.Value         <span class="comment">// 快照：[]string</span></span><br><span class="line">    dirty     *syncx.AtomicBool</span><br><span class="line">    listeners []<span class="function"><span class="keyword">func</span><span class="params">()</span></span></span><br><span class="line">    lock      sync.Mutex</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>values</code> 的 key 是服务地址（value），value 是 etcd key 列表。一个地址可能对应多个 etcd key（不同租约 ID），<code>exclusive</code> 模式下新 key 注册时会清除同 value 的旧 key。</p>
+<p><code>snapshot</code> 和 <code>dirty</code> 实现了一个惰性快照机制。<code>GetValues()</code> 在 <code>dirty</code> 为 false 时直接返回上次生成的快照（零开销的原子读），只在 <code>dirty</code> 为 true 时才加锁重建。这个优化看似微小，但在高并发的 <code>Values()</code> 调用（每次 pick 前都要获取地址列表）中，从加锁遍历 map 变成了原子值读取，性能差异显著。</p>
+<p><code>notifyChange</code> 更为关键——每次 <code>OnAdd</code> 或 <code>OnDelete</code> 完成后，它遍历所有注册的 listener 并调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *container)</span></span> notifyChange() &#123;</span><br><span class="line">    c.lock.Lock()</span><br><span class="line">    listeners := <span class="built_in">append</span>(([]<span class="function"><span class="keyword">func</span><span class="params">()</span></span>)(<span class="literal">nil</span>), c.listeners...)</span><br><span class="line">    c.lock.Unlock()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> _, listener := <span class="keyword">range</span> listeners &#123;</span><br><span class="line">        listener()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个 listener 是怎么注册的？答案就在 resolver 的 <code>Build</code> 方法中。</p>
+<h2 id="resolver从-etcd-变化到-grpc-地址的桥梁"><a class="markdownIt-Anchor" href="#resolver从-etcd-变化到-grpc-地址的桥梁"></a> Resolver：从 etcd 变化到 gRPC 地址的桥梁</h2>
+<p><code>container</code> 帮我们解决了&quot;本地维护实例列表&quot;的问题，但 gRPC 需要的是 <code>resolver.Address</code> 列表。gRPC 的 resolver 接口定义了两个核心职责：解析 target 字符串，以及通过 <code>resolver.ClientConn.UpdateState</code> 告知 gRPC 地址变化。go-zero 要做的是：<strong>在 Subscriber 的 listener 和 <code>cc.UpdateState</code> 之间架一座桥。</strong></p>
+<h3 id="四种-resolver-scheme"><a class="markdownIt-Anchor" href="#四种-resolver-scheme"></a> 四种 Resolver Scheme</h3>
+<p>go-zero 在 <code>init()</code> 中注册了四种 resolver scheme：</p>
+<ul>
+<li><strong><code>direct</code></strong>：直连模式。target 如 <code>direct:///127.0.0.1:8080,127.0.0.1:8081</code>。地址在 <code>Build</code> 时一次性解析完毕，返回一个 <code>nopResolver</code>——不需要 watch，不需要更新。</li>
+<li><strong><code>discov</code></strong>：服务发现模式（etcd watch）。target 如 <code>discov:///etcd-host:2379?key=greet.rpc</code>。<code>Build</code> 时创建 <code>Subscriber</code>，注册 listener，地址变化时调用 <code>cc.UpdateState</code>。</li>
+<li><strong><code>etcd</code></strong>：与 <code>discov</code> 功能完全相同，只是 scheme 名不同。<code>etcdBuilder</code> 内嵌了 <code>discovBuilder</code>，仅覆盖了 <code>Scheme()</code> 方法返回 <code>&quot;etcd&quot;</code>。这是为了兼容历史配置。</li>
+<li><strong><code>k8s</code></strong>：Kubernetes 模式。target 如 <code>k8s:///namespace/servicename:port</code>。不通过 etcd，而是使用 Kubernetes 原生的 Informer 机制监听 EndpointSlice 资源变化。</li>
+</ul>
+<h3 id="关键的桥接listener-和-ccupdatestate"><a class="markdownIt-Anchor" href="#关键的桥接listener-和-ccupdatestate"></a> 关键的桥接：listener 和 cc.UpdateState</h3>
+<p><code>discovBuilder.Build</code> 只有三十几行，但它是整条链路中最关键的桥接点：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/resolver/internal/discovbuilder.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *discovBuilder)</span></span> Build(target resolver.Target, cc resolver.ClientConn, _ resolver.BuildOptions) (</span><br><span class="line">    resolver.Resolver, <span class="type">error</span>) &#123;</span><br><span class="line">    hosts := strings.FieldsFunc(targets.GetHosts(target), <span class="function"><span class="keyword">func</span><span class="params">(r <span class="type">rune</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> r == EndpointSepChar</span><br><span class="line">    &#125;)</span><br><span class="line">    sub, err := discov.NewSubscriber(hosts, targets.GetKey(target))</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    update := <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        vals := subset(sub.Values(), subsetSize)</span><br><span class="line">        addrs := <span class="built_in">make</span>([]resolver.Address, <span class="number">0</span>, <span class="built_in">len</span>(vals))</span><br><span class="line">        <span class="keyword">for</span> _, val := <span class="keyword">range</span> vals &#123;</span><br><span class="line">            addrs = <span class="built_in">append</span>(addrs, resolver.Address&#123;</span><br><span class="line">                Addr: val,</span><br><span class="line">            &#125;)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> err := cc.UpdateState(resolver.State&#123;</span><br><span class="line">            Addresses: addrs,</span><br><span class="line">        &#125;); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            logx.Error(err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    sub.AddListener(update)</span><br><span class="line">    update()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> &amp;discovResolver&#123;</span><br><span class="line">        cc:  cc,</span><br><span class="line">        sub: sub,</span><br><span class="line">    &#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>让我们仔细追踪这个函数的行为：</p>
+<ol>
+<li>
+<p><strong>解析 target</strong>：<code>targets.GetHosts</code> 和 <code>targets.GetKey</code> 从 gRPC target URI 中提取 etcd 主机列表和订阅的 key 前缀。新版格式是 <code>discov:///h1:port,h2:port?key=greet.rpc</code>——hosts 放在 URI path 中以避免逗号分隔的多主机地址违反 RFC 3986；旧版格式 <code>etcd://h:port/key</code> 仍兼容。</p>
+</li>
+<li>
+<p><strong>创建 Subscriber</strong>：传入 etcd 地址列表和要订阅的 key 前缀。Subscriber 内部立即执行一次全量 <code>Get</code> 后启动 <code>Watch</code>。</p>
+</li>
+<li>
+<p><strong>注册 listener</strong>：<code>update</code> 闭包函数做了三件事——从 Container 获取当前所有在线地址（<code>sub.Values()</code>），通过 <code>subset</code> 取最多 32 个（防止一个服务有数百个实例时 gRPC 管理的连接数爆炸），构造 <code>resolver.Address</code> 列表，调用 <code>cc.UpdateState</code> 提交给 gRPC。</p>
+</li>
+<li>
+<p><strong>立即调用一次 update</strong>：在注册完 listener 后立即调用，将初始地址列表推给 gRPC。这一步保证了服务刚启动时客户端就能拿到地址，而不是等到下一次 watch 事件。</p>
+</li>
+</ol>
+<p>从此刻起，数据流变成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">etcd watch 事件 → cluster.handleWatchEvents → UpdateListener.OnAdd/OnDelete</span><br><span class="line">  → container addKv/removeKey → notifyChange → listener (update 闭包)</span><br><span class="line">  → subset → cc.UpdateState → gRPC balancer 收到新地址</span><br></pre></td></tr></table></figure>
+<p><strong>每一次 etcd 上的变化，都会自动推送到 gRPC 的连接管理层面。</strong> 新增实例会触发新 SubConn 的创建，下线实例会触发旧 SubConn 的关闭和回收——整个过程对业务代码完全透明。</p>
+<h3 id="连接复用的隐形架构"><a class="markdownIt-Anchor" href="#连接复用的隐形架构"></a> 连接复用的隐形架构</h3>
+<p>在 Subscriber 和 Publisher 的背后，有一个容易忽视但至关重要的基础设施：<code>Registry</code> 中 etcd 客户端连接的复用。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/internal/registry.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(r *Registry)</span></span> GetConn(endpoints []<span class="type">string</span>) (EtcdClient, <span class="type">error</span>) &#123;</span><br><span class="line">    c, _ := r.getOrCreateCluster(endpoints)</span><br><span class="line">    <span class="keyword">return</span> c.getClient()</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *cluster)</span></span> getClient() (EtcdClient, <span class="type">error</span>) &#123;</span><br><span class="line">    val, err := connManager.GetResource(c.key, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (io.Closer, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="keyword">return</span> c.newClient()</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> val.(EtcdClient), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>connManager</code> 是一个 <code>syncx.ResourceManager</code>——它将 etcd 端点列表排序后拼接为唯一 key，相同端点列表只创建一个 etcd 客户端连接。这意味着：</p>
+<ul>
+<li><strong>同一个进程内对同一个 etcd 集群的多个 Subscriber 和 Publisher 共享一个连接</strong>。不会因为你订阅了 10 个不同的 key 前缀就创建 10 个 gRPC 连接到 etcd。</li>
+<li><strong>连接创建由 ResourceManager 保证并发安全</strong>——同时有多个 goroutine 请求连接时，只有一个真正创建，其他等待并复用结果（这实际上是 ResourceManager 内部使用了 SingleFlight 机制）。</li>
+</ul>
+<h3 id="etcd-连接的自动恢复"><a class="markdownIt-Anchor" href="#etcd-连接的自动恢复"></a> etcd 连接的自动恢复</h3>
+<p>共享连接带来了连接数优化的好处，但也引入了一个问题：<strong>如果底层连接断开后重建，所有 Watch 全部失效，谁来重启它们？</strong></p>
+<p>答案在 <code>StateWatcher</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/internal/statewatcher.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(sw *stateWatcher)</span></span> watch(conn etcdConn) &#123;</span><br><span class="line">    sw.currentState = conn.GetState()</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> conn.WaitForStateChange(context.Background(), sw.currentState) &#123;</span><br><span class="line">            sw.updateState(conn)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(sw *stateWatcher)</span></span> updateState(conn etcdConn) &#123;</span><br><span class="line">    sw.currentState = conn.GetState()</span><br><span class="line">    <span class="keyword">switch</span> sw.currentState &#123;</span><br><span class="line">    <span class="keyword">case</span> connectivity.TransientFailure, connectivity.Shutdown:</span><br><span class="line">        sw.disconnected = <span class="literal">true</span></span><br><span class="line">    <span class="keyword">case</span> connectivity.Ready:</span><br><span class="line">        <span class="keyword">if</span> sw.disconnected &#123;</span><br><span class="line">            sw.disconnected = <span class="literal">false</span></span><br><span class="line">            sw.notifyListeners()</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>StateWatcher 监听了 etcd gRPC 连接的状态变化。当连接从 <code>TransientFailure</code> 或 <code>Shutdown</code> 恢复为 <code>Ready</code> 时，它会通知 <code>cluster.reload</code>——后者会取消所有旧的 Watch context，等待旧的 watch goroutine 退出，然后启动全新的 <code>Get</code> + <code>Watch</code> 循环。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/discov/internal/registry.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *cluster)</span></span> watchConnState(cli EtcdClient) &#123;</span><br><span class="line">    watcher := newStateWatcher()</span><br><span class="line">    watcher.addListener(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">go</span> c.reload(cli)</span><br><span class="line">    &#125;)</span><br><span class="line">    watcher.watch(cli.ActiveConnection())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个设计保证了：<strong>即便 etcd 集群整体故障后恢复，客户端的服务发现能力也能自动恢复。</strong> 不需要人工重启客户端进程，不需要额外的健康检查定时器——连接恢复的信号会沿着 <code>StateWatcher → cluster.reload → 重新 Get + Watch → UpdateListener → cc.UpdateState</code> 一路传导到 gRPC 的负载均衡层。</p>
+<h3 id="revision-压缩的处理"><a class="markdownIt-Anchor" href="#revision-压缩的处理"></a> Revision 压缩的处理</h3>
+<p>etcd 为了控制存储大小，会定期压缩历史 revision。如果客户端的 Watch 起始 revision 已经被压缩，Watch 会返回 <code>rpctypes.ErrCompacted</code> 错误。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *cluster)</span></span> watch(cli EtcdClient, key watchKey, rev <span class="type">int64</span>) &#123;</span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        err := c.watchStream(cli, key, rev)</span><br><span class="line">        <span class="keyword">if</span> err == <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> rev != <span class="number">0</span> &amp;&amp; errors.Is(err, rpctypes.ErrCompacted) &#123;</span><br><span class="line">            logc.Errorf(cli.Ctx(), <span class="string">&quot;etcd watch stream has been compacted, try to reload, rev %d&quot;</span>, rev)</span><br><span class="line">            rev = c.load(cli, key)  <span class="comment">// 重新全量 load，获取最新 revision</span></span><br><span class="line">        &#125;</span><br><span class="line">        time.Sleep(coolDownUnstable.AroundDuration(coolDownInterval))</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当 revision 被压缩时，框架不会报错放弃，而是重新执行 <code>load</code>（全量 Get）获取最新 revision，以此为基础重新启动 Watch。这保证了在 etcd 运维期间的短暂不可用不会导致客户端的地址列表永久停滞。</p>
+<h2 id="全局视图registry-与-cluster-的生命周期"><a class="markdownIt-Anchor" href="#全局视图registry-与-cluster-的生命周期"></a> 全局视图：Registry 与 Cluster 的生命周期</h2>
+<p>在进入负载均衡之前，先纵览一下服务发现的整体架构。<code>Registry</code> 内部管理的是一个 <code>map[string]*cluster</code>——同一组 etcd 端点对应一个 <code>cluster</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> cluster <span class="keyword">struct</span> &#123;</span><br><span class="line">    endpoints  []<span class="type">string</span></span><br><span class="line">    key        <span class="type">string</span></span><br><span class="line">    watchers   <span class="keyword">map</span>[watchKey]*watchValue</span><br><span class="line">    watchGroup *threading.RoutineGroup</span><br><span class="line">    done       <span class="keyword">chan</span> lang.PlaceholderType</span><br><span class="line">    lock       sync.RWMutex</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>watchKey</code> 由 <code>&#123;key, exactMatch&#125;</code> 组成，<code>watchValue</code> 包含该 key 上所有 listener 和当前的全量 values 缓存。<strong>不同的 watchKey 共享同一个 etcd 连接，但各自独立维护自己的 Watch 协程和 values 缓存。</strong> 例如，一个客户端同时订阅了 <code>/service/order.rpc</code> 和 <code>/service/user.rpc</code>，它们注册到同一个 <code>cluster</code> 下，共享一个 etcd 客户端连接，但各自有独立的 watch goroutine。</p>
+<p><code>watchGroup</code> 是一个 <code>RoutineGroup</code>，管理了所有 watch goroutine 的生命周期。<code>cluster.reload</code> 在执行时，先关闭 <code>done</code> channel（退出所有 watch goroutine），调用 <code>watchGroup.Wait()</code> 等待全部退出，然后重置 <code>done</code> 和 <code>watchGroup</code>，重新启动所有 key 的 watch。这个优雅的重启流程避免了 goroutine 泄漏和并发冲突。</p>
+<p><code>subscriber.Close()</code> 对应的 <code>Registry.Unmonitor</code> 流程也是一样自洽的：从 listener 列表中移除当前 listener，如果这是最后一个 listener，取消对应的 watch context 并从 <code>c.watchers</code> 中删除该 watchKey——没有 listener 还开着 watch 是浪费资源和带宽。</p>
+<h2 id="负载均衡从地址列表到选择节点"><a class="markdownIt-Anchor" href="#负载均衡从地址列表到选择节点"></a> 负载均衡：从地址列表到选择节点</h2>
+<h3 id="问题n-个节点该选哪一个"><a class="markdownIt-Anchor" href="#问题n-个节点该选哪一个"></a> 问题：N 个节点，该选哪一个</h3>
+<p>Resolver 将地址列表交给了 gRPC，gRPC 的 balancer 会为每个地址建立一个 SubConn（子连接）。接下来，每次 RPC 调用时，<code>Picker.Pick</code> 需要从所有 Ready SubConn 中选择一个。</p>
+<p>最简单的策略是轮询——每个请求选下一个节点，保证&quot;所有节点被调用的次数相同&quot;。但轮询忽略了一个关键事实：<strong>节点的处理能力并不相同。</strong> 一台刚恢复的节点可能还在预热（JIT、缓存填充），一台正在做 GC 的节点可能延迟很高，一台物理机上的实例和一台性能较差的虚拟机上的实例处理能力天然不同。</p>
+<p>go-zero 的选择是 <strong>P2C（Power of Two Choices）+ EWMA（指数加权移动平均延迟）</strong>。这是一个在生产环境中经过充分验证的组合策略。</p>
+<h3 id="p2c-算法两次随机而非一次选择"><a class="markdownIt-Anchor" href="#p2c-算法两次随机而非一次选择"></a> P2C 算法：两次随机而非一次选择</h3>
+<p>P2C 的全称是 “Power of Two Choices”——从列表中随机选择两个节点，取其中负载较轻的那个。这不是随机选一个，也不是遍历所有节点找出最优的（O(n)），而是用 O(1) 的随机和一次比较，理论上将最大负载降低到大约 log(log(n)) 级别。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/balancer/p2c/p2c.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *p2cPicker)</span></span> Pick(_ balancer.PickInfo) (balancer.PickResult, <span class="type">error</span>) &#123;</span><br><span class="line">    p.lock.Lock()</span><br><span class="line">    <span class="keyword">defer</span> p.lock.Unlock()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> chosen *subConn</span><br><span class="line">    <span class="keyword">switch</span> <span class="built_in">len</span>(p.conns) &#123;</span><br><span class="line">    <span class="keyword">case</span> <span class="number">0</span>:</span><br><span class="line">        <span class="keyword">return</span> emptyPickResult, balancer.ErrNoSubConnAvailable</span><br><span class="line">    <span class="keyword">case</span> <span class="number">1</span>:</span><br><span class="line">        chosen = p.choose(p.conns[<span class="number">0</span>], <span class="literal">nil</span>)</span><br><span class="line">    <span class="keyword">case</span> <span class="number">2</span>:</span><br><span class="line">        chosen = p.choose(p.conns[<span class="number">0</span>], p.conns[<span class="number">1</span>])</span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="keyword">var</span> node1, node2 *subConn</span><br><span class="line">        <span class="keyword">for</span> i := <span class="number">0</span>; i &lt; pickTimes; i++ &#123;</span><br><span class="line">            a := p.r.Intn(<span class="built_in">len</span>(p.conns))</span><br><span class="line">            b := p.r.Intn(<span class="built_in">len</span>(p.conns) - <span class="number">1</span>)</span><br><span class="line">            <span class="keyword">if</span> b &gt;= a &#123;</span><br><span class="line">                b++</span><br><span class="line">            &#125;</span><br><span class="line">            node1 = p.conns[a]</span><br><span class="line">            node2 = p.conns[b]</span><br><span class="line">            <span class="keyword">if</span> node1.healthy() &amp;&amp; node2.healthy() &#123;</span><br><span class="line">                <span class="keyword">break</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        chosen = p.choose(node1, node2)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    atomic.AddInt64(&amp;chosen.inflight, <span class="number">1</span>)</span><br><span class="line">    atomic.AddInt64(&amp;chosen.requests, <span class="number">1</span>)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> balancer.PickResult&#123;</span><br><span class="line">        SubConn: chosen.conn,</span><br><span class="line">        Done:    p.buildDoneFunc(chosen),</span><br><span class="line">    &#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>pickTimes</code> 等于 3——最多重试 3 次随机选出两个&quot;健康&quot;的节点。什么是健康？<code>healthy()</code> 的判断条件只有一行：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *subConn)</span></span> healthy() <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> atomic.LoadUint64(&amp;c.success) &gt; throttleSuccess</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>c.success</code> 是一个每轮完成时通过 EWMA 更新的&quot;成功率&quot;指标，初始值为 1000（<code>initSuccess</code>），<code>throttleSuccess</code> 为 500（即初始成功率的 50%）。当节点的成功率低于一半时，它被认为&quot;不健康&quot;，会被随机选择过程排除在外——但<strong>不是永远排除</strong>，稍后会讲到。</p>
+<h3 id="排他式随机选取"><a class="markdownIt-Anchor" href="#排他式随机选取"></a> 排他式随机选取</h3>
+<p><code>a := p.r.Intn(len(p.conns))</code> 和 <code>b := p.r.Intn(len(p.conns) - 1)</code> 然后 <code>if b &gt;= a &#123; b++ &#125;</code>，这是经典的&quot;从 n 个元素中无放回选 2 个&quot;的写法——<code>a</code> 从 <code>[0, n-1]</code> 中选，<code>b</code> 从去掉 <code>a</code> 后的 <code>n-1</code> 个位置中选。短小的算法保证了 node1 和 node2 永远不会是同一个实例。</p>
+<h3 id="choose负载比较与强制拾取"><a class="markdownIt-Anchor" href="#choose负载比较与强制拾取"></a> <code>choose</code>：负载比较与强制拾取</h3>
+<p>两个节点选出来了，怎么判断谁更&quot;轻&quot;？</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *p2cPicker)</span></span> choose(c1, c2 *subConn) *subConn &#123;</span><br><span class="line">    start := <span class="type">int64</span>(timex.Now())</span><br><span class="line">    <span class="keyword">if</span> c2 == <span class="literal">nil</span> &#123;</span><br><span class="line">        atomic.StoreInt64(&amp;c1.pick, start)</span><br><span class="line">        <span class="keyword">return</span> c1</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> c1.load() &gt; c2.load() &#123;</span><br><span class="line">        c1, c2 = c2, c1</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 强制拾取：如果 c2 被&quot;冷落&quot;太久，放弃 c1，选 c2</span></span><br><span class="line">    pick := atomic.LoadInt64(&amp;c2.pick)</span><br><span class="line">    <span class="keyword">if</span> start-pick &gt; forcePick &amp;&amp; atomic.CompareAndSwapInt64(&amp;c2.pick, pick, start) &#123;</span><br><span class="line">        <span class="keyword">return</span> c2</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    atomic.StoreInt64(&amp;c1.pick, start)</span><br><span class="line">    <span class="keyword">return</span> c1</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>正常情况下，<code>choose</code> 选取 <code>load()</code> 较小的节点。<code>load()</code> 的计算是 P2C 算法的灵魂：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *subConn)</span></span> load() <span class="type">int64</span> &#123;</span><br><span class="line">    lag := <span class="type">int64</span>(math.Sqrt(<span class="type">float64</span>(atomic.LoadUint64(&amp;c.lag) + <span class="number">1</span>)))</span><br><span class="line">    load := lag * (atomic.LoadInt64(&amp;c.inflight) + <span class="number">1</span>)</span><br><span class="line">    <span class="keyword">if</span> load == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> penalty  <span class="comment">// penalty = math.MaxInt32</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> load</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>load = sqrt(lag) × (inflight + 1)</code>，总结起来就是一句话：<strong>节点的&quot;负载&quot;由它的历史延迟和当前正在处理的请求数共同决定。</strong></p>
+<ul>
+<li><code>lag</code> 取平方根是为了压缩延迟的数值范围——延迟从 1ms 变为 100ms 是非常大的恶化，从 100ms 变为 200ms 虽然也糟，但没有那么戏剧性地糟。平方根让 lag 对负载的影响递减而不是线性上升。</li>
+<li><code>inflight + 1</code> 保证了即使没有在途请求，负载也不为 0。</li>
+<li>如果 <code>load</code> 计算结果为 0（只有在 <code>lag == 0 &amp;&amp; inflight == -1</code> 才可能），返回 <code>math.MaxInt32</code>——这个节点被视为&quot;几乎不可能被选中&quot;，直到下次 lag 更新。</li>
+</ul>
+<p>还有一个巧妙的机制：<strong>强制拾取</strong>。如果某个节点超过 1 秒（<code>forcePick</code>）没有被选中，<code>choose</code> 会忽略负载比较，直接选中它。为什么需要这个？</p>
+<p>因为 EWMA 的延迟值是滞后的——如果某个节点的瞬时延迟很低（因为最近根本没有请求打到它），它的 <code>lag</code> 就会很低，<code>load()</code> 也很低，P2C 总是选中它，形成一个&quot;富者越富&quot;的正反馈循环。强制拾取打破了这种惯性——至少在每秒一次的频率上，每个节点都有机会被选到。这维持了所有 SubConn 的&quot;热度&quot;，保证了所有的连接都保持了活跃的状态跟踪，也避免了延迟信号在长时间无请求后失去参考价值。</p>
+<h3 id="ewma-延迟为何指数加权"><a class="markdownIt-Anchor" href="#ewma-延迟为何指数加权"></a> EWMA 延迟：为何指数加权</h3>
+<p>P2C 解决了&quot;选谁&quot;的问题。但如何衡量一个节点的延迟不是一次取样的暴政，而是对历史趋势的平滑反映？每次 RPC 调用完成后，<code>Done</code> 回调更新节点的 lag 和 success：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *p2cPicker)</span></span> buildDoneFunc(c *subConn) <span class="function"><span class="keyword">func</span><span class="params">(info balancer.DoneInfo)</span></span> &#123;</span><br><span class="line">    start := <span class="type">int64</span>(timex.Now())</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(info balancer.DoneInfo)</span></span> &#123;</span><br><span class="line">        atomic.AddInt64(&amp;c.inflight, <span class="number">-1</span>)</span><br><span class="line">        now := timex.Now()</span><br><span class="line">        last := atomic.SwapInt64(&amp;c.last, <span class="type">int64</span>(now))</span><br><span class="line">        td := <span class="type">int64</span>(now) - last</span><br><span class="line">        <span class="keyword">if</span> td &lt; <span class="number">0</span> &#123;</span><br><span class="line">            td = <span class="number">0</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// EWMA 权重：时间间隔越大，历史数据的权重越低</span></span><br><span class="line">        w := math.Exp(<span class="type">float64</span>(-td) / <span class="type">float64</span>(decayTime))</span><br><span class="line"></span><br><span class="line">        lag := <span class="type">int64</span>(now) - start</span><br><span class="line">        <span class="keyword">if</span> lag &lt; <span class="number">0</span> &#123;</span><br><span class="line">            lag = <span class="number">0</span></span><br><span class="line">        &#125;</span><br><span class="line">        olag := atomic.LoadUint64(&amp;c.lag)</span><br><span class="line">        <span class="keyword">if</span> olag == <span class="number">0</span> &#123;</span><br><span class="line">            w = <span class="number">0</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 新 lag = 旧 lag × w + 当前 lag × (1-w)</span></span><br><span class="line">        atomic.StoreUint64(&amp;c.lag, <span class="type">uint64</span>(<span class="type">float64</span>(olag)*w + <span class="type">float64</span>(lag)*(<span class="number">1</span>-w)))</span><br><span class="line"></span><br><span class="line">        success := initSuccess</span><br><span class="line">        <span class="keyword">if</span> info.Err != <span class="literal">nil</span> &amp;&amp; !codes.Acceptable(info.Err) &#123;</span><br><span class="line">            success = <span class="number">0</span></span><br><span class="line">        &#125;</span><br><span class="line">        osucc := atomic.LoadUint64(&amp;c.success)</span><br><span class="line">        atomic.StoreUint64(&amp;c.success, <span class="type">uint64</span>(<span class="type">float64</span>(osucc)*w + <span class="type">float64</span>(success)*(<span class="number">1</span>-w)))</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>w</code> 不是固定常数——它基于 <strong>距离上一次 Done 回调的时间间隔 <code>td</code></strong> 动态计算：</p>
+<ul>
+<li>如果请求密集（<code>td</code> 很小），<code>w</code> 接近 1，历史数据保留更多权重，延迟估计更平滑。</li>
+<li>如果请求稀疏（<code>td</code> 很大），<code>w</code> 接近 0，历史数据几乎被丢弃，直接用当前延迟重新初始化——长时间无请求后，之前的延迟数据已经没有参考意义。</li>
+</ul>
+<p><code>decayTime</code> 固定为 10 秒——这是一个从 Twitter Finagle 继承的经验值。这个值的含义是：<strong>10 秒内的历史延迟具有实质参考意义，超过 10 秒则衰减到接近零。</strong></p>
+<p>这里有一个容易被忽略的细节：<code>olag == 0</code> 时 <code>w = 0</code>。为什么？一个刚创建的 <code>subConn</code>，其 <code>lag</code> 初始值为 0。如果 w 不为 0，第一次 Done 回调后，新 lag 会是 <code>0 * w + realLag * (1-w)</code>——被历史值 0 拉低了。不合理。设置 <code>w = 0</code> 等价于直接使用第一次的实际延迟值作为起点，之后才开始平滑。</p>
+<p><code>success</code> 同理：<code>codes.Acceptable</code> 的判断（在第 08 篇中有详细分析）决定了这次调用是否算&quot;成功&quot;——<code>DeadlineExceeded</code>、<code>Internal</code>、<code>Unavailable</code> 等错误算失败（success=0），<code>InvalidArgument</code>、<code>NotFound</code> 等错误算成功（success=1000）。通过 EWMA，success 形成了一个在 [0, 1000] 之间的连续值，低于 500 的节点被视为不健康。</p>
+<h3 id="统计日志每分钟一张健康快照"><a class="markdownIt-Anchor" href="#统计日志每分钟一张健康快照"></a> 统计日志：每分钟一张健康快照</h3>
+<p>还有一个容易被忽视但运维友好的功能——每分钟打印一次节点统计：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *p2cPicker)</span></span> logStats() &#123;</span><br><span class="line">    stats := <span class="built_in">make</span>([]<span class="type">string</span>, <span class="number">0</span>, <span class="built_in">len</span>(p.conns))</span><br><span class="line">    p.lock.Lock()</span><br><span class="line">    <span class="keyword">defer</span> p.lock.Unlock()</span><br><span class="line">    <span class="keyword">for</span> _, conn := <span class="keyword">range</span> p.conns &#123;</span><br><span class="line">        stats = <span class="built_in">append</span>(stats, fmt.Sprintf(<span class="string">&quot;conn: %s, load: %d, reqs: %d&quot;</span>,</span><br><span class="line">            conn.addr.Addr, conn.load(), atomic.SwapInt64(&amp;conn.requests, <span class="number">0</span>)))</span><br><span class="line">    &#125;</span><br><span class="line">    logx.Statf(<span class="string">&quot;p2c - %s&quot;</span>, strings.Join(stats, <span class="string">&quot;; &quot;</span>))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每分钟，你可以从日志中看到每个节点的当前负载值和过去一分钟的请求数。不需要上 Prometheus 也不需要看 Grafana 图表——一行日志就能快速判断流量分布是否均匀、是否有&quot;冷节点&quot;。</p>
+<h2 id="一致性哈希不同的路由需求"><a class="markdownIt-Anchor" href="#一致性哈希不同的路由需求"></a> 一致性哈希：不同的路由需求</h2>
+<p>P2C 适合大多数无状态 RPC 调用——哪个节点处理请求都一样。但有些场景需要将同一个 key 的请求发到同一个节点：有状态的分片缓存（同一片数据总是被同一个节点处理）、哈希路由的流量控制（A/B 测试按用户 ID 划分）。</p>
+<p>go-zero 提供了一致性哈希作为备选的负载均衡策略：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/balancer/consistenthash/consistenthash.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *picker)</span></span> Pick(info balancer.PickInfo) (balancer.PickResult, <span class="type">error</span>) &#123;</span><br><span class="line">    hashKey := GetHashKey(info.Ctx)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(hashKey) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> emptyPickResult, status.Error(codes.InvalidArgument,</span><br><span class="line">            <span class="string">&quot;[consistent_hash] missing hash key in context&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> addrAny, ok := p.hashRing.Get(hashKey); ok &#123;</span><br><span class="line">        addr, ok := addrAny.(<span class="type">string</span>)</span><br><span class="line">        subConn, ok := p.conns[addr]</span><br><span class="line">        <span class="keyword">return</span> balancer.PickResult&#123;SubConn: subConn&#125;, <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> emptyPickResult, status.Errorf(codes.Unavailable,</span><br><span class="line">        <span class="string">&quot;[consistent_hash] no matching conn for hashKey: %s&quot;</span>, hashKey)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>使用时需要在 context 中设置 hash key：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">ctx = consistenthash.SetHashKey(ctx, userId)</span><br><span class="line">client.Call(ctx, req)</span><br></pre></td></tr></table></figure>
+<p>一致性哈希使用 go-zero 的 <code>hash.ConsistentHash</code> 实现（默认 100 个虚拟节点），当节点列表变化时只影响相邻节点的数据流，大部分 key 的映射保持不变。与 P2C 不同，一致性哈希不做延迟感知和健康度判断——它只负责将同一个 key 固定映射到同一个地址。如果需要健康管理，需要在上层（如代码层面）自行处理。</p>
+<h2 id="subset实用的大规模保护"><a class="markdownIt-Anchor" href="#subset实用的大规模保护"></a> Subset：实用的大规模保护</h2>
+<p>在所有 resolver 的 <code>update</code> 闭包中，你都会看到一句话：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">vals := subset(sub.Values(), subsetSize)</span><br></pre></td></tr></table></figure>
+<p><code>subsetSize</code> 固定为 32。如果某个服务有 500 个实例，客户端只需要从其中随机挑选 32 个来建立连接，而不是 500 个。这不是因为 P2C 算法不能处理 500 个节点——而是因为 gRPC 为每个地址创建 SubConn 的实际资源开销不容忽视（每个 SubConn 背后是一个 HTTP/2 连接和多个 stream）。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">subset</span><span class="params">(set []<span class="type">string</span>, sub <span class="type">int</span>)</span></span> []<span class="type">string</span> &#123;</span><br><span class="line">    rand.Shuffle(<span class="built_in">len</span>(set), <span class="function"><span class="keyword">func</span><span class="params">(i, j <span class="type">int</span>)</span></span> &#123;</span><br><span class="line">        set[i], set[j] = set[j], set[i]</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(set) &lt;= sub &#123;</span><br><span class="line">        <span class="keyword">return</span> set</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> set[:sub]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>随机打乱 + 截取前 32 个——每个客户端持有的实例子集不同但覆盖不重叠。最终结果是<strong>每个实例的客户端连接数大致均等</strong>（因为每个实例进入不同客户端子集的概率相同），不存在&quot;特定几个实例被所有客户端连接导致负载不均&quot;的问题。在生产环境中，32 这个值在大多数场景下足够——500 个实例本身已经过于冗余，32 个实例的子集能涵盖足够多的故障转移候选。</p>
+<h2 id="完整链路串联"><a class="markdownIt-Anchor" href="#完整链路串联"></a> 完整链路串联</h2>
+<p>把前文分散在各处的代码片段拼成一张完整的数据流图：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────────────────────────────────────────────────┐</span><br><span class="line">│  服务端                                                  │</span><br><span class="line">│  RpcPubServer.Start()                                   │</span><br><span class="line">│    → registerEtcd()                                     │</span><br><span class="line">│      → discov.NewPublisher(hosts, key, listenOn)         │</span><br><span class="line">│        → Registry.GetConn(hosts)  // 复用 etcd 连接       │</span><br><span class="line">│        → cli.Grant(TTL=10s)      // 创建租约              │</span><br><span class="line">│        → cli.Put(key, value, WithLease)                  │</span><br><span class="line">│        → keepAliveAsync(cli)                             │</span><br><span class="line">│          ├─ KeepAlive channel  // 心跳续约                 │</span><br><span class="line">│          ├─ Watch channel      // 监听自己 key 被删        │</span><br><span class="line">│          └─ Pause/Resume/Quit  // 生命周期控制             │</span><br><span class="line">└──────────────┬──────────────────────────────────────────┘</span><br><span class="line">               │ etcd 存储</span><br><span class="line">               │ /greet.rpc/leaseID → &quot;192.168.1.10:8080&quot;</span><br><span class="line">               ▼</span><br><span class="line">┌─────────────────────────────────────────────────────────┐</span><br><span class="line">│  客户端                                                  │</span><br><span class="line">│  NewClient → BuildTarget                                │</span><br><span class="line">│    &quot;discov:///etcd:2379?key=greet.rpc&quot;                  │</span><br><span class="line">│    → grpc.DialContext → resolver.Build                   │</span><br><span class="line">│      → discov.NewSubscriber(hosts, key)                  │</span><br><span class="line">│        → Registry.Monitor(key, container)                │</span><br><span class="line">│          → cluster.getClient()  // 复用 etcd 连接         │</span><br><span class="line">│          → cluster.load()       // 全量 Get + 初始填充    │</span><br><span class="line">│          → cluster.watch()      // Watch 变更             │</span><br><span class="line">│            ├─ watchStream: 事件循环                       │</span><br><span class="line">│            │   └─ handleWatchEvents                      │</span><br><span class="line">│            │     → UpdateListener.OnAdd/OnDelete          │</span><br><span class="line">│            │       → container.addKv/removeKey            │</span><br><span class="line">│            │         → notifyChange()                     │</span><br><span class="line">│            └─ watchConnState: 连接断开恢复                 │</span><br><span class="line">│                → cluster.reload()                        │</span><br><span class="line">│      → sub.AddListener(update)  // 注册 update 闭包      │</span><br><span class="line">│        → update()&#123; cc.UpdateState(addrs) &#125;               │</span><br><span class="line">└──────────────┬──────────────────────────────────────────┘</span><br><span class="line">               │ gRPC 接收新地址列表</span><br><span class="line">               ▼</span><br><span class="line">┌─────────────────────────────────────────────────────────┐</span><br><span class="line">│  gRPC Balancer                                          │</span><br><span class="line">│  base.NewBalancerBuilder(&quot;p2c_ewma&quot;)                     │</span><br><span class="line">│    → 为每个 Address 建立 SubConn                           │</span><br><span class="line">│    → 监听 SubConn 连接状态变化                              │</span><br><span class="line">│    → 仅 Ready SubConn 进入 picker                         │</span><br><span class="line">│    → 每次 RPC 调用: Picker.Pick                           │</span><br><span class="line">│      ├─ 从健康 Ready 节点中随机选 2 个                      │</span><br><span class="line">│      ├─ choose(c1, c2): 比较 load()                      │</span><br><span class="line">│      │   load = sqrt(lag) × (inflight + 1)               │</span><br><span class="line">│      │   ├─ 正常: 选 load 较小的                           │</span><br><span class="line">│      │   └─ 强制拾取: 超过 1s 未选中的节点直接选中             │</span><br><span class="line">│      ├─ inflight++                                       │</span><br><span class="line">│      └─ 返回 PickResult&#123;SubConn, Done&#125;                    │</span><br><span class="line">│                                                          │</span><br><span class="line">│  RPC 调用完成 → Done(info)                                │</span><br><span class="line">│    ├─ inflight--                                         │</span><br><span class="line">│    ├─ EWMA 更新 lag:                                     │</span><br><span class="line">│    │   w = exp(-td / 10s)                                │</span><br><span class="line">│    │   new_lag = old_lag × w + current_lag × (1-w)       │</span><br><span class="line">│    └─ EWMA 更新 success:                                  │</span><br><span class="line">│        new_success = old_success × w + (0 or 1000) × (1-w) │</span><br><span class="line">│        (根据 codes.Acceptable 判断)                        │</span><br><span class="line">└─────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+<p>从服务端&quot;我来也&quot;的一声宣告，到客户端精准地在一个最优的节点上执行请求，整条链路涉及了 4 个模块、十余个类型、3 个并发的 goroutine 循环，但对业务代码来说，这一切只浓缩为两行配置和一行调用：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 服务端配置</span></span><br><span class="line">RpcServerConf:</span><br><span class="line">  Etcd:</span><br><span class="line">    Hosts: [<span class="string">&quot;127.0.0.1:2379&quot;</span>]</span><br><span class="line">    Key: <span class="string">&quot;greet.rpc&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 客户端调用</span></span><br><span class="line">client.SayHello(ctx, &amp;req)</span><br></pre></td></tr></table></figure>
+<p>这就是框架的真正价值——<strong>基础设施的复杂性与业务代码的简洁性之间，隔着一套精密的自动化管道。</strong> go-zero 的服务发现和负载均衡就是这条管道的关键一段。</p>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>本文从服务端注册到客户端选端，完整走完了 go-zero 的服务发现与负载均衡主链路：</p>
+<p><strong>服务注册遵循&quot;声明式配置 + 自动 KeepAlive&quot;的模式。</strong> 你只需在配置中写 etcd 地址和 key 前缀，框架自动处理租约创建、心跳续约、异常重建和优雅退出。Pause/Resume 机制为运行时的流量摘除提供了精确的控制点。</p>
+<p><strong>服务发现的核心是&quot;Registry + cluster + UpdateListener&quot;三层抽象。</strong> Registry 管理 etcd 连接的复用（同一端点共享一个连接），cluster 管理 key 级别的 watch 生命周期（不同 key 共享连接但独立 watch），UpdateListener 将 etcd 的增量变化转化为通用的 OnAdd/OnDelete 通知。StateWatcher 和 revision 压缩处理保证了连接断开和 etcd 运维期间的自愈能力。</p>
+<p><strong>Resolver 是&quot;服务发现&quot;和&quot;负载均衡&quot;之间的桥梁。</strong> 它实现了 gRPC 的 <code>resolver.Builder</code> 接口，将 Subscriber 的变化通过 <code>cc.UpdateState</code> 自动同步到 gRPC 的地址管理层面。四种 scheme（direct、discov、etcd、k8s）覆盖了从开发环境到生产 Kubernetes 的各种部署场景。Subset 机制在所有 resolver 中统一启用，防止大实例集下的连接数爆炸。</p>
+<p><strong>P2C + EWMA 的组合让负载均衡从&quot;轮询&quot;升级为&quot;感知&quot;。</strong> 两次随机选择将决策复杂度降到 O(1)，EWMA 延迟和成功率让算法能够区分快节点和慢节点，强制拾取打破了惯性防止信号腐化。相比简单的轮询或最少连接数算法，P2C 在节点性能异构的场景下显著减少了请求的长尾延迟。</p>
+<p><strong>一致性哈希为有状态路由提供了另一种维度。</strong> P2C 适合&quot;任意节点都能处理请求&quot;的无状态场景，而一致性哈希保证同一个 key 总是落到同一个节点——适合分片缓存、A/B 测试等需要路由亲和性的需求。</p>
+<p>理解了服务发现和负载均衡之后，我们在下一篇将进入 go-zero 的另一块核心竞争力——<strong>弹性保护的三层武器：熔断、降载与限流</strong>。当你知道了客户端如何发现和选择节点之后，再看到&quot;节点连续失败导致断路器跳闸，CPU 过载触发降载拒绝请求&quot;的全过程，才能真正理解 go-zero 的弹性体系是怎样从头武装到尾的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/17/go-zero-08/" rel="next" title="go-zero 源码分析 08：zRPC 调用链">
+      go-zero 源码分析 08：zRPC 调用链 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E6%B3%A8%E5%86%8Cpublisher-%E5%A6%82%E4%BD%95%E6%8A%8A%E6%88%91%E5%9C%A8%E7%BA%BF%E5%91%8A%E8%AF%89-etcd"><span class="nav-number">1.</span> <span class="nav-text"> 服务注册：Publisher 如何把&quot;我在线&quot;告诉 etcd</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E6%9C%8D%E5%8A%A1%E7%AB%AF%E9%87%8D%E5%90%AF%E5%90%8E-ip-%E5%8F%98%E4%BA%86%E6%80%8E%E4%B9%88%E5%8A%9E"><span class="nav-number">1.1.</span> <span class="nav-text"> 问题：服务端重启后 IP 变了怎么办</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%8E-keepaliveserver-%E8%AF%B4%E8%B5%B7"><span class="nav-number">1.2.</span> <span class="nav-text"> 从 KeepAliveServer 说起</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#keepalive-%E7%9A%84%E4%B8%89%E4%B8%AA%E5%B9%B6%E5%8F%91%E5%BE%AA%E7%8E%AF"><span class="nav-number">1.3.</span> <span class="nav-text"> KeepAlive 的三个并发循环</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8D%E8%AF%95%E7%9A%84%E5%86%B7%E9%9D%99%E6%9C%9Fcooldown-%E6%9C%BA%E5%88%B6"><span class="nav-number">1.4.</span> <span class="nav-text"> 重试的冷静期：CoolDown 机制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E5%8F%91%E7%8E%B0subscriber-%E5%A6%82%E4%BD%95%E6%84%9F%E7%9F%A5%E5%AE%9E%E4%BE%8B%E5%8F%98%E5%8C%96"><span class="nav-number">2.</span> <span class="nav-text"> 服务发现：Subscriber 如何感知实例变化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E5%A6%82%E4%BD%95%E5%9C%A8%E5%85%A8%E9%87%8F-return-%E5%92%8C%E5%A2%9E%E9%87%8F-push-%E4%B9%8B%E9%97%B4%E6%89%BE%E5%88%B0%E5%B9%B3%E8%A1%A1"><span class="nav-number">2.1.</span> <span class="nav-text"> 问题：如何在全量 return 和增量 push 之间找到平衡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#subscriber-%E7%9A%84%E5%88%9B%E5%BB%BA%E4%B8%8E%E5%AE%B9%E5%99%A8%E7%9A%84%E7%BB%91%E5%AE%9A"><span class="nav-number">2.2.</span> <span class="nav-text"> Subscriber 的创建与容器的绑定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#container%E6%9C%AC%E5%9C%B0%E7%BC%93%E5%AD%98%E7%9A%84%E5%A2%9E%E9%87%8F%E6%9B%B4%E6%96%B0"><span class="nav-number">2.3.</span> <span class="nav-text"> Container：本地缓存的增量更新</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#resolver%E4%BB%8E-etcd-%E5%8F%98%E5%8C%96%E5%88%B0-grpc-%E5%9C%B0%E5%9D%80%E7%9A%84%E6%A1%A5%E6%A2%81"><span class="nav-number">3.</span> <span class="nav-text"> Resolver：从 etcd 变化到 gRPC 地址的桥梁</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9B%9B%E7%A7%8D-resolver-scheme"><span class="nav-number">3.1.</span> <span class="nav-text"> 四种 Resolver Scheme</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B3%E9%94%AE%E7%9A%84%E6%A1%A5%E6%8E%A5listener-%E5%92%8C-ccupdatestate"><span class="nav-number">3.2.</span> <span class="nav-text"> 关键的桥接：listener 和 cc.UpdateState</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5%E5%A4%8D%E7%94%A8%E7%9A%84%E9%9A%90%E5%BD%A2%E6%9E%B6%E6%9E%84"><span class="nav-number">3.3.</span> <span class="nav-text"> 连接复用的隐形架构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#etcd-%E8%BF%9E%E6%8E%A5%E7%9A%84%E8%87%AA%E5%8A%A8%E6%81%A2%E5%A4%8D"><span class="nav-number">3.4.</span> <span class="nav-text"> etcd 连接的自动恢复</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#revision-%E5%8E%8B%E7%BC%A9%E7%9A%84%E5%A4%84%E7%90%86"><span class="nav-number">3.5.</span> <span class="nav-text"> Revision 压缩的处理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%A8%E5%B1%80%E8%A7%86%E5%9B%BEregistry-%E4%B8%8E-cluster-%E7%9A%84%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F"><span class="nav-number">4.</span> <span class="nav-text"> 全局视图：Registry 与 Cluster 的生命周期</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B4%9F%E8%BD%BD%E5%9D%87%E8%A1%A1%E4%BB%8E%E5%9C%B0%E5%9D%80%E5%88%97%E8%A1%A8%E5%88%B0%E9%80%89%E6%8B%A9%E8%8A%82%E7%82%B9"><span class="nav-number">5.</span> <span class="nav-text"> 负载均衡：从地址列表到选择节点</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98n-%E4%B8%AA%E8%8A%82%E7%82%B9%E8%AF%A5%E9%80%89%E5%93%AA%E4%B8%80%E4%B8%AA"><span class="nav-number">5.1.</span> <span class="nav-text"> 问题：N 个节点，该选哪一个</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#p2c-%E7%AE%97%E6%B3%95%E4%B8%A4%E6%AC%A1%E9%9A%8F%E6%9C%BA%E8%80%8C%E9%9D%9E%E4%B8%80%E6%AC%A1%E9%80%89%E6%8B%A9"><span class="nav-number">5.2.</span> <span class="nav-text"> P2C 算法：两次随机而非一次选择</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E4%BB%96%E5%BC%8F%E9%9A%8F%E6%9C%BA%E9%80%89%E5%8F%96"><span class="nav-number">5.3.</span> <span class="nav-text"> 排他式随机选取</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#choose%E8%B4%9F%E8%BD%BD%E6%AF%94%E8%BE%83%E4%B8%8E%E5%BC%BA%E5%88%B6%E6%8B%BE%E5%8F%96"><span class="nav-number">5.4.</span> <span class="nav-text"> choose：负载比较与强制拾取</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ewma-%E5%BB%B6%E8%BF%9F%E4%B8%BA%E4%BD%95%E6%8C%87%E6%95%B0%E5%8A%A0%E6%9D%83"><span class="nav-number">5.5.</span> <span class="nav-text"> EWMA 延迟：为何指数加权</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%9F%E8%AE%A1%E6%97%A5%E5%BF%97%E6%AF%8F%E5%88%86%E9%92%9F%E4%B8%80%E5%BC%A0%E5%81%A5%E5%BA%B7%E5%BF%AB%E7%85%A7"><span class="nav-number">5.6.</span> <span class="nav-text"> 统计日志：每分钟一张健康快照</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E8%87%B4%E6%80%A7%E5%93%88%E5%B8%8C%E4%B8%8D%E5%90%8C%E7%9A%84%E8%B7%AF%E7%94%B1%E9%9C%80%E6%B1%82"><span class="nav-number">6.</span> <span class="nav-text"> 一致性哈希：不同的路由需求</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#subset%E5%AE%9E%E7%94%A8%E7%9A%84%E5%A4%A7%E8%A7%84%E6%A8%A1%E4%BF%9D%E6%8A%A4"><span class="nav-number">7.</span> <span class="nav-text"> Subset：实用的大规模保护</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%8C%E6%95%B4%E9%93%BE%E8%B7%AF%E4%B8%B2%E8%81%94"><span class="nav-number">8.</span> <span class="nav-text"> 完整链路串联</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">286</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
