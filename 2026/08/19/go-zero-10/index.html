@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在上一篇文章的最后，我们走完了 go-zero 的服务发现与负载均衡链路——客户端通过 etcd Watch 实时获取在线节点列表，再通过 P2C 算法选择延迟最低、在途请求最少的那个节点发出请求。这一切运转良好的前提是：下游是健康的，流量是可控的，CPU 是空闲的，但生产环境从来不缺少意外。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 10：熔断、降载与限流">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/19/go-zero-10/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在上一篇文章的最后，我们走完了 go-zero 的服务发现与负载均衡链路——客户端通过 etcd Watch 实时获取在线节点列表，再通过 P2C 算法选择延迟最低、在途请求最少的那个节点发出请求。这一切运转良好的前提是：下游是健康的，流量是可控的，CPU 是空闲的，但生产环境从来不缺少意外。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-19T05:54:16.000Z">
+<meta property="article:modified_time" content="2026-08-19T06:08:19.169Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/19/go-zero-10/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 10：熔断、降载与限流 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/19/go-zero-10/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 10：熔断、降载与限流
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-19 13:54:16" itemprop="dateCreated datePublished" datetime="2026-08-19T13:54:16+08:00">2026-08-19</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在上一篇文章的最后，我们走完了 go-zero 的服务发现与负载均衡链路——客户端通过 etcd Watch 实时获取在线节点列表，再通过 P2C 算法选择延迟最低、在途请求最少的那个节点发出请求。这一切运转良好的前提是：下游是健康的，流量是可控的，CPU 是空闲的，但生产环境从来不缺少意外。</p>
+<span id="more"></span>
+<ul>
+<li><strong>下游故障</strong>：某个 RPC 服务的数据库连接池耗尽，每次调用都超时 2 秒。客户端的 P2C 算法虽然能感知延迟变化，但调用仍然在发生——几百个并发的调用者同时在等 2 秒超时，客户端的 goroutine 堆积、内存上升，最终把调用方自己也拖垮。这本质上是一个<strong>级联故障</strong>——一个组件的问题沿着调用链扩散，最终瘫痪整个系统。</li>
+<li><strong>流量突发</strong>：缓存大面积失效，流量全部穿透到数据库。CPU 瞬间飙到 99%，所有的请求都在排队等待，响应时间从 50ms 涨到 30 秒。系统还没挂，但等价于挂了——因为没有人能在一个可接受的时间内拿到结果。这本质上是一个<strong>过载</strong>问题——系统容量上限被突破时，如果不主动拒绝一部分请求，最终所有请求都会被拖死。</li>
+<li><strong>资源滥用</strong>：某个调用方代码有 bug，在循环中不断调用你的接口，每秒数千次。其他正常的调用方被挤占，甚至因为连接数占满而连不上。这本质上是一个<strong>资源竞争</strong>问题——缺少按调用方做配额控制的机制。</li>
+</ul>
+<p>go-zero 提供了三层独立的保护机制来应对这三种场景，它们从保护对象、触发条件到决策算法都不同：</p>
+<table>
+<thead>
+<tr>
+<th>机制</th>
+<th>保护对象</th>
+<th>触发条件</th>
+<th>核心问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>熔断（Breaker）</td>
+<td>调用方</td>
+<td>下游错误率</td>
+<td>下游挂了，要不要继续调？</td>
+</tr>
+<tr>
+<td>降载（Shedding）</td>
+<td>当前服务</td>
+<td>系统 CPU 过载</td>
+<td>CPU 满了，要不要拒绝新请求？</td>
+</tr>
+<tr>
+<td>限流（Limiting）</td>
+<td>系统容量边界</td>
+<td>请求超过预设速率</td>
+<td>某个调用方是否超过了分配额度？</td>
+</tr>
+</tbody>
+</table>
+<p>三者不是互斥关系，而是各自的战场不同。理解了这一点，再看它们的具体实现，就能明白为什么有些设计决策要那样做而不是这样做。</p>
+<h2 id="熔断google-sre-的概率式断路器"><a class="markdownIt-Anchor" href="#熔断google-sre-的概率式断路器"></a> 熔断：Google SRE 的概率式断路器</h2>
+<h3 id="传统的全开全关有什么问题"><a class="markdownIt-Anchor" href="#传统的全开全关有什么问题"></a> 传统的&quot;全开全关&quot;有什么问题</h3>
+<p>提到熔断器，<strong>很多人首先想到的是 Netflix Hystrix 的三态机</strong>：<code>闭合 → 开放 → 半开 → 闭合</code>。当失败率超过阈值（比如 50%），开关从闭合变为开放，所有请求直接失败；一段时间后变为半开，允许一个探测请求通过；探测成功则闭合，失败则继续开放。</p>
+<p>这个模型清晰且直观，但它有一个根本性缺陷：<strong>开关是二元的——要么全放，要么全拒。</strong> 假设失败率从 5% 涨到 55%，瞬时超过 50% 阈值，此时断路器从&quot;放行所有请求&quot;直接跳变为&quot;拒绝所有请求&quot;。这 45% 的成功请求本可以正常处理，却被一并拒绝了。</p>
+<p>在生产环境中，这种情况尤其危险：当故障开始恢复时（比如失败率从 100% 逐步回落到 40%），半开状态只放行一个探测请求——如果这个探测请求恰好失败（巧合），整个恢复过程就被延后了一个探测周期。这导致恢复过于缓慢，而故障期间系统吞吐量又被打了一个不必要的零。</p>
+<h3 id="概率式拒绝让拒绝与失败程度成正比"><a class="markdownIt-Anchor" href="#概率式拒绝让拒绝与失败程度成正比"></a> 概率式拒绝：让拒绝与失败程度成正比</h3>
+<p>go-zero 没有使用传统的三态机，而是实现了一个<strong>概率式断路器</strong>——默认名为 <code>googleBreaker</code>。它的核心思路来自 Google SRE 手册中&quot;处理过载&quot;一章的客户端节流算法：<strong>不是要么全放要么全拒，而是计算一个&quot;丢弃概率&quot;，失败越多，丢弃概率越高，但总有一部分请求能通过。</strong></p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/breaker/googlebreaker.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *googleBreaker)</span></span> accept() <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">var</span> w <span class="type">float64</span></span><br><span class="line">    history := b.history()</span><br><span class="line">    w = b.k - (b.k-minK)*<span class="type">float64</span>(history.failingBuckets)/buckets</span><br><span class="line">    weightedAccepts := mathx.AtLeast(w, minK) * <span class="type">float64</span>(history.accepts)</span><br><span class="line">    dropRatio := (<span class="type">float64</span>(history.total-protection) - weightedAccepts) / <span class="type">float64</span>(history.total+<span class="number">1</span>)</span><br><span class="line">    <span class="keyword">if</span> dropRatio &lt;= <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 强制放行：至少每秒有一个请求能通过</span></span><br><span class="line">    lastPass := b.lastPass.Load()</span><br><span class="line">    <span class="keyword">if</span> lastPass &gt; <span class="number">0</span> &amp;&amp; timex.Since(lastPass) &gt; forcePassDuration &#123;</span><br><span class="line">        b.lastPass.Set(timex.Now())</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    dropRatio *= <span class="type">float64</span>(buckets-history.workingBuckets) / buckets</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> b.proba.TrueOnProba(dropRatio) &#123;</span><br><span class="line">        <span class="keyword">return</span> ErrServiceUnavailable</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    b.lastPass.Set(timex.Now())</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>理解这个算法需要先理清几个概念：</p>
+<h4 id="滑动窗口与-bucket"><a class="markdownIt-Anchor" href="#滑动窗口与-bucket"></a> 滑动窗口与 bucket</h4>
+<p>断路器内部使用了一个 40 个 bucket 的滑动窗口，每个 bucket 覆盖 250ms，总窗口为 10 秒。每个 bucket 记录四种计数：<code>Sum</code>（总请求数）、<code>Success</code>（成功）、<code>Failure</code>（失败）、<code>Drop</code>（被丢弃）。</p>
+<p>每次有请求被接受、执行并返回结果后，调用方通过 <code>Promise.Accept()</code> 或 <code>Promise.Reject(reason)</code> 告诉断路器本次调用的结果，断路器据此在各 bucket 中增加相应的计数。</p>
+<h4 id="history四个关键指标"><a class="markdownIt-Anchor" href="#history四个关键指标"></a> history()：四个关键指标</h4>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(b *googleBreaker)</span></span> history() windowResult &#123;</span><br><span class="line">    <span class="keyword">var</span> result windowResult</span><br><span class="line">    b.stat.Reduce(<span class="function"><span class="keyword">func</span><span class="params">(b *bucket)</span></span> &#123;</span><br><span class="line">        result.accepts += b.Success</span><br><span class="line">        result.total += b.Sum</span><br><span class="line">        <span class="keyword">if</span> b.Failure &gt; <span class="number">0</span> &#123;</span><br><span class="line">            result.workingBuckets = <span class="number">0</span></span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> b.Success &gt; <span class="number">0</span> &#123;</span><br><span class="line">            result.workingBuckets++</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> b.Success &gt; <span class="number">0</span> &#123;</span><br><span class="line">            result.failingBuckets = <span class="number">0</span></span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> b.Failure &gt; <span class="number">0</span> &#123;</span><br><span class="line">            result.failingBuckets++</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>history()</code> 遍历所有 40 个 bucket，计算四个值：</p>
+<ul>
+<li><strong><code>accepts</code></strong>：所有 bucket 中的成功总数。</li>
+<li><strong><code>total</code></strong>：所有 bucket 中的请求总数（成功 + 失败 + 丢弃）。</li>
+<li><strong><code>failingBuckets</code></strong>：从窗口尾部向前数，<strong>连续</strong>出现失败（且没有成功）的 bucket 数量。注意计数规则：遇到有成功的 bucket 时计数器归零，遇到有失败无成功的 bucket 时计数器加一。所以 <code>failingBuckets</code> 反映的是&quot;距离最近一次成功有多久了&quot;。</li>
+<li><strong><code>workingBuckets</code></strong>：对称的概念——从窗口尾部向前数，<strong>连续</strong>出现成功（且没有失败）的 bucket 数量。</li>
+</ul>
+<p>这四个值的组合用处很大。<code>failingBuckets</code> 和 <code>workingBuckets</code> 不是简单地在统计失败次数——它们统计的是<strong>连续趋势</strong>。10 秒前有过一次失败（几乎不影响当前健康度）和最近 1 秒内全是失败（系统出了大问题），breaker 的反应应该完全不同。<code>failingBuckets</code> 的连续计数机制天然区分了这两种情形：前者对应的 <code>failingBuckets</code> 几乎为 0，后者接近 40。</p>
+<h4 id="丢弃率的计算"><a class="markdownIt-Anchor" href="#丢弃率的计算"></a> 丢弃率的计算</h4>
+<p>回到 <code>accept()</code> 的执行过程：</p>
+<p><strong>第一步：计算权重因子。</strong> <code>w = k - (k - minK) * failingBuckets / buckets</code>。当没有失败 bucket 时，<code>w = k = 1.5</code>；当所有 bucket 都在失败时，<code>w = minK = 1.1</code>。<code>w</code> 在 1.5 到 1.1 之间根据 <code>failingBuckets</code> 线性插值——失败越多，w 越小，允许的请求越少。</p>
+<p><strong>第二步：计算加权允许数。</strong> <code>weightedAccepts = max(w, minK) * accepts</code>。这是根据当前健康状态，系统&quot;本应&quot;能接受的请求数量——如果最近的失败多，w 就小，等量的 accepts 乘以更小的 w，意味着更多请求应该被拒绝。</p>
+<p><strong>第三步：计算丢弃率。</strong> <code>dropRatio = (total - protection - weightedAccepts) / (total + 1)</code>。分子是&quot;超出合理范围的请求数&quot;，分母是总请求数。当 <code>total</code>（实际请求总量）远超 <code>weightedAccepts</code>（合理请求量）时，<code>dropRatio</code> 接近 1——几乎所有请求都应该被丢弃。</p>
+<p><strong>第四步：强制放行（force pass）。</strong> 如果距离上一次实际放行请求已经超过了 1 秒，无论 <code>dropRatio</code> 多高，当前请求都会被放行。这个机制保证了断路器不会永远&quot;锁死&quot;——即使下游故障持续了很长时间，至少每秒有一个探测请求能穿透，用于检测下游是否已经恢复。</p>
+<p><strong>第五步：工作 bucket 修正。</strong> <code>dropRatio *= (buckets - workingBuckets) / buckets</code>。正常工作的 bucket 越多，丢弃率越低。当全部 40 个 bucket 都在正常工作时，<code>dropRatio</code> 乘以 0——再怎么算出来的丢弃率都不作数，全部放行。</p>
+<p><strong>第六步：概率判断。</strong> <code>proba.TrueOnProba(dropRatio)</code> 根据 <code>dropRatio</code> 做概率性拒绝，概率越高被拒绝的可能性越大。注意这里的行为：<code>dropRatio</code> 为 0.3 时，大约 30% 的请求会被拒绝，70% 仍然能通过。这正是在本文开头强调的概率式拒绝：<strong>不是全开全关，而是按比例拒绝。</strong></p>
+<p>这种概率式断路器的巧妙之处在于：它把健康与故障之间的边界从 <code>开关</code> 变成了 <code>渐变</code>。12 个 failure bucket 对应约 30% 的丢弃率，30 个对应约 75%——丢弃率随着失败持续时间的增加自然增长，无需人工设定阈值。</p>
+<h3 id="三层的分层设计"><a class="markdownIt-Anchor" href="#三层的分层设计"></a> 三层的分层设计</h3>
+<p>断路器模块的内部架构是分层的：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">circuitBreaker (Breaker 接口) → loggedThrottle → googleBreaker (internalThrottle)</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong><code>circuitBreaker</code></strong>：对外暴露的入口。包装了 <code>name</code> 和 <code>loggedThrottle</code>，实现了 <code>Breaker</code> 接口的全部方法。所有的 <code>Do*</code> 和 <code>DoWith*</code> 变体都在这里有定义。</li>
+<li><strong><code>loggedThrottle</code></strong>：在 <code>googleBreaker</code> 的外面包了一层日志和错误记录。它持有一个 <code>errorWindow</code>——一个固定容量为 5 的环形缓冲区，记录最近 5 次被判定为&quot;失败&quot;调用的错误原因和发生时间。当断路器跳开后拒绝请求（返回 <code>ErrServiceUnavailable</code>），<code>logError</code> 方法会打印一条带有最近错误原因的日志，运维排查不再需要猜&quot;它是为什么开的&quot;。</li>
+<li><strong><code>googleBreaker</code></strong>：核心算法层，实现 <code>internalThrottle</code> 接口的两个方法——<code>allow()</code> 和 <code>doReq()</code>。</li>
+</ul>
+<p><code>Promise</code> 也遵循了这个分层：<code>promiseWithReason</code> 包装了 <code>internalPromise</code>，在 <code>Reject(reason string)</code> 时先把错误原因推入 <code>errorWindow</code>，再调用内层 <code>promise.Reject()</code>。这就是为什么你看到 <code>Reject(reason string)</code> 和 <code>Accept()</code> 分别是两个 Promise 接口——前者多了一个记录原因的责任。</p>
+<h3 id="全局-breaker-注册表"><a class="markdownIt-Anchor" href="#全局-breaker-注册表"></a> 全局 Breaker 注册表</h3>
+<p>断路器按名称管理——name 就是它的 identity。框架提供了一个全局注册表：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/breaker/breakers.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">GetBreaker</span><span class="params">(name <span class="type">string</span>)</span></span> Breaker &#123;</span><br><span class="line">    lock.RLock()</span><br><span class="line">    b, ok := breakers[name]</span><br><span class="line">    lock.RUnlock()</span><br><span class="line">    <span class="keyword">if</span> ok &#123;</span><br><span class="line">        <span class="keyword">return</span> b</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    lock.Lock()</span><br><span class="line">    b, ok = breakers[name]</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        b = NewBreaker(WithName(name))</span><br><span class="line">        breakers[name] = b</span><br><span class="line">    &#125;</span><br><span class="line">    lock.Unlock()</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> b</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>使用 double-check locking 模式保证并发安全。所有全局级别的 <code>Do()</code>、<code>DoWithAcceptable()</code> 等函数都是先拿到 named breaker，再调用它的方法。REST 中每个路由用 <code>&quot;GET://user/info&quot;</code> 作为 breaker 名，RPC 中用 <code>&quot;/package.Service/Method&quot;</code> 全限定方法名——同一个接口在同一个进程中共享一个断路器实例。</p>
+<h3 id="rest-与-rpc-中的集成"><a class="markdownIt-Anchor" href="#rest-与-rpc-中的集成"></a> REST 与 RPC 中的集成</h3>
+<p>在 REST 中，<code>BreakerHandler</code> 按路由为单位创建断路器：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/breakerhandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">BreakerHandler</span><span class="params">(method, path <span class="type">string</span>, metrics *stat.Metrics)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    brk := breaker.NewBreaker(breaker.WithName(strings.Join([]<span class="type">string</span>&#123;method, path&#125;, breakerSeparator)))</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            promise, err := brk.Allow()</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                metrics.AddDrop()</span><br><span class="line">                w.WriteHeader(http.StatusServiceUnavailable)</span><br><span class="line">                <span class="keyword">return</span></span><br><span class="line">            &#125;</span><br><span class="line">            cw := response.NewWithCodeResponseWriter(w)</span><br><span class="line">            <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                <span class="keyword">if</span> cw.Code &lt; http.StatusInternalServerError &#123;</span><br><span class="line">                    promise.Accept()</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    promise.Reject(fmt.Sprintf(<span class="string">&quot;%d %s&quot;</span>, cw.Code, http.StatusText(cw.Code)))</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;()</span><br><span class="line">            next.ServeHTTP(cw, r)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>断路器根据 HTTP 状态码判定成功/失败——小于 500 算成功，大于等于 500 算失败。这和 gRPC 中的判断逻辑稍有不同。在 gRPC 服务端，断路器通过 <code>serverSideAcceptable</code> 判断错误是否可接受：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/breakerinterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">serverSideAcceptable</span><span class="params">(err <span class="type">error</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> errorx.In(err, context.DeadlineExceeded, breaker.ErrServiceUnavailable) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> codes.Acceptable(err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>DeadlineExceeded</code> 和 <code>ErrServiceUnavailable</code> 被明确标记为不可接受——前者说明下游超时了，后者说明被下游的断路器拒绝了，这两种情况都应该计入失败。</p>
+<h2 id="降载bbr-思路的自适应过载保护"><a class="markdownIt-Anchor" href="#降载bbr-思路的自适应过载保护"></a> 降载：BBR 思路的自适应过载保护</h2>
+<h3 id="问题cpu-是比-qps-更好的过载信号"><a class="markdownIt-Anchor" href="#问题cpu-是比-qps-更好的过载信号"></a> 问题：CPU 是比 QPS 更好的过载信号</h3>
+<p>断路器保护的是 <code>被调用方出错</code> 的场景。但如果下游一切正常——响应很快，没有错误——只是流量太大了呢？</p>
+<p>一个直观的方案是限制最大 QPS——比如限制为 10000 QPS，超过就拒绝。但 QPS 不是一个好的过载信号。10000 次 <code>/health</code> 和 10000 次复杂查询请求，CPU 的开销完全不同。同一个接口在不同数据量级下的 CPU 开销也可能差数倍。用 QPS 做限流，要么过于宽松（设置太高导致 CPU 满了），要么过于保守（设置太低浪费了资源）。</p>
+<p>go-zero 的降载模块直接监视 <strong>CPU 使用率</strong>。不是 QPS，不是因为 QPS 控制不了突发多变的流量模式，而是因为 CPU 直接反映&quot;系统当前有多忙&quot;——不管是什么请求、什么数据量、什么代码路径，CPU 只要满了，系统就该减压了。</p>
+<h3 id="算法总览不是重新发明而是借鉴-tcp-bbr"><a class="markdownIt-Anchor" href="#算法总览不是重新发明而是借鉴-tcp-bbr"></a> 算法总览：不是重新发明，而是借鉴 TCP BBR</h3>
+<p>TCP BBR（Bottleneck Bandwidth and Round-trip propagation time）是 Google 提出的一种拥塞控制算法。不同于传统算法依赖丢包信号，BBR 通过持续测量<strong>瓶颈带宽</strong>和<strong>最小延迟</strong>来决策发送速率——它不等到网络出现拥塞信号才降速，而是主动寻找最优发送速率。</p>
+<p>go-zero 的 <code>adaptiveShedder</code> 借鉴了 BBR 的测量-决策模式，但问题域从&quot;网络带宽&quot;变成了&quot;CPU 容量&quot;：</p>
+<table>
+<thead>
+<tr>
+<th>TCP BBR 概念</th>
+<th>go-zero 降载对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>瓶颈带宽（bottleneck bandwidth）</td>
+<td>最大通过率 <code>maxPass</code>——最近 5 秒内的峰值吞吐</td>
+</tr>
+<tr>
+<td>最小 RTT（round-trip time）</td>
+<td>最小响应时间 <code>minRt</code>——最近 5 秒内的最快响应</td>
+</tr>
+<tr>
+<td>BDP（带宽×延迟积）</td>
+<td><code>maxFlight</code>——系统在最优状态下能同时处理的请求数</td>
+</tr>
+<tr>
+<td>拥塞窗口调整</td>
+<td><code>overloadFactor</code>——根据 CPU 使用率线性缩减允许的负载</td>
+</tr>
+</tbody>
+</table>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/load/adaptiveshedder.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(as *adaptiveShedder)</span></span> maxFlight() <span class="type">float64</span> &#123;</span><br><span class="line">    maxFlight := <span class="type">float64</span>(as.maxPass()) * as.minRt() * as.windowScale</span><br><span class="line">    <span class="keyword">return</span> mathx.AtLeast(maxFlight, <span class="number">1</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>maxFlight</code> 的计算来自于 Little 定律 <code>L = λW</code>——系统的平均在途数等于到达率乘以平均驻留时间。在这里，<code>λ</code> 是 <code>maxPass</code>（每 bucket 的最大通过数），<code>W</code> 是 <code>minRt</code>（最小响应时间），<code>windowScale</code> 是单位转换因子（把 per-bucket 转为 per-millisecond）。计算结果 <code>maxFlight</code> 就是系统的&quot;BDP&quot;——在低延迟、无过载状态下，最多可以同时在途处理的请求数。</p>
+<h3 id="sliding-window-中的-maxpass-与-minrt"><a class="markdownIt-Anchor" href="#sliding-window-中的-maxpass-与-minrt"></a> sliding window 中的 maxPass 与 minRt</h3>
+<p>降载器使用了<strong>两个独立的滑动窗口</strong>，每个窗口为 5 秒，包含 50 个 bucket（每 100ms 一个）：</p>
+<ul>
+<li><strong><code>passCounter</code></strong>：记录每个 bucket 中<strong>通过的请求数</strong>（Pass 次数）。</li>
+<li><strong><code>rtCounter</code></strong>：记录每个 bucket 中<strong>响应时间的总和和次数</strong>（<code>Sum</code> 是总毫秒数，<code>Count</code> 是请求数）。</li>
+</ul>
+<p>注意这两个窗口在创建时使用了 <code>collection.IgnoreCurrentBucket()</code>——当前的 bucket 还在填充中，数据不完整，在 <code>Reduce</code> 时被排除在外。这是一个细致的考量：如果不忽略当前 bucket，50ms 前创建的 bucket 只收集了 50ms 的数据，其计数会和完整 100ms 的 bucket 混合在一起产生误差。</p>
+<p><code>maxPass()</code> 在 50 个完整 bucket 中寻找<strong>单个 bucket 的最大通过数</strong>——它代表系统在极限状态下能处理的吞吐量峰值。<code>minRt()</code> 寻找<strong>单个 bucket 的最小平均响应时间</strong>——它代表系统在最理想状态下的延迟水平。两个极端值组合在一起，给出系统&quot;最佳表现&quot;的数学描述。</p>
+<h3 id="决策链三层判断两重门"><a class="markdownIt-Anchor" href="#决策链三层判断两重门"></a> 决策链：三层判断，两重门</h3>
+<p>请求到达 <code>Allow()</code> 时，降载器执行的是三层判断链：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(as *adaptiveShedder)</span></span> Allow() (Promise, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> as.shouldDrop() &#123;</span><br><span class="line">        as.droppedRecently.Set(<span class="literal">true</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, ErrServiceOverloaded</span><br><span class="line">    &#125;</span><br><span class="line">    as.addFlying(<span class="number">1</span>)</span><br><span class="line">    <span class="keyword">return</span> &amp;promise&#123;start: timex.Now(), shedder: as&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="第一重门系统是否过载是否还在余热中"><a class="markdownIt-Anchor" href="#第一重门系统是否过载是否还在余热中"></a> 第一重门：系统是否过载？是否还在&quot;余热&quot;中？</h4>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(as *adaptiveShedder)</span></span> shouldDrop() <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> as.systemOverloaded() || as.stillHot() &#123;</span><br><span class="line">        <span class="keyword">if</span> as.highThru() &#123;</span><br><span class="line">            <span class="comment">// ... 记录日志和上报指标 ...</span></span><br><span class="line">            <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当 CPU 使用率 ≥ 阈值（默认 900 millicpu，即 90%）时，<code>systemOverloaded()</code> 返回 true。<code>stillHot()</code> 检查最近 1 秒内是否发生过丢弃——如果是，即便 CPU 暂时降低，它仍然返回 true。这个 1 秒的 <code>coolOffDuration</code> 起到了滞回作用，防止 CPU 短暂降到 89% 后又立即飙回 91% 带来的反复振荡。</p>
+<p>如果 CPU 没有达到阈值且没有余热期，请求直接放行——不经过任何计算，不读任何计数器。这是一种精心设计的优化：<strong>正常状态下零开销</strong>——大多数时候系统 CPU 是正常的，不应该为&quot;可能过载&quot;而一直消耗额外的 CPU。</p>
+<h4 id="第二重门当前吞吐量是否过高"><a class="markdownIt-Anchor" href="#第二重门当前吞吐量是否过高"></a> 第二重门：当前吞吐量是否过高？</h4>
+<p>只有当第一重门满足时（系统过载或仍在余热），才会进入第二重门——<code>highThru()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(as *adaptiveShedder)</span></span> highThru() <span class="type">bool</span> &#123;</span><br><span class="line">    avgFlying := as.avgFlying</span><br><span class="line">    maxFlight := as.maxFlight() * as.overloadFactor()</span><br><span class="line">    <span class="keyword">return</span> avgFlying &gt; maxFlight &amp;&amp; <span class="type">float64</span>(as.flying) &gt; maxFlight</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>maxFlight</code>（历史的&quot;最佳同时在途数&quot;）乘以 <code>overloadFactor</code>（当前 CPU 下的容量倍数）得到当前允许的在途数上限。<strong>同时检查两个值</strong>：EMA 平滑的平均在途数（<code>avgFlying</code>）和瞬时在途数（<code>flying</code>），两者都必须超过上限才算&quot;高吞吐&quot;。为什么要两个？光有瞬时高不代表持续高——可能只是一个突发尖刺，很快就自我修正了。光有平均高不代表现在还高——如果 in-flight 已经降下来但平均值因为 EMA 惯性仍然偏高，不该再拒绝请求。双重条件下，只有在&quot;持续且当前都高&quot;时才拒绝，策略更精确。</p>
+<h4 id="overloadfactorcpu-越高越吝啬"><a class="markdownIt-Anchor" href="#overloadfactorcpu-越高越吝啬"></a> overloadFactor：CPU 越高，越&quot;吝啬&quot;</h4>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(as *adaptiveShedder)</span></span> overloadFactor() <span class="type">float64</span> &#123;</span><br><span class="line">    factor := (cpuMax - <span class="type">float64</span>(stat.CpuUsage())) / (cpuMax - <span class="type">float64</span>(as.cpuThreshold))</span><br><span class="line">    <span class="keyword">return</span> mathx.Between(factor, overloadFactorLowerBound, <span class="number">1</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>overloadFactor</code> 实现了降载中最关键的非线性控制。它根据当前 CPU 使用率，线性缩放允许的负载上限：</p>
+<ul>
+<li>CPU = 90%（刚好到阈值）：<code>factor = (1000 - 900) / (1000 - 900) = 1.0</code>——允许满载。</li>
+<li>CPU = 95%：<code>factor = 50 / 100 = 0.5</code>——只允许一半。</li>
+<li>CPU = 100%：<code>factor = 0 / 100 = 0</code>——会被钳制到 <code>overloadFactorLowerBound = 0.1</code>，至少保留 10% 的通过率。</li>
+</ul>
+<p>这里有一个重要的设计：<strong>最低保留 10%。</strong> 如果 CPU = 100% 时允许的负载降到 0，那就是全盘拒绝——没有请求通过，也没有响应时间数据返回，<code>minRt</code> 和 <code>maxPass</code> 都冻结在窗口内，任何恢复都是不可能的。保持 10% 的通过率保证了系统始终有新鲜数据更新，从而能判断何时应该恢复正常。</p>
+<h3 id="avgflying-的-ema-不对称更新"><a class="markdownIt-Anchor" href="#avgflying-的-ema-不对称更新"></a> avgFlying 的 EMA 不对称更新</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(as *adaptiveShedder)</span></span> addFlying(delta <span class="type">int64</span>) &#123;</span><br><span class="line">    flying := atomic.AddInt64(&amp;as.flying, delta)</span><br><span class="line">    <span class="keyword">if</span> delta &lt; <span class="number">0</span> &#123;</span><br><span class="line">        as.avgFlyingLock.Lock()</span><br><span class="line">        as.avgFlying = as.avgFlying*flyingBeta + <span class="type">float64</span>(flying)*(<span class="number">1</span>-flyingBeta)</span><br><span class="line">        as.avgFlyingLock.Unlock()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>EMA 的更新只发生在 <code>delta &lt; 0</code> 时——即请求<strong>完成</strong>时。这意味着：</p>
+<ul>
+<li>当 in-flight 快速上升时（请求涌入），<code>avgFlying</code> 保持不变，滞后于实际值，允许更多请求被接受——系统乐观地认为&quot;新请求的响应应该也会很快&quot;。</li>
+<li>当 in-flight 快速下降时（请求完成），<code>avgFlying</code> 也开始下降，但仍然滞后——此时降载器相对保守，“不要急着全放，看看情况再说”。</li>
+</ul>
+<p>这是一个 pragmatically smart 的工程决策：<strong>进攻要快，撤退要慢。</strong> 系统应该尽快接纳请求（增加吞吐），但释放容量时要观察一阵（防止冲击）。</p>
+<h3 id="promise成功失败的语义"><a class="markdownIt-Anchor" href="#promise成功失败的语义"></a> Promise：成功/失败的语义</h3>
+<p>与断路器的 <code>Accept()</code> vs <code>Reject()</code> 不同，降载器的 Promise 使用的是 <code>Pass()</code> vs <code>Fail()</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *promise)</span></span> Pass() &#123;</span><br><span class="line">    rt := <span class="type">float64</span>(timex.Since(p.start)) / <span class="type">float64</span>(time.Millisecond)</span><br><span class="line">    p.shedder.addFlying(<span class="number">-1</span>)</span><br><span class="line">    p.shedder.rtCounter.Add(<span class="type">int64</span>(math.Ceil(rt)))</span><br><span class="line">    p.shedder.passCounter.Add(<span class="number">1</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *promise)</span></span> Fail() &#123;</span><br><span class="line">    p.shedder.addFlying(<span class="number">-1</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Pass()</code> 做了三件事：计算本次请求的响应时间并加入 <code>rtCounter</code>，在 <code>passCounter</code> 中记录一次通过，降低 in-flight 计数。<code>Fail()</code> 只做降低 in-flight——失败的请求不计入吞吐量和响应时间的统计。区分是重要的：如果你把超时的请求时间也纳入 <code>minRt</code>，那 <code>minRt</code> 就不再是&quot;系统在最佳状态下的表现&quot;，降载的判断就失真了。</p>
+<h2 id="限流redis-分布式与本地并发的双重防线"><a class="markdownIt-Anchor" href="#限流redis-分布式与本地并发的双重防线"></a> 限流：Redis 分布式与本地并发的双重防线</h2>
+<h3 id="问题凭什么不限还不够"><a class="markdownIt-Anchor" href="#问题凭什么不限还不够"></a> 问题：凭什么&quot;不限&quot;还不够</h3>
+<p>熔断保护下游，降载保护 CPU，两者处理的都是系统级别的健康问题。但有一种场景两者都照顾不到：<strong>某个特定的调用方发送了远超过其合理份额的请求，但每个请求都返回 200 OK，CPU 也没有到 90%。</strong> 另一些调用方因此被挤占——它们的请求在队列中排队，响应时间上升，尽管&quot;整体&quot;看起来还正常。</p>
+<p>这就是限流的适用场景——按调用方、按时间窗口、按配额，在进入 CPU 压力之前就挡住过量请求。go-zero 提供了三种限流方式：Redis 固定窗口、Redis 令牌桶和本地限并发。</p>
+<h3 id="redis-固定窗口periodlimit"><a class="markdownIt-Anchor" href="#redis-固定窗口periodlimit"></a> Redis 固定窗口：PeriodLimit</h3>
+<p>固定窗口是最简单的限流策略：在一个固定长度的时间段内（比如 1 秒），最多允许 N 个请求。实现也非常直接——18 行 Lua 脚本：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- core/limit/periodscript.lua</span></span><br><span class="line"><span class="keyword">local</span> limit = <span class="built_in">tonumber</span>(ARGV[<span class="number">1</span>])</span><br><span class="line"><span class="keyword">local</span> window = <span class="built_in">tonumber</span>(ARGV[<span class="number">2</span>])</span><br><span class="line"><span class="keyword">local</span> current = redis.call(<span class="string">&quot;INCRBY&quot;</span>, KEYS[<span class="number">1</span>], <span class="number">1</span>)</span><br><span class="line"><span class="keyword">if</span> current == <span class="number">1</span> <span class="keyword">then</span></span><br><span class="line">    redis.call(<span class="string">&quot;expire&quot;</span>, KEYS[<span class="number">1</span>], window)</span><br><span class="line"><span class="keyword">end</span></span><br><span class="line"><span class="keyword">if</span> current &lt; limit <span class="keyword">then</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span></span><br><span class="line"><span class="keyword">elseif</span> current == limit <span class="keyword">then</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">2</span></span><br><span class="line"><span class="keyword">else</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line"><span class="keyword">end</span></span><br></pre></td></tr></table></figure>
+<p>所有逻辑在 Redis 中通过一个 <code>INCRBY</code> + 条件 <code>EXPIRE</code> 实现原子性。返回值有三种：</p>
+<ul>
+<li><code>1</code>（Allowed）：还没到配额上限。</li>
+<li><code>2</code>（HitQuota）：刚好等于配额上限——这被单独区分出来是有原因的，调用方可以据此判断&quot;这次是第 N 次，可能是该提醒用户稍后再尝试了&quot;。</li>
+<li><code>0</code>（OverQuota）：已超过配额。</li>
+</ul>
+<p><code>PeriodLimit</code> 还提供了一个可选的 <code>Align()</code> 选项，用于将时间窗口对齐到整点边界。如果设置为 24 小时的窗口并对齐，“每天 5 次&quot;的语义体现为&quot;从零点到 23:59:59 最多 5 次”，而不是&quot;从第一次请求开始的 86400 秒内最多 5 次&quot;。对于手机验证码这种需求，对齐到自然日是合理的设计。</p>
+<h3 id="redis-令牌桶tokenlimiter"><a class="markdownIt-Anchor" href="#redis-令牌桶tokenlimiter"></a> Redis 令牌桶：TokenLimiter</h3>
+<p>固定窗口的缺陷是&quot;临界突发&quot;——在窗口的最后 1ms 和下一个窗口的第 1ms 发出了两倍配额的请求（两者分别属于不同的窗口）。令牌桶通过稳态的速度限制（rate）和短期的突发容量（burst）来解决这个问题。</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- core/limit/tokenscript.lua（核心逻辑节选）</span></span><br><span class="line"><span class="keyword">local</span> delta = <span class="built_in">math</span>.<span class="built_in">max</span>(<span class="number">0</span>, now - last_refreshed)</span><br><span class="line"><span class="keyword">local</span> filled_tokens = <span class="built_in">math</span>.<span class="built_in">min</span>(capacity, last_tokens + (delta * rate))</span><br><span class="line"><span class="keyword">local</span> allowed = filled_tokens &gt;= requested</span><br><span class="line"><span class="keyword">local</span> new_tokens = filled_tokens</span><br><span class="line"><span class="keyword">if</span> allowed <span class="keyword">then</span></span><br><span class="line">    new_tokens = filled_tokens - requested</span><br><span class="line"><span class="keyword">end</span></span><br><span class="line">redis.call(<span class="string">&quot;setex&quot;</span>, KEYS[<span class="number">1</span>], ttl, new_tokens)</span><br><span class="line">redis.call(<span class="string">&quot;setex&quot;</span>, KEYS[<span class="number">2</span>], ttl, now)</span><br><span class="line"><span class="keyword">return</span> allowed</span><br></pre></td></tr></table></figure>
+<p>令牌桶的 Lua 脚本维护了两把 Redis key：<code>tokenKey</code> 存储当前令牌数，<code>timestampKey</code> 存储上次补充令牌的时间戳。每次请求时，先根据时间差补充令牌（不超过 bucket 容量 <code>capacity</code>），然后检查令牌是否充足，充足则扣减 1 个，不充足则返回 false。TTL 设为 <code>2 * capacity / rate</code>——足够两次从满到空的时长，保证 key 不会在空闲期泄漏。</p>
+<p>但<code>TokenLimiter</code> 最值得关注的设计不是令牌桶算法本身，而是它的<strong>降级策略</strong>。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/limit/tokenlimit.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(lim *TokenLimiter)</span></span> reserveN(ctx context.Context, now time.Time, n <span class="type">int</span>) <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> atomic.LoadUint32(&amp;lim.redisAlive) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> lim.rescueLimiter.AllowN(now, n)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    resp, err := lim.store.ScriptRunCtx(ctx, tokenScript, ...)</span><br><span class="line">    <span class="keyword">if</span> errors.Is(err, redis.Nil) &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        lim.startMonitor()</span><br><span class="line">        <span class="keyword">return</span> lim.rescueLimiter.AllowN(now, n)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当 Redis 连接失败（不是被拒绝，而是网络错误），<code>TokenLimiter</code> 并非束手无策——它立即启用本地的 <code>xrate.Limiter</code>（<code>golang.org/x/time/rate</code> 的标准实现）作为降级限流器。同时启动一个后台 goroutine 以 100ms 周期 ping Redis，一旦 Redis 恢复，切换回分布式限流。</p>
+<p>为什么不在降级后继续使用本地限流器？因为 <code>TokenLimiter</code> 的核心使用场景是分布式环境——<strong>同一个接口的限流需要所有节点统一配额</strong>（比如全站每日短信发送数不超过 10000）。本地限流器只能限制当前进程，分布式额度被切成了 N 份，不再精确。所以一旦 Redis 恢复就立即切换回去。</p>
+<h3 id="本地限并发syncxlimit"><a class="markdownIt-Anchor" href="#本地限并发syncxlimit"></a> 本地限并发：syncx.Limit</h3>
+<p>严格来说，<code>syncx.Limit</code> 是一个<strong>并发数门控</strong>，不是速率限制——它不关心时间，只关心&quot;当前有多少个请求在执行&quot;。它的实现完全不需要 Redis：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/syncx/limit.go</span></span><br><span class="line"><span class="keyword">type</span> Limit <span class="keyword">struct</span> &#123;</span><br><span class="line">    pool <span class="keyword">chan</span> lang.PlaceholderType</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>用带缓冲的 channel 做信号量——<code>TryBorrow()</code> 非阻塞地向 channel 发送一个值，如果 channel 满了（有 N 个元素正在使用中），立即返回 false。这就是 REST 的 <code>MaxConnsHandler</code> 使用的机制：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/maxconnshandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">MaxConnsHandler</span><span class="params">(n <span class="type">int</span>)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        latch := syncx.NewLimit(n)</span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="keyword">if</span> latch.TryBorrow() &#123;</span><br><span class="line">                <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">                    <span class="keyword">if</span> err := latch.Return(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                        logx.WithContext(r.Context()).Error(err)</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;()</span><br><span class="line">                next.ServeHTTP(w, r)</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                w.WriteHeader(http.StatusServiceUnavailable)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>与降载不同，<code>MaxConns</code> 不判断 CPU，只判断&quot;同时打开的 slot 是否够用&quot;。它更适合防御的场景是：服务配置了 1000 的超时，但在 T=999ms 时所有请求都还没完成，第 1001 个连接请求到达时 <code>TryBorrow</code> 返回 false，快速返回 503。</p>
+<h2 id="三层保护在请求链中的位置与分工"><a class="markdownIt-Anchor" href="#三层保护在请求链中的位置与分工"></a> 三层保护在请求链中的位置与分工</h2>
+<p>到现在，我们理解了三种保护的独立原理。但它们不是孤立的——它们在一个请求的处理链中按特定的顺序组合在一起。</p>
+<h3 id="rest-中间件链的顺序由外到内"><a class="markdownIt-Anchor" href="#rest-中间件链的顺序由外到内"></a> REST 中间件链的顺序（由外到内）</h3>
+<p>回到第 07 篇讨论过的中间件链，这里聚焦三个保护相关中间件的位置：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Trace → Log → Prometheus → MaxConns → Breaker → Shedding → Timeout → ...</span><br></pre></td></tr></table></figure>
+<p>注意：<strong>MaxConns 在最外，Breaker 在中间，Shedding 在内层。</strong> 这不仅仅是一个感觉上的排序，关键是：</p>
+<ul>
+<li><strong>MaxConns 放最外</strong>：它的判断零依赖且成本极低——只需看一眼 channel 是否满。让它在最外层直接拦住新连接，保护后面所有的 CPU 开销（包括 Trace 打点、Log 写入、Prometheus 统计）。</li>
+<li><strong>Breaker 在 Shedding 外面</strong>：当下游已明确故障（连续返回 500）时，breaker 概率性拒绝，被拒绝的请求不再进入 Shedding 检测。这避免了这样一种情况——下游挂了，对 CPU 还没到 90%，Shedding 不触发，所有请求都去调用下游然后等超时。</li>
+<li><strong>Shedding 在 Breaker 里面</strong>：当 CPU 过载时，Shedding 直接拒绝请求——哪怕下游完全正常。这时候 breaker 还处于关闭状态（没有错误），但因为系统 CPU 撑不住了，必须优先保护当前服务。同样重要的是，Shedding 在 Timeout 外面——过载时拒绝请求只需微秒级，但等待超时需要秒级，把 Shedding 放在 Timeout 外面意味着&quot;不等超时就知道该拒绝&quot;。</li>
+</ul>
+<h3 id="rpc-服务端拦截器链"><a class="markdownIt-Anchor" href="#rpc-服务端拦截器链"></a> RPC 服务端拦截器链</h3>
+<p>在 zRPC 的服务端，保护机制以拦截器的方式存在。核心函数 <code>setupUnaryInterceptors</code> 展示了它们的加载顺序（由于 gRPC 的拦截器是 prepend 机制，先添加的在最外层）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">setupUnaryInterceptors</span><span class="params">(svr internal.Server, c RpcServerConf, metrics *stat.Metrics)</span></span> &#123;</span><br><span class="line">    <span class="comment">// ... Trace, Recover, Stat, Prometheus ...</span></span><br><span class="line">    <span class="keyword">if</span> c.Middlewares.Breaker &#123;</span><br><span class="line">        svr.AddUnaryInterceptors(serverinterceptors.UnaryBreakerInterceptor)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> c.CpuThreshold &gt; <span class="number">0</span> &#123;</span><br><span class="line">        shedder := load.NewAdaptiveShedder(load.WithCpuThreshold(c.CpuThreshold))</span><br><span class="line">        svr.AddUnaryInterceptors(serverinterceptors.UnarySheddingInterceptor(shedder, metrics))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> c.Timeout &gt; <span class="number">0</span> &#123;</span><br><span class="line">        svr.AddUnaryInterceptors(serverinterceptors.UnaryTimeoutInterceptor(...))</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>执行顺序（外到内）：<strong>Trace → Recover → Stat → Prometheus → Breaker → Shedding → Timeout → [Auth] → Handler</strong>。</p>
+<p>这与 REST 的顺序一致——Breaker 在 Shedding 外面，Shedding 在 Timeout 外面。值得注意的一点是：这里没有 MaxConns，这是因为 gRPC 自身通过 <code>MaxConcurrentStreams</code> 服务器选项提供了等价的连接并发控制。</p>
+<h3 id="三种保护的协同与边界"><a class="markdownIt-Anchor" href="#三种保护的协同与边界"></a> 三种保护的协同与边界</h3>
+<p>三者之间的关系不是层叠关系，而是三个独立的防护面：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">                   请求流</span><br><span class="line">                     │</span><br><span class="line">      ┌──────────────┼──────────────┐</span><br><span class="line">      ▼              ▼              ▼</span><br><span class="line">MaxConns          Breaker        PeriodLimit</span><br><span class="line">(连接并发)       (错误率)        (调用方配额)</span><br><span class="line">      │              │              │</span><br><span class="line">      └──────────────┼──────────────┘</span><br><span class="line">                     ▼</span><br><span class="line">                Shedding</span><br><span class="line">                (CPU压力)</span><br><span class="line">                     │</span><br><span class="line">                     ▼</span><br><span class="line">                Timeout</span><br><span class="line">                     │</span><br><span class="line">                     ▼</span><br><span class="line">                 Handler</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>MaxConns</strong> 关心的是&quot;同时来了多少个&quot;，不看内容不看结果，纯粹的门控。</li>
+<li><strong>Breaker</strong> 关心的是&quot;下游多少调用失败了&quot;，依赖历史数据做概率性决策。</li>
+<li><strong>PeriodLimit / TokenLimiter</strong> 关心的是&quot;某个 key 在窗口内的调用次数&quot;，依赖 Redis 做分布式配额。</li>
+<li><strong>Shedding</strong> 关心的是&quot;系统现在忙不忙&quot;，依赖 CPU 指标和响应时间统计。</li>
+</ul>
+<p>按业务场景选择：</p>
+<ul>
+<li>需要保护<strong>下游</strong> → 用 <strong>Breaker</strong></li>
+<li>需要保护<strong>自身 CPU</strong> → 用 <strong>Shedding</strong></li>
+<li>需要限制<strong>调用方配额</strong> → 用 <strong>PeriodLimit</strong> 或 <strong>TokenLimiter</strong></li>
+<li>需要限制<strong>连接并发</strong> → 用 <strong>MaxConns / syncx.Limit</strong></li>
+</ul>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>本文从三种弹性保护的&quot;分工&quot;出发，逐一分析了它们的实现原理和协同关系。</p>
+<p><strong>熔断器的精髓在于&quot;概率式拒绝&quot;。</strong> 不是全开全关，而是根据 10 秒滑动窗口的历史数据动态计算丢弃率。<code>dropRatio</code> 的公式融合了失败 bucket 的权重衰减、成功 bucket 的恢复修正和每秒一次的强制放行——让系统在故障时有节奏地试探恢复，而不是盲目地&quot;等一等再说&quot;。</p>
+<p><strong>降载器的思路从 TCP BBR 借来了&quot;测量-决策&quot;模式。</strong> 它持续测量系统的最大通过率和最小响应时间，通过 Little 定律推算出系统的最优同时在途数。然后根据当前 CPU 使用率，线性缩减这个上限——CPU 越高，越紧缩。EMA 的不对称更新（只在请求完成时更新）让它在进攻时乐观、撤退时保守。</p>
+<p><strong>限流器覆盖了剩下的配额管理。</strong> Redis 固定窗口简单可靠，令牌桶平滑了临界突发，本地 <code>syncx.Limit</code> 作为轻量级的并发门控随时可用。<code>TokenLimiter</code> 的 Redis 故障自动降级为本地限流，展示了设计中对&quot;尽量不停止服务&quot;的坚定立场的坚持。</p>
+<p>三种保护在 REST/RPC 请求链中从外到内依次排布——MaxConns 最外（零开销门控），Breaker 中（依赖错误信号），Shedding 在 Breaker 里面但在 Timeout 外面（不等超时就拒绝过载请求）。三者不是&quot;任选其一&quot;，而是<strong>三个独立的防护面</strong>——彼此互不知晓，各负责各的守护边界，但组合在一起构成了 go-zero 请求链上最坚固的一道防线。</p>
+<p>在下一篇中，我们将从&quot;怎么在代码中保护自己&quot;转到&quot;怎么看清楚系统的每个角落&quot;——追踪一次请求如何在日志、链路和指标中留下能相互定位的证据，学习 go-zero 的可观测性体系。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/18/go-zero-09/" rel="next" title="go-zero 源码分析 09：服务发现与负载均衡">
+      go-zero 源码分析 09：服务发现与负载均衡 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%86%94%E6%96%ADgoogle-sre-%E7%9A%84%E6%A6%82%E7%8E%87%E5%BC%8F%E6%96%AD%E8%B7%AF%E5%99%A8"><span class="nav-number">1.</span> <span class="nav-text"> 熔断：Google SRE 的概率式断路器</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%A0%E7%BB%9F%E7%9A%84%E5%85%A8%E5%BC%80%E5%85%A8%E5%85%B3%E6%9C%89%E4%BB%80%E4%B9%88%E9%97%AE%E9%A2%98"><span class="nav-number">1.1.</span> <span class="nav-text"> 传统的&quot;全开全关&quot;有什么问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A6%82%E7%8E%87%E5%BC%8F%E6%8B%92%E7%BB%9D%E8%AE%A9%E6%8B%92%E7%BB%9D%E4%B8%8E%E5%A4%B1%E8%B4%A5%E7%A8%8B%E5%BA%A6%E6%88%90%E6%AD%A3%E6%AF%94"><span class="nav-number">1.2.</span> <span class="nav-text"> 概率式拒绝：让拒绝与失败程度成正比</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%BB%91%E5%8A%A8%E7%AA%97%E5%8F%A3%E4%B8%8E-bucket"><span class="nav-number">1.2.1.</span> <span class="nav-text"> 滑动窗口与 bucket</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#history%E5%9B%9B%E4%B8%AA%E5%85%B3%E9%94%AE%E6%8C%87%E6%A0%87"><span class="nav-number">1.2.2.</span> <span class="nav-text"> history()：四个关键指标</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%B8%A2%E5%BC%83%E7%8E%87%E7%9A%84%E8%AE%A1%E7%AE%97"><span class="nav-number">1.2.3.</span> <span class="nav-text"> 丢弃率的计算</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%89%E5%B1%82%E7%9A%84%E5%88%86%E5%B1%82%E8%AE%BE%E8%AE%A1"><span class="nav-number">1.3.</span> <span class="nav-text"> 三层的分层设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%A8%E5%B1%80-breaker-%E6%B3%A8%E5%86%8C%E8%A1%A8"><span class="nav-number">1.4.</span> <span class="nav-text"> 全局 Breaker 注册表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rest-%E4%B8%8E-rpc-%E4%B8%AD%E7%9A%84%E9%9B%86%E6%88%90"><span class="nav-number">1.5.</span> <span class="nav-text"> REST 与 RPC 中的集成</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%99%8D%E8%BD%BDbbr-%E6%80%9D%E8%B7%AF%E7%9A%84%E8%87%AA%E9%80%82%E5%BA%94%E8%BF%87%E8%BD%BD%E4%BF%9D%E6%8A%A4"><span class="nav-number">2.</span> <span class="nav-text"> 降载：BBR 思路的自适应过载保护</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98cpu-%E6%98%AF%E6%AF%94-qps-%E6%9B%B4%E5%A5%BD%E7%9A%84%E8%BF%87%E8%BD%BD%E4%BF%A1%E5%8F%B7"><span class="nav-number">2.1.</span> <span class="nav-text"> 问题：CPU 是比 QPS 更好的过载信号</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AE%97%E6%B3%95%E6%80%BB%E8%A7%88%E4%B8%8D%E6%98%AF%E9%87%8D%E6%96%B0%E5%8F%91%E6%98%8E%E8%80%8C%E6%98%AF%E5%80%9F%E9%89%B4-tcp-bbr"><span class="nav-number">2.2.</span> <span class="nav-text"> 算法总览：不是重新发明，而是借鉴 TCP BBR</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sliding-window-%E4%B8%AD%E7%9A%84-maxpass-%E4%B8%8E-minrt"><span class="nav-number">2.3.</span> <span class="nav-text"> sliding window 中的 maxPass 与 minRt</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%B3%E7%AD%96%E9%93%BE%E4%B8%89%E5%B1%82%E5%88%A4%E6%96%AD%E4%B8%A4%E9%87%8D%E9%97%A8"><span class="nav-number">2.4.</span> <span class="nav-text"> 决策链：三层判断，两重门</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E9%87%8D%E9%97%A8%E7%B3%BB%E7%BB%9F%E6%98%AF%E5%90%A6%E8%BF%87%E8%BD%BD%E6%98%AF%E5%90%A6%E8%BF%98%E5%9C%A8%E4%BD%99%E7%83%AD%E4%B8%AD"><span class="nav-number">2.4.1.</span> <span class="nav-text"> 第一重门：系统是否过载？是否还在&quot;余热&quot;中？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%AC%AC%E4%BA%8C%E9%87%8D%E9%97%A8%E5%BD%93%E5%89%8D%E5%90%9E%E5%90%90%E9%87%8F%E6%98%AF%E5%90%A6%E8%BF%87%E9%AB%98"><span class="nav-number">2.4.2.</span> <span class="nav-text"> 第二重门：当前吞吐量是否过高？</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#overloadfactorcpu-%E8%B6%8A%E9%AB%98%E8%B6%8A%E5%90%9D%E5%95%AC"><span class="nav-number">2.4.3.</span> <span class="nav-text"> overloadFactor：CPU 越高，越&quot;吝啬&quot;</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#avgflying-%E7%9A%84-ema-%E4%B8%8D%E5%AF%B9%E7%A7%B0%E6%9B%B4%E6%96%B0"><span class="nav-number">2.5.</span> <span class="nav-text"> avgFlying 的 EMA 不对称更新</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#promise%E6%88%90%E5%8A%9F%E5%A4%B1%E8%B4%A5%E7%9A%84%E8%AF%AD%E4%B9%89"><span class="nav-number">2.6.</span> <span class="nav-text"> Promise：成功&#x2F;失败的语义</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%99%90%E6%B5%81redis-%E5%88%86%E5%B8%83%E5%BC%8F%E4%B8%8E%E6%9C%AC%E5%9C%B0%E5%B9%B6%E5%8F%91%E7%9A%84%E5%8F%8C%E9%87%8D%E9%98%B2%E7%BA%BF"><span class="nav-number">3.</span> <span class="nav-text"> 限流：Redis 分布式与本地并发的双重防线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E5%87%AD%E4%BB%80%E4%B9%88%E4%B8%8D%E9%99%90%E8%BF%98%E4%B8%8D%E5%A4%9F"><span class="nav-number">3.1.</span> <span class="nav-text"> 问题：凭什么&quot;不限&quot;还不够</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#redis-%E5%9B%BA%E5%AE%9A%E7%AA%97%E5%8F%A3periodlimit"><span class="nav-number">3.2.</span> <span class="nav-text"> Redis 固定窗口：PeriodLimit</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#redis-%E4%BB%A4%E7%89%8C%E6%A1%B6tokenlimiter"><span class="nav-number">3.3.</span> <span class="nav-text"> Redis 令牌桶：TokenLimiter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%AC%E5%9C%B0%E9%99%90%E5%B9%B6%E5%8F%91syncxlimit"><span class="nav-number">3.4.</span> <span class="nav-text"> 本地限并发：syncx.Limit</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E5%B1%82%E4%BF%9D%E6%8A%A4%E5%9C%A8%E8%AF%B7%E6%B1%82%E9%93%BE%E4%B8%AD%E7%9A%84%E4%BD%8D%E7%BD%AE%E4%B8%8E%E5%88%86%E5%B7%A5"><span class="nav-number">4.</span> <span class="nav-text"> 三层保护在请求链中的位置与分工</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#rest-%E4%B8%AD%E9%97%B4%E4%BB%B6%E9%93%BE%E7%9A%84%E9%A1%BA%E5%BA%8F%E7%94%B1%E5%A4%96%E5%88%B0%E5%86%85"><span class="nav-number">4.1.</span> <span class="nav-text"> REST 中间件链的顺序（由外到内）</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rpc-%E6%9C%8D%E5%8A%A1%E7%AB%AF%E6%8B%A6%E6%88%AA%E5%99%A8%E9%93%BE"><span class="nav-number">4.2.</span> <span class="nav-text"> RPC 服务端拦截器链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%89%E7%A7%8D%E4%BF%9D%E6%8A%A4%E7%9A%84%E5%8D%8F%E5%90%8C%E4%B8%8E%E8%BE%B9%E7%95%8C"><span class="nav-number">4.3.</span> <span class="nav-text"> 三种保护的协同与边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">287</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
