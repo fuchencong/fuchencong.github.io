@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="当断路器跳开了、降载器拒绝了请求、限流器拦住了调用方——你如何知道这些事正在发生？更进一步，当系统一切正常时，你如何验证一切正常？这就是可观测性的领域。它不直接参与业务逻辑，但它回答运维中最基本的问题。  “刚才发生了什么？” → 日志（Logging） “这个请求经过了哪些服务？每个环节花了多久？” → 链路追踪（Tracing） “系统整体表现如何？QPS、延迟、错误率分别是多少？” → 指标">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 11：可观测性链路">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/20/go-zero-11/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="当断路器跳开了、降载器拒绝了请求、限流器拦住了调用方——你如何知道这些事正在发生？更进一步，当系统一切正常时，你如何验证一切正常？这就是可观测性的领域。它不直接参与业务逻辑，但它回答运维中最基本的问题。  “刚才发生了什么？” → 日志（Logging） “这个请求经过了哪些服务？每个环节花了多久？” → 链路追踪（Tracing） “系统整体表现如何？QPS、延迟、错误率分别是多少？” → 指标">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-20T05:58:00.000Z">
+<meta property="article:modified_time" content="2026-08-20T06:00:05.954Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/20/go-zero-11/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 11：可观测性链路 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/20/go-zero-11/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 11：可观测性链路
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-20 13:58:00" itemprop="dateCreated datePublished" datetime="2026-08-20T13:58:00+08:00">2026-08-20</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>当断路器跳开了、降载器拒绝了请求、限流器拦住了调用方——你如何知道这些事正在发生？更进一步，当系统一切正常时，你如何验证一切正常？这就是可观测性的领域。它不直接参与业务逻辑，但它回答运维中最基本的问题。</p>
+<ul>
+<li><strong>“刚才发生了什么？”</strong> → 日志（Logging）</li>
+<li><strong>“这个请求经过了哪些服务？每个环节花了多久？”</strong> → 链路追踪（Tracing）</li>
+<li><strong>“系统整体表现如何？QPS、延迟、错误率分别是多少？”</strong> → 指标（Metrics）</li>
+</ul>
+<span id="more"></span>
+<p>三者的分工互补，各有侧重：</p>
+<table>
+<thead>
+<tr>
+<th>支柱</th>
+<th>回答的问题</th>
+<th>数据特征</th>
+<th>典型消费者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>日志</td>
+<td>“发生了什么？”</td>
+<td>离散事件，非结构化或半结构化</td>
+<td>开发者、运维排查</td>
+</tr>
+<tr>
+<td>追踪</td>
+<td>“请求经过了哪里？”</td>
+<td>跨服务关联，带层级结构</td>
+<td>开发者、SRE 定位瓶颈</td>
+</tr>
+<tr>
+<td>指标</td>
+<td>“系统表现如何？”</td>
+<td>聚合数值，可做趋势分析</td>
+<td>告警、容量规划、Dashboard</td>
+</tr>
+</tbody>
+</table>
+<p>go-zero 的可观测性体系不仅仅是为这三个维度各自提供了实现，更重要的是让它们<strong>互相关联</strong>——同一条请求，在日志里能看到 trace ID 和 span ID，在 trace 里能看到每个 span 的耗时和属性，在 metrics 里能看到同一维度的 QPS 和分位数。接下来，我们从日志讲起，然后看追踪和指标是如何与日志关联的，最后介绍围绕运行时诊断的几个辅助工具。</p>
+<h2 id="日志系统三层架构与结构化输出"><a class="markdownIt-Anchor" href="#日志系统三层架构与结构化输出"></a> 日志系统：三层架构与结构化输出</h2>
+<p>go-zero 的日志模块位于 <code>core/logx/</code>，是整个可观测性体系的底座。trace 的错误通过它输出，metrics 的统计报告通过它持久化，Prometheus 的启动日志也经过它——它几乎是所有其他观测手段的&quot;最后一步&quot;。</p>
+<p>但日志模块自身的结构并不简单。它采用了一个三层架构，从顶层的业务 API 到底层的文件系统，每一层都有明确的分工。</p>
+<h3 id="三层架构总览"><a class="markdownIt-Anchor" href="#三层架构总览"></a> 三层架构总览</h3>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Tier 1: 公共 API 层</span><br><span class="line">  ├── 包级函数：logx.Info(), logx.Errorf(), logx.Debugw() 等</span><br><span class="line">  └── Logger 接口：WithContext(), WithFields(), WithDuration() 等</span><br><span class="line"></span><br><span class="line">Tier 2: 门面层 (richLogger)</span><br><span class="line">  ├── 实现 Logger 接口</span><br><span class="line">  ├── 从 context 提取 trace/span ID，自动注入到日志字段</span><br><span class="line">  └── 合并全局字段、本地字段和调用栈信息</span><br><span class="line"></span><br><span class="line">Tier 3: 输出层 (Writer 接口 → concreteWriter → RotateLogger)</span><br><span class="line">  ├── 按级别分流到不同的 io.WriteCloser（access/error/severe/slow/stat）</span><br><span class="line">  ├── 将日志字段格式化为 JSON 或纯文本</span><br><span class="line">  └── 异步写入文件，支持按天或按大小轮转、压缩</span><br></pre></td></tr></table></figure>
+<p>先从最顶层看起——如果你在业务代码中调用 <code>logx.Info(&quot;order created&quot;)</code>，这个调用的完整旅程会穿过这三层。</p>
+<h3 id="公共-api两种使用方式"><a class="markdownIt-Anchor" href="#公共-api两种使用方式"></a> 公共 API：两种使用方式</h3>
+<p>go-zero 的日志模块提供了两种使用方式：<strong>包级函数</strong>（快速使用）和 <strong>Logger 接口</strong>（需要上下文或结构化字段时）。</p>
+<p>包级函数直接可用，不需要预先创建任何对象：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 基本用法</span></span><br><span class="line">logx.Info(<span class="string">&quot;server started&quot;</span>)</span><br><span class="line">logx.Errorf(<span class="string">&quot;failed to connect: %v&quot;</span>, err)</span><br><span class="line"></span><br><span class="line"><span class="comment">// 结构化字段</span></span><br><span class="line">logx.Infow(<span class="string">&quot;order created&quot;</span>, logx.Field(<span class="string">&quot;orderId&quot;</span>, <span class="number">123</span>), logx.Field(<span class="string">&quot;userId&quot;</span>, <span class="number">456</span>))</span><br><span class="line"></span><br><span class="line"><span class="comment">// 惰性求值——只有在对应级别启用时才会执行 fn</span></span><br><span class="line">logx.Debugfn(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> any &#123;</span><br><span class="line">    <span class="keyword">return</span> expensiveDebugInfo()</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p>每种日志级别（Debug、Info、Error、Slow、Severe）都有五种变体：</p>
+<ul>
+<li>基础形式：<code>Info(v ...any)</code></li>
+<li>格式化：<code>Infof(format string, v ...any)</code></li>
+<li>惰性求值：<code>Infofn(fn func() any)</code>——当函数调用很昂贵时，只有在级别启用时才求值</li>
+<li>结构化值：<code>Infov(v any)</code>——序列化为 JSON</li>
+<li>结构化字段：<code>Infow(msg string, fields ...LogField)</code>——带键值对的日志</li>
+</ul>
+<p><code>Logger</code> 接口则提供了更丰富的上下文能力：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/logger.go</span></span><br><span class="line"><span class="keyword">type</span> Logger <span class="keyword">interface</span> &#123;</span><br><span class="line">    Debug(...any)</span><br><span class="line">    Debugf(<span class="type">string</span>, ...any)</span><br><span class="line">    <span class="comment">// ... 各级别的五种变体</span></span><br><span class="line"></span><br><span class="line">    WithCallerSkip(skip <span class="type">int</span>) Logger</span><br><span class="line">    WithContext(ctx context.Context) Logger</span><br><span class="line">    WithDuration(d time.Duration) Logger</span><br><span class="line">    WithFields(fields ...LogField) Logger</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>WithContext</code> 是最关键的方法。当你把 <code>ctx</code> 传给 logger 后，logger 会自动从 context 中提取 trace ID 和 span ID（通过 <code>internal/trace</code> 包），并将它们注入到日志字段中。这意味着同一条请求链路上的所有日志都会自动带上相同的 trace ID——你不需要在每处日志调用中手动传递。</p>
+<h3 id="richlogger门面层的关键职责"><a class="markdownIt-Anchor" href="#richlogger门面层的关键职责"></a> richLogger：门面层的关键职责</h3>
+<p><code>richLogger</code> 是 <code>Logger</code> 接口的唯一实现（<code>core/logx/richlogger.go</code>）。它是一个<strong>值类型 builder</strong>，每次调用 <code>With*</code> 方法时都返回一个新实例，复制现有状态并扩展新字段——原实例保持不变。</p>
+<p>它最核心的方法是 <code>buildFields</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/richlogger.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(l *richLogger)</span></span> buildFields(fields ...LogField) []LogField &#123;</span><br><span class="line">    fields = <span class="built_in">append</span>(l.fields, fields...)</span><br><span class="line">    fields = <span class="built_in">append</span>(fields, Field(callerKey, getCaller(callerDepth+l.callerSkip)))</span><br><span class="line">    fields = mergeGlobalFields(fields)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> l.ctx == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> fields</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 从 context 中自动提取 trace 和 span</span></span><br><span class="line">    traceID := trace.TraceIDFromContext(l.ctx)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(traceID) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        fields = <span class="built_in">append</span>(fields, Field(traceKey, traceID))</span><br><span class="line">    &#125;</span><br><span class="line">    spanID := trace.SpanIDFromContext(l.ctx)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(spanID) &gt; <span class="number">0</span> &#123;</span><br><span class="line">        fields = <span class="built_in">append</span>(fields, Field(spanKey, spanID))</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 从 context 中提取用户注入的自定义字段</span></span><br><span class="line">    val := l.ctx.Value(fieldsKey&#123;&#125;)</span><br><span class="line">    <span class="keyword">if</span> val != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> arr, ok := val.([]LogField); ok &#123;</span><br><span class="line">            fields = <span class="built_in">append</span>(fields, arr...)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> fields</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>字段的合并顺序是有意的，体现了优先级：</p>
+<ol>
+<li><strong>Logger 自身的 fields</strong>（通过 <code>WithFields</code> 添加）</li>
+<li><strong>调用方信息</strong>（<code>caller</code> 字段——哪个文件的哪一行调用了日志）</li>
+<li><strong>全局 fields</strong>（通过 <code>AddGlobalFields</code> 添加——例如所有日志都需要带的服务名称）</li>
+<li><strong>Trace/Span ID</strong>（从 context 中自动提取）</li>
+<li><strong>Context fields</strong>（通过 <code>ContextWithFields(ctx, ...)</code> 注入的自定义字段）</li>
+</ol>
+<p>这个顺序意味着：context 中的 trace 信息总是会出现在日志中，且用户通过 context 传入的字段拥有最后的发言权。正是这个机制，让日志和 trace 系统自然地融为一体——trace 中间件在创建 span 后将 trace context 注入到请求的 <code>context.Context</code> 中，后续所有使用了 <code>WithContext(ctx)</code> 的日志调用都会自动带上 trace 信息。</p>
+<h3 id="writer-层输出分流与格式化"><a class="markdownIt-Anchor" href="#writer-层输出分流与格式化"></a> Writer 层：输出分流与格式化</h3>
+<p>当 <code>richLogger</code> 完成了字段组装后，日志内容被传递到 <code>Writer</code> 接口——日志的输出抽象层：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/writer.go</span></span><br><span class="line"><span class="keyword">type</span> Writer <span class="keyword">interface</span> &#123;</span><br><span class="line">    Alert(v any)</span><br><span class="line">    Close() <span class="type">error</span></span><br><span class="line">    Debug(v any, fields ...LogField)</span><br><span class="line">    Error(v any, fields ...LogField)</span><br><span class="line">    Info(v any, fields ...LogField)</span><br><span class="line">    Severe(v any)</span><br><span class="line">    Slow(v any, fields ...LogField)</span><br><span class="line">    Stack(v any)</span><br><span class="line">    Stat(v any, fields ...LogField)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Writer</code> 接口的七个方法，对应七种不同的日志流向。<code>concreteWriter</code> 是标准实现——它内部持有 <strong>六个不同的 <code>io.WriteCloser</code></strong>，将不同级别的日志写入不同的文件：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/writer.go</span></span><br><span class="line"><span class="keyword">type</span> concreteWriter <span class="keyword">struct</span> &#123;</span><br><span class="line">    infoLog   io.WriteCloser   <span class="comment">// Debug + Info</span></span><br><span class="line">    errorLog  io.WriteCloser   <span class="comment">// Error + Alert</span></span><br><span class="line">    severeLog io.WriteCloser   <span class="comment">// Severe</span></span><br><span class="line">    slowLog   io.WriteCloser   <span class="comment">// Slow</span></span><br><span class="line">    statLog   io.WriteCloser   <span class="comment">// Stat</span></span><br><span class="line">    stackLog  io.Writer        <span class="comment">// Stack（经过限频）</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>以 <code>newFileWriter</code> 为例，它创建五个独立的 <code>RotateLogger</code> 文件：</p>
+<ul>
+<li><code>access.log</code>：Debug 和 Info 级别——记录一切正常的请求</li>
+<li><code>error.log</code>：Error 级别——记录需要关注的错误</li>
+<li><code>severe.log</code>：Severe 级别——记录需要立即响应的严重事件</li>
+<li><code>slow.log</code>：Slow 级别——记录超过阈值的慢请求</li>
+<li><code>stat.log</code>：Stat 级别——记录每分钟的 QPS 和延迟统计</li>
+</ul>
+<p>这种按级别分流的设计有一个直接的好处：<strong>当你排查问题时，不需要在海量的 access 日志中grep 错误</strong>——直接看 <code>error.log</code> 即可。同样，性能分析直接看 <code>slow.log</code>。每个文件的关注者不同，运维策略也不同（比如 error.log 可能需要告警，access.log 只需要归档）。</p>
+<p><code>stackLog</code> 特殊一些——它被包了一层 <code>lessWriter</code>，限频机制在 100ms 内同一条错误栈最多输出一次，避免在故障大爆发时栈日志把磁盘打满。</p>
+<h3 id="输出管道从字段到-json"><a class="markdownIt-Anchor" href="#输出管道从字段到-json"></a> 输出管道：从字段到 JSON</h3>
+<p>所有级别的日志最终都汇聚到 <code>output</code> 函数——日志模块的&quot;最后一道门&quot;：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/writer.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">output</span><span class="params">(writer io.Writer, level <span class="type">string</span>, val any, fields ...LogField)</span></span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> v := val.(<span class="keyword">type</span>) &#123;</span><br><span class="line">    <span class="keyword">case</span> <span class="type">string</span>:</span><br><span class="line">        <span class="comment">// 内容截断——超过 maxContentLength 则截断</span></span><br><span class="line">        maxLen := atomic.LoadUint32(&amp;maxContentLength)</span><br><span class="line">        <span class="keyword">if</span> maxLen &gt; <span class="number">0</span> &amp;&amp; <span class="built_in">len</span>(v) &gt; <span class="type">int</span>(maxLen) &#123;</span><br><span class="line">            val = v[:maxLen]</span><br><span class="line">            fields = <span class="built_in">append</span>(fields, truncatedField)</span><br><span class="line">        &#125;</span><br><span class="line">    <span class="keyword">case</span> Sensitive:</span><br><span class="line">        val = v.MaskSensitive()</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    entry := <span class="built_in">make</span>(logEntry, <span class="built_in">len</span>(fields)+<span class="number">3</span>)</span><br><span class="line">    <span class="keyword">for</span> _, field := <span class="keyword">range</span> fields &#123;</span><br><span class="line">        mval := maskSensitive(field.Value)</span><br><span class="line">        entry[field.Key] = processFieldValue(mval)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">switch</span> atomic.LoadUint32(&amp;encoding) &#123;</span><br><span class="line">    <span class="keyword">case</span> plainEncodingType:</span><br><span class="line">        writePlainAny(writer, level, val, buildPlainFields(entry)...)</span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        entry[timestampKey] = getTimestamp()</span><br><span class="line">        entry[levelKey] = level</span><br><span class="line">        entry[contentKey] = val</span><br><span class="line">        writeJson(writer, entry)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在编码之前，有两个值得注意的处理步骤：</p>
+<p><strong>内容截断。</strong> 如果配置了 <code>MaxContentLength</code>，string 类型的日志内容会被截断到指定长度，并追加一个 <code>truncated: true</code> 字段。这不是为了防止日志炸磁盘（磁盘空间一般充足），而是因为像 <code>http.ResponseWriter</code> 包装后的日志可能会把整个 response body 打印出来，在响应体很大的时候污染日志，影响后续 grep 的效率。</p>
+<p><strong>敏感数据脱敏。</strong> go-zero 提供了一个 <code>Sensitive</code> 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Sensitive <span class="keyword">interface</span> &#123;</span><br><span class="line">    MaskSensitive() any</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>任何实现了这个接口的类型，在日志输出时会自动调用 <code>MaskSensitive()</code>，用脱敏后的值代替原始值。这发生在两个层面：日志消息体本身（<code>val</code>）和每个字段的值（<code>field.Value</code>）。</p>
+<p><strong>字段值的类型感知编码。</strong> <code>processFieldValue</code> 对常见类型做了定制处理：</p>
+<ul>
+<li><code>error</code> → 通过 <code>encodeError</code> 安全地调用 <code>.Error()</code>，防止 nil pointer panic</li>
+<li><code>time.Duration</code> → 转为字符串（如 <code>&quot;1.5s&quot;</code>）</li>
+<li><code>json.Marshaler</code> → 保留 JSON 编码能力</li>
+<li><code>fmt.Stringer</code> → 安全地调用 <code>.String()</code></li>
+</ul>
+<p>JSON 模式下，最终输出形如 <code>&#123;&quot;@timestamp&quot;:&quot;2026-08-12T10:30:00.000+08:00&quot;,&quot;level&quot;:&quot;info&quot;,&quot;content&quot;:&quot;order created&quot;,&quot;caller&quot;:&quot;logic/orderlogic.go:42&quot;,&quot;trace&quot;:&quot;abc123...&quot;,&quot;span&quot;:&quot;def456...&quot;&#125;</code>。注意 <code>@timestamp</code> 字段使用了 <code>@</code> 前缀——这是为了在 ELK 等日志平台中让它被识别为时间字段。</p>
+<h3 id="rotatelogger异步写入与文件轮转"><a class="markdownIt-Anchor" href="#rotatelogger异步写入与文件轮转"></a> RotateLogger：异步写入与文件轮转</h3>
+<p>大多数日志库的写入是同步的——每次调用 <code>Write</code> 都是一次系统调用。go-zero 的 <code>RotateLogger</code> 采用了<strong>异步写入</strong>模式，核心是一个带缓冲的 channel：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/rotatelogger.go</span></span><br><span class="line"><span class="keyword">type</span> RotateLogger <span class="keyword">struct</span> &#123;</span><br><span class="line">    filename    <span class="type">string</span></span><br><span class="line">    fp          *os.File</span><br><span class="line">    channel     <span class="keyword">chan</span> []<span class="type">byte</span>          <span class="comment">// 缓冲大小为 100</span></span><br><span class="line">    done        <span class="keyword">chan</span> lang.PlaceholderType</span><br><span class="line">    rule        RotateRule</span><br><span class="line">    compress    <span class="type">bool</span></span><br><span class="line">    waitGroup   sync.WaitGroup</span><br><span class="line">    closeOnce   sync.Once</span><br><span class="line">    currentSize <span class="type">int64</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>日志数据通过 <code>channel</code> 发送给一个专门的 goroutine（<code>startWorker</code>），由它负责实际的 <code>Write</code> 系统调用和文件轮转。channel 大小为 100，意味着在高并发写日志时，最多可以缓冲 100 条日志消息而不阻塞业务 goroutine。如果 channel 满了？<code>Write</code> 方法会立即返回 <code>false</code>，但调用方（<code>output</code> 函数）会退回到标准库的 <code>log.Println</code> 做一个保底。这是一个明确的取舍：宁可丢一条日志，也不阻塞业务处理。</p>
+<p>轮转规则通过 <code>RotateRule</code> 接口定义，有两种实现：</p>
+<ul>
+<li><strong><code>DailyRotateRule</code></strong>：每天轮转一次。备份文件名为 <code>access-2026-08-12.log</code>。通过 <code>MarkRotated()</code> 记录上次轮转日期，通过 <code>ShallRotate()</code> 比较当前日期与记录日期。</li>
+<li><strong><code>SizeLimitRotateRule</code></strong>：文件达到指定大小后轮转。继承自 <code>DailyRotateRule</code>，增加了 <code>maxSize</code> 和 <code>maxBackups</code> 限制。<code>ShallRotate()</code> 检查 <code>currentSize &gt;= maxSize</code>。</li>
+</ul>
+<p>轮转时还支持 <strong>gzip 压缩</strong>——轮转完成后，一个后台 goroutine 将旧文件压缩为 <code>.gz</code>，并清理超过保留天数或超过最大备份数的过期文件。</p>
+<h3 id="限频机制防止日志爆炸"><a class="markdownIt-Anchor" href="#限频机制防止日志爆炸"></a> 限频机制：防止日志爆炸</h3>
+<p>在故障场景下，日志输出本身就是一种负担。一个下游超时的错误，在 1000 个并发请求下每秒会产生 1000 条错误日志。go-zero 用了 <strong><code>limitedExecutor</code></strong> 来防止这种日志爆炸：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/logx/limitedexecutor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(le *limitedExecutor)</span></span> logOrDiscard(execute <span class="function"><span class="keyword">func</span><span class="params">()</span></span>) &#123;</span><br><span class="line">    now := timex.Now()</span><br><span class="line">    <span class="keyword">if</span> now-le.lastTime.Load() &lt;= le.threshold &#123;</span><br><span class="line">        atomic.AddUint32(&amp;le.discarded, <span class="number">1</span>)</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        le.lastTime.Set(now)</span><br><span class="line">        discarded := atomic.SwapUint32(&amp;le.discarded, <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">if</span> discarded &gt; <span class="number">0</span> &#123;</span><br><span class="line">            Errorf(<span class="string">&quot;Discarded %d error messages&quot;</span>, discarded)</span><br><span class="line">        &#125;</span><br><span class="line">        execute()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在 threshold 时间内（比如 100ms），只有第一次调用会执行，后续调用只增加丢弃计数。当 threshold 过去后，下一次调用先报告&quot;这期间丢弃了多少条&quot;，再执行。这使得日志输出从&quot;每个错误一条&quot;退化到&quot;每 100ms 一条 + 丢弃计数&quot;——信息量没有丢失（你知道丢失了多少条），但日志量降低了两个数量级。</p>
+<p><code>limitedExecutor</code> 的两大消费者是：</p>
+<ul>
+<li><strong><code>lessWriter</code></strong>：限频 stack trace 的写入（用在 <code>concreteWriter.stackLog</code>）</li>
+<li><strong><code>LessLogger</code></strong>：面向用户的限频 Logger，用户可以在业务代码中使用 <code>logx.NewLessLogger(500)</code> 来限制某个特定日志的频率</li>
+</ul>
+<h2 id="链路追踪opentelemetry-的集成与传播"><a class="markdownIt-Anchor" href="#链路追踪opentelemetry-的集成与传播"></a> 链路追踪：OpenTelemetry 的集成与传播</h2>
+<p>日志告诉你&quot;发生了什么&quot;，但当一个请求跨越多个服务时，&quot;发生了什么&quot;散落在各个服务的日志中。你需要一个办法把它们串起来——这就是链路追踪的角色。</p>
+<h3 id="全局设定一次初始化处处生效"><a class="markdownIt-Anchor" href="#全局设定一次初始化处处生效"></a> 全局设定：一次初始化，处处生效</h3>
+<p>go-zero 的追踪模块通过 <code>sync.Once</code> 保证全局 <code>TracerProvider</code> 只初始化一次。入口是 <code>trace.StartAgent(c Config)</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/trace/agent.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">StartAgent</span><span class="params">(c Config)</span></span> &#123;</span><br><span class="line">    <span class="keyword">if</span> c.Disabled &#123;</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line">    once.Do(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> err := startAgent(c); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            logx.Error(err)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>startAgent</code> 做了三件关键的事：</p>
+<p><strong>第一，创建 Exporter。</strong> 根据 <code>Batcher</code> 配置选择不同的后端：</p>
+<ul>
+<li><code>&quot;zipkin&quot;</code>：Zipkin 兼容后端</li>
+<li><code>&quot;otlpgrpc&quot;</code>：OTLP over gRPC（默认），支持自定义 headers（如 Uptrace DSN）</li>
+<li><code>&quot;otlphttp&quot;</code>：OTLP over HTTP，支持自定义路径和 TLS</li>
+<li><code>&quot;file&quot;</code>：本地文件（开发和调试用）</li>
+</ul>
+<p>对于 OTLP gRPC，特别注意它使用了 <code>WithInsecure()</code> 和非阻塞连接模式——这意味着如果 exporter 不可达，不会阻塞服务启动。</p>
+<p><strong>第二，设置全局 TracerProvider。</strong> 通过 <code>otel.SetTracerProvider(tp)</code> 将 TracerProvider 注册为全局单例。同时，错误通过自定义的 <code>ErrorHandler</code> 路由到 go-zero 的 <code>logx.Errorf</code>——OTEL SDK 的内部错误不会无声丢失。</p>
+<p><strong>第三，设置采样策略。</strong> 使用 <code>ParentBased(TraceIDRatioBased(sampler))</code>——基于 Trace ID Ratio 的采样 + 基于父 Span 的决策继承。如果上游已经决定要采样这个 trace，下游强制采样；否则按比例随机采样。</p>
+<h3 id="w3c-trace-context-传播"><a class="markdownIt-Anchor" href="#w3c-trace-context-传播"></a> W3C Trace-Context 传播</h3>
+<p>追踪的关键不是&quot;创建 span&quot;，而是&quot;把 span 连成一条链&quot;。go-zero 在包初始化时就确定了传播协议：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/trace/propagation.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(</span><br><span class="line">        propagation.TraceContext&#123;&#125;, propagation.Baggage&#123;&#125;))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>TraceContext</code> 是 W3C 标准的 trace 传播协议，通过 <code>traceparent</code> 和 <code>tracestate</code> HTTP header 传递 trace 信息。<code>Baggage</code> 允许在 trace 上下文之外携带用户自定义的键值对。两者组成一个 composite propagator——一次注入或提取，两套信息同时传播。</p>
+<h3 id="rest-侧的-trace-中间件"><a class="markdownIt-Anchor" href="#rest-侧的-trace-中间件"></a> REST 侧的 Trace 中间件</h3>
+<p><code>TraceHandler</code> 是 HTTP 请求的追踪入口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// rest/handler/tracehandler.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">TraceHandler</span><span class="params">(serviceName, path <span class="type">string</span>, opts ...TraceOption)</span></span> <span class="function"><span class="keyword">func</span><span class="params">(http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(next http.Handler)</span></span> http.Handler &#123;</span><br><span class="line">        tracer := otel.Tracer(trace.TraceName)</span><br><span class="line">        propagator := otel.GetTextMapPropagator()</span><br><span class="line"></span><br><span class="line">        <span class="keyword">return</span> http.HandlerFunc(<span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, r *http.Request)</span></span> &#123;</span><br><span class="line">            <span class="comment">// 1. 从 HTTP Header 提取 trace 上下文</span></span><br><span class="line">            ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))</span><br><span class="line">            <span class="comment">// 2. 创建服务端 Span</span></span><br><span class="line">            spanCtx, span := tracer.Start(ctx, spanName,</span><br><span class="line">                oteltrace.WithSpanKind(oteltrace.SpanKindServer),</span><br><span class="line">                oteltrace.WithAttributes(semconv.HTTPServerAttributesFromHTTPRequest(</span><br><span class="line">                    serviceName, spanName, r)...),</span><br><span class="line">            )</span><br><span class="line">            <span class="keyword">defer</span> span.End()</span><br><span class="line">            <span class="comment">// 3. 将 span 上下文注入到响应 Header（方便调用方追踪）</span></span><br><span class="line">            propagator.Inject(spanCtx, propagation.HeaderCarrier(w.Header()))</span><br><span class="line">            <span class="comment">// 4. 将 spanCtx 放入 request context，后续 handler 和日志都能拿到</span></span><br><span class="line">            trw := response.NewWithCodeResponseWriter(w)</span><br><span class="line">            next.ServeHTTP(trw, r.WithContext(spanCtx))</span><br><span class="line">            <span class="comment">// 5. 记录 HTTP 状态码</span></span><br><span class="line">            span.SetAttributes(semconv.HTTPAttributesFromHTTPStatusCode(trw.Code)...)</span><br><span class="line">            span.SetStatus(semconv.SpanStatusFromHTTPStatusCodeAndSpanKind(</span><br><span class="line">                trw.Code, oteltrace.SpanKindServer))</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意第四步——<code>r.WithContext(spanCtx)</code>。这一步是关键桥接：它把 trace context 注入到 HTTP 请求的 context 中。后续的 handler、logic 以及所有使用 <code>logx.WithContext(r.Context())</code> 的日志调用，都会自动获得 trace ID 和 span ID 字段。<strong>日志和 trace 就是这样关联起来的。</strong></p>
+<h3 id="grpc-侧的双向传播"><a class="markdownIt-Anchor" href="#grpc-侧的双向传播"></a> gRPC 侧的双向传播</h3>
+<p>gRPC 的追踪比 HTTP 多了一个环节——gRPC 使用 metadata 传递上下文，而不是 HTTP header。go-zero 提供了 <code>Inject</code> 和 <code>Extract</code> 两个适配函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/trace/tracer.go</span></span><br><span class="line"><span class="keyword">type</span> metadataSupplier <span class="keyword">struct</span> &#123;</span><br><span class="line">    metadata *metadata.MD</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *metadataSupplier)</span></span> Get(key <span class="type">string</span>) <span class="type">string</span> &#123;</span><br><span class="line">    values := s.metadata.Get(key)</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(values) == <span class="number">0</span> &#123; <span class="keyword">return</span> <span class="string">&quot;&quot;</span> &#125;</span><br><span class="line">    <span class="keyword">return</span> values[<span class="number">0</span>]</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *metadataSupplier)</span></span> Set(key, value <span class="type">string</span>) &#123;</span><br><span class="line">    s.metadata.Set(key, value)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>metadataSupplier</code> 将 gRPC 的 <code>metadata.MD</code> 适配为 OpenTelemetry 的 <code>TextMapCarrier</code> 接口。在服务端，<code>UnaryTracingInterceptor</code> 通过 <code>Extract</code> 从 incoming metadata 中提取上游的 trace context；在客户端，<code>UnaryTracingInterceptor</code> 通过 <code>Inject</code> 将 trace context 注入 outgoing metadata。</p>
+<p>服务端 interceptor 的核心流程：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// zrpc/internal/serverinterceptors/tracinginterceptor.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">UnaryTracingInterceptor</span><span class="params">(ctx context.Context, req any, info *grpc.UnaryServerInfo,</span></span></span><br><span class="line"><span class="params"><span class="function">    handler grpc.UnaryHandler)</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">    ctx, span := startSpan(ctx, info.FullMethod)</span><br><span class="line">    <span class="keyword">defer</span> span.End()</span><br><span class="line"></span><br><span class="line">    ztrace.MessageReceived.Event(ctx, <span class="number">1</span>, req)   <span class="comment">// 记录接收消息事件</span></span><br><span class="line">    resp, err := handler(ctx, req)</span><br><span class="line">    <span class="comment">// ... 根据 err 设置 span 状态和 gRPC status code ...</span></span><br><span class="line">    ztrace.MessageSent.Event(ctx, <span class="number">1</span>, resp)       <span class="comment">// 记录发送消息事件</span></span><br><span class="line">    <span class="keyword">return</span> resp, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个 span 不光有方法名（<code>/package.Service/Method</code>）、服务名、对端地址这些属性，还记录了 <strong>message 事件</strong>——每次发送和接收的 proto 消息大小、消息 ID，这些信息在排查&quot;哪个请求/响应的消息体特别大&quot;时非常有用。</p>
+<h3 id="rest-到-rpc-的完整-trace-链路"><a class="markdownIt-Anchor" href="#rest-到-rpc-的完整-trace-链路"></a> REST 到 RPC 的完整 Trace 链路</h3>
+<p>当 REST 服务调用 RPC 服务时，一条 trace 需要跨两种协议。REST 服务从 HTTP header 提取 trace 上下文，当它通过 gRPC client 调用下游时，客户端的 <code>UnaryTracingInterceptor</code> 会自动将 trace context 注入到 gRPC metadata 中。下游的 <code>UnaryTracingInterceptor</code> 再从 metadata 中提取——整条 trace 就这样跨越了协议边界。</p>
+<p>中间件的顺序也保证了 trace 总是最先执行。在 REST 中：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Trace → Log → Prometheus → MaxConns → Breaker → Shedding → Timeout → ...</span><br></pre></td></tr></table></figure>
+<p>Trace 在最外层意味着：即使后续的 Breaker 或 Shedding 拒绝了请求，拒绝行为本身也会在一个 span 中被记录下来——通过 span 的属性（HTTP 503）和事件（为什么被拒绝），你可以区分&quot;是断路器跳了&quot;还是&quot;降载器丢掉了&quot;。</p>
+<h2 id="统计指标cpu-感知的延迟分位数"><a class="markdownIt-Anchor" href="#统计指标cpu-感知的延迟分位数"></a> 统计指标：CPU 感知的延迟分位数</h2>
+<p>日志是离散事件，trace 是跨服务链路，Metrics 则回答了另一个维度的问题：<strong>“过去一分钟，这个接口的平均响应时间是多少？99% 的请求在多少毫秒内完成？”</strong></p>
+<p>go-zero 的 <code>core/stat/</code> 模块实现了一套独立的聚合统计系统，它不从 Prometheus 获取数据，而是直接从请求链路中收集原始数据，自行计算分位数。</p>
+<h3 id="task-收集与定时聚合"><a class="markdownIt-Anchor" href="#task-收集与定时聚合"></a> Task 收集与定时聚合</h3>
+<p>一切从 <code>Task</code> 开始：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stat/task.go</span></span><br><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">    Drop        <span class="type">bool</span></span><br><span class="line">    Duration    time.Duration</span><br><span class="line">    Description <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Task</code> 是最小的统计单元。每当一个请求完成（或被拒绝），调用方创建一个 <code>Task</code> 并调用 <code>Metrics.Add(task)</code>。<code>Metrics</code> 内部使用 <code>executors.PeriodicalExecutor</code>，每隔一分钟执行一次聚合：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stat/metrics.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *metricsContainer)</span></span> Execute(v any) &#123;</span><br><span class="line">    pair := v.(tasksDurationPair)</span><br><span class="line">    tasks := pair.tasks</span><br><span class="line">    size := <span class="built_in">len</span>(tasks)</span><br><span class="line">    report := &amp;StatReport&#123;</span><br><span class="line">        Name:          c.name,</span><br><span class="line">        Timestamp:     time.Now().Unix(),</span><br><span class="line">        ReqsPerSecond: <span class="type">float32</span>(size) / <span class="type">float32</span>(logInterval/time.Second),</span><br><span class="line">        Drops:         pair.drops,</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ... 计算分位数 ...</span></span><br><span class="line">    log(report)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>ReqsPerSecond</code> 的计算很简单：<code>size / 60s</code>，就是一分钟内的平均 QPS。<code>Drops</code> 是被拒绝（breaker/shedding/limit）的请求数——这是一个有用的信号：drop 数突然上升意味着某个保护机制触发了。</p>
+<h3 id="分层-topk用最小堆计算分位数"><a class="markdownIt-Anchor" href="#分层-topk用最小堆计算分位数"></a> 分层 topK：用最小堆计算分位数</h3>
+<p>计算分位数的直观做法是排序——但对一分钟内上万个请求排序，时间开销不小。go-zero 使用了一种 <strong>分层最小堆</strong> 策略：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stat/metrics.go</span></span><br><span class="line">fiftyPercent := size &gt;&gt; <span class="number">1</span></span><br><span class="line"><span class="keyword">if</span> fiftyPercent &gt; <span class="number">0</span> &#123;</span><br><span class="line">    top50pTasks := topK(tasks, fiftyPercent)       <span class="comment">// 对 N 取前 N/2</span></span><br><span class="line">    report.Median = <span class="type">float32</span>(top50pTasks[<span class="number">0</span>].Duration) / <span class="type">float32</span>(time.Millisecond)</span><br><span class="line"></span><br><span class="line">    tenPercent := fiftyPercent / <span class="number">5</span></span><br><span class="line">    <span class="keyword">if</span> tenPercent &gt; <span class="number">0</span> &#123;</span><br><span class="line">        top10pTasks := topK(top50pTasks, tenPercent)  <span class="comment">// 对 N/2 取前 N/10</span></span><br><span class="line">        report.Top90th = <span class="type">float32</span>(top10pTasks[<span class="number">0</span>].Duration) / <span class="type">float32</span>(time.Millisecond)</span><br><span class="line"></span><br><span class="line">        onePercent := tenPercent / <span class="number">10</span></span><br><span class="line">        <span class="keyword">if</span> onePercent &gt; <span class="number">0</span> &#123;</span><br><span class="line">            top1pTasks := topK(top10pTasks, onePercent)  <span class="comment">// 对 N/10 取前 N/100</span></span><br><span class="line">            report.Top99th = <span class="type">float32</span>(top1pTasks[<span class="number">0</span>].Duration) / <span class="type">float32</span>(time.Millisecond)</span><br><span class="line">            <span class="comment">// ... 依此类推计算 99.9th</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>分层的思路是：先从全部请求中取前 50%（得到 p50），再从 p50 中取前 1/5（得到 p90），再从 p90 中取前 1/10（得到 p99）……每一层的搜索范围缩小一个数量级，最小堆的 k 值也随之缩小。这样总计算复杂度从 <code>O(N log N)</code>（全排序）降到 <code>O(N log k₁ + N/2 log k₂ + ...)</code>，其中 k 值逐层缩小。</p>
+<p><code>topK</code> 使用 Go 标准库的 <code>container/heap</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stat/topk.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">topK</span><span class="params">(all []Task, k <span class="type">int</span>)</span></span> []Task &#123;</span><br><span class="line">    h := <span class="built_in">new</span>(taskHeap)</span><br><span class="line">    heap.Init(h)</span><br><span class="line">    <span class="keyword">for</span> _, each := <span class="keyword">range</span> all &#123;</span><br><span class="line">        <span class="keyword">if</span> h.Len() &lt; k &#123;</span><br><span class="line">            heap.Push(h, each)</span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> (*h)[<span class="number">0</span>].Duration &lt; each.Duration &#123;</span><br><span class="line">            heap.Pop(h)</span><br><span class="line">            heap.Push(h, each)</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> *h</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>标准的最小堆取前 K 大——当堆未满时直接放入，满了后如果新元素比堆顶大则替换堆顶。最终堆中保留的就是前 K 个最大元素，堆顶是第 K 大的值，即分位数值。</p>
+<h3 id="输出双通道stat-日志与-remotewriter"><a class="markdownIt-Anchor" href="#输出双通道stat-日志与-remotewriter"></a> 输出双通道：Stat 日志与 RemoteWriter</h3>
+<p>计算完成后，<code>StatReport</code> 通过两个通道输出：</p>
+<ol>
+<li><strong>Stat 日志</strong>：<code>logx.Statf(&quot;(%s) - qps: %.1f/s, drops: %d, avg time: %.1fms, med: %.1fms, 90th: %.1fms, 99th: %.1fms, 99.9th: %.1fms&quot;, ...)</code>——输出到 <code>stat.log</code> 文件，每行一条，适合 grep 归档。</li>
+<li><strong>RemoteWriter</strong>：如果设置了 <code>stat.SetReportWriter(stat.NewRemoteWriter(&quot;http://...&quot;))</code>，则通过 HTTP POST 将 JSON 格式的 <code>StatReport</code> 发送到外部监控系统。</li>
+</ol>
+<h3 id="cpu-监控ema-平滑与-cgroup-感知"><a class="markdownIt-Anchor" href="#cpu-监控ema-平滑与-cgroup-感知"></a> CPU 监控：EMA 平滑与 cgroup 感知</h3>
+<p>除了请求级别的统计，<code>stat</code> 包还运行了一个后台 CPU 监控 goroutine：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stat/usage.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">init</span><span class="params">()</span></span> &#123;</span><br><span class="line">    <span class="keyword">go</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        cpuTicker := time.NewTicker(<span class="number">250</span> * time.Millisecond)</span><br><span class="line">        allTicker := time.NewTicker(time.Minute)</span><br><span class="line">        <span class="keyword">for</span> &#123;</span><br><span class="line">            <span class="keyword">select</span> &#123;</span><br><span class="line">            <span class="keyword">case</span> &lt;-cpuTicker.C:</span><br><span class="line">                curUsage := internal.RefreshCpu()</span><br><span class="line">                prevUsage := atomic.LoadInt64(&amp;cpuUsage)</span><br><span class="line">                <span class="comment">// EMA 平滑：cpu = cpuᵗ⁻¹ * 0.95 + cpuᵗ * 0.05</span></span><br><span class="line">                usage := <span class="type">int64</span>(<span class="type">float64</span>(prevUsage)*beta + <span class="type">float64</span>(curUsage)*(<span class="number">1</span>-beta))</span><br><span class="line">                atomic.StoreInt64(&amp;cpuUsage, usage)</span><br><span class="line">            <span class="keyword">case</span> &lt;-allTicker.C:</span><br><span class="line">                printUsage()  <span class="comment">// 打印 CPU + 内存 + GC 统计</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;()</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>CPU 数据每 250ms 刷新一次，通过<strong>指数移动平均</strong>（EMA, β=0.95）平滑——等价于约 5 秒的滑动窗口。这在上一篇的降载器中被使用——降载器通过 <code>stat.CpuUsage()</code> 判断 CPU 是否过载。</p>
+<p>CPU 的采集是 <strong>cgroup 感知的</strong>（Linux 下）。<code>core/stat/internal/</code> 中的代码会读取 cgroup v1 或 v2 的 CPU quota 和 CPU usage，在容器化部署中能拿到容器级别的 CPU 使用率，而不是宿主机级别的。这个设计保证了降载器在容器环境中仍然准确。</p>
+<h2 id="prometheus-指标类型包装与开关控制"><a class="markdownIt-Anchor" href="#prometheus-指标类型包装与开关控制"></a> Prometheus 指标：类型包装与开关控制</h2>
+<p>与 <code>stat</code> 的自建聚合不同，Prometheus 模块是标准的指标暴露层。go-zero 的 <code>core/metric/</code> 封装了 <code>prometheus/client_golang</code>，提供 Counter、Gauge、Histogram、Summary 四种向量类型，但同时增加了一个关键的&quot;开关&quot;机制。</p>
+<h3 id="全局开关不启用就不开销"><a class="markdownIt-Anchor" href="#全局开关不启用就不开销"></a> 全局开关：不启用就不开销</h3>
+<p>所有指标操作的入口是一个 <code>update</code> 函数：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/metric/metric.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">update</span><span class="params">(fn <span class="keyword">func</span>()</span></span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> prometheus.Enabled() &#123;</span><br><span class="line">        fn()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每个指标的每个操作（<code>Inc</code>、<code>Add</code>、<code>Set</code>、<code>Observe</code>）都包裹在 <code>update</code> 中。如果 Prometheus 没有被启用，所有操作都是空调用。这不是多余的——<code>prometheus.Enabled()</code> 只是一个 <code>atomic.Bool</code> 的读取，几乎零开销。而如果不做这个检查，即使没有启动 Prometheus agent，<code>CounterVec.Inc()</code> 仍然会执行完整的 label 查找和计数更新——这些都是有实质开销的。</p>
+<p><code>enabled</code> 这个开关被设置在 <code>prometheus.StartAgent(c Config)</code> 中：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/prometheus/agent.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">StartAgent</span><span class="params">(c Config)</span></span> &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(c.Host) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span></span><br><span class="line">    &#125;</span><br><span class="line">    once.Do(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        enabled.Set(<span class="literal">true</span>)</span><br><span class="line">        threading.GoSafe(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">            http.Handle(c.Path, promhttp.Handler())</span><br><span class="line">            http.ListenAndServe(fmt.Sprintf(<span class="string">&quot;%s:%d&quot;</span>, c.Host, c.Port), <span class="literal">nil</span>)</span><br><span class="line">        &#125;)</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>只有当用户显式配置了 Prometheus 的 Host 和 Port，agent 才会启动并且设置 <code>enabled = true</code>。这个设计对开发体验很友好：本地开发时不用配 Prometheus，不会有额外的指标开销；部署到生产时配上了 host，指标自动生效。</p>
+<h3 id="四类向量的统一模式"><a class="markdownIt-Anchor" href="#四类向量的统一模式"></a> 四类向量的统一模式</h3>
+<p><code>core/metric/</code> 提供了四种向量类型，每种都遵循同样的模式：</p>
+<ul>
+<li><strong>公共接口</strong>（如 <code>CounterVec</code>）定义方法</li>
+<li><strong>私有实现</strong>（如 <code>promCounterVec</code>）封装 <code>*prom.CounterVec</code></li>
+<li><strong>构造函数</strong>注册到 Prometheus 并注册 shutdown 清理</li>
+</ul>
+<p>以 Counter 为例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/metric/counter.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewCounterVec</span><span class="params">(cfg *CounterVecOpts)</span></span> CounterVec &#123;</span><br><span class="line">    <span class="keyword">if</span> cfg == <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;</span><br><span class="line">    vec := prom.NewCounterVec(prom.CounterOpts&#123;</span><br><span class="line">        Namespace: cfg.Namespace,</span><br><span class="line">        Subsystem: cfg.Subsystem,</span><br><span class="line">        Name:      cfg.Name,</span><br><span class="line">        Help:      cfg.Help,</span><br><span class="line">    &#125;, cfg.Labels)</span><br><span class="line">    prom.MustRegister(vec)</span><br><span class="line">    proc.AddShutdownListener(<span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        prom.Unregister(vec)</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> &amp;promCounterVec&#123;counter: vec&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>shutdown 清理器会调用 <code>prom.Unregister</code> 取消注册——这不是可有可无的，因为在重启时如果不清理旧的注册，<code>MustRegister</code> 会对重复注册的指标 panic。</p>
+<h2 id="运行时诊断工具健康检查-dev-server-与持续-profiling"><a class="markdownIt-Anchor" href="#运行时诊断工具健康检查-dev-server-与持续-profiling"></a> 运行时诊断工具：健康检查、Dev Server 与持续 Profiling</h2>
+<p>日志、trace 和 metrics 构成了可观测性的三大支柱，但还有一些工具不在三者之中，却一样重要——它们帮你回答&quot;服务还活着吗&quot;、&quot;现在 CPU 在干什么&quot;这些问题。</p>
+<h3 id="健康检查组合探针模式"><a class="markdownIt-Anchor" href="#健康检查组合探针模式"></a> 健康检查：组合探针模式</h3>
+<p><code>internal/health/</code> 提供了一个简洁的多探针健康检查框架：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/health/health.go</span></span><br><span class="line"><span class="keyword">type</span> Probe <span class="keyword">interface</span> &#123;</span><br><span class="line">    MarkReady()</span><br><span class="line">    MarkNotReady()</span><br><span class="line">    IsReady() <span class="type">bool</span></span><br><span class="line">    Name() <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>单个 <code>Probe</code> 是一个命名组件——比如数据库连接池、Redis 客户端、消息队列消费者——各自用 <code>MarkReady()</code> 标记自己就绪。多个 Probe 通过 <code>comboHealthManager</code> 组合在一起：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p *comboHealthManager)</span></span> IsReady() <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(p.probes) == <span class="number">0</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span>      <span class="comment">// 零探针 = 未就绪</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">for</span> _, probe := <span class="keyword">range</span> p.probes &#123;</span><br><span class="line">        <span class="keyword">if</span> !probe.IsReady() &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">false</span>  <span class="comment">// 任一未就绪 = 整体未就绪</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">true</span>           <span class="comment">// 全部就绪 = 整体就绪</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>组合语义是<strong>逻辑与</strong>——所有探针就绪才算就绪。这考虑了&quot;数据库还没连上但 HTTP 端口已经开了&quot;的场景——Kubernetes 的 readiness probe 此时应返回 503，而不是 200。</p>
+<p><code>CreateHttpHandler</code> 将一个组合探针对外暴露为 HTTP 端点：</p>
+<ul>
+<li>全部就绪 → 200 + <code>healthResponse</code>（默认 <code>&quot;OK&quot;</code>）</li>
+<li>任一未就绪 → 503 + 逐探针状态列表（<code>&quot;mysql is not ready\nredis is ready\n&quot;</code>）</li>
+</ul>
+<h3 id="dev-server一个端口提供三种能力"><a class="markdownIt-Anchor" href="#dev-server一个端口提供三种能力"></a> Dev Server：一个端口提供三种能力</h3>
+<p><code>internal/devserver/</code> 将三个内部服务聚合到了一个 HTTP 端口（默认 6060）上：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/devserver/server.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(s *Server)</span></span> addRoutes(c Config) &#123;</span><br><span class="line">    <span class="comment">// 根路径：列出所有已注册的路由</span></span><br><span class="line">    s.handleFunc(<span class="string">&quot;/&quot;</span>, <span class="function"><span class="keyword">func</span><span class="params">(w http.ResponseWriter, _ *http.Request)</span></span> &#123;</span><br><span class="line">        _ = json.NewEncoder(w).Encode(s.routes)</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="comment">// 健康检查：/healthz</span></span><br><span class="line">    s.handleFunc(s.config.HealthPath, health.CreateHttpHandler(c.HealthResponse))</span><br><span class="line">    <span class="comment">// Prometheus 指标：/metrics</span></span><br><span class="line">    <span class="keyword">if</span> s.config.EnableMetrics &#123;</span><br><span class="line">        prometheus.Enable()</span><br><span class="line">        s.handleFunc(s.config.MetricsPath, promhttp.Handler().ServeHTTP)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// pprof：五个调试端点</span></span><br><span class="line">    <span class="keyword">if</span> s.config.EnablePprof &#123;</span><br><span class="line">        s.handleFunc(<span class="string">&quot;/debug/pprof/&quot;</span>, pprof.Index)</span><br><span class="line">        s.handleFunc(<span class="string">&quot;/debug/pprof/cmdline&quot;</span>, pprof.Cmdline)</span><br><span class="line">        s.handleFunc(<span class="string">&quot;/debug/pprof/profile&quot;</span>, pprof.Profile)</span><br><span class="line">        s.handleFunc(<span class="string">&quot;/debug/pprof/symbol&quot;</span>, pprof.Symbol)</span><br><span class="line">        s.handleFunc(<span class="string">&quot;/debug/pprof/trace&quot;</span>, pprof.Trace)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>访问 <code>:6060</code> 的根路径能看到所有已注册路由的 JSON 列表——这在排查&quot;哪个端点有没有被正确注册&quot;时很方便。</p>
+<p>这里需要注意<strong>两套 Prometheus 的区别</strong>：</p>
+<ul>
+<li><code>core/prometheus/</code> 是独立的 agent，启动在用户配置的端口上（默认 9101）</li>
+<li>Dev Server 的 <code>/metrics</code> 端点（默认在 6060 上）在启动时会调用 <code>prometheus.Enable()</code>，激活全局指标开关，但<strong>数据源是同一个</strong>——都是 <code>promhttp.Handler()</code> 暴露的默认 Registry</li>
+</ul>
+<p>两套端口的分工是：9101 给 Prometheus scrap（生产用途），6060 给人直接访问（调试用途）。</p>
+<h3 id="持续-profilingcpu-门控的-pyroscope-集成"><a class="markdownIt-Anchor" href="#持续-profilingcpu-门控的-pyroscope-集成"></a> 持续 Profiling：CPU 门控的 Pyroscope 集成</h3>
+<p><code>internal/profiling/</code> 不是普通的 <code>pprof</code> 端点（那些在 Dev Server 中已经有了），而是<strong>持续的、自动触发的 Pyroscope profiling</strong>。它的独特之处在于：profiling 不是一直开着的，而是根据 CPU 使用率自动启停：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// internal/profiling/profiling.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">startPyroscope</span><span class="params">(c Config, done &lt;-<span class="keyword">chan</span> <span class="keyword">struct</span>&#123;&#125;)</span></span> &#123;</span><br><span class="line">    <span class="keyword">var</span> pr profiler</span><br><span class="line">    intervalTicker := time.NewTicker(c.CheckInterval)       <span class="comment">// 默认 10s</span></span><br><span class="line">    profilingTicker := time.NewTicker(c.ProfilingDuration)  <span class="comment">// 默认 2m</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> &#123;</span><br><span class="line">        <span class="keyword">select</span> &#123;</span><br><span class="line">        <span class="keyword">case</span> &lt;-intervalTicker.C:</span><br><span class="line">            <span class="comment">// CPU 超过阈值（默认 700 millicpu）且 profiler 未在运行 → 启动</span></span><br><span class="line">            <span class="keyword">if</span> pr == <span class="literal">nil</span> &amp;&amp; isCpuOverloaded(c) &#123;</span><br><span class="line">                pr = newProfiler(c)</span><br><span class="line">                pr.Start()</span><br><span class="line">            &#125;</span><br><span class="line">        <span class="keyword">case</span> &lt;-profilingTicker.C:</span><br><span class="line">            <span class="comment">// profiling 时长超过上限 → 停止</span></span><br><span class="line">            <span class="keyword">if</span> pr != <span class="literal">nil</span> &#123;</span><br><span class="line">                pr.Stop()</span><br><span class="line">                pr = <span class="literal">nil</span></span><br><span class="line">            &#125;</span><br><span class="line">        <span class="keyword">case</span> &lt;-done:</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个 CPU 门控设计非常务实：profiling 本身有开销（特别是 memory profiling），一直开着会消耗约 5-10% 的 CPU。在 CPU 空闲时采样没有意义（系统表现良好），只有在 CPU 过载时才需要看火焰图——“CPU 时间花在哪里了”。默认每 10 秒检查一次，一旦 CPU 超过 700 millicpu（约 70%），自动启动 profiler；持续 2 分钟后自动停止。</p>
+<p>Profiling 类型覆盖：</p>
+<ul>
+<li><strong>CPU</strong>（默认开）：CPU profiling</li>
+<li><strong>Goroutines</strong>（默认开）：goroutine 状态快照</li>
+<li><strong>Memory</strong>（默认开）：<code>AllocObjects</code>、<code>AllocSpace</code>、<code>InuseObjects</code>、<code>InuseSpace</code></li>
+<li><strong>Mutex</strong>（默认关）：mutex 竞争 profiling——需要 <code>runtime.SetMutexProfileFraction(10)</code></li>
+<li><strong>Block</strong>（默认关）：阻塞 profiling——需要 <code>runtime.SetBlockProfileRate(1000000)</code></li>
+</ul>
+<p>Mutex 和 Block 默认关闭是因为它们的运行时开销更大——采样会拦截每次 mutex 锁和 channel 阻塞操作——只在确定需要排查锁竞争时才打开。</p>
+<h2 id="三个-pillar-的串联日志-trace-metrics-的协同"><a class="markdownIt-Anchor" href="#三个-pillar-的串联日志-trace-metrics-的协同"></a> 三个 Pillar 的串联：日志、Trace、Metrics 的协同</h2>
+<p>到此，go-zero 的可观测性体系各个模块都已就位。但它们不是孤立的——它们在一份请求的生命周期中协同工作。让我们以一次 REST → RPC 调用为例，追踪完整的可观测性数据流：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line">HTTP 请求到达</span><br><span class="line">  │</span><br><span class="line">  ├─ [Trace] TraceHandler 从 Header 提取 trace context</span><br><span class="line">  │   └─ 创建 Server Span (/user/info)，并注入 ctx</span><br><span class="line">  │</span><br><span class="line">  ├─ [Log] LogHandler 创建 WithContext(ctx) 的 logger</span><br><span class="line">  │   └─ 自动获得 trace ID 和 span ID 字段</span><br><span class="line">  │   └─ 记录请求开始日志</span><br><span class="line">  │</span><br><span class="line">  ├─ [Metric] PrometheusHandler 增加 http_requests_total</span><br><span class="line">  │</span><br><span class="line">  ├─ [Log] 经过 Breaker/Shedding 等中间件（如被拒绝，记录 drop）</span><br><span class="line">  │   └─ drop 计数进入 Metrics.AddDrop()</span><br><span class="line">  │</span><br><span class="line">  ├─ [业务] Logic 调用 RPC Client</span><br><span class="line">  │   │</span><br><span class="line">  │   ├─ [Trace] UnaryTracingInterceptor (client)</span><br><span class="line">  │   │   └─ 从 ctx 提取 trace context → Inject 到 gRPC metadata</span><br><span class="line">  │   │   └─ 创建 Client Span，与 Server Span 构成父子关系</span><br><span class="line">  │   │</span><br><span class="line">  │   ├─ [RPC 调用到下游]</span><br><span class="line">  │   │   │</span><br><span class="line">  │   │   ├─ [Trace] UnaryTracingInterceptor (server) 在远端</span><br><span class="line">  │   │   │   └─ 从 gRPC metadata 提取 trace context</span><br><span class="line">  │   │   │   └─ 创建 Server Span，与 Client Span 构成父子关系</span><br><span class="line">  │   │   │</span><br><span class="line">  │   │   └─ [Log] 远端日志也带有相同的 trace ID</span><br><span class="line">  │   │</span><br><span class="line">  │   └─ [Metric] 记录 RPC 调用耗时到 metrics.Task</span><br><span class="line">  │</span><br><span class="line">  ├─ [Metric] 业务逻辑完成后，记录 REST 请求耗时到 metrics.Task</span><br><span class="line">  │</span><br><span class="line">  ├─ [Log] LogHandler 记录请求结束日志（含耗时、状态码）</span><br><span class="line">  │</span><br><span class="line">  └─ [Trace] Span.End() → 导出到后端</span><br></pre></td></tr></table></figure>
+<p><strong>日志是如何和 Trace 关联的？</strong> 通过 context。Trace 中间件将 trace context 注入到 HTTP 请求的 context 中，<code>logx.WithContext(ctx)</code> 自动从 context 中提取 trace ID 和 span ID。这意味着任何带 <code>WithContext</code> 的日志调用——不管是在中间件、logic 还是更深的调用栈——都会自动带上 trace 信息。</p>
+<p><strong>Metrics 是如何和 Trace 关联的？</strong> 它们不直接关联——Metrics 是聚合数据，不携带 trace ID。但它们通过相同的维度（接口名、方法名）可以间接对照：trace 中的一个慢请求的 span 耗时，在 metrics 的 p99 分位数中体现为其统计数据的一部分。</p>
+<p><strong>三者各自的出口不同，但数据源是同一份请求：</strong></p>
+<table>
+<thead>
+<tr>
+<th>支柱</th>
+<th>数据源</th>
+<th>出口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Logs</td>
+<td>中间件、Logic 中的 logx 调用</td>
+<td>本地文件（access/error/slow/stat.log）、可扩展 Writer</td>
+</tr>
+<tr>
+<td>Trace</td>
+<td>Trace 中间件/拦截器自动创建 Span</td>
+<td>OTLP/Zipkin/File Exporter → Jaeger/Grafana/Uptrace</td>
+</tr>
+<tr>
+<td>Metrics</td>
+<td>Metrics.Add(task), Prometheus metrics</td>
+<td>stat.log + RemoteWriter + Prometheus <code>/metrics</code> 端点</td>
+</tr>
+</tbody>
+</table>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>本文从&quot;保护机制生效后怎么知道发生了什么&quot;这个问题出发，梳理了 go-zero 的可观测性体系的各个组件。</p>
+<p><strong>日志系统（logx）</strong> 是整个体系的底座。三层架构——公共 API、richLogger 门面和 Writer 输出层——将&quot;业务调用日志&quot;和&quot;日志如何存储&quot;解耦。<code>WithContext(ctx)</code> 自动注入 trace 信息的设计，是日志与 trace 关联的最关键机制。异步写入、文件轮转、内容截断、敏感数据脱敏和限频写入是它作为生产级日志的核心竞争力。</p>
+<p><strong>链路追踪（trace）</strong> 通过 OpenTelemetry 实现了跨服务、跨协议的 trace 传播。W3C Trace-Context 协议在 HTTP 和 gRPC 之间无缝切换，<code>metadataSupplier</code> 是 gRPC metadata 和 OTEL TextMapCarrier 之间的适配器。Trace 中间件在最外层执行，保证所有后续中间件（包括 breaker 的拒绝和 shedding 的丢弃）都能被 span 记录。</p>
+<p><strong>统计指标（stat）</strong> 用分层最小堆算法高效计算分位数，同时提供 CPU 监控（cgroup 感知 + EMA 平滑），为降载器提供决策依据。<strong>Prometheus 指标（metric/prometheus）</strong> 则以&quot;不启用就不开销&quot;的全局开关为特色，零配置的开发体验和丰富的生产数据互不冲突。</p>
+<p><strong>辅助工具</strong>——健康检查、Dev Server 和 Pyroscope 持续 profiling——填补了可观测性的剩余空白。CPU 门控的自动 profiling 尤其务实：不开着浪费 CPU，但在 CPU 飙高时自动采样，既省资源又不丢失关键时刻的诊断数据。</p>
+<p>下一篇中，我们将从可观测性转向 go-zero 的并发工具箱——看 RollingWindow、TimingWheel、SingleFlight 等基础组件是如何支撑起上层的熔断器、降载器和限流器的。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/19/go-zero-10/" rel="next" title="go-zero 源码分析 10：熔断、降载与限流">
+      go-zero 源码分析 10：熔断、降载与限流 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%97%A5%E5%BF%97%E7%B3%BB%E7%BB%9F%E4%B8%89%E5%B1%82%E6%9E%B6%E6%9E%84%E4%B8%8E%E7%BB%93%E6%9E%84%E5%8C%96%E8%BE%93%E5%87%BA"><span class="nav-number">1.</span> <span class="nav-text"> 日志系统：三层架构与结构化输出</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%89%E5%B1%82%E6%9E%B6%E6%9E%84%E6%80%BB%E8%A7%88"><span class="nav-number">1.1.</span> <span class="nav-text"> 三层架构总览</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%AC%E5%85%B1-api%E4%B8%A4%E7%A7%8D%E4%BD%BF%E7%94%A8%E6%96%B9%E5%BC%8F"><span class="nav-number">1.2.</span> <span class="nav-text"> 公共 API：两种使用方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#richlogger%E9%97%A8%E9%9D%A2%E5%B1%82%E7%9A%84%E5%85%B3%E9%94%AE%E8%81%8C%E8%B4%A3"><span class="nav-number">1.3.</span> <span class="nav-text"> richLogger：门面层的关键职责</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#writer-%E5%B1%82%E8%BE%93%E5%87%BA%E5%88%86%E6%B5%81%E4%B8%8E%E6%A0%BC%E5%BC%8F%E5%8C%96"><span class="nav-number">1.4.</span> <span class="nav-text"> Writer 层：输出分流与格式化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E7%AE%A1%E9%81%93%E4%BB%8E%E5%AD%97%E6%AE%B5%E5%88%B0-json"><span class="nav-number">1.5.</span> <span class="nav-text"> 输出管道：从字段到 JSON</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rotatelogger%E5%BC%82%E6%AD%A5%E5%86%99%E5%85%A5%E4%B8%8E%E6%96%87%E4%BB%B6%E8%BD%AE%E8%BD%AC"><span class="nav-number">1.6.</span> <span class="nav-text"> RotateLogger：异步写入与文件轮转</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%99%90%E9%A2%91%E6%9C%BA%E5%88%B6%E9%98%B2%E6%AD%A2%E6%97%A5%E5%BF%97%E7%88%86%E7%82%B8"><span class="nav-number">1.7.</span> <span class="nav-text"> 限频机制：防止日志爆炸</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%93%BE%E8%B7%AF%E8%BF%BD%E8%B8%AAopentelemetry-%E7%9A%84%E9%9B%86%E6%88%90%E4%B8%8E%E4%BC%A0%E6%92%AD"><span class="nav-number">2.</span> <span class="nav-text"> 链路追踪：OpenTelemetry 的集成与传播</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%A8%E5%B1%80%E8%AE%BE%E5%AE%9A%E4%B8%80%E6%AC%A1%E5%88%9D%E5%A7%8B%E5%8C%96%E5%A4%84%E5%A4%84%E7%94%9F%E6%95%88"><span class="nav-number">2.1.</span> <span class="nav-text"> 全局设定：一次初始化，处处生效</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#w3c-trace-context-%E4%BC%A0%E6%92%AD"><span class="nav-number">2.2.</span> <span class="nav-text"> W3C Trace-Context 传播</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rest-%E4%BE%A7%E7%9A%84-trace-%E4%B8%AD%E9%97%B4%E4%BB%B6"><span class="nav-number">2.3.</span> <span class="nav-text"> REST 侧的 Trace 中间件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#grpc-%E4%BE%A7%E7%9A%84%E5%8F%8C%E5%90%91%E4%BC%A0%E6%92%AD"><span class="nav-number">2.4.</span> <span class="nav-text"> gRPC 侧的双向传播</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#rest-%E5%88%B0-rpc-%E7%9A%84%E5%AE%8C%E6%95%B4-trace-%E9%93%BE%E8%B7%AF"><span class="nav-number">2.5.</span> <span class="nav-text"> REST 到 RPC 的完整 Trace 链路</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%9F%E8%AE%A1%E6%8C%87%E6%A0%87cpu-%E6%84%9F%E7%9F%A5%E7%9A%84%E5%BB%B6%E8%BF%9F%E5%88%86%E4%BD%8D%E6%95%B0"><span class="nav-number">3.</span> <span class="nav-text"> 统计指标：CPU 感知的延迟分位数</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#task-%E6%94%B6%E9%9B%86%E4%B8%8E%E5%AE%9A%E6%97%B6%E8%81%9A%E5%90%88"><span class="nav-number">3.1.</span> <span class="nav-text"> Task 收集与定时聚合</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%B1%82-topk%E7%94%A8%E6%9C%80%E5%B0%8F%E5%A0%86%E8%AE%A1%E7%AE%97%E5%88%86%E4%BD%8D%E6%95%B0"><span class="nav-number">3.2.</span> <span class="nav-text"> 分层 topK：用最小堆计算分位数</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E5%8F%8C%E9%80%9A%E9%81%93stat-%E6%97%A5%E5%BF%97%E4%B8%8E-remotewriter"><span class="nav-number">3.3.</span> <span class="nav-text"> 输出双通道：Stat 日志与 RemoteWriter</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#cpu-%E7%9B%91%E6%8E%A7ema-%E5%B9%B3%E6%BB%91%E4%B8%8E-cgroup-%E6%84%9F%E7%9F%A5"><span class="nav-number">3.4.</span> <span class="nav-text"> CPU 监控：EMA 平滑与 cgroup 感知</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#prometheus-%E6%8C%87%E6%A0%87%E7%B1%BB%E5%9E%8B%E5%8C%85%E8%A3%85%E4%B8%8E%E5%BC%80%E5%85%B3%E6%8E%A7%E5%88%B6"><span class="nav-number">4.</span> <span class="nav-text"> Prometheus 指标：类型包装与开关控制</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%A8%E5%B1%80%E5%BC%80%E5%85%B3%E4%B8%8D%E5%90%AF%E7%94%A8%E5%B0%B1%E4%B8%8D%E5%BC%80%E9%94%80"><span class="nav-number">4.1.</span> <span class="nav-text"> 全局开关：不启用就不开销</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9B%9B%E7%B1%BB%E5%90%91%E9%87%8F%E7%9A%84%E7%BB%9F%E4%B8%80%E6%A8%A1%E5%BC%8F"><span class="nav-number">4.2.</span> <span class="nav-text"> 四类向量的统一模式</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E8%AF%8A%E6%96%AD%E5%B7%A5%E5%85%B7%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5-dev-server-%E4%B8%8E%E6%8C%81%E7%BB%AD-profiling"><span class="nav-number">5.</span> <span class="nav-text"> 运行时诊断工具：健康检查、Dev Server 与持续 Profiling</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E7%BB%84%E5%90%88%E6%8E%A2%E9%92%88%E6%A8%A1%E5%BC%8F"><span class="nav-number">5.1.</span> <span class="nav-text"> 健康检查：组合探针模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#dev-server%E4%B8%80%E4%B8%AA%E7%AB%AF%E5%8F%A3%E6%8F%90%E4%BE%9B%E4%B8%89%E7%A7%8D%E8%83%BD%E5%8A%9B"><span class="nav-number">5.2.</span> <span class="nav-text"> Dev Server：一个端口提供三种能力</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%81%E7%BB%AD-profilingcpu-%E9%97%A8%E6%8E%A7%E7%9A%84-pyroscope-%E9%9B%86%E6%88%90"><span class="nav-number">5.3.</span> <span class="nav-text"> 持续 Profiling：CPU 门控的 Pyroscope 集成</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89%E4%B8%AA-pillar-%E7%9A%84%E4%B8%B2%E8%81%94%E6%97%A5%E5%BF%97-trace-metrics-%E7%9A%84%E5%8D%8F%E5%90%8C"><span class="nav-number">6.</span> <span class="nav-text"> 三个 Pillar 的串联：日志、Trace、Metrics 的协同</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">288</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
