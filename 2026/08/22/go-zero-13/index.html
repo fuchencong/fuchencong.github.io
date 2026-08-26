@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="go-zero 的数据访问层由 core&#x2F;stores&#x2F; 下的六个子包构成——sqlx、redis、cache、sqlc、mon、monc。本文就沿着这条层次线索来阅读源码：先从底层的 sqlx 和 redis 入手，理解连接管理和监控机制；然后深入到 cache 层，拆解 Cache-Aside 模式及其三种防护策略；最后看 sqlc 和 monc 如何把数据库和缓存编织在一起。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="go-zero 源码分析 13： 数据访问与缓存一致性">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/08/22/go-zero-13/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="go-zero 的数据访问层由 core&#x2F;stores&#x2F; 下的六个子包构成——sqlx、redis、cache、sqlc、mon、monc。本文就沿着这条层次线索来阅读源码：先从底层的 sqlx 和 redis 入手，理解连接管理和监控机制；然后深入到 cache 层，拆解 Cache-Aside 模式及其三种防护策略；最后看 sqlc 和 monc 如何把数据库和缓存编织在一起。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-08-22T07:38:39.000Z">
+<meta property="article:modified_time" content="2026-08-26T07:39:31.373Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/22/go-zero-13/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>go-zero 源码分析 13： 数据访问与缓存一致性 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/08/22/go-zero-13/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          go-zero 源码分析 13： 数据访问与缓存一致性
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-08-22 15:38:39" itemprop="dateCreated datePublished" datetime="2026-08-22T15:38:39+08:00">2026-08-22</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>go-zero 的数据访问层由 <code>core/stores/</code> 下的六个子包构成——<code>sqlx</code>、<code>redis</code>、<code>cache</code>、<code>sqlc</code>、<code>mon</code>、<code>monc</code>。本文就沿着这条层次线索来阅读源码：先从底层的 <code>sqlx</code> 和 <code>redis</code> 入手，理解连接管理和监控机制；然后深入到 <code>cache</code> 层，拆解 Cache-Aside 模式及其三种防护策略；最后看 <code>sqlc</code> 和 <code>monc</code> 如何把数据库和缓存编织在一起。</p>
+<span id="more"></span>
+<p>上述这些模块不是独立的功能模块，而是<strong>分层叠加</strong>的关系：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">sqlc (Cached SQL Model)   monc (Cached Mongo Model)</span><br><span class="line">       ↓                          ↓</span><br><span class="line">   ┌──────────┐             ┌──────────┐</span><br><span class="line">   │  cache   │             │  cache   │</span><br><span class="line">   ├──────────┤             ├──────────┤</span><br><span class="line">   │  redis   │             │  mon     │</span><br><span class="line">   └──────────┘             └──────────┘</span><br><span class="line">       ↓                          ↓</span><br><span class="line">     sqlx                      mongo driver</span><br></pre></td></tr></table></figure>
+<p>底层提供最基础的数据库/Redis 连接、监控和容错能力，中间层 <code>cache</code> 实现缓存策略，最上层 <code>sqlc</code>/<code>monc</code> 将两者组合成带缓存的 Model。</p>
+<h2 id="底层连接管理sqlx-的-sqlconn-与熔断包裹"><a class="markdownIt-Anchor" href="#底层连接管理sqlx-的-sqlconn-与熔断包裹"></a> 底层连接管理：sqlx 的 SqlConn 与熔断包裹</h2>
+<h3 id="问题直接使用-databasesql-缺少什么"><a class="markdownIt-Anchor" href="#问题直接使用-databasesql-缺少什么"></a> 问题：直接使用 database/sql 缺少什么</h3>
+<p>标准库 <code>database/sql</code> 提供了连接池、预编译语句和事务支持，但要在生产环境中可靠地使用它，还需要：</p>
+<ul>
+<li><strong>连接复用</strong>：多个 handler 共享同一组连接，而不是各自调用 <code>sql.Open</code></li>
+<li><strong>熔断保护</strong>：数据库宕机时快速失败，而不是让每个请求都等待超时</li>
+<li><strong>慢查询监控</strong>：自动记录耗时超过阈值的 SQL，在排查故障时能快速定位</li>
+<li><strong>链路追踪</strong>：每次数据库调用生成 span，接入分布式追踪系统</li>
+<li><strong>读写分离</strong>：写操作走主库，读操作可配置走从库</li>
+<li><strong>自动映射</strong>：将 <code>sql.Rows</code> 扫描到带 <code>db</code> tag 的结构体，不用手写 <code>Scan</code></li>
+</ul>
+<p><code>sqlx</code> 包正是为此而生。它的核心入口是 <code>commonSqlConn</code>——一个封装了 <code>database/sql</code> 连接的生产级数据库客户端。</p>
+<h3 id="commonsqlconn-的结构设计"><a class="markdownIt-Anchor" href="#commonsqlconn-的结构设计"></a> commonSqlConn 的结构设计</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/sqlconn.go</span></span><br><span class="line"><span class="keyword">type</span> commonSqlConn <span class="keyword">struct</span> &#123;</span><br><span class="line">    connProv connProvider       <span class="comment">// 连接获取器（支持读写分离）</span></span><br><span class="line">    onError  <span class="function"><span class="keyword">func</span><span class="params">(context.Context, <span class="type">error</span>)</span></span>  <span class="comment">// 错误日志回调</span></span><br><span class="line">    beginTx  beginnable         <span class="comment">// 开启事务的函数</span></span><br><span class="line">    brk      breaker.Breaker    <span class="comment">// 熔断器</span></span><br><span class="line">    accept   breaker.Acceptable <span class="comment">// 自定义可接受错误判定</span></span><br><span class="line">    index    <span class="type">uint32</span>             <span class="comment">// 轮询策略的计数器</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> connProvider <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context)</span></span> (*sql.DB, <span class="type">error</span>)</span><br></pre></td></tr></table></figure>
+<p>这里有一个值得注意的设计：<code>connProv</code> 是一个<strong>函数</strong>，不是直接持有 <code>*sql.DB</code>。这个间接层的关键价值在于<strong>读写分离</strong>。当配置了从库（Replicas）时，<code>connProv</code> 会根据 context 中的标记决定返回主库还是从库连接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/sqlconn.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getConnProvider</span><span class="params">(sc *commonSqlConn, driverName, datasource, policy <span class="type">string</span>,</span></span></span><br><span class="line"><span class="params"><span class="function">    replicas []<span class="type">string</span>)</span></span> connProvider &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context)</span></span> (*sql.DB, <span class="type">error</span>) &#123;</span><br><span class="line">        replicaCount := <span class="built_in">len</span>(replicas)</span><br><span class="line">        <span class="keyword">if</span> replicaCount == <span class="number">0</span> || usePrimary(ctx) &#123;</span><br><span class="line">            <span class="keyword">return</span> getSqlConn(driverName, datasource)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// ... 轮询或随机选择从库</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>默认情况下所有请求都走主库（<code>usePrimary</code> 在 context 中无标记时返回 <code>true</code>）。如果需要将读流量打到从库，可以通过 <code>WithReadReplica(ctx)</code> 在调用前标记 context。</p>
+<h3 id="连接复用resourcemanager-的一层缓存"><a class="markdownIt-Anchor" href="#连接复用resourcemanager-的一层缓存"></a> 连接复用：ResourceManager 的一层缓存</h3>
+<p>数据库连接不是说每次请求都创建新的，但也不能全局只创建一个——不同的数据源（DSN）需要不同的连接池。go-zero 用 <code>ResourceManager</code>（上一篇文章讨论过的 SingleFlight 应用）来管理连接的生命周期：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/sqlmanager.go</span></span><br><span class="line"><span class="keyword">var</span> connManager = syncx.NewResourceManager()</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getCachedSqlConn</span><span class="params">(driverName, server <span class="type">string</span>)</span></span> (*sql.DB, <span class="type">error</span>) &#123;</span><br><span class="line">    val, err := connManager.GetResource(server, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (io.Closer, <span class="type">error</span>) &#123;</span><br><span class="line">        conn, err := newDBConnection(driverName, server)</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        <span class="keyword">return</span> conn, <span class="literal">nil</span></span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">return</span> val.(*sql.DB), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>同一个 DSN 的数据库连接只会创建一次，后续调用直接复用。<code>ResourceManager</code> 底层的 SingleFlight 保证了并发安全——多个 goroutine 同时请求同一 DSN 时，只有一个真正执行 <code>newDBConnection</code>。</p>
+<p>在 <code>newDBConnection</code> 中，go-zero 对连接池做了合理的默认设置：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/sqlmanager.go</span></span><br><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    maxIdleConns = <span class="number">64</span></span><br><span class="line">    maxOpenConns = <span class="number">64</span></span><br><span class="line">    maxLifetime  = time.Minute</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newDBConnection</span><span class="params">(driverName, datasource <span class="type">string</span>)</span></span> (*sql.DB, <span class="type">error</span>) &#123;</span><br><span class="line">    conn, err := sql.Open(driverName, datasource)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    conn.SetMaxIdleConns(maxIdleConns)</span><br><span class="line">    conn.SetMaxOpenConns(maxOpenConns)</span><br><span class="line">    conn.SetConnMaxLifetime(maxLifetime)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这些数值不是随意的：<code>maxOpenConns=64</code> 避免了连接数无限膨胀，<code>maxLifetime=1min</code> 让连接定期轮换，避免因网络波动导致的长连接僵死。</p>
+<h3 id="每次调用都走熔断器"><a class="markdownIt-Anchor" href="#每次调用都走熔断器"></a> 每次调用都走熔断器</h3>
+<p>理解连接管理后，我们来看实际执行 SQL 的流程。以 <code>ExecCtx</code> 为例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/sqlconn.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(db *commonSqlConn)</span></span> ExecCtx(ctx context.Context, q <span class="type">string</span>, args ...any) (</span><br><span class="line">    result sql.Result, err <span class="type">error</span>) &#123;</span><br><span class="line">    ctx, span := startSpan(ctx, <span class="string">&quot;Exec&quot;</span>)   <span class="comment">// ① 开启 trace span</span></span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        endSpan(span, err)</span><br><span class="line">    &#125;()</span><br><span class="line"></span><br><span class="line">    err = db.brk.DoWithAcceptableCtx(ctx, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;   <span class="comment">// ② 熔断器包裹</span></span><br><span class="line">        <span class="keyword">var</span> conn *sql.DB</span><br><span class="line">        conn, err = db.connProv(ctx)       <span class="comment">// ③ 获取连接（读写分离）</span></span><br><span class="line">        <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            db.onError(ctx, err)</span><br><span class="line">            <span class="keyword">return</span> err</span><br><span class="line">        &#125;</span><br><span class="line">        result, err = exec(ctx, conn, q, args...)   <span class="comment">// ④ 执行 + 慢查询日志</span></span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;, db.acceptable)                      <span class="comment">// ⑤ 可接受错误判定</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>整个执行流程经过了五层处理：</p>
+<ol>
+<li><strong>Trace span</strong>：每个 SQL 操作都生成一个名为 <code>sql</code> 的 span，携带方法名（Exec/QueryRow 等）作为属性</li>
+<li><strong>熔断器</strong>：通过 <code>brk.DoWithAcceptableCtx</code> 包裹。如果数据库连续返回不可接受的错误，熔断器打开，后续请求快速失败（返回 <code>ErrServiceUnavailable</code>）而不是继续等待</li>
+<li><strong>连接获取</strong>：<code>connProv</code> 根据 context 标记决定走主库还是从库</li>
+<li><strong>执行与慢查询日志</strong>：内部的 <code>exec</code>/<code>query</code> 函数使用 <code>realSqlGuard</code> 记录执行时间和 SQL 语句，超过慢阈值（默认 500ms）时输出 slow log</li>
+<li><strong>可接受错误判定</strong>：<code>sql.ErrNoRows</code>、<code>sql.ErrTxDone</code>、<code>context.Canceled</code> 等属于&quot;正常&quot;错误，不计入熔断器的失败统计</li>
+</ol>
+<p>查询操作（QueryRow/QueryRows）与 Exec 的结构几乎相同，区别在于 <code>queryRows</code> 内部额外处理了 “scan failed” 的场景——如果扫描失败，即使 SQL 执行成功，这次调用也不标记为可接受，而是更新熔断器状态。这背后的逻辑是：scan 失败通常意味着数据库返回了与预期结构不符的数据，这可能是一个值得熔断的信号。</p>
+<h3 id="结果映射从-rows-到-struct"><a class="markdownIt-Anchor" href="#结果映射从-rows-到-struct"></a> 结果映射：从 Rows 到 []Struct</h3>
+<p>一个经常被低估的痛点是从 <code>sql.Rows</code> 手动扫描字段。go-zero 提供了一套基于反射的自动映射机制，核心在 <code>unmarshalRow</code> 和 <code>unmarshalRows</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/orm.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">unmarshalRow</span><span class="params">(v any, scanner rowsScanner, strict <span class="type">bool</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    rv := reflect.ValueOf(v)</span><br><span class="line">    rve := rv.Elem()</span><br><span class="line">    <span class="keyword">switch</span> rte.Kind() &#123;</span><br><span class="line">    <span class="keyword">case</span> reflect.Int, reflect.String, ...:   <span class="comment">// 基本类型：直接 Scan</span></span><br><span class="line">        <span class="keyword">return</span> scanner.Scan(v)</span><br><span class="line">    <span class="keyword">case</span> reflect.Struct:</span><br><span class="line">        columns, _ := scanner.Columns()</span><br><span class="line">        values, _ := mapStructFieldsIntoSlice(rve, columns, strict)</span><br><span class="line">        <span class="keyword">return</span> scanner.Scan(values...)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>对于基本类型（int、string 等），直接 <code>Scan</code> 即可。对于结构体，<code>mapStructFieldsIntoSlice</code> 通过 <code>db</code> tag 建立字段与列名的映射，再按 <code>columns</code> 的顺序排列成一个 <code>[]any</code> 切片传给 <code>Scan</code>。</p>
+<p>“strict” 模式控制列数与字段数的匹配策略：strict 模式下，如果列数少于结构体字段数，返回错误；非 strict 模式下（即 <code>Partial</code> 后缀的方法），允许列数少于字段数，多余的字段保持零值。这在你只需要查询部分字段时非常有用。</p>
+<h3 id="事务与预编译语句"><a class="markdownIt-Anchor" href="#事务与预编译语句"></a> 事务与预编译语句</h3>
+<p>事务操作通过 <code>TransactCtx</code> 执行，它同样是熔断器包裹下的标准流程：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/tx.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">transactOnConn</span><span class="params">(ctx context.Context, conn *sql.DB, b beginnable,</span></span></span><br><span class="line"><span class="params"><span class="function">    fn <span class="keyword">func</span>(context.Context, Session)</span></span> <span class="type">error</span>) (err <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">var</span> tx trans</span><br><span class="line">    tx, err = b(conn)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123;</span><br><span class="line">        <span class="keyword">if</span> p := <span class="built_in">recover</span>(); p != <span class="literal">nil</span> &#123;      <span class="comment">// panic 恢复并回滚</span></span><br><span class="line">            <span class="comment">// ...</span></span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="comment">// 业务错误，回滚</span></span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            err = tx.Commit()              <span class="comment">// 正常提交</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;()</span><br><span class="line">    <span class="keyword">return</span> fn(ctx, tx)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个 <code>defer</code> 块是事务安全的核心：<strong>panic 一定回滚，错误一定回滚，只有正常返回才提交</strong>。没有什么特殊情况——这保证了事务的语义正确性。</p>
+<p>预编译语句（Prepare）返回一个 <code>statement</code> 结构，它实现了 <code>StmtSession</code> 接口，行为上与 <code>commonSqlConn</code> 平行——同样带熔断器和 trace span。不同的是它的 <code>accept</code> 判定不包含内部默认的可接受错误判定（因为 <code>sql.ErrNoRows</code> 等已在 statement 层面处理)。</p>
+<h3 id="bulkinserter周期执行器驱动批量插入"><a class="markdownIt-Anchor" href="#bulkinserter周期执行器驱动批量插入"></a> BulkInserter：周期执行器驱动批量插入</h3>
+<p>批量插入是一个独立的话题。如果每次都拼一条完整的 INSERT 语句，性能会很差。<code>BulkInserter</code> 的思路是用 <code>PeriodicalExecutor</code> 做批量聚合：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlx/bulkinserter.go</span></span><br><span class="line"><span class="keyword">type</span> BulkInserter <span class="keyword">struct</span> &#123;</span><br><span class="line">    executor *executors.PeriodicalExecutor   <span class="comment">// 每秒 flush 一次</span></span><br><span class="line">    inserter *dbInserter</span><br><span class="line">    stmt     bulkStmt</span><br><span class="line">    lock     sync.RWMutex</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每次 <code>Insert</code> 调用不直接执行 SQL，而是将 value 格式化后通过 <code>executor.Add(value)</code> 追加到内部列表。<code>PeriodicalExecutor</code> 每 1 秒（或累积到 1000 行）自动触发 <code>dbInserter.Execute</code>，将所有 value 拼成一条 SQL 执行：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">INSERT</span> <span class="keyword">INTO</span> users (name, email) <span class="keyword">VALUES</span> (?, ?), (?, ?), (?, ?) <span class="comment">-- 批量拼接</span></span><br></pre></td></tr></table></figure>
+<p>这意味着业务代码可以放心地在循环中逐行调用 <code>Insert</code>，框架自动完成批量拼装。如果你需要在批量插入前先做 update/delete 操作，<code>UpdateOrDelete</code> 方法会先 <code>Flush</code> 积压的插入再执行你的操作，保证执行顺序。</p>
+<p>到这里，<code>sqlx</code> 层的全景就清晰了：</p>
+<ul>
+<li><strong>连接管理</strong>：<code>ResourceManager</code> + SingleFlight 保证同 DSN 只创建一次连接池</li>
+<li><strong>读写分离</strong>：<code>connProv</code> 通过 context 标记决定目标数据库</li>
+<li><strong>熔断保护</strong>：每个 SQL 操作都经过 <code>breaker.DoWithAcceptableCtx</code></li>
+<li><strong>链路追踪</strong>：每个操作都生成 trace span</li>
+<li><strong>慢查询</strong>：超过 500ms 自动告警</li>
+<li><strong>结果映射</strong>：基于 <code>db</code> tag 的反射映射，支持 strict 和 partial 两种模式</li>
+<li><strong>事务安全</strong>：defer 块保证 commit/rollback 语义</li>
+<li><strong>批量插入</strong>：PeriodicalExecutor 自动聚合</li>
+</ul>
+<h2 id="redis-客户端与-sqlx-平行的设计哲学"><a class="markdownIt-Anchor" href="#redis-客户端与-sqlx-平行的设计哲学"></a> Redis 客户端：与 sqlx 平行的设计哲学</h2>
+<p>理解了 <code>sqlx</code> 后，再看 <code>redis</code> 包的实现就能发现清晰的设计对称性——同样的熔断器模式，同样的 hook 链设计，同样的连接管理方式。</p>
+<h3 id="redis-结构与连接管理"><a class="markdownIt-Anchor" href="#redis-结构与连接管理"></a> Redis 结构与连接管理</h3>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/redis/redis.go</span></span><br><span class="line"><span class="keyword">type</span> Redis <span class="keyword">struct</span> &#123;</span><br><span class="line">    Addr               <span class="type">string</span></span><br><span class="line">    Type               <span class="type">string</span>      <span class="comment">// &quot;node&quot; 或 &quot;cluster&quot;</span></span><br><span class="line">    User               <span class="type">string</span></span><br><span class="line">    Pass               <span class="type">string</span></span><br><span class="line">    protocol           <span class="type">int</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    brk                breaker.Breaker</span><br><span class="line">    hooks              []red.Hook</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>与 <code>sqlx</code> 一样，每个 <code>Redis</code> 实例持有自己的熔断器。连接获取同样经过 <code>ResourceManager</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/redis/redisclientmanager.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">getClient</span><span class="params">(r *Redis)</span></span> (*red.Client, <span class="type">error</span>) &#123;</span><br><span class="line">    val, err := clientManager.GetResource(r.Addr, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (io.Closer, <span class="type">error</span>) &#123;</span><br><span class="line">        store := red.NewClient(&amp;red.Options&#123;</span><br><span class="line">            Addr:       r.Addr,</span><br><span class="line">            PoolSize:   <span class="number">10</span> * runtime.GOMAXPROCS(<span class="number">0</span>),   <span class="comment">// 连接池大小与 CPU 核数挂钩</span></span><br><span class="line">            MaxRetries: <span class="number">3</span>,</span><br><span class="line">            <span class="comment">// ...</span></span><br><span class="line">        &#125;)</span><br><span class="line">        hooks := <span class="built_in">append</span>([]red.Hook&#123;defaultDurationHook, breakerHook&#123;brk: r.brk&#125;&#125;, r.hooks...)</span><br><span class="line">        <span class="keyword">for</span> _, hook := <span class="keyword">range</span> hooks &#123;</span><br><span class="line">            store.AddHook(hook)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> store, <span class="literal">nil</span></span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意两个默认 hook：</p>
+<ul>
+<li><strong><code>defaultDurationHook</code></strong>：记录每次 Redis 操作的耗时，类似 <code>sqlx</code> 的慢查询日志</li>
+<li><strong><code>breakerHook</code></strong>：通过 <code>ProcessHook</code> 和 <code>ProcessPipelineHook</code> 将每次 Redis 命令调用用熔断器包裹起来</li>
+</ul>
+<p><code>breakerHook</code> 的实现很精炼——它在 go-redis 的 hook 体系中介入，对每个命令调用执行 <code>brk.DoWithAcceptableCtx</code>。值得注意的是 <code>ignoreCmds</code>——<code>blpop</code> 等阻塞命令会被跳过熔断检查，因为它们长时间持有连接是预期行为，不应被判定为故障：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/redis/breakerhook.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(h breakerHook)</span></span> ProcessHook(next red.ProcessHook) red.ProcessHook &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="function"><span class="keyword">func</span><span class="params">(ctx context.Context, cmd red.Cmder)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> _, ok := ignoreCmds[cmd.Name()]; ok &#123;</span><br><span class="line">            <span class="keyword">return</span> next(ctx, cmd)</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> h.brk.DoWithAcceptableCtx(ctx, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> next(ctx, cmd)</span><br><span class="line">        &#125;, acceptable)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="阻塞操作与连接池隔离"><a class="markdownIt-Anchor" href="#阻塞操作与连接池隔离"></a> 阻塞操作与连接池隔离</h3>
+<p>Redis 的阻塞命令（<code>BLPOP</code>、<code>XREADGROUP</code> 等）有一个特殊问题：它们会长时间占用一个连接，如果使用共享连接池，可能耗尽所有可用连接。go-zero 的解决方案是 <code>CreateBlockingNode</code>——为阻塞操作创建一个独立的、PoolSize=1 的专用客户端：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/redis/redisblockingnode.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">CreateBlockingNode</span><span class="params">(r *Redis)</span></span> (ClosableNode, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    client := red.NewClient(&amp;red.Options&#123;</span><br><span class="line">        Addr:        r.Addr,</span><br><span class="line">        PoolSize:    <span class="number">1</span>,     <span class="comment">// 专用连接，不共享池</span></span><br><span class="line">        MinIdleConns: <span class="number">1</span>,</span><br><span class="line">        ReadTimeout: readWriteTimeout + blockingQueryTimeout,</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="keyword">return</span> &amp;clientBridge&#123;client&#125;, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>所有阻塞操作的 API 都要求显式传入这个 <code>RedisNode</code> 参数（如 <code>Blpop(node RedisNode, key string)</code>），从类型系统层面保证了阻塞操作不会影响普通操作。</p>
+<h3 id="分布式锁lua-脚本保证原子性"><a class="markdownIt-Anchor" href="#分布式锁lua-脚本保证原子性"></a> 分布式锁：Lua 脚本保证原子性</h3>
+<p>在高并发场景下，有时需要跨进程的互斥。go-zero 的 <code>RedisLock</code> 使用两个 Lua 脚本来保证加锁和释放的原子性：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- lockscript.lua: 可重入加锁</span></span><br><span class="line"><span class="keyword">if</span> redis.call(<span class="string">&quot;GET&quot;</span>, KEYS[<span class="number">1</span>]) == ARGV[<span class="number">1</span>] <span class="keyword">then</span></span><br><span class="line">    redis.call(<span class="string">&quot;SET&quot;</span>, KEYS[<span class="number">1</span>], ARGV[<span class="number">1</span>], <span class="string">&quot;PX&quot;</span>, ARGV[<span class="number">2</span>])</span><br><span class="line">    <span class="keyword">return</span> <span class="string">&quot;OK&quot;</span></span><br><span class="line"><span class="keyword">else</span></span><br><span class="line">    <span class="keyword">return</span> redis.call(<span class="string">&quot;SET&quot;</span>, KEYS[<span class="number">1</span>], ARGV[<span class="number">1</span>], <span class="string">&quot;NX&quot;</span>, <span class="string">&quot;PX&quot;</span>, ARGV[<span class="number">2</span>])</span><br><span class="line"><span class="keyword">end</span></span><br></pre></td></tr></table></figure>
+<p>这段脚本实现了<strong>可重入锁</strong>：如果持有锁的是自己，就刷新过期时间（续期）；如果不是自己，则尝试用 <code>NX</code> 获取。对应地，释放锁也需要 Lua 保证&quot;只释放自己的锁&quot;：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">-- delscript.lua</span></span><br><span class="line"><span class="keyword">if</span> redis.call(<span class="string">&quot;GET&quot;</span>, KEYS[<span class="number">1</span>]) == ARGV[<span class="number">1</span>] <span class="keyword">then</span></span><br><span class="line">    <span class="keyword">return</span> redis.call(<span class="string">&quot;DEL&quot;</span>, KEYS[<span class="number">1</span>])</span><br><span class="line"><span class="keyword">else</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line"><span class="keyword">end</span></span><br></pre></td></tr></table></figure>
+<p>每个锁实例内部有一个随机生成的 <code>id</code>，只有 value 匹配时才执行删除，防止误删其他持有者的锁。锁的过期时间通过 <code>SetExpire(seconds)</code> 设定，使用 <code>atomic</code> 保证并发安全。</p>
+<h3 id="脚本缓存"><a class="markdownIt-Anchor" href="#脚本缓存"></a> 脚本缓存</h3>
+<p>频繁执行 <code>EVAL</code> 会有性能开销，因为每次都要传输完整的 Lua 脚本。更好的方式是先用 <code>SCRIPT LOAD</code> 将脚本缓存到 Redis，之后用 <code>EVALSHA</code> 通过 SHA 摘要调用。go-zero 的 <code>ScriptCache</code> 就是为此准备的——它是一个线程安全的 script → SHA 映射缓存。</p>
+<h2 id="缓存层cache-接口与三种防护策略"><a class="markdownIt-Anchor" href="#缓存层cache-接口与三种防护策略"></a> 缓存层：Cache 接口与三种防护策略</h2>
+<p>有了 <code>sqlx</code> 和 <code>redis</code> 做地基，我们就可以构建缓存层了。go-zero 的缓存设计围绕一个核心接口展开：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cache.go</span></span><br><span class="line"><span class="keyword">type</span> Cache <span class="keyword">interface</span> &#123;</span><br><span class="line">    Del(keys ...<span class="type">string</span>) <span class="type">error</span></span><br><span class="line">    Get(key <span class="type">string</span>, val any) <span class="type">error</span></span><br><span class="line">    Set(key <span class="type">string</span>, val any) <span class="type">error</span></span><br><span class="line">    SetWithExpire(key <span class="type">string</span>, val any, expire time.Duration) <span class="type">error</span></span><br><span class="line">    Take(val any, key <span class="type">string</span>, query <span class="function"><span class="keyword">func</span><span class="params">(val any)</span></span> <span class="type">error</span>) <span class="type">error</span></span><br><span class="line">    TakeWithExpire(val any, key <span class="type">string</span>, query <span class="function"><span class="keyword">func</span><span class="params">(val any, expire time.Duration)</span></span> <span class="type">error</span>) <span class="type">error</span></span><br><span class="line">    IsNotFound(err <span class="type">error</span>) <span class="type">bool</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中 <code>Take</code> 是缓存策略的实现核心——它封装了<strong>Cache-Aside</strong> 模式：先查缓存，未命中再查数据库，结果回写缓存。它的两个变体 <code>TakeCtx</code> 和 <code>TakeWithExpire</code> 分别增加了 context 支持和自定义过期时间。</p>
+<h3 id="cachenode单节点缓存的完整实现"><a class="markdownIt-Anchor" href="#cachenode单节点缓存的完整实现"></a> cacheNode：单节点缓存的完整实现</h3>
+<p><code>cacheNode</code> 是 <code>Cache</code> 接口的核心实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cachenode.go</span></span><br><span class="line"><span class="keyword">type</span> cacheNode <span class="keyword">struct</span> &#123;</span><br><span class="line">    rds            *redis.Redis</span><br><span class="line">    expiry         time.Duration          <span class="comment">// 正常缓存的过期时间</span></span><br><span class="line">    notFoundExpiry time.Duration          <span class="comment">// &quot;不存在&quot;标记的过期时间</span></span><br><span class="line">    barrier        syncx.SingleFlight     <span class="comment">// 防击穿</span></span><br><span class="line">    r              *rand.Rand</span><br><span class="line">    lock           *sync.Mutex</span><br><span class="line">    unstableExpiry mathx.Unstable         <span class="comment">// 随机过期偏移</span></span><br><span class="line">    stat           *Stat                  <span class="comment">// 缓存命中率统计</span></span><br><span class="line">    errNotFound    <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里组合了我们之前介绍过的两个工具——<code>SingleFlight</code> 用于防击穿，<code>Unstable</code> 用于随机过期防雪崩。<code>Stat</code> 则记录缓存总请求、命中和未命中次数。</p>
+<h3 id="take一次缓存读取的完整流程"><a class="markdownIt-Anchor" href="#take一次缓存读取的完整流程"></a> Take：一次缓存读取的完整流程</h3>
+<p><code>doTake</code> 方法是整个缓存层的最高潮：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cachenode.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c cacheNode)</span></span> doTake(ctx context.Context, v any, key <span class="type">string</span>,</span><br><span class="line">    query <span class="function"><span class="keyword">func</span><span class="params">(v any)</span></span> <span class="type">error</span>, cacheVal <span class="function"><span class="keyword">func</span><span class="params">(v any)</span></span> <span class="type">error</span>) <span class="type">error</span> &#123;</span><br><span class="line">    val, fresh, err := c.barrier.DoEx(key, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (any, <span class="type">error</span>) &#123;</span><br><span class="line">        <span class="comment">// 第一次查缓存</span></span><br><span class="line">        <span class="keyword">if</span> err := c.doGetCache(ctx, key, v); err != <span class="literal">nil</span> &#123;</span><br><span class="line">            <span class="keyword">if</span> errors.Is(err, errPlaceholder) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">nil</span>, c.errNotFound       <span class="comment">// 占位值 → 返回&quot;不存在&quot;</span></span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span> !errors.Is(err, c.errNotFound) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">nil</span>, err                 <span class="comment">// 缓存系统错误 → 快速失败</span></span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">// 缓存 miss → 回源查数据库</span></span><br><span class="line">            <span class="keyword">if</span> err = query(v); errors.Is(err, c.errNotFound) &#123;</span><br><span class="line">                <span class="comment">// 数据库也没有 → 设置占位值防穿透</span></span><br><span class="line">                <span class="keyword">if</span> err = c.setCacheWithNotFound(ctx, key); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                    logger.Error(err)</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">nil</span>, c.errNotFound</span><br><span class="line">            &#125; <span class="keyword">else</span> <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">                c.stat.IncrementDbFails()</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            <span class="comment">// 数据库有 → 写入缓存</span></span><br><span class="line">            <span class="keyword">if</span> err = cacheVal(v); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                logger.Error(err)</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> jsonx.Marshal(v)</span><br><span class="line">    &#125;)</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">if</span> fresh &#123; <span class="keyword">return</span> <span class="literal">nil</span> &#125;   <span class="comment">// 我是第一个执行 query 的，不用再反序列化</span></span><br><span class="line">    <span class="comment">// 复用了 barrier 的结果，需要 Unmarshal</span></span><br><span class="line">    <span class="keyword">return</span> jsonx.Unmarshal(val.([]<span class="type">byte</span>), v)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个函数内部的决策树值得我们一步步解读：</p>
+<p><strong>第一步：SingleFlight 包裹</strong>。多个 goroutine 同时 <code>Take</code> 同一个 key 时，只有第一个真正进入查询逻辑，其余的等待它的结果。这直接解决了<strong>缓存击穿</strong>——热点数据过期瞬间，不会有一堆请求同时打到数据库。</p>
+<p><strong>第二步：查缓存</strong>。<code>doGetCache</code> 返回三种可能：</p>
+<ul>
+<li>正常数据：直接反序列化返回（命中）</li>
+<li>占位符 <code>*</code>：说明之前回源过，数据库也没有，返回 <code>errNotFound</code></li>
+<li>缓存 miss：<code>errNotFound</code>，进入回源逻辑</li>
+<li>系统错误：比如 Redis 挂了，这里直接返回错误。（注意注释中的关键决策：<strong>不向下游穿透</strong>——数据库可能已经压力很大了，不能再用缓存层的错误去增加它的负担）</li>
+</ul>
+<p><strong>第三步：回源</strong>。调用 <code>query</code> 函数（由上层 <code>sqlc</code>/<code>monc</code> 传入，实际执行数据库查询）：</p>
+<ul>
+<li>数据库也查不到 → 设置占位值（<strong>防穿透</strong>）</li>
+<li>数据库出错 → 记录 <code>DbFails</code> 指标，返回错误</li>
+<li>数据库有结果 → 写入缓存</li>
+</ul>
+<p><strong>第四步：共享结果处理</strong>。通过 <code>DoEx</code> 的 <code>fresh</code> 标志判断：</p>
+<ul>
+<li>fresh=true：当前 goroutine 是实际执行者，数据已在 <code>query</code> 中填入 <code>v</code>，直接返回</li>
+<li>fresh=false：复用了他人的结果，需要从 JSON 反序列化到 <code>v</code></li>
+</ul>
+<h3 id="三种防护策略的实现"><a class="markdownIt-Anchor" href="#三种防护策略的实现"></a> 三种防护策略的实现</h3>
+<p>缓存三大经典问题——穿透、击穿、雪崩——在 <code>doTake</code> 实现中都有对应的防护策略：</p>
+<ul>
+<li>
+<p><strong>防穿透</strong>：当数据库也查询不到数据时，调用 <code>setCacheWithNotFound</code> 设置一个占位符（<code>*</code>），过期时间使用 <code>notFoundExpiry</code>（默认 1 分钟）。下次相同 key 的请求命中占位符，直接返回 not found，不再打到数据库。占位符使用 <code>SetnxEx</code>（SETNX + expire），过期时间同样经过随机抖动。</p>
+</li>
+<li>
+<p><strong>防击穿</strong>：<code>barrier.DoEx</code> 在 SingleFlight 层面保证同一 key 只有一个 goroutine 执行 <code>query</code>。这与 <code>doGetCache</code> 构成&quot;双重检查&quot;：第一个进入 barrier 的 goroutine 再次检查缓存，避免在前一个 Take 调用刚写完缓存后，当前调用又去重复回源。</p>
+</li>
+<li>
+<p><strong>防雪崩</strong>：每次设置缓存时，过期时间都会经过 <code>unstableExpiry.AroundDuration(expire)</code> 处理，给过期时间增加 ±5% 的随机抖动：</p>
+</li>
+</ul>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cachenode.go</span></span><br><span class="line"><span class="keyword">const</span> expiryDeviation = <span class="number">0.05</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c cacheNode)</span></span> aroundDuration(duration time.Duration) time.Duration &#123;</span><br><span class="line">    <span class="keyword">return</span> c.unstableExpiry.AroundDuration(duration)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c cacheNode)</span></span> SetCtx(ctx context.Context, key <span class="type">string</span>, val any) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> c.SetWithExpireCtx(ctx, key, val, c.aroundDuration(c.expiry))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这意味着 1000 个缓存条目不会在同一秒内集中过期——±5% 的抖动将它们分散在一段时间窗口内，避免回源请求的瞬时峰值。</p>
+<h3 id="删除失败的异步重试"><a class="markdownIt-Anchor" href="#删除失败的异步重试"></a> 删除失败的异步重试</h3>
+<p>缓存删除是一个容易被忽视的坑。更新数据库后，如果 Redis 删除命令因为网络抖动而失败，缓存中残留的就是旧数据。<code>cacheNode.Del</code> 的做法很务实：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cachenode.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c cacheNode)</span></span> DelCtx(ctx context.Context, keys ...<span class="type">string</span>) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(keys) &gt; <span class="number">1</span> &amp;&amp; c.rds.Type == redis.ClusterType &#123;</span><br><span class="line">        <span class="keyword">for</span> _, key := <span class="keyword">range</span> keys &#123;</span><br><span class="line">            <span class="keyword">if</span> _, err := c.rds.DelCtx(ctx, key); err != <span class="literal">nil</span> &#123;</span><br><span class="line">                logger.Errorf(<span class="string">&quot;failed to clear cache with key: %q, error: %v&quot;</span>, key, err)</span><br><span class="line">                c.asyncRetryDelCache(key)   <span class="comment">// 异步重试</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> _, err := c.rds.DelCtx(ctx, keys...); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        c.asyncRetryDelCache(keys...)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>   <span class="comment">// 注意：Del 不向上返回错误</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>有两个设计细节：</p>
+<ol>
+<li><strong>集群模式下逐个删除</strong>：Redis Cluster 的 <code>DEL</code> 命令不支持跨 slot 的多 key 删除（会返回 CROSSSLOT 错误），所以集群模式下改为逐个删除</li>
+<li><strong>异步重试</strong>：通过 <code>AddCleanTask</code> 将失败的删除操作加入时间轮做重试。重试间隔采用指数回退——1 秒 → 5 秒 → 1 分钟 → 5 分钟 → 1 小时：</li>
+</ol>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cleaner.go</span></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">nextDelay</span><span class="params">(delay time.Duration)</span></span> (time.Duration, <span class="type">bool</span>) &#123;</span><br><span class="line">    <span class="keyword">switch</span> delay &#123;</span><br><span class="line">    <span class="keyword">case</span> time.Second:      <span class="keyword">return</span> time.Second * <span class="number">5</span>, <span class="literal">true</span></span><br><span class="line">    <span class="keyword">case</span> time.Second * <span class="number">5</span>:  <span class="keyword">return</span> time.Minute, <span class="literal">true</span></span><br><span class="line">    <span class="keyword">case</span> time.Minute:      <span class="keyword">return</span> time.Minute * <span class="number">5</span>, <span class="literal">true</span></span><br><span class="line">    <span class="keyword">case</span> time.Minute * <span class="number">5</span>:  <span class="keyword">return</span> time.Hour, <span class="literal">true</span></span><br><span class="line">    <span class="keyword">default</span>:               <span class="keyword">return</span> <span class="number">0</span>, <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>重试到达上限后放弃，输出错误日志并上报统计系统。</p>
+<h3 id="缓存集群一致性哈希分发"><a class="markdownIt-Anchor" href="#缓存集群一致性哈希分发"></a> 缓存集群：一致性哈希分发</h3>
+<p>当缓存数据量超过单机 Redis 容量时，需要水平扩展。<code>cacheCluster</code> 通过一致性哈希将 key 路由到不同的节点：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/cache/cache.go</span></span><br><span class="line"><span class="keyword">type</span> cacheCluster <span class="keyword">struct</span> &#123;</span><br><span class="line">    dispatcher  *hash.ConsistentHash     <span class="comment">// 一致性哈希环</span></span><br><span class="line">    errNotFound <span class="type">error</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(c ClusterConf, barrier syncx.SingleFlight, st *Stat, errNotFound <span class="type">error</span>,</span></span></span><br><span class="line"><span class="params"><span class="function">    opts ...Option)</span></span> Cache &#123;</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(c) == <span class="number">1</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> NewNode(...)    <span class="comment">// 单节点直接用 cacheNode</span></span><br><span class="line">    &#125;</span><br><span class="line">    dispatcher := hash.NewConsistentHash()</span><br><span class="line">    <span class="keyword">for</span> _, node := <span class="keyword">range</span> c &#123;</span><br><span class="line">        cn := NewNode(...)</span><br><span class="line">        dispatcher.AddWithWeight(cn, node.Weight)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> cacheCluster&#123;dispatcher: dispatcher, errNotFound: errNotFound&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>配置了多节点时，内部为每个节点创建独立的 <code>cacheNode</code>，通过一致性哈希分发 key。每个节点有自己的 <code>SingleFlight</code>（通过参数共享同一个 <code>barrier</code>，避免跨节点的冗余回源）和 <code>Stat</code>。</p>
+<p>注意核心决策：所有 <code>cacheNode</code> 共享同一个 <code>SingleFlight</code> 实例——这意味着即使不同的 key 路由到不同的节点，只要 key 相同，SingleFlight 就能起作用。相比之下，如果每个节点各自创建自己的 SingleFlight，同一个 key 的两个请求落到不同节点时就会各自回源一次。</p>
+<h2 id="整合cachedconn-与缓存模型的生成"><a class="markdownIt-Anchor" href="#整合cachedconn-与缓存模型的生成"></a> 整合：CachedConn 与缓存模型的生成</h2>
+<p>理解了底层的数据库连接和缓存策略后，<code>sqlc.CachedConn</code> 的实现就变得透明了。它将 <code>sqlx.SqlConn</code> 和 <code>cache.Cache</code> 组合在一起，为上层提供带缓存的数据库操作：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlc/cachedsql.go</span></span><br><span class="line"><span class="keyword">type</span> CachedConn <span class="keyword">struct</span> &#123;</span><br><span class="line">    db    sqlx.SqlConn</span><br><span class="line">    cache cache.Cache</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">var</span> singleFlights = syncx.NewSingleFlight()  <span class="comment">// 整个进程中所有 CachedConn 共享</span></span><br><span class="line"><span class="keyword">var</span> stats         = cache.NewStat(<span class="string">&quot;sqlc&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>这里有两点耐人寻味的设计：</p>
+<ul>
+<li><strong>共享 SingleFlight</strong>：所有 <code>CachedConn</code> 共享同一个 <code>singleFlights</code> 实例。这很重要——假设你有两个数据库连接，都缓存相同的 user 表，如果它们各用自己的 SingleFlight，高并发时同一个 key 还是会回源两次。共享的 <code>singleFlights</code> 解决了这个问题。</li>
+<li><strong>共享统计</strong>：<code>stats</code> 也是全局共享的，方便统一监控所有缓存命中率。</li>
+</ul>
+<h3 id="查询与缓存的协作模式"><a class="markdownIt-Anchor" href="#查询与缓存的协作模式"></a> 查询与缓存的协作模式</h3>
+<p><code>CachedConn.QueryRow</code> 是最经典的使用方式——缓存优先，miss 则查询数据库：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(cc CachedConn)</span></span> QueryRowCtx(ctx context.Context, v any, key <span class="type">string</span>,</span><br><span class="line">    query QueryCtxFn) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> cc.cache.TakeCtx(ctx, v, key, <span class="function"><span class="keyword">func</span><span class="params">(v any)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> query(ctx, cc.db, v)    <span class="comment">// 缓存 miss → 执行数据库查询</span></span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>写操作的缓存处理是 Cache-Aside 的标准做法——<strong>先更新数据库，成功后删除缓存</strong>（即&quot;写后删除&quot;）：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(cc CachedConn)</span></span> ExecCtx(ctx context.Context, exec ExecCtxFn, keys ...<span class="type">string</span>) (</span><br><span class="line">    sql.Result, <span class="type">error</span>) &#123;</span><br><span class="line">    res, err := exec(ctx, cc.db)        <span class="comment">// 先执行写操作</span></span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> res, cc.DelCacheCtx(ctx, keys...)  <span class="comment">// 成功后删除缓存</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有一个微妙的顺序问题：为什么不先删缓存再写数据库？因为&quot;先删缓存&quot;会引入一个不一致窗口——在删缓存和写数据库之间，其他请求查到旧数据并写入缓存，导致后续请求读到旧数据。而&quot;先写数据库再删缓存&quot;的不一致窗口更小：在写数据库和删缓存之间，其他请求读到的是旧缓存——但一旦删除完成，下次请求就会从数据库中读到新数据。两者的不一致窗口是不可消除的，但&quot;写后删除&quot;的窗口通常更短。</p>
+<p>此外，<code>CachedConn</code> 还提供了 <code>*NoCache</code> 和 <code>*PartialNoCache</code> 系列方法，用于需要跳过缓存或只查询部分字段的场景——这些方法直接透传到 <code>sqlx</code> 层，不经过 <code>cache.Take</code>。</p>
+<h3 id="索引缓存queryrowindex-的两阶段回源"><a class="markdownIt-Anchor" href="#索引缓存queryrowindex-的两阶段回源"></a> 索引缓存：QueryRowIndex 的两阶段回源</h3>
+<p>有时候查询条件不是主键而是唯一索引（比如通过邮箱查用户）。<code>QueryRowIndex</code> 处理这种场景：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/sqlc/cachedsql.go</span></span><br><span class="line"><span class="keyword">const</span> cacheSafeGapBetweenIndexAndPrimary = time.Second * <span class="number">5</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(cc CachedConn)</span></span> QueryRowIndexCtx(ctx context.Context, v any, key <span class="type">string</span>,</span><br><span class="line">    keyer <span class="function"><span class="keyword">func</span><span class="params">(primary any)</span></span> <span class="type">string</span>,</span><br><span class="line">    indexQuery IndexQueryCtxFn,</span><br><span class="line">    primaryQuery PrimaryQueryCtxFn) <span class="type">error</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">var</span> primaryKey any</span><br><span class="line">    <span class="keyword">var</span> found <span class="type">bool</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第一阶段：通过索引查询获取主键值</span></span><br><span class="line">    <span class="keyword">if</span> err := cc.cache.TakeWithExpireCtx(ctx, &amp;primaryKey, key,</span><br><span class="line">        <span class="function"><span class="keyword">func</span><span class="params">(val any, expire time.Duration)</span></span> (err <span class="type">error</span>) &#123;</span><br><span class="line">            primaryKey, err = indexQuery(ctx, cc.db, v)</span><br><span class="line">            <span class="keyword">if</span> err != <span class="literal">nil</span> &#123; <span class="keyword">return</span> &#125;</span><br><span class="line">            found = <span class="literal">true</span></span><br><span class="line">            <span class="comment">// 将主键到实体的映射写入缓存（过期时间比索引缓存稍长）</span></span><br><span class="line">            <span class="keyword">return</span> cc.cache.SetWithExpireCtx(ctx, keyer(primaryKey), v,</span><br><span class="line">                expire+cacheSafeGapBetweenIndexAndPrimary)</span><br><span class="line">        &#125;); err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> found &#123; <span class="keyword">return</span> <span class="literal">nil</span> &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 第二阶段：通过主键缓存获取实体</span></span><br><span class="line">    <span class="keyword">return</span> cc.cache.TakeCtx(ctx, v, keyer(primaryKey), <span class="function"><span class="keyword">func</span><span class="params">(v any)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> primaryQuery(ctx, cc.db, v, primaryKey)</span><br><span class="line">    &#125;)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个方法做了两次 <code>Take</code>：</p>
+<ol>
+<li>先通过索引 key 查缓存，如果 miss 则用 <code>indexQuery</code> 从数据库查到主键值，同时将主键值缓存到索引 key 中，并将实体缓存到主键 key 中</li>
+<li>然后通过主键 key 查缓存，如果 miss 则用 <code>primaryQuery</code> 从数据库查实体</li>
+</ol>
+<p>注意 <code>cacheSafeGapBetweenIndexAndPrimary = 5s</code>：索引缓存的过期时间比主键缓存早 5 秒。这保证了当索引缓存过期时，主键缓存还没有过期——索引 key miss 后调用 <code>indexQuery</code> 可以拿到主键值，然后直接命中原有的主键缓存，避免了额外的数据查询。</p>
+<h3 id="事务中的缓存为什么不要用缓存"><a class="markdownIt-Anchor" href="#事务中的缓存为什么不要用缓存"></a> 事务中的缓存：为什么不要用缓存</h3>
+<p><code>CachedConn.Transact</code> 直接透传到 <code>sqlx</code> 层，不涉及缓存：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(cc CachedConn)</span></span> TransactCtx(ctx context.Context,</span><br><span class="line">    fn <span class="function"><span class="keyword">func</span><span class="params">(context.Context, sqlx.Session)</span></span> <span class="type">error</span>) <span class="type">error</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> cc.db.TransactCtx(ctx, fn)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>函数内通过 <code>WithSession</code> 可以获取一个绑定事务的 <code>CachedConn</code>，但注释明确警告：<strong>不建议在事务中使用缓存</strong>。原因是事务中可能读到未提交的数据——如果把未提交的数据写入缓存，当事务回滚时，缓存中的就是脏数据。</p>
+<h2 id="mongodb对称设计的装饰器模式"><a class="markdownIt-Anchor" href="#mongodb对称设计的装饰器模式"></a> MongoDB：对称设计的装饰器模式</h2>
+<p><code>mon</code> 和 <code>monc</code> 包的设计与 <code>sqlx</code> 和 <code>sqlc</code> 几乎是对称的。<code>mon.Collection</code> 接口定义了所有 MongoDB 操作方法，<code>decoratedCollection</code> 通过装饰器模式为每个方法加上熔断、trace span 和慢查询日志：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/mon/collection.go</span></span><br><span class="line"><span class="keyword">type</span> decoratedCollection <span class="keyword">struct</span> &#123;</span><br><span class="line">    Collection monCollection    <span class="comment">// 原始的 mongo.Collection</span></span><br><span class="line">    name       <span class="type">string</span></span><br><span class="line">    brk        breaker.Breaker</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(c *decoratedCollection)</span></span> FindOne(ctx context.Context, filter any,</span><br><span class="line">    opts ...options.Lister[options.FindOneOptions]) (res *mongo.SingleResult, err <span class="type">error</span>) &#123;</span><br><span class="line">    ctx, span := startSpan(ctx, findOne)</span><br><span class="line">    <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; endSpan(span, err) &#125;()</span><br><span class="line"></span><br><span class="line">    err = c.brk.DoWithAcceptableCtx(ctx, <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        startTime := timex.Now()</span><br><span class="line">        <span class="keyword">defer</span> <span class="function"><span class="keyword">func</span><span class="params">()</span></span> &#123; c.logDuration(ctx, findOne, startTime, err, filter) &#125;()</span><br><span class="line">        res = c.Collection.FindOne(ctx, filter, opts...)</span><br><span class="line">        err = res.Err()</span><br><span class="line">        <span class="keyword">return</span> err</span><br><span class="line">    &#125;, acceptable)</span><br><span class="line">    <span class="keyword">return</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这与 <code>sqlx.commonSqlConn.ExecCtx</code> 的模式一模一样——熔断、trace span、慢查询日志。唯一的区别是 <code>acceptable</code> 函数中多了 MongoDB 特有的错误类型（<code>mongo.ErrNoDocuments</code>、<code>mongo.ErrNilValue</code>、duplicate key error 11000 等），这些&quot;正常&quot;错误同样不会触发熔断器。</p>
+<p><code>monc.Model</code> 是 MongoDB 的带缓存版，组合了 <code>mon.Model</code> 和 <code>cache.Cache</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// core/stores/monc/cachedmodel.go</span></span><br><span class="line"><span class="keyword">type</span> Model <span class="keyword">struct</span> &#123;</span><br><span class="line">    *mon.Model</span><br><span class="line">    cache cache.Cache</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>它的 <code>FindOne</code>、<code>UpdateOne</code>、<code>InsertOne</code> 等方法的实现与 <code>CachedConn</code> 一致——查询走 <code>cache.Take</code>，写操作先执行数据库操作再删除缓存。</p>
+<h2 id="总结"><a class="markdownIt-Anchor" href="#总结"></a> 总结</h2>
+<p>go-zero 的数据访问层遵循一条清晰的层次关系：</p>
+<ul>
+<li><strong>sqlx/redis/mon</strong>：底层连接管理，统一的熔断 + trace + 慢日志包装模式</li>
+<li><strong>cache</strong> 层：Cache-Aside 策略，实现防穿透、防击穿、防雪崩三大防护，以及异步重试删除</li>
+<li><strong>sqlc/monc</strong>：组合下层能力，提供&quot;带缓存的数据库操作&quot;这一高层抽象</li>
+</ul>
+<p>这种分层设计的好处是每层可以独立演进：<code>sqlx</code> 的连接池算法可以升级而不影响缓存层，缓存策略可以调整而不影响业务代码。各层之间通过接口耦合——<code>Cache</code> 接口使得缓存后端（单机 Redis、Redis Cluster）可以互换，<code>Session</code> 接口使得数据库后端（MySQL、PostgreSQL）可以替换。</p>
+<table>
+<thead>
+<tr>
+<th>防护策略</th>
+<th>解决的问题</th>
+<th>实现机制</th>
+<th>位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>防穿透</td>
+<td>大量请求查询不存在的数据</td>
+<td>占位值 <code>*</code> + <code>SetnxEx</code></td>
+<td><code>setCacheWithNotFound</code></td>
+</tr>
+<tr>
+<td>防击穿</td>
+<td>热点数据过期瞬间的多请求回源</td>
+<td>SingleFlight + 双重检查</td>
+<td><code>barrier.DoEx</code> + <code>doGetCache</code></td>
+</tr>
+<tr>
+<td>防雪崩</td>
+<td>大批缓存同时过期</td>
+<td>过期时间 ±5% 随机抖动</td>
+<td><code>unstableExpiry.AroundDuration</code></td>
+</tr>
+<tr>
+<td>删除失败</td>
+<td>缓存残留旧数据</td>
+<td>时间轮异步重试（指数回退）</td>
+<td><code>AsyncRetryDelCache</code> + cleaner</td>
+</tr>
+</tbody>
+</table>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/21/go-zero-12/" rel="next" title="go-zero 源码分析 12：时间与并发工具箱">
+      go-zero 源码分析 12：时间与并发工具箱 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BA%95%E5%B1%82%E8%BF%9E%E6%8E%A5%E7%AE%A1%E7%90%86sqlx-%E7%9A%84-sqlconn-%E4%B8%8E%E7%86%94%E6%96%AD%E5%8C%85%E8%A3%B9"><span class="nav-number">1.</span> <span class="nav-text"> 底层连接管理：sqlx 的 SqlConn 与熔断包裹</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E7%9B%B4%E6%8E%A5%E4%BD%BF%E7%94%A8-databasesql-%E7%BC%BA%E5%B0%91%E4%BB%80%E4%B9%88"><span class="nav-number">1.1.</span> <span class="nav-text"> 问题：直接使用 database&#x2F;sql 缺少什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#commonsqlconn-%E7%9A%84%E7%BB%93%E6%9E%84%E8%AE%BE%E8%AE%A1"><span class="nav-number">1.2.</span> <span class="nav-text"> commonSqlConn 的结构设计</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9E%E6%8E%A5%E5%A4%8D%E7%94%A8resourcemanager-%E7%9A%84%E4%B8%80%E5%B1%82%E7%BC%93%E5%AD%98"><span class="nav-number">1.3.</span> <span class="nav-text"> 连接复用：ResourceManager 的一层缓存</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%AF%8F%E6%AC%A1%E8%B0%83%E7%94%A8%E9%83%BD%E8%B5%B0%E7%86%94%E6%96%AD%E5%99%A8"><span class="nav-number">1.4.</span> <span class="nav-text"> 每次调用都走熔断器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%93%E6%9E%9C%E6%98%A0%E5%B0%84%E4%BB%8E-rows-%E5%88%B0-struct"><span class="nav-number">1.5.</span> <span class="nav-text"> 结果映射：从 Rows 到 []Struct</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E5%8A%A1%E4%B8%8E%E9%A2%84%E7%BC%96%E8%AF%91%E8%AF%AD%E5%8F%A5"><span class="nav-number">1.6.</span> <span class="nav-text"> 事务与预编译语句</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#bulkinserter%E5%91%A8%E6%9C%9F%E6%89%A7%E8%A1%8C%E5%99%A8%E9%A9%B1%E5%8A%A8%E6%89%B9%E9%87%8F%E6%8F%92%E5%85%A5"><span class="nav-number">1.7.</span> <span class="nav-text"> BulkInserter：周期执行器驱动批量插入</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#redis-%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%B8%8E-sqlx-%E5%B9%B3%E8%A1%8C%E7%9A%84%E8%AE%BE%E8%AE%A1%E5%93%B2%E5%AD%A6"><span class="nav-number">2.</span> <span class="nav-text"> Redis 客户端：与 sqlx 平行的设计哲学</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#redis-%E7%BB%93%E6%9E%84%E4%B8%8E%E8%BF%9E%E6%8E%A5%E7%AE%A1%E7%90%86"><span class="nav-number">2.1.</span> <span class="nav-text"> Redis 结构与连接管理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%BB%E5%A1%9E%E6%93%8D%E4%BD%9C%E4%B8%8E%E8%BF%9E%E6%8E%A5%E6%B1%A0%E9%9A%94%E7%A6%BB"><span class="nav-number">2.2.</span> <span class="nav-text"> 阻塞操作与连接池隔离</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%B8%83%E5%BC%8F%E9%94%81lua-%E8%84%9A%E6%9C%AC%E4%BF%9D%E8%AF%81%E5%8E%9F%E5%AD%90%E6%80%A7"><span class="nav-number">2.3.</span> <span class="nav-text"> 分布式锁：Lua 脚本保证原子性</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%84%9A%E6%9C%AC%E7%BC%93%E5%AD%98"><span class="nav-number">2.4.</span> <span class="nav-text"> 脚本缓存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E5%B1%82cache-%E6%8E%A5%E5%8F%A3%E4%B8%8E%E4%B8%89%E7%A7%8D%E9%98%B2%E6%8A%A4%E7%AD%96%E7%95%A5"><span class="nav-number">3.</span> <span class="nav-text"> 缓存层：Cache 接口与三种防护策略</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#cachenode%E5%8D%95%E8%8A%82%E7%82%B9%E7%BC%93%E5%AD%98%E7%9A%84%E5%AE%8C%E6%95%B4%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.1.</span> <span class="nav-text"> cacheNode：单节点缓存的完整实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#take%E4%B8%80%E6%AC%A1%E7%BC%93%E5%AD%98%E8%AF%BB%E5%8F%96%E7%9A%84%E5%AE%8C%E6%95%B4%E6%B5%81%E7%A8%8B"><span class="nav-number">3.2.</span> <span class="nav-text"> Take：一次缓存读取的完整流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%89%E7%A7%8D%E9%98%B2%E6%8A%A4%E7%AD%96%E7%95%A5%E7%9A%84%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.3.</span> <span class="nav-text"> 三种防护策略的实现</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A0%E9%99%A4%E5%A4%B1%E8%B4%A5%E7%9A%84%E5%BC%82%E6%AD%A5%E9%87%8D%E8%AF%95"><span class="nav-number">3.4.</span> <span class="nav-text"> 删除失败的异步重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%AD%98%E9%9B%86%E7%BE%A4%E4%B8%80%E8%87%B4%E6%80%A7%E5%93%88%E5%B8%8C%E5%88%86%E5%8F%91"><span class="nav-number">3.5.</span> <span class="nav-text"> 缓存集群：一致性哈希分发</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E5%90%88cachedconn-%E4%B8%8E%E7%BC%93%E5%AD%98%E6%A8%A1%E5%9E%8B%E7%9A%84%E7%94%9F%E6%88%90"><span class="nav-number">4.</span> <span class="nav-text"> 整合：CachedConn 与缓存模型的生成</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E8%AF%A2%E4%B8%8E%E7%BC%93%E5%AD%98%E7%9A%84%E5%8D%8F%E4%BD%9C%E6%A8%A1%E5%BC%8F"><span class="nav-number">4.1.</span> <span class="nav-text"> 查询与缓存的协作模式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B4%A2%E5%BC%95%E7%BC%93%E5%AD%98queryrowindex-%E7%9A%84%E4%B8%A4%E9%98%B6%E6%AE%B5%E5%9B%9E%E6%BA%90"><span class="nav-number">4.2.</span> <span class="nav-text"> 索引缓存：QueryRowIndex 的两阶段回源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E5%8A%A1%E4%B8%AD%E7%9A%84%E7%BC%93%E5%AD%98%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E8%A6%81%E7%94%A8%E7%BC%93%E5%AD%98"><span class="nav-number">4.3.</span> <span class="nav-text"> 事务中的缓存：为什么不要用缓存</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#mongodb%E5%AF%B9%E7%A7%B0%E8%AE%BE%E8%AE%A1%E7%9A%84%E8%A3%85%E9%A5%B0%E5%99%A8%E6%A8%A1%E5%BC%8F"><span class="nav-number">5.</span> <span class="nav-text"> MongoDB：对称设计的装饰器模式</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">6.</span> <span class="nav-text"> 总结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">290</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
