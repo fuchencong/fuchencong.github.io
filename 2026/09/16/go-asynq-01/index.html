@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="很多业务请求并不需要在 HTTP 请求返回前完成全部工作。发送邮件、生成缩略图、同步第三方订单，这些操作可能很慢，也可能因为外部服务不稳定而失败。如果把它们直接放在请求处理函数里，用户要等待，服务也更容易在高峰期被拖垮。任务队列解决的正是这个问题：请求只负责登记一项工作，后台 Worker 稍后完成它。 本系列文章将会学习一个极简的 Go 异步任务队列 Asynq，本文先不急着钻进所有内部细节，而">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Asynq 源码分析 01：从一个异步任务开始">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/09/16/go-asynq-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="很多业务请求并不需要在 HTTP 请求返回前完成全部工作。发送邮件、生成缩略图、同步第三方订单，这些操作可能很慢，也可能因为外部服务不稳定而失败。如果把它们直接放在请求处理函数里，用户要等待，服务也更容易在高峰期被拖垮。任务队列解决的正是这个问题：请求只负责登记一项工作，后台 Worker 稍后完成它。 本系列文章将会学习一个极简的 Go 异步任务队列 Asynq，本文先不急着钻进所有内部细节，而">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-09-16T03:07:47.000Z">
+<meta property="article:modified_time" content="2026-09-16T03:19:00.629Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/09/16/go-asynq-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Asynq 源码分析 01：从一个异步任务开始 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/09/16/go-asynq-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Asynq 源码分析 01：从一个异步任务开始
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-09-16 11:07:47" itemprop="dateCreated datePublished" datetime="2026-09-16T11:07:47+08:00">2026-09-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>很多业务请求并不需要在 HTTP 请求返回前完成全部工作。发送邮件、生成缩略图、同步第三方订单，这些操作可能很慢，也可能因为外部服务不稳定而失败。如果把它们直接放在请求处理函数里，用户要等待，服务也更容易在高峰期被拖垮。<strong>任务队列解决的正是这个问题：请求只负责登记一项工作，后台 Worker 稍后完成它</strong>。</p>
+<p>本系列文章将会学习一个极简的 Go 异步任务队列 <a target="_blank" rel="noopener" href="https://github.com/hibiken/asynq">Asynq</a>，本文先不急着钻进所有内部细节，而是用一个可以运行的例子认识 Asynq，再沿着这个例子看清 Client、Redis、Server 和 Handler 各自做了什么。</p>
+<span id="more"></span>
+<h2 id="asynq-是什么"><a class="markdownIt-Anchor" href="#asynq-是什么"></a> Asynq 是什么</h2>
+<p>Asynq 是一个用 Go 编写的、基于 Redis 的分布式任务队列。它把系统分成两端：</p>
+<ul>
+<li><strong>Client</strong> 是生产者，把任务写入 Redis；</li>
+<li><strong>Server</strong> 是消费者，从 Redis 取出任务并交给 Worker 执行；</li>
+<li><strong>Handler</strong> 是业务代码，决定一项任务具体如何完成；</li>
+<li><strong>Redis</strong> 保存任务及其状态，让不同进程、不同机器上的 Client 和 Server 能够协作。</li>
+</ul>
+<p>最简的工作流程可以画成这样：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">业务请求</span><br><span class="line">   │ 创建 Task、调用 Client.Enqueue</span><br><span class="line">   ▼</span><br><span class="line"> Redis 队列</span><br><span class="line">   │ Server 轮询并取出任务</span><br><span class="line">   ▼</span><br><span class="line">Worker goroutine ──&gt; Handler.ProcessTask</span><br><span class="line">                         │</span><br><span class="line">                         ├─ 成功：任务完成</span><br><span class="line">                         └─ 失败：稍后重试或归档</span><br></pre></td></tr></table></figure>
+<p>这个模型带来几个直接的好处：请求线程不用等待耗时操作；任务可以暂存在 Redis 中等待处理；增加 Server 实例就能增加处理能力。<strong>Asynq 还提供延迟执行、重试、任务去重、队列优先级和运维查询等能力</strong>，后续文章会分别展开。</p>
+<h2 id="源码结构"><a class="markdownIt-Anchor" href="#源码结构"></a> 源码结构</h2>
+<p>第一次打开 Asynq 仓库，容易被根目录里许多 Go 文件吓到。其实它们不是一团混在一起的代码，而是按“公开 API、服务端组件、存储实现、工具和扩展”分层摆放。先掌握这张地图，后面的源码阅读会轻松很多。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">asynq/</span><br><span class="line">├── asynq.go、client.go、server.go、servemux.go、inspector.go</span><br><span class="line">│   └── 对外的任务、客户端、服务端、路由和运维 API</span><br><span class="line">├── processor.go、heartbeat.go、recoverer.go、forwarder.go</span><br><span class="line">│   └── Server 内部的处理、续租、恢复和延迟任务组件</span><br><span class="line">├── syncer.go、subscriber.go、healthcheck.go、janitor.go</span><br><span class="line">│   └── 状态同步、取消订阅、健康检查和过期数据清理</span><br><span class="line">├── scheduler.go、periodic_task_manager.go、aggregator.go</span><br><span class="line">│   └── Cron 调度、周期任务和分组聚合</span><br><span class="line">├── internal/</span><br><span class="line">│   ├── base/       ── Broker 接口、任务状态、Redis Key 约定</span><br><span class="line">│   ├── rdb/        ── Redis 命令和 Lua 脚本实现</span><br><span class="line">│   ├── proto/      ── TaskMessage 等 protobuf 生成代码</span><br><span class="line">│   ├── context/    ── Handler 使用的任务上下文</span><br><span class="line">│   ├── timeutil/   ── 可替换的时间时钟，方便测试</span><br><span class="line">│   └── testbroker/、testutil/、errors/、log/</span><br><span class="line">│                    ── 测试设施、错误和日志支持</span><br><span class="line">├── tools/</span><br><span class="line">│   ├── asynq/      ── 命令行工具（含 dash 终端界面）</span><br><span class="line">│   └── metrics_exporter/</span><br><span class="line">│                    ── Prometheus 指标导出器</span><br><span class="line">├── x/</span><br><span class="line">│   ├── metrics/    ── 可选的 Prometheus Collector</span><br><span class="line">│   └── rate/       ── 基于 Redis 的分布式信号量</span><br><span class="line">└── *_test.go、benchmark_test.go</span><br><span class="line">    └── 单元测试、Redis 集成测试、并发和性能测试</span><br></pre></td></tr></table></figure>
+<p><strong>根目录的 <code>go.mod</code> 是核心库。<code>tools/</code> 和 <code>x/</code> 各自有独立的 <code>go.mod</code>，这样 CLI、指标和限流扩展可以单独管理依赖，不会把工具库带进核心运行时</strong>。<code>internal</code> 是 Go 的内部包，仓库外的程序不能直接导入它；这让 Redis Key、Lua 脚本等实现细节可以在不承诺公共 API 兼容性的情况下演进。</p>
+<p>阅读源码时，可以沿着下面这条路径前进：</p>
+<ul>
+<li>先看 <code>asynq.go</code>，了解任务模型和 Redis 连接配置；</li>
+<li>再看 <code>client.go</code> 与 <code>server.go</code>，找到生产和消费的公开入口；</li>
+<li>接着进入 <code>processor.go</code>，观察 Server 如何取出任务并启动 Worker；</li>
+<li>需要追查数据落盘时，从 <code>internal/base</code> 的 <code>Broker</code> 接口跳到 <code>internal/rdb</code>；</li>
+<li>运维查询看 <code>inspector.go</code>，定时任务看 <code>scheduler.go</code>，可选能力看 <code>x/</code>；</li>
+<li>最后对照各组件旁边的 <code>*_test.go</code>，通过测试理解边界行为。</li>
+</ul>
+<h2 id="先把示例跑起来"><a class="markdownIt-Anchor" href="#先把示例跑起来"></a> 先把示例跑起来</h2>
+<h3 id="准备-redis"><a class="markdownIt-Anchor" href="#准备-redis"></a> 准备 Redis</h3>
+<p>Asynq 要求 Redis 4.0 或更高版本。已经有 Redis 的读者可以直接使用；如果本机安装了 Docker，可以这样启动一个临时实例：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker run --name asynq-redis -p 6379:6379 -d redis:7</span><br></pre></td></tr></table></figure>
+<p>然后创建 Go 项目并安装 Asynq：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">mkdir</span> asynq-demo &amp;&amp; <span class="built_in">cd</span> asynq-demo</span><br><span class="line">go mod init example.com/asynq-demo</span><br><span class="line">go get github.com/hibiken/asynq</span><br></pre></td></tr></table></figure>
+<p>下面的代码分成 <code>tasks</code>、生产者和 Worker 三部分。实际项目也可以把它们放在不同的服务中，这正是任务队列常见的部署方式。</p>
+<h3 id="定义任务"><a class="markdownIt-Anchor" href="#定义任务"></a> 定义任务</h3>
+<p>一个 Asynq 任务由类型名和 payload 组成。类型名用于路由，payload 保存业务数据，通常使用 JSON 或 protobuf 编码。先创建 <code>tasks/tasks.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> tasks</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;encoding/json&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;log&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;github.com/hibiken/asynq&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">const</span> TypeEmailDelivery = <span class="string">&quot;email:deliver&quot;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> EmailDeliveryPayload <span class="keyword">struct</span> &#123;</span><br><span class="line">	UserID     <span class="type">int</span>    <span class="string">`json:&quot;user_id&quot;`</span></span><br><span class="line">	TemplateID <span class="type">string</span> <span class="string">`json:&quot;template_id&quot;`</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">NewEmailDeliveryTask</span><span class="params">(userID <span class="type">int</span>, templateID <span class="type">string</span>)</span></span> (*asynq.Task, <span class="type">error</span>) &#123;</span><br><span class="line">	payload, err := json.Marshal(EmailDeliveryPayload&#123;</span><br><span class="line">		UserID:     userID,</span><br><span class="line">		TemplateID: templateID,</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> asynq.NewTask(TypeEmailDelivery, payload), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">HandleEmailDeliveryTask</span><span class="params">(ctx context.Context, t *asynq.Task)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">var</span> p EmailDeliveryPayload</span><br><span class="line">	<span class="keyword">if</span> err := json.Unmarshal(t.Payload(), &amp;p); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="comment">// payload 无法解析时重试没有意义，直接归档任务。</span></span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;invalid email payload: %v: %w&quot;</span>, err, asynq.SkipRetry)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">select</span> &#123;</span><br><span class="line">	<span class="keyword">case</span> &lt;-ctx.Done():</span><br><span class="line">		<span class="keyword">return</span> ctx.Err()</span><br><span class="line">	<span class="keyword">default</span>:</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	log.Printf(<span class="string">&quot;send email: user_id=%d template_id=%s&quot;</span>, p.UserID, p.TemplateID)</span><br><span class="line">	<span class="comment">// 这里放真正的邮件发送逻辑。</span></span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有一个值得注意的设计：<strong><code>NewEmailDeliveryTask</code> 只创建内存中的 <code>Task</code>，还没有访问 Redis。任务何时入队由调用方决定，这使得同一种任务可以在不同业务流程中使用不同的队列或调度选项</strong>。</p>
+<h3 id="发送任务"><a class="markdownIt-Anchor" href="#发送任务"></a> 发送任务</h3>
+<p>生产者可以放在 Web 服务或命令行程序中。创建 <code>producer/main.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;log&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;github.com/hibiken/asynq&quot;</span></span><br><span class="line">	<span class="string">&quot;example.com/asynq-demo/tasks&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	client := asynq.NewClient(asynq.RedisClientOpt&#123;</span><br><span class="line">		Addr: <span class="string">&quot;127.0.0.1:6379&quot;</span>,</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">defer</span> client.Close()</span><br><span class="line"></span><br><span class="line">	task, err := tasks.NewEmailDeliveryTask(<span class="number">42</span>, <span class="string">&quot;welcome&quot;</span>)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	info, err := client.Enqueue(task,</span><br><span class="line">		asynq.MaxRetry(<span class="number">5</span>),</span><br><span class="line">		asynq.Queue(<span class="string">&quot;default&quot;</span>),</span><br><span class="line">	)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatalf(<span class="string">&quot;could not enqueue task: %v&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	log.Printf(<span class="string">&quot;enqueued: id=%s queue=%s state=%s&quot;</span>, info.ID, info.Queue, info.State)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>NewClient</code> 接收的是 <code>RedisConnOpt</code>。最常用的 <code>RedisClientOpt</code> 连接单个 Redis；同一个接口还支持 Sentinel 和 Cluster。<code>Client</code> 可以被多个 goroutine 并发使用，程序退出时调用 <code>Close</code> 释放它创建的连接池。</p>
+<p>如果任务需要稍后执行，可以在入队时增加选项：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> <span class="string">&quot;time&quot;</span></span><br><span class="line"></span><br><span class="line">task, _ := tasks.NewEmailDeliveryTask(<span class="number">42</span>, <span class="string">&quot;reminder&quot;</span>)</span><br><span class="line">info, err := client.Enqueue(task, asynq.ProcessIn(<span class="number">10</span>*time.Minute))</span><br></pre></td></tr></table></figure>
+<p><code>ProcessIn</code> 表示相对当前时间延迟一段时间；如果业务已经确定了具体时刻，则使用 <code>ProcessAt</code> 指定绝对时间。两者都会让任务先进入 scheduled 状态，等到时间到达后再交给 Worker；这条路径会在后续的调度文章中详细说明。</p>
+<h3 id="启动-worker"><a class="markdownIt-Anchor" href="#启动-worker"></a> 启动 Worker</h3>
+<p>再创建 <code>worker/main.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;log&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;github.com/hibiken/asynq&quot;</span></span><br><span class="line">	<span class="string">&quot;example.com/asynq-demo/tasks&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	srv := asynq.NewServer(</span><br><span class="line">		asynq.RedisClientOpt&#123;Addr: <span class="string">&quot;127.0.0.1:6379&quot;</span>&#125;,</span><br><span class="line">		asynq.Config&#123;</span><br><span class="line">			Concurrency: <span class="number">10</span>,</span><br><span class="line">			Queues: <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">int</span>&#123;</span><br><span class="line">				<span class="string">&quot;default&quot;</span>: <span class="number">1</span>,</span><br><span class="line">			&#125;,</span><br><span class="line">		&#125;,</span><br><span class="line">	)</span><br><span class="line"></span><br><span class="line">	mux := asynq.NewServeMux()</span><br><span class="line">	mux.HandleFunc(tasks.TypeEmailDelivery, tasks.HandleEmailDeliveryTask)</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> err := srv.Run(mux); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在两个终端分别启动 Worker 和生产者（Worker 会一直运行，直到收到终止信号）：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 终端一：启动 Worker</span></span><br><span class="line">go run ./worker</span><br><span class="line"></span><br><span class="line"><span class="comment"># 终端二：入队一条任务</span></span><br><span class="line">go run ./producer</span><br></pre></td></tr></table></figure>
+<p>Worker 会打印类似下面的日志：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">send email: user_id=42 template_id=welcome</span><br></pre></td></tr></table></figure>
+<p><strong><code>Run</code> 会启动后台组件并等待终止信号，收到 <code>SIGTERM</code> 或 <code>SIGINT</code> 后执行优雅关闭</strong>。如果需要由测试或自己的生命周期管理代码控制，可以使用 <code>Start</code> 和 <code>Shutdown</code>，它们与 <code>Run</code> 使用的是同一套处理逻辑。</p>
+<h2 id="从-api-走到源码"><a class="markdownIt-Anchor" href="#从-api-走到源码"></a> 从 API 走到源码</h2>
+<p>示例跑通后，再回头看源码会清楚很多。Asynq 的核心路径并不长，关键在于每一层只承担一部分职责。</p>
+<h3 id="task-描述任务"><a class="markdownIt-Anchor" href="#task-描述任务"></a> Task 描述任务</h3>
+<p><code>asynq.go</code> 中的 <code>Task</code> 保存类型、payload、headers 和选项：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Task <span class="keyword">struct</span> &#123;</span><br><span class="line">	typename <span class="type">string</span></span><br><span class="line">	payload  []<span class="type">byte</span></span><br><span class="line">	headers  <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span></span><br><span class="line">	opts     []Option</span><br><span class="line">	w        *ResultWriter</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>NewTask</code> 只是填充这些字段，并不会启动 goroutine，也不会写 Redis。这样做有两个好处：<strong>任务构造和任务投递相互独立；业务代码可以在真正入队前完成参数校验和序列化</strong>。</p>
+<h3 id="clientenqueue-负责入队"><a class="markdownIt-Anchor" href="#clientenqueue-负责入队"></a> Client.Enqueue 负责入队</h3>
+<p><code>Client.Enqueue</code> 使用后台上下文，实际工作交给 <code>EnqueueContext</code>。源码先合并任务创建时和入队时的选项，再根据时间和分组信息选择路径：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">opts = <span class="built_in">append</span>(task.opts, opts...)</span><br><span class="line">opt, err := composeOptions(opts...)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">now := time.Now()</span><br><span class="line"><span class="keyword">switch</span> &#123;</span><br><span class="line"><span class="keyword">case</span> opt.processAt.After(now):</span><br><span class="line">	err = c.schedule(ctx, msg, opt.processAt, opt.uniqueTTL)</span><br><span class="line">	state = base.TaskStateScheduled</span><br><span class="line"><span class="keyword">case</span> opt.group != <span class="string">&quot;&quot;</span>:</span><br><span class="line">	err = c.addToGroup(ctx, msg, opt.group, opt.uniqueTTL)</span><br><span class="line">	state = base.TaskStateAggregating</span><br><span class="line"><span class="keyword">default</span>:</span><br><span class="line">	err = c.enqueue(ctx, msg, opt.uniqueTTL)</span><br><span class="line">	state = base.TaskStatePending</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>对普通任务来说，最后会走 <code>c.enqueue</code>。如果指定了未来时间，就进入 scheduled；如果指定了 Group，则等待聚合。这里先记住这三个入口即可，聚合和调度的内部组件会在后文介绍。</p>
+<p>选项有明确的覆盖规则：先使用 <code>NewTask</code> 里的选项，再使用 <code>Enqueue</code> 传入的选项；同一种选项出现多次时，最后一个生效。没有显式设置时，源码会使用默认值：最大重试次数为 25，处理超时时间为 30 分钟。</p>
+<p>常用选项可以按业务意图理解：</p>
+<table>
+<thead>
+<tr>
+<th>业务意图</th>
+<th>选项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>失败后再试几次</td>
+<td><code>MaxRetry(n)</code></td>
+<td>设置最大重试次数</td>
+</tr>
+<tr>
+<td>放入指定队列</td>
+<td><code>Queue(name)</code></td>
+<td>将任务交给对应队列的 Worker</td>
+</tr>
+<tr>
+<td>限制单次处理时间</td>
+<td><code>Timeout(d)</code></td>
+<td>超时后结束本次处理并进入失败路径</td>
+</tr>
+<tr>
+<td>指定最终截止时间</td>
+<td><code>Deadline(t)</code></td>
+<td>到达绝对时间后不再继续处理</td>
+</tr>
+<tr>
+<td>稍后再处理</td>
+<td><code>ProcessIn</code> / <code>ProcessAt</code></td>
+<td>进入 scheduled，等待到期</td>
+</tr>
+<tr>
+<td>防止重复入队</td>
+<td><code>Unique(ttl)</code></td>
+<td>在 TTL 内拒绝相同任务</td>
+</tr>
+</tbody>
+</table>
+<h3 id="server-组织处理流程"><a class="markdownIt-Anchor" href="#server-组织处理流程"></a> Server 组织处理流程</h3>
+<p><code>NewServer</code> 会把连接配置转换成 <code>redis.UniversalClient</code>，并创建多个后台组件。为了先建立整体认识，可以按职责把这些组件归为三组：</p>
+<ul>
+<li><code>processor</code> 负责取任务、创建 Worker goroutine、调用 Handler；</li>
+<li><code>heartbeater</code>、<code>recoverer</code>、<code>forwarder</code>、<code>janitor</code> 等后台组件维护租约、恢复、延迟任务和过期数据；</li>
+<li><code>healthchecker</code>、<code>subscriber</code>、<code>syncer</code> 等组件分别处理健康检查、取消消息和失败后的状态同步。</li>
+</ul>
+<p>调用 <code>srv.Start(mux)</code> 时，这些组件会依次启动；<code>processor</code> 的并发数由 <code>Config.Concurrency</code> 控制。如果没有设置有效值，Server 会使用当前进程可用的 CPU 数量。<code>Queues</code> 未配置时只处理名为 <code>default</code> 的队列。</p>
+<h3 id="servemux-路由任务"><a class="markdownIt-Anchor" href="#servemux-路由任务"></a> ServeMux 路由任务</h3>
+<p>Server 不需要知道每种业务任务的细节，它只依赖 <code>Handler</code> 接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Handler <span class="keyword">interface</span> &#123;</span><br><span class="line">	ProcessTask(context.Context, *Task) <span class="type">error</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Asynq 用一个函数类型把普通函数适配成 <code>Handler</code>。<code>server.go</code> 中的定义很简单：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> HandlerFunc <span class="function"><span class="keyword">func</span><span class="params">(context.Context, *Task)</span></span> <span class="type">error</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(fn HandlerFunc)</span></span> ProcessTask(ctx context.Context, task *Task) <span class="type">error</span> &#123;</span><br><span class="line">	<span class="keyword">return</span> fn(ctx, task)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>函数类型本身也可以定义方法。因此，只要函数签名符合要求，就能通过 <code>asynq.HandlerFunc(fn)</code> 转换为 <code>Handler</code>，不必额外声明一个结构体。前面的 <code>mux.HandleFunc</code> 正是帮我们完成了这次转换。</p>
+<p>这种“函数类型 + 方法”的适配器写法在 Go 中很常见。标准库的 <code>http.HandlerFunc</code> 让普通函数变成 <code>http.Handler</code>，<code>sort.Interface</code> 也经常通过自定义类型加方法来适配。它保留了接口带来的可替换性，又让简单场景只需要写一个函数。</p>
+<p>在此基础上，<code>ServeMux</code> 把任务类型映射到 Handler，并且支持最长前缀匹配：注册 <code>image</code> 和 <code>image:resize</code> 时，类型为 <code>image:resize:thumbnail</code> 的任务会优先匹配更具体的 <code>image:resize</code>。这和 <code>net/http.ServeMux</code> 的使用体验很接近，也允许通过 <code>Use</code> 添加日志、鉴权或限流中间件。</p>
+<h2 id="redis-保存任务状态"><a class="markdownIt-Anchor" href="#redis-保存任务状态"></a> Redis 保存任务状态</h2>
+<p>Asynq 并不是把任务直接序列化成一条普通字符串就结束了。一个任务既有自己的内容，也需要被快速地按状态查询、按时间调度，还要能在处理中被找到并续租。因此，Asynq 把 <code>任务实体</code> 和 <code>状态索引</code> 拆开保存：任务内容只有一份，各种队列结构只保存任务 ID。</p>
+<h3 id="redis-key-统一按队列组织"><a class="markdownIt-Anchor" href="#redis-key-统一按队列组织"></a> Redis Key 统一按队列组织</h3>
+<p>Redis Key 可以理解为 Redis 中一条数据的名称，作用类似数据库表中的主键。写入、读取或删除数据时，客户端都要通过 Key 找到目标。例如，<code>HSET some-key field value</code> 中的 <code>some-key</code> 就是这组 Hash 数据的 Key。<strong>Asynq 用不同的 Key 区分不同队列、不同任务和不同状态集合</strong>，Worker、Inspector 以及后台维护组件都通过这些 Key 找到需要处理的数据。</p>
+<p>源码在 <code>internal/base/base.go</code> 中集中生成这些 Key。队列名会出现在统一的前缀中，例如默认队列的前缀是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">asynq:&#123;default&#125;:</span><br></pre></td></tr></table></figure>
+<p>其中的 <code>&#123;default&#125;</code> 不只是为了好看，它是 Redis Cluster 的 hash tag。属于同一个队列的 Key 会尽量落在同一个 slot，Lua 脚本才能把这些 Key 一起作为参数执行。基于这个前缀，一个任务 ID 为 <code>abc123</code> 的实体 Key 是：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">asynq:&#123;default&#125;:t:abc123</span><br></pre></td></tr></table></figure>
+<h3 id="任务实体和状态索引"><a class="markdownIt-Anchor" href="#任务实体和状态索引"></a> 任务实体和状态索引</h3>
+<p>以队列 <code>default</code> 为例，常见 Key 可以这样理解：</p>
+<table>
+<thead>
+<tr>
+<th>Redis Key</th>
+<th>类型</th>
+<th>保存内容</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>asynq:&#123;default&#125;:t:&lt;id&gt;</code></td>
+<td>Hash</td>
+<td>protobuf 编码的消息、<code>state</code>、错误信息等</td>
+<td>任务实体，贯穿整个生命周期</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:pending</code></td>
+<td>List</td>
+<td>待处理任务 ID</td>
+<td>Worker 从这里取任务</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:active</code></td>
+<td>List</td>
+<td>正在处理的任务 ID</td>
+<td>记录当前正在执行的任务</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:scheduled</code></td>
+<td>ZSet</td>
+<td>任务 ID，score 是执行时间</td>
+<td>保存未来执行的任务</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:retry</code></td>
+<td>ZSet</td>
+<td>任务 ID，score 是下次重试时间</td>
+<td>保存等待重试的任务</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:lease</code></td>
+<td>ZSet</td>
+<td>任务 ID，score 是租约过期时间</td>
+<td>检查 Worker 是否还活着</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:completed</code></td>
+<td>ZSet</td>
+<td>已完成任务 ID，score 是完成时间</td>
+<td>在保留期内供查询</td>
+</tr>
+<tr>
+<td><code>asynq:&#123;default&#125;:archived</code></td>
+<td>ZSet</td>
+<td>归档任务 ID，score 是归档时间</td>
+<td>保存失败且不再重试的任务</td>
+</tr>
+</tbody>
+</table>
+<p>这些结构之间并不是互相复制任务内容。例如任务从 pending 进入 active 时，脚本只需把 ID 从一个 List 移到另一个 List，再更新任务 Hash 的 <code>state</code> 字段并写入 Lease。查询任务详情时，Inspector 根据 ID 找到同一个 Hash 即可。这样既避免了多份 payload，也让状态迁移的含义非常明确。</p>
+<p>除了前面列出的状态 Key，Asynq 还维护了一些辅助 Key。它们不负责保存任务正文，而是分别服务于队列发现、统计、去重和分组：</p>
+<ul>
+<li><code>asynq:queues</code> 是一个全局 Set，记录系统中出现过的队列名称。Inspector 先从这里发现队列，再查询每个队列的具体状态。</li>
+<li><code>asynq:&#123;&lt;queue&gt;&#125;:processed</code>、<code>failed</code> 记录累计数量；带日期后缀的 <code>processed:YYYY-MM-DD</code> 和 <code>failed:YYYY-MM-DD</code> 记录每日数量，并设置过期时间，避免统计数据无限增长。</li>
+<li>使用 <code>Unique</code> 时，Asynq 会根据队列名、任务类型和 payload 计算摘要，生成类似 <code>asynq:&#123;default&#125;:unique:email:deliver:&lt;hash&gt;</code> 的 String Key。这个 Key 通过 TTL 充当“去重锁”，锁存在时相同任务不会再次入队。</li>
+<li>使用 Group 时，<code>asynq:&#123;&lt;queue&gt;&#125;:groups</code> 保存该队列的组名，<code>asynq:&#123;&lt;queue&gt;&#125;:g:&lt;group&gt;</code> 是保存组内任务 ID 的 ZSet；真正开始聚合时，还会在这个前缀下创建带聚合集合 ID 的临时 Key。</li>
+</ul>
+<p>这些辅助 Key 与任务实体、状态索引使用同一套命名规则，因此一个队列的相关数据可以按前缀集中查找和维护。</p>
+<p>真正入队时，<code>internal/rdb</code> 使用 Lua 脚本一次完成 <code>检查任务 ID、写入任务内容、加入 pending 列表</code> 这几步：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> redis.call(<span class="string">&quot;EXISTS&quot;</span>, KEYS[<span class="number">1</span>]) == <span class="number">1</span> <span class="keyword">then</span></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span></span><br><span class="line"><span class="keyword">end</span></span><br><span class="line">redis.call(<span class="string">&quot;HSET&quot;</span>, KEYS[<span class="number">1</span>],</span><br><span class="line">           <span class="string">&quot;msg&quot;</span>, ARGV[<span class="number">1</span>],</span><br><span class="line">           <span class="string">&quot;state&quot;</span>, <span class="string">&quot;pending&quot;</span>,</span><br><span class="line">           <span class="string">&quot;pending_since&quot;</span>, ARGV[<span class="number">3</span>])</span><br><span class="line">redis.call(<span class="string">&quot;LPUSH&quot;</span>, KEYS[<span class="number">2</span>], ARGV[<span class="number">2</span>])</span><br><span class="line"><span class="keyword">return</span> <span class="number">1</span></span><br></pre></td></tr></table></figure>
+<p>这段脚本的意义在于：<strong>检查和写入之间不会被另一个 Client 插入操作打断，任务不会出现 <code>Hash 已写入但列表没有 ID</code> 的中间状态</strong>。脚本返回 0 时，Asynq 会把它转换成任务 ID 冲突错误。</p>
+<p>任务消息内部使用 protobuf 编码后存入 Redis；业务 payload 的编码方式则由应用决定，本文示例使用 JSON。Redis 的 List、ZSet、Hash、Pub/Sub 和 Lua 能力共同构成了 Asynq 的基础设施，<code>go-redis/v9</code> 负责在 Go 与 Redis 之间建立连接并执行这些操作。</p>
+<h2 id="项目依赖"><a class="markdownIt-Anchor" href="#项目依赖"></a> 项目依赖</h2>
+<p>从这个最小示例可以看出，Asynq 的运行时依赖并不多：</p>
+<ul>
+<li><code>github.com/redis/go-redis/v9</code> 提供 Redis 单机、Sentinel 和 Cluster 的连接，以及 Lua、Pipeline、Pub/Sub 等操作；</li>
+<li><code>google.golang.org/protobuf</code> 用于编码保存在 Redis 中的内部任务消息；</li>
+<li><code>github.com/google/uuid</code> 在没有指定 <code>TaskID</code> 时生成任务 ID；</li>
+<li>Go 标准库负责 Context、JSON 编码、TLS 和时间处理。</li>
+</ul>
+<p>Cron 调度使用的 <code>github.com/robfig/cron/v3</code>、Prometheus 指标和分布式限流属于特定功能或扩展，并不是运行这个基本示例的前置条件。把依赖按功能拆开，后面阅读源码时就能知道某个库为什么只出现在某个模块中。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>到这里，可以用四句话概括 Asynq：</p>
+<ul>
+<li>Client 把“要做什么”写进 Redis，Server 决定“什么时候取、交给谁做”；</li>
+<li><strong>Task 本身只是类型和数据，业务行为写在 Handler 中</strong>；</li>
+<li>ServeMux 解决任务类型到 Handler 的路由，Config 控制并发和队列；</li>
+<li>Redis 保存任务状态，Lua 脚本保证关键状态变更的一致性。</li>
+</ul>
+<p>这个模型解释了 Asynq 为什么既适合单体应用中的后台任务，也适合多个服务、多个 Worker 实例共同消费。它同时也提醒我们：<strong>任务可能因为故障被再次执行，Handler 最好设计成幂等的</strong>；Redis 是必需的运行时依赖，部分 Lua 脚本在 Redis Cluster 下还存在兼容性限制。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/08/24/go-zero-15/" rel="next" title="go-zero 源码分析 15：从源码到生产">
+      go-zero 源码分析 15：从源码到生产 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#asynq-%E6%98%AF%E4%BB%80%E4%B9%88"><span class="nav-number">1.</span> <span class="nav-text"> Asynq 是什么</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E7%BB%93%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> 源码结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%88%E6%8A%8A%E7%A4%BA%E4%BE%8B%E8%B7%91%E8%B5%B7%E6%9D%A5"><span class="nav-number">3.</span> <span class="nav-text"> 先把示例跑起来</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%86%E5%A4%87-redis"><span class="nav-number">3.1.</span> <span class="nav-text"> 准备 Redis</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9A%E4%B9%89%E4%BB%BB%E5%8A%A1"><span class="nav-number">3.2.</span> <span class="nav-text"> 定义任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8F%91%E9%80%81%E4%BB%BB%E5%8A%A1"><span class="nav-number">3.3.</span> <span class="nav-text"> 发送任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8-worker"><span class="nav-number">3.4.</span> <span class="nav-text"> 启动 Worker</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%8E-api-%E8%B5%B0%E5%88%B0%E6%BA%90%E7%A0%81"><span class="nav-number">4.</span> <span class="nav-text"> 从 API 走到源码</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#task-%E6%8F%8F%E8%BF%B0%E4%BB%BB%E5%8A%A1"><span class="nav-number">4.1.</span> <span class="nav-text"> Task 描述任务</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#clientenqueue-%E8%B4%9F%E8%B4%A3%E5%85%A5%E9%98%9F"><span class="nav-number">4.2.</span> <span class="nav-text"> Client.Enqueue 负责入队</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#server-%E7%BB%84%E7%BB%87%E5%A4%84%E7%90%86%E6%B5%81%E7%A8%8B"><span class="nav-number">4.3.</span> <span class="nav-text"> Server 组织处理流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#servemux-%E8%B7%AF%E7%94%B1%E4%BB%BB%E5%8A%A1"><span class="nav-number">4.4.</span> <span class="nav-text"> ServeMux 路由任务</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#redis-%E4%BF%9D%E5%AD%98%E4%BB%BB%E5%8A%A1%E7%8A%B6%E6%80%81"><span class="nav-number">5.</span> <span class="nav-text"> Redis 保存任务状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#redis-key-%E7%BB%9F%E4%B8%80%E6%8C%89%E9%98%9F%E5%88%97%E7%BB%84%E7%BB%87"><span class="nav-number">5.1.</span> <span class="nav-text"> Redis Key 统一按队列组织</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E5%AE%9E%E4%BD%93%E5%92%8C%E7%8A%B6%E6%80%81%E7%B4%A2%E5%BC%95"><span class="nav-number">5.2.</span> <span class="nav-text"> 任务实体和状态索引</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE%E4%BE%9D%E8%B5%96"><span class="nav-number">6.</span> <span class="nav-text"> 项目依赖</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">293</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
