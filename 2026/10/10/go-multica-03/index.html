@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Multica 的一项工作不会只落在一张表里。创建一个 Issue 会涉及工作区、成员、项目、标签和附件；把它交给 Agent 后，又会产生 Runtime、队列任务、运行消息和用量记录。数据库模型要解决的核心问题，是让这些记录各自保存清晰的事实，同时还能沿着同一个工作区和同一个 Issue 找回完整上下文。 本文先从核心数据抽象建立坐标，再列出当前 schema 的全部业务表，随后按领域解释模型">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Multica 学习 03：数据模型">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/10/go-multica-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="Multica 的一项工作不会只落在一张表里。创建一个 Issue 会涉及工作区、成员、项目、标签和附件；把它交给 Agent 后，又会产生 Runtime、队列任务、运行消息和用量记录。数据库模型要解决的核心问题，是让这些记录各自保存清晰的事实，同时还能沿着同一个工作区和同一个 Issue 找回完整上下文。 本文先从核心数据抽象建立坐标，再列出当前 schema 的全部业务表，随后按领域解释模型">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-10T09:15:36.000Z">
+<meta property="article:modified_time" content="2026-10-10T09:32:54.096Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/10/go-multica-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Multica 学习 03：数据模型 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/10/go-multica-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Multica 学习 03：数据模型
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-10 17:15:36" itemprop="dateCreated datePublished" datetime="2026-10-10T17:15:36+08:00">2026-10-10</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>Multica 的一项工作不会只落在一张表里。创建一个 Issue 会涉及工作区、成员、项目、标签和附件；把它交给 Agent 后，又会产生 Runtime、队列任务、运行消息和用量记录。数据库模型要解决的核心问题，是让这些记录各自保存清晰的事实，同时还能沿着同一个工作区和同一个 Issue 找回完整上下文。</p>
+<p>本文先从核心数据抽象建立坐标，再列出当前 schema 的全部业务表，随后按领域解释模型如何组织业务事实和生命周期，最后回到 Go 服务端说明 SQL、事务和业务 Service 如何访问数据库。</p>
+<span id="more"></span>
+<h2 id="核心数据抽象"><a class="markdownIt-Anchor" href="#核心数据抽象"></a> 核心数据抽象</h2>
+<p>读数据库模型时，最容易陷入字段清单：看到一百多个表，却不知道它们共同描述了什么。Multica 的数据可以先压缩成四个抽象，再回到具体表。</p>
+<p><strong>工作区是边界。</strong> <code>user</code> 是全局账户，<code>workspace</code> 是团队的隔离空间，<code>member</code> 把用户加入某个空间并赋予角色。任务、Agent、项目和集成数据大多带有 <code>workspace_id</code>，服务层也会在读取和写入时重复校验这个边界。</p>
+<p><strong>Issue 是协作事实。</strong> <code>issue</code> 描述要完成的工作，<code>project</code> 提供更大的目标范围，<code>comment</code> 保存讨论和触发信息，标签、状态、依赖和订阅表补充 Issue 的组织方式。Issue 保存当前状态，活动日志和评论保存变化过程。</p>
+<p><strong>Agent、Runtime 和 Task 是执行事实。</strong> <code>agent</code> 保存“谁来做”的配置，<code>agent_runtime</code> 保存“在哪台机器上做”，<code>agent_task_queue</code> 保存“一次具体运行”。三者分开后，同一个 Agent 可以更换 Runtime，一个 Issue 也可以有多次运行。</p>
+<p><strong>Chat、Autopilot 和 Channel 是入口。</strong> Chat 将消息映射到 Task，Autopilot 按计划或 webhook 产生运行，Channel 表把外部聊天平台的身份、会话和投递状态接到同一条执行链路上。它们都复用 Issue、Task 和事件记录，而不是各自建立一套任务模型。</p>
+<p>这四个抽象解释了表之间的层次：工作区提供范围，Issue 提供协作对象，Task 提供执行实例，外围表保存入口、投影和审计信息。下面按领域列出完整表名，并在同一张表中补充字段、主键、关系和阅读提示。</p>
+<h2 id="数据库表一览"><a class="markdownIt-Anchor" href="#数据库表一览"></a> 数据库表一览</h2>
+<p>当前 SQL schema 由迁移文件持续演进，sqlc 最终生成了 123 个业务模型。下面按领域列出当前模型表，并在同一张表中说明主要字段、主键、与其他表的关系以及阅读时需要注意的地方。<code>schema_migrations</code> 是迁移器自己的版本账本，不属于业务模型。</p>
+<p>关系一栏使用业务语言描述字段的用途；由于项目遵循由应用层校验和清理关系的设计，文字中的“应用层”表示这不是数据库级联行为。<code>核心字段</code> 是从 sqlc 生成模型中挑出的主要字段，完整字段仍以对应的 <code>models.go</code> 和查询文件为准。</p>
+<h3 id="认证-管理与运行支撑"><a class="markdownIt-Anchor" href="#认证-管理与运行支撑"></a> 认证、管理与运行支撑</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>verification_code</code></td>
+<td>邮箱验证码及尝试次数</td>
+<td><code>id, email, code, expires_at, used, created_at, attempts</code></td>
+<td><code>id</code></td>
+<td>独立的认证记录，不直接关联其他业务表。</td>
+</tr>
+<tr>
+<td><code>personal_access_token</code></td>
+<td>用户 API token 的哈希、过期和撤销状态</td>
+<td><code>id, user_id, name, token_hash, token_prefix, expires_at, last_used_at, revoked, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>workspace_invitation</code></td>
+<td>工作区邀请、角色、状态和过期时间</td>
+<td><code>id, workspace_id, inviter_id, invitee_email, invitee_user_id, role, status, created_at, updated_at, expires_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>inviter_id</code> 用来关联 <code>user</code> 表中的记录；字段 <code>invitee_user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>workspace_share_link</code></td>
+<td>可重复使用的工作区分享链接及使用次数</td>
+<td><code>id, workspace_id, code, created_by, role, expires_at, max_uses, use_count, is_active, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>notification_preference</code></td>
+<td>用户在工作区内的通知偏好</td>
+<td><code>id, workspace_id, user_id, preferences, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>daemon_token</code></td>
+<td>daemon 认证 token 的哈希和有效期</td>
+<td><code>id, token_hash, workspace_id, daemon_id, expires_at, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>daemon_connection</code></td>
+<td>Agent 与 daemon 的连接、心跳和运行时信息</td>
+<td><code>id, agent_id, daemon_id, status, last_heartbeat_at, runtime_info, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent_builder_draft</code></td>
+<td>Agent Builder 会话中的草稿</td>
+<td><code>chat_session_id, workspace_id, draft, updated_at</code></td>
+<td><code>chat_session_id</code></td>
+<td>表结构未声明数据库外键；删除由 Chat session 清理流程负责。</td>
+</tr>
+<tr>
+<td><code>quick_action</code></td>
+<td>评论或聊天中可复用的快捷 Prompt</td>
+<td><code>id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>assignee_id</code> 用来关联 <code>主体</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>seat_capacity_outbox</code></td>
+<td>席位容量操作的可靠投递队列</td>
+<td><code>workspace_id, operation_token, action, subject_id, member_id, invitation_id, share_link_id, user_id, expires_at, delivered_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录，投递关系由应用层维护。</td>
+</tr>
+<tr>
+<td><code>contact_sales_inquiry</code></td>
+<td>站点销售联系表单</td>
+<td><code>id, first_name, last_name, business_email, company_name, company_size, country_region, use_case, goals, consent_outreach</code></td>
+<td><code>id</code></td>
+<td>独立的销售线索记录，不直接关联其他业务表。</td>
+</tr>
+<tr>
+<td><code>feedback</code></td>
+<td>用户对工作区的反馈</td>
+<td><code>id, user_id, workspace_id, message, metadata, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>instance_telemetry_state</code></td>
+<td>自托管实例遥测发送状态</td>
+<td><code>singleton, instance_id, last_successful_day, pending_day, pending_body, next_attempt_at, attempt_count, updated_at</code></td>
+<td><code>singleton</code></td>
+<td>单例遥测状态，不直接关联其他业务表。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="核心业务表"><a class="markdownIt-Anchor" href="#核心业务表"></a> 核心业务表</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user</code></td>
+<td>全局用户账户和个人资料</td>
+<td><code>id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason</code></td>
+<td><code>id</code></td>
+<td>全局账户基础表；其他表通过用户 ID 在应用层引用它。</td>
+</tr>
+<tr>
+<td><code>workspace</code></td>
+<td>租户边界、设置、Issue 编号计数器和仓库上下文</td>
+<td><code>id, name, slug, description, settings, created_at, updated_at, context, repos, issue_prefix</code></td>
+<td><code>id</code></td>
+<td>工作区基础表；其他业务表通过工作区 ID 在应用层归属到它。</td>
+</tr>
+<tr>
+<td><code>member</code></td>
+<td>用户加入工作区的成员关系和角色</td>
+<td><code>id, workspace_id, user_id, role, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue</code></td>
+<td>待完成的工作及其当前状态、负责人和上下文</td>
+<td><code>id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>parent_issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>project_id</code> 用来关联 <code>project</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_label</code></td>
+<td>工作区标签定义</td>
+<td><code>id, workspace_id, name, color, created_at, updated_at, resource_type, description</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_to_label</code></td>
+<td>Issue 与标签的多对多连接</td>
+<td><code>issue_id, label_id</code></td>
+<td><code>issue_id, label_id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>label_id</code> 用来关联 <code>issue_label</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_dependency</code></td>
+<td>Issue 之间的阻塞或关联关系</td>
+<td><code>id, issue_id, depends_on_issue_id, type</code></td>
+<td><code>id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录；字段 <code>depends_on_issue_id</code> 用来关联 <code>issue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>comment</code></td>
+<td>Issue 讨论、线程和 Agent 触发信息</td>
+<td><code>id, issue_id, author_type, author_id, content, type, created_at, updated_at, parent_id, workspace_id</code></td>
+<td><code>id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>parent_id</code> 用来关联 <code>comment</code> 表中的记录。字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>inbox_item</code></td>
+<td>面向成员或 Agent 的通知投影</td>
+<td><code>id, workspace_id, recipient_type, recipient_id, type, severity, issue_id, title, body, read</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>activity_log</code></td>
+<td>工作区和 Issue 的审计时间线</td>
+<td><code>id, workspace_id, issue_id, actor_type, actor_id, action, details, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent</code></td>
+<td>Agent 的指令、模型、权限和运行时配置</td>
+<td><code>id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>owner_id</code> 用来关联 <code>user</code> 表中的记录。字段 <code>runtime_id</code> 用来关联 <code>agent_runtime</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent_runtime</code></td>
+<td>daemon 提供的一次实际执行环境</td>
+<td><code>id, workspace_id, daemon_id, name, runtime_mode, provider, status, device_info, metadata, last_seen_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>owner_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent_task_queue</code></td>
+<td>一次 Agent 运行的状态和执行上下文</td>
+<td><code>id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error</code></td>
+<td><code>id</code></td>
+<td>字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>runtime_id</code> 用来关联 <code>agent_runtime</code> 表中的记录。字段 <code>parent_task_id</code> 用来关联 <code>agent_task_queue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent_invocation_target</code></td>
+<td>public_to Agent 的调用授权对象</td>
+<td><code>id, agent_id, target_type, target_id, created_by, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录；字段 <code>target_id</code> 用来关联 <code>授权对象</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>agent_skill</code></td>
+<td>Agent 与 Skill 的多对多连接</td>
+<td><code>agent_id, skill_id, created_at, enabled</code></td>
+<td><code>agent_id, skill_id</code></td>
+<td>字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。字段 <code>skill_id</code> 用来关联 <code>skill</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>skill</code></td>
+<td>工作区级可复用技能包</td>
+<td><code>id, workspace_id, name, description, content, config, created_by, created_at, updated_at, plugin_installation_id</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>created_by</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>skill_file</code></td>
+<td>Skill 的附属文件</td>
+<td><code>id, skill_id, path, content, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>skill_id</code> 用来关联 <code>skill</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>project</code></td>
+<td>一组 Issue 的目标和负责人</td>
+<td><code>id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>project_resource</code></td>
+<td>项目关联的仓库、目录或外部资源</td>
+<td><code>id, project_id, workspace_id, resource_type, resource_ref, label, position, created_at, created_by</code></td>
+<td><code>id</code></td>
+<td>字段 <code>project_id</code> 用来关联 <code>project</code> 表中的记录。字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>squad</code></td>
+<td>由 Leader 协调的成员或 Agent 小队</td>
+<td><code>id, workspace_id, name, description, leader_id, creator_id, created_at, updated_at, archived_at, archived_by</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>leader_id</code> 用来关联 <code>agent</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>squad_member</code></td>
+<td>Squad 与成员/Agent 的多态连接</td>
+<td><code>id, squad_id, member_type, member_id, role, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>squad_id</code> 用来关联 <code>squad</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>runtime_profile</code></td>
+<td>自定义 Runtime 的协议和启动命令</td>
+<td><code>id, workspace_id, display_name, protocol_family, command_name, description, fixed_args, visibility, created_by, enabled</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表；<code>created_by</code> 记录创建者用户，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>chat_session</code></td>
+<td>用户与 Agent 的持续会话</td>
+<td><code>id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。字段 <code>creator_id</code> 用来关联 <code>user</code> 表中的记录。字段 <code>runtime_id</code> 用来关联 <code>agent_runtime</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>chat_message</code></td>
+<td>Chat 中的一条用户、助手或系统消息</td>
+<td><code>id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until</code></td>
+<td><code>id</code></td>
+<td>字段 <code>chat_session_id</code> 用来关联 <code>chat_session</code> 表中的记录。字段 <code>task_id</code> 用来关联 <code>agent_task_queue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>chat_draft_restore</code></td>
+<td>可恢复的聊天草稿</td>
+<td><code>id, chat_session_id, task_id, content, attachment_ids, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>chat_session_id</code> 用来关联 <code>chat_session</code> 表；<code>task_id</code> 用来关联对应的运行记录，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>chat_pinned_agent</code></td>
+<td>用户置顶的 Agent 及顺序</td>
+<td><code>id, workspace_id, user_id, agent_id, position, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code>、<code>user_id</code> 和 <code>agent_id</code> 分别关联工作区、用户和智能体，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>task_message</code></td>
+<td>一次运行的工具调用、输入和输出事件</td>
+<td><code>id, task_id, seq, type, tool, content, input, output, created_at, output_truncated</code></td>
+<td><code>id</code></td>
+<td>字段 <code>task_id</code> 用来关联 <code>agent_task_queue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>task_usage</code></td>
+<td>单个 Task 的模型 token 和成本</td>
+<td><code>id, task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>task_id</code> 用来关联 <code>agent_task_queue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>task_usage_hourly</code></td>
+<td>按小时和维度聚合的模型用量</td>
+<td><code>bucket_hour, workspace_id, runtime_id, agent_id, project_id, provider, model, input_tokens, output_tokens, cache_read_tokens</code></td>
+<td>无显式主键；上述维度有 <code>UNIQUE NULLS NOT DISTINCT</code> 约束</td>
+<td>表结构未声明数据库外键；聚合维度由 Task/Issue 的应用逻辑写入。</td>
+</tr>
+<tr>
+<td><code>task_usage_hourly_dirty</code></td>
+<td>等待重算的小时用量桶</td>
+<td><code>bucket_hour, workspace_id, runtime_id, agent_id, project_id, provider, model, enqueued_at</code></td>
+<td>无显式主键；上述维度有 <code>UNIQUE NULLS NOT DISTINCT</code> 约束</td>
+<td>表结构未声明数据库外键；由数据库触发器写入失效桶。</td>
+</tr>
+<tr>
+<td><code>task_usage_hourly_rollup_state</code></td>
+<td>小时用量聚合水位和错误状态</td>
+<td><code>id, watermark_at, last_run_started_at, last_run_finished_at, last_run_rows, last_error</code></td>
+<td><code>id</code></td>
+<td>维护用量聚合进度，不直接关联业务对象；聚合任务由应用层驱动。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="自动化与集成主表"><a class="markdownIt-Anchor" href="#自动化与集成主表"></a> 自动化与集成主表</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>autopilot</code></td>
+<td>自动化规则本身和负责人</td>
+<td><code>id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>project_id</code> 用来关联 <code>project</code> 表中的记录。字段 <code>assignee_id</code> 用来关联 <code>agent</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>autopilot_trigger</code></td>
+<td>自动化的 Cron、Webhook 或事件触发器</td>
+<td><code>id, autopilot_id, kind, enabled, cron_expression, timezone, next_run_at, webhook_token, label, last_fired_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>autopilot_id</code> 用来关联 <code>autopilot</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>autopilot_run</code></td>
+<td>一次自动化触发的运行及其结果</td>
+<td><code>id, autopilot_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason</code></td>
+<td><code>id</code></td>
+<td>字段 <code>autopilot_id</code> 用来关联 <code>autopilot</code> 表中的记录。字段 <code>trigger_id</code> 用来关联 <code>autopilot_trigger</code> 表中的记录。字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>task_id</code> 用来关联 <code>agent_task_queue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>autopilot_rule_version</code></td>
+<td>发布时的规则配置快照和发布者</td>
+<td><code>id, autopilot_id, workspace_id, published_by_type, published_by_id, config_summary, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>autopilot_id</code> 和 <code>workspace_id</code> 分别关联自动化规则和工作区，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>autopilot_subscriber</code></td>
+<td>自动化规则订阅者</td>
+<td><code>autopilot_id, user_type, user_id, created_at</code></td>
+<td><code>autopilot_id, user_type, user_id</code></td>
+<td>通过 <code>autopilot_id</code> 关联自动化规则；<code>user_type</code> 与 <code>user_id</code> 表示订阅者，具体主体由应用层校验。</td>
+</tr>
+<tr>
+<td><code>autopilot_collaborator</code></td>
+<td>自动化规则协作者和授权人</td>
+<td><code>autopilot_id, user_type, user_id, granted_by, created_at</code></td>
+<td><code>autopilot_id, user_type, user_id</code></td>
+<td>通过 <code>autopilot_id</code> 关联自动化规则；<code>user_type</code> 与 <code>user_id</code> 表示协作者，授权人由应用层校验。</td>
+</tr>
+<tr>
+<td><code>autopilot_quota_period</code></td>
+<td>工作区时间段的自动化配额计数</td>
+<td><code>workspace_id, period_start, period_end, used_count, reserved_count, blocked_counts, created_at, updated_at, rejection_notified_at</code></td>
+<td><code>workspace_id, period_start, period_end</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>autopilot_quota_reservation</code></td>
+<td>一次自动化配额的预留和结算</td>
+<td><code>id, workspace_id, period_start, period_end, policy_revision, subscription_version, source, idempotency_key, state, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>webhook_delivery</code></td>
+<td>外部 Webhook 的验签、去重、租约和重试</td>
+<td><code>id, workspace_id, autopilot_id, trigger_id, provider, event, dedupe_key, dedupe_source, signature_status, status</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>autopilot_id</code> 用来关联 <code>autopilot</code> 表中的记录；字段 <code>trigger_id</code> 用来关联 <code>autopilot_trigger</code> 表中的记录。字段 <code>autopilot_run_id</code> 用来关联 <code>autopilot_run</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>vcs_connection</code></td>
+<td>通用版本控制连接和加密凭据</td>
+<td><code>id, workspace_id, provider, instance_url, account_login, access_token_encrypted, webhook_secret_encrypted, connected_by_id, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 表示连接所属的工作区，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>vcs_pull_request</code></td>
+<td>通用 VCS Pull Request 镜像</td>
+<td><code>id, workspace_id, connection_id, provider, repo_owner, repo_name, pr_number, title, state, html_url</code></td>
+<td><code>id</code></td>
+<td>字段 <code>connection_id</code> 用来关联 <code>vcs_connection</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_vcs_pull_request</code></td>
+<td>Issue 与通用 VCS PR 的连接</td>
+<td><code>issue_id, pull_request_id, close_intent, linked_by_type, linked_by_id, linked_at</code></td>
+<td><code>issue_id, pull_request_id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>pull_request_id</code> 用来关联 <code>vcs_pull_request</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>vcs_commit_status</code></td>
+<td>提交检查状态</td>
+<td><code>connection_id, sha, context, state, target_url, description, updated_at</code></td>
+<td><code>connection_id, sha, context</code></td>
+<td>字段 <code>connection_id</code> 关联 <code>vcs_connection</code>；SHA 和 context 标识对应的提交检查。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="通用渠道表"><a class="markdownIt-Anchor" href="#通用渠道表"></a> 通用渠道表</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>channel_installation</code></td>
+<td>工作区 Agent 的外部聊天渠道安装</td>
+<td><code>id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_user_binding</code></td>
+<td>外部渠道用户与 Multica 用户的绑定</td>
+<td><code>id, workspace_id, multica_user_id, installation_id, channel_type, channel_user_id, config, bound_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>installation_id</code> 用来关联 <code>channel_installation</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_chat_session_binding</code></td>
+<td>外部聊天会话与 Chat session 的绑定</td>
+<td><code>id, chat_session_id, installation_id, channel_type, channel_chat_id, chat_type, last_message_id, last_thread_id, config, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>chat_session_id</code> 用来关联 <code>chat_session</code> 表中的记录；字段 <code>installation_id</code> 用来关联 <code>installation</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_inbound_message_dedup</code></td>
+<td>外部入站消息去重</td>
+<td><code>installation_id, message_id, received_at, processed_at, claim_token</code></td>
+<td><code>installation_id, message_id</code></td>
+<td>通过 <code>installation_id</code> 关联渠道安装；<code>message_id</code> 用于判断同一入站消息是否已经处理，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_inbound_audit</code></td>
+<td>外部事件接收和丢弃审计</td>
+<td><code>id, installation_id, channel_type, channel_chat_id, event_type, channel_event_id, channel_message_id, drop_reason, received_at</code></td>
+<td><code>id</code></td>
+<td>通过 <code>installation_id</code> 关联渠道安装；事件和消息 ID 用于记录外部渠道的接收审计，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_task_delivery</code></td>
+<td>Task 到外部聊天的投递上下文</td>
+<td><code>task_id, binding_id, installation_id, channel_type, channel_chat_id, chat_type, channel_message_id, channel_thread_id, route_revision, config</code></td>
+<td><code>task_id</code></td>
+<td>字段 <code>task_id</code> 用来关联 <code>task</code> 表中的记录；字段 <code>binding_id</code> 用来关联 <code>channel binding</code> 表中的记录；字段 <code>installation_id</code> 用来关联 <code>installation</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_outbound_message</code></td>
+<td>外部出站消息与路由版本</td>
+<td><code>installation_id, channel_type, channel_message_id, binding_id, route_revision, task_id, outbound_kind, created_at</code></td>
+<td>无显式主键；<code>(installation_id, channel_message_id)</code> 唯一索引</td>
+<td>表结构未声明数据库外键；绑定和 Task 关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_outbound_card_message</code></td>
+<td>外部卡片消息及补丁状态</td>
+<td><code>id, chat_session_id, task_id, channel_type, channel_chat_id, channel_card_message_id, status, last_patched_at, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>chat_session_id</code> 和 <code>task_id</code> 分别关联 Chat 会话和运行记录，外部渠道身份由应用层维护。</td>
+</tr>
+<tr>
+<td><code>channel_reply_delivery</code></td>
+<td>一次回复分块发送的租约和结算</td>
+<td><code>turn_id, task_id, binding_id, installation_id, channel_type, chat_id, phase, send_state, message_id, chunks_sent</code></td>
+<td>无显式主键；<code>turn_id</code> 唯一索引</td>
+<td>表结构未声明数据库外键；Task、Binding 和 Installation 关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_binding_token</code></td>
+<td>一次性渠道绑定 token</td>
+<td><code>token_hash, workspace_id, installation_id, channel_type, channel_user_id, expires_at, consumed_at, created_at</code></td>
+<td><code>token_hash</code></td>
+<td>表结构未声明数据库外键；installation 和用户范围由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_chat_context_generation</code></td>
+<td>外部会话上下文重建版本</td>
+<td><code>chat_session_id, revision, history_start_message_id, history_end_message_id, history_boundary_pending, pending_fresh, initiator_user_id, created_at, last_message_id, last_thread_id</code></td>
+<td>无显式主键；<code>(chat_session_id, revision)</code> 唯一索引</td>
+<td>表结构未声明数据库外键；Chat session 关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>channel_media_pending_object</code></td>
+<td>待解析渠道媒体对象的重试账本</td>
+<td><code>storage_key, workspace_id, chat_message_id, storage_url, installation_id, state, lease_token, lease_expires_at, attempt, next_attempt_at</code></td>
+<td><code>storage_key</code></td>
+<td>字段 <code>workspace_id</code>、<code>chat_message_id</code> 和 <code>installation_id</code> 分别指向工作区、Chat 消息和渠道安装，关系由应用层校验。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="协作辅助表"><a class="markdownIt-Anchor" href="#协作辅助表"></a> 协作辅助表</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>comment_reaction</code></td>
+<td>评论表情反应</td>
+<td><code>id, comment_id, workspace_id, actor_type, actor_id, emoji, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>comment_id</code> 用来关联 <code>comment</code> 表中的记录。字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_reaction</code></td>
+<td>Issue 表情反应</td>
+<td><code>id, issue_id, workspace_id, actor_type, actor_id, emoji, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent_to_label</code></td>
+<td>Agent 与标签的连接</td>
+<td><code>agent_id, label_id, created_at</code></td>
+<td><code>agent_id, label_id</code></td>
+<td>字段 <code>agent_id</code> 和 <code>label_id</code> 分别关联智能体与标签，是两者的多对多连接，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>skill_to_label</code></td>
+<td>Skill 与标签的连接</td>
+<td><code>skill_id, label_id, created_at</code></td>
+<td><code>skill_id, label_id</code></td>
+<td>字段 <code>skill_id</code> 和 <code>label_id</code> 分别关联 skill 与标签，是两者的多对多连接，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>issue_subscriber</code></td>
+<td>Issue 订阅者及退订状态</td>
+<td><code>issue_id, user_type, user_id, reason, created_at, unsubscribed_at, opt_out_scope</code></td>
+<td><code>issue_id, user_type, user_id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_view</code></td>
+<td>保存的 Issue 筛选和展示定义</td>
+<td><code>id, workspace_id, owner_id, name, scope_type, scope_id, scope_variant, visibility, definition_version, query</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>owner_id</code> 用来关联 <code>user</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>issue_view_preference</code></td>
+<td>用户对 Issue 视图的偏好</td>
+<td><code>workspace_id, user_id, scope_type, scope_id, prefs, updated_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>pinned_item</code></td>
+<td>用户固定的工作区对象</td>
+<td><code>id, workspace_id, user_id, item_type, item_id, position, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>attachment</code></td>
+<td>Issue、评论、Chat 或 Task 的文件引用</td>
+<td><code>id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录；字段 <code>comment_id</code> 用来关联 <code>comment</code> 表中的记录。字段 <code>chat_session_id</code> 用来关联 <code>chat_session</code> 表中的记录；字段 <code>chat_message_id</code> 用来关联 <code>chat_message</code> 表中的记录。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="调度-维护与搜索"><a class="markdownIt-Anchor" href="#调度-维护与搜索"></a> 调度、维护与搜索</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sys_cron_executions</code></td>
+<td>系统 Cron 作业的租约、重试和结果</td>
+<td><code>id, job_name, scope_kind, scope_id, plan_time, status, attempt, max_attempts, next_retry_at, runner_id</code></td>
+<td><code>id</code></td>
+<td>表结构未声明数据库外键；相关 ID 的有效性和清理由应用层负责。</td>
+</tr>
+<tr>
+<td><code>maintenance_job</code></td>
+<td>长时间维护作业的检查点和进度</td>
+<td><code>id, job_type, job_version, scope_key, idempotency_key, request_hash, status, revision, dry_run, options</code></td>
+<td><code>id</code></td>
+<td>表结构未声明数据库外键；相关 ID 的有效性和清理由应用层负责。</td>
+</tr>
+<tr>
+<td><code>search_index_change</code></td>
+<td>异步搜索索引变更队列</td>
+<td><code>entity_type, entity_id, workspace_id, change_xid, changed_at</code></td>
+<td><code>entity_type, entity_id</code></td>
+<td>表结构未声明数据库外键；workspace_id 由触发器写入并由索引消费者校验。</td>
+</tr>
+<tr>
+<td><code>search_index_prune_mark</code></td>
+<td>搜索变更队列清理水位</td>
+<td><code>singleton, pruned_through_xid</code></td>
+<td><code>singleton</code></td>
+<td>表结构未声明数据库外键；相关 ID 的有效性和清理由应用层负责。</td>
+</tr>
+<tr>
+<td><code>client_usage_daily</code></td>
+<td>客户端每日活跃和 Runtime 探测统计</td>
+<td><code>user_id, client_type, install_id, activity_date, workspace_id, client_version, os, first_active_at, last_active_at, runtime_probed_at</code></td>
+<td><code>user_id, client_type, install_id, activity_date, workspace_id</code></td>
+<td>字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录；字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="issue-扩展与来源"><a class="markdownIt-Anchor" href="#issue-扩展与来源"></a> Issue 扩展与来源</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>issue_property</code></td>
+<td>工作区自定义 Issue 属性定义</td>
+<td><code>id, workspace_id, name, type, description, config, position, archived_at, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 表示自定义属性所属的工作区，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>issue_status</code></td>
+<td>工作区 Issue 状态目录</td>
+<td><code>id, workspace_id, key, name, description, category, color, is_system, position, archived_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 表示状态目录所属的工作区，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>issue_child_event</code></td>
+<td>子 Issue 状态传播事件</td>
+<td><code>id, workspace_id, parent_id, child_id, kind, source_task_id, created_at, claimed_at, processed_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>parent_id</code> 用来关联 <code>issue</code> 表中的记录；字段 <code>child_id</code> 用来关联 <code>issue</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>issue_source_context</code></td>
+<td>从 Issue 或评论捕获的不可变上下文快照</td>
+<td><code>id, workspace_id, issue_id, origin_task_id, source_issue_id, anchor_comment_id, captured_by_user_id, snapshot_version, snapshot, capture_digest</code></td>
+<td><code>id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_source_context_object_intent</code></td>
+<td>来源上下文对象存储清理意图</td>
+<td><code>storage_key, workspace_id, source_context_id, attachment_id, object_url, state, lease_token, lease_expires_at, next_attempt_at, last_error</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>source_context_id</code> 用来关联 <code>issue_source_context</code> 表中的记录。字段 <code>attachment_id</code> 用来关联 <code>attachment</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_wakeup</code></td>
+<td>Issue 的延迟或事件唤醒规则</td>
+<td><code>id, workspace_id, issue_id, agent_id, created_by, source_task_id, parent_comment_id, instruction, kind, mode</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录；字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>issue_wakeup_receipt</code></td>
+<td>唤醒事件去重和处理凭据</td>
+<td><code>id, wakeup_id, revision, event_key, event_type, payload, task_id, processed_at, created_at, coalesce_key</code></td>
+<td><code>id</code></td>
+<td>字段 <code>wakeup_id</code> 用来关联 <code>issue_wakeup</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>task_supplement</code></td>
+<td>Task 补充请求的生命周期</td>
+<td><code>task_id, workspace_id, issue_id, comment_id, author_id, client_request_id, status, failure_reason, attempt_count, created_at</code></td>
+<td><code>task_id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录；字段 <code>comment_id</code> 用来关联 <code>comment</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>task_supplement_capability</code></td>
+<td>补充请求所需能力</td>
+<td><code>task_id, workspace_id, issue_id, capability, created_at</code></td>
+<td><code>task_id, capability</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>task_token</code></td>
+<td>一次运行的短期访问 token</td>
+<td><code>id, token_hash, task_id, agent_id, workspace_id, user_id, expires_at, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>task_id</code> 用来关联 <code>agent_task_queue</code> 表中的记录。字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="渠道与历史兼容"><a class="markdownIt-Anchor" href="#渠道与历史兼容"></a> 渠道与历史兼容</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dingtalk_group_route</code></td>
+<td>钉钉群到 Agent 的路由</td>
+<td><code>id, workspace_id, installation_id, conversation_id, conversation_title, agent_id, revision, discovered_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>installation_id</code> 用来关联 <code>channel_installation</code> 表中的记录；字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录，具体有效性由应用层校验。</td>
+</tr>
+<tr>
+<td><code>dingtalk_group_presence</code></td>
+<td>钉钉群发现和活跃状态</td>
+<td><code>workspace_id, installation_id, conversation_id, conversation_title, bot_name, bot_identity_issue, first_seen_at, last_active_at, mention_count, created_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>workspace_id</code> 和 <code>installation_id</code> 分别关联工作区与渠道安装，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>dingtalk_bot_identity</code></td>
+<td>钉钉机器人身份诊断</td>
+<td><code>workspace_id, installation_id, bot_name, bot_identity_issue, created_at, updated_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>workspace_id</code> 和 <code>installation_id</code> 分别关联工作区与渠道安装，关系由应用层校验。</td>
+</tr>
+<tr>
+<td><code>lark_installation</code></td>
+<td>旧 Feishu 安装记录</td>
+<td><code>id, workspace_id, agent_id, app_id, app_secret_encrypted, tenant_key, bot_open_id, installer_user_id, status, ws_lease_token</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。字段 <code>installer_user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>lark_user_binding</code></td>
+<td>旧 Feishu 用户绑定</td>
+<td><code>id, workspace_id, multica_user_id, installation_id, lark_open_id, union_id, bound_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录；字段 <code>multica_user_id</code> 用来关联 <code>member</code> 表中的记录；字段 <code>installation_id</code> 用来关联 <code>lark_installation</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>lark_chat_session_binding</code></td>
+<td>旧 Feishu 会话绑定</td>
+<td><code>id, chat_session_id, installation_id, lark_chat_id, lark_chat_type, created_at, last_lark_message_id, last_lark_thread_id</code></td>
+<td><code>id</code></td>
+<td>字段 <code>chat_session_id</code> 用来关联 <code>chat_session</code> 表中的记录；字段 <code>installation_id</code> 用来关联 <code>lark_installation</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>lark_inbound_message_dedup</code></td>
+<td>旧 Feishu 入站去重</td>
+<td><code>installation_id, message_id, received_at, processed_at, claim_token</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>通过 <code>installation_id</code> 关联旧 Feishu 安装；<code>message_id</code> 用于判断入站消息是否重复。</td>
+</tr>
+<tr>
+<td><code>lark_inbound_audit</code></td>
+<td>旧 Feishu 入站审计</td>
+<td><code>id, installation_id, lark_chat_id, event_type, lark_event_id, lark_message_id, drop_reason, received_at</code></td>
+<td><code>id</code></td>
+<td>通过 <code>installation_id</code> 关联旧 Feishu 安装；事件和消息 ID 用于保存接收审计。</td>
+</tr>
+<tr>
+<td><code>lark_outbound_card_message</code></td>
+<td>旧 Feishu 卡片消息</td>
+<td><code>id, chat_session_id, task_id, lark_chat_id, lark_card_message_id, status, last_patched_at, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>chat_session_id</code> 和 <code>task_id</code> 分别关联 Chat 会话和运行记录，旧 Feishu 身份由应用层维护。</td>
+</tr>
+<tr>
+<td><code>lark_binding_token</code></td>
+<td>旧 Feishu 绑定 token</td>
+<td><code>token_hash, workspace_id, installation_id, lark_open_id, expires_at, consumed_at, created_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>workspace_id</code> 和 <code>installation_id</code> 分别关联工作区与旧 Feishu 安装，绑定用户由应用层校验。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="github-辅助表"><a class="markdownIt-Anchor" href="#github-辅助表"></a> GitHub 辅助表</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>github_installation</code></td>
+<td>GitHub App 安装和账号</td>
+<td><code>id, workspace_id, installation_id, account_login, account_type, account_avatar_url, connected_by_id, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>connected_by_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>github_pull_request</code></td>
+<td>GitHub Pull Request 镜像</td>
+<td><code>id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>github_pull_request_check_suite</code></td>
+<td>GitHub 检查套件</td>
+<td><code>pr_id, suite_id, head_sha, app_id, conclusion, status, updated_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>pr_id</code> 用来关联 <code>github_pull_request</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>github_pull_request_check_run</code></td>
+<td>GitHub 检查运行</td>
+<td><code>pr_id, head_sha, ordinal, name, status, conclusion, details_url, is_status_context</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>pr_id</code> 用来关联 <code>github_pull_request</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>github_pending_check_suite</code></td>
+<td>尚未合并的 GitHub 检查结果</td>
+<td><code>workspace_id, installation_id, repo_owner, repo_name, pr_number, suite_id, head_sha, app_id, conclusion, status</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>保存尚未归档的外部检查结果；工作区和安装信息由应用层校验。</td>
+</tr>
+<tr>
+<td><code>github_pending_installation</code></td>
+<td>尚未绑定工作区的 GitHub 安装</td>
+<td><code>installation_id, account_login, account_type, account_avatar_url, received_at, updated_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>保存尚未绑定工作区的 GitHub 安装，不直接关联业务表。</td>
+</tr>
+<tr>
+<td><code>issue_pull_request</code></td>
+<td>Issue 与 GitHub PR 的连接</td>
+<td><code>issue_id, pull_request_id, linked_by_type, linked_by_id, linked_at, close_intent</code></td>
+<td><code>issue_id, pull_request_id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>pull_request_id</code> 用来关联 <code>github_pull_request</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_pull_request_exclusion</code></td>
+<td>Issue 明确排除的 GitHub PR</td>
+<td><code>issue_id, pull_request_id, workspace_id, excluded_by_type, excluded_by_id, created_at</code></td>
+<td><code>issue_id, pull_request_id</code></td>
+<td>字段 <code>issue_id</code> 用来关联 <code>issue</code> 表中的记录。字段 <code>pull_request_id</code> 用来关联 <code>github_pull_request</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>issue_pr_automation</code></td>
+<td>Issue 的 PR 自动完成设置</td>
+<td><code>issue_id, workspace_id, auto_complete_disabled, updated_by_type, updated_by_id, updated_at</code></td>
+<td><code>模型无单独 id；见复合唯一键</code></td>
+<td>字段 <code>issue_id</code> 和 <code>workspace_id</code> 分别关联任务与工作区，关系由应用层校验。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="插件与外部服务辅助表"><a class="markdownIt-Anchor" href="#插件与外部服务辅助表"></a> 插件与外部服务辅助表</h3>
+<table>
+<thead>
+<tr>
+<th>表</th>
+<th>核心功能</th>
+<th>核心字段</th>
+<th>主键</th>
+<th>与其他表的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>plugin_package</code></td>
+<td>工作区插件包</td>
+<td><code>id, workspace_id, plugin_key, name, created_by, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 表示插件包所属工作区，创建者由应用层校验。</td>
+</tr>
+<tr>
+<td><code>plugin_package_version</code></td>
+<td>插件包的不可变版本</td>
+<td><code>id, package_id, workspace_id, version, manifest, digest, size_bytes, published_by, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>package_id</code> 用来关联 <code>plugin_package</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>plugin_package_file</code></td>
+<td>插件版本中的文件</td>
+<td><code>id, version_id, path, content, size_bytes, sha256, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>version_id</code> 用来关联 <code>plugin_package_version</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>plugin_installation</code></td>
+<td>插件在工作区的安装实例</td>
+<td><code>id, workspace_id, plugin_key, version, manifest, granted_scopes, config, enabled, installed_by, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。字段 <code>package_version_id</code> 用来关联 <code>plugin_package_version</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>plugin_storage</code></td>
+<td>插件按作用域保存的 key/value</td>
+<td><code>id, installation_id, scope_type, scope_id, key, value, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>installation_id</code> 用来关联 <code>plugin_installation</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>plugin_secret</code></td>
+<td>插件加密密钥</td>
+<td><code>id, installation_id, key, ciphertext, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>installation_id</code> 用来关联 <code>plugin_installation</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>plugin_hook_schedule</code></td>
+<td>插件 Hook 的定时计划</td>
+<td><code>id, installation_id, workspace_id, hook_key, cron_expression, timezone, generation, activated_at, next_run_at, enabled</code></td>
+<td><code>id</code></td>
+<td>字段 <code>installation_id</code> 用来关联 <code>plugin_installation</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>plugin_invocation</code></td>
+<td>插件 Hook 的执行记录</td>
+<td><code>id, installation_id, workspace_id, hook_key, trigger, status, event_type, attempt, latency_ms, error</code></td>
+<td><code>id</code></td>
+<td>字段 <code>installation_id</code> 用来关联 <code>plugin_installation</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>user_composio_connection</code></td>
+<td>用户的 Composio 工具连接</td>
+<td><code>id, user_id, toolkit_slug, auth_config_id, connected_account_id, composio_user_id, status, connected_at, last_used_at, created_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>user_id</code> 用来关联 <code>user</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>workspace_mcp_server</code></td>
+<td>工作区 MCP Server 配置</td>
+<td><code>id, workspace_id, name, config, created_by, created_at, updated_at</code></td>
+<td><code>id</code></td>
+<td>字段 <code>workspace_id</code> 用来关联 <code>workspace</code> 表中的记录。</td>
+</tr>
+<tr>
+<td><code>agent_mcp_server</code></td>
+<td>Agent 与 MCP Server 的连接</td>
+<td><code>agent_id, server_id, enabled, created_at</code></td>
+<td><code>agent_id, server_id</code></td>
+<td>字段 <code>agent_id</code> 用来关联 <code>agent</code> 表中的记录。字段 <code>server_id</code> 用来关联 <code>workspace_mcp_server</code> 表中的记录。</td>
+</tr>
+</tbody>
+</table>
+<p>下面不再重复逐表列字段，而是按领域说明这些表如何组织业务事实、关系和生命周期。需要核对具体字段时，以前面的表格和 <code>server/pkg/db/generated/models.go</code> 为准。</p>
+<h3 id="身份与工作区"><a class="markdownIt-Anchor" href="#身份与工作区"></a> 身份与工作区</h3>
+<h4 id="用户与成员"><a class="markdownIt-Anchor" href="#用户与成员"></a> 用户与成员</h4>
+<p><code>user</code> 是全局账户，<code>workspace</code> 是隔离团队数据的边界；用户只有通过 <code>member</code> 加入工作区后，才拥有该工作区中的角色和权限。这样同一个用户可以参与多个工作区，而任务、智能体和集成数据仍然在各自的工作区内隔离。<code>member</code> 的唯一性约束保证同一用户不会在同一工作区重复入组。</p>
+<p><code>workspace_invitation</code> 和 <code>workspace_share_link</code> 是两种加入工作区的入口：前者面向特定邮箱或用户，后者面向可重复使用的邀请链接。验证邮箱、个人访问 token 等认证数据与成员关系分开保存；token 只保存哈希和生命周期信息，原文不会进入数据库。</p>
+<p>通知偏好、固定对象和客户端活跃记录属于成员使用工作区时产生的个性化投影，分别由 <code>notification_preference</code>、<code>pinned_item</code> 和 <code>client_usage_daily</code> 保存。它们不会改变成员权限，也不承担工作区身份判断；<code>feedback</code> 则保留用户对工作区的反馈上下文。</p>
+<h4 id="工作区配置"><a class="markdownIt-Anchor" href="#工作区配置"></a> 工作区配置</h4>
+<p><code>workspace</code> 不只是租户名称，还承载 Issue 编号、仓库上下文和默认设置等工作区级事实。Issue 编号计数器是并发控制点：创建任务时，服务在同一事务中锁定并递增计数器，再写入新的可读编号，避免两个请求得到相同编号。工作区条件也会贯穿业务查询，使一个对象的 UUID 不能绕过租户边界。</p>
+<h3 id="issue-与协作对象"><a class="markdownIt-Anchor" href="#issue-与协作对象"></a> Issue 与协作对象</h3>
+<h4 id="issue-主表"><a class="markdownIt-Anchor" href="#issue-主表"></a> Issue 主表</h4>
+<p><code>issue</code> 是协作模型的中心，保存一项待完成工作的当前状态；项目、评论、标签、依赖、附件和运行记录都围绕它展开。表中的内容、看板状态和负责人属于当前投影，状态变化过程则交给 <code>comment</code>、<code>activity_log</code> 和运行事件记录。这样读取列表时不必重放全部历史，审计时又能追溯状态如何变化。</p>
+<p>Issue 的负责人和创建者使用 <code>*_type + *_id</code> 表达多态主体，因此可以指向成员、智能体、小队或系统主体。<code>metadata</code> 适合保存来源和自动化产生的机器信息，工作区自定义字段则由 <code>issue_property</code> 定义、由 Issue 的属性值引用；服务层负责检查定义和任务是否属于同一工作区，并验证属性类型和大小。</p>
+<p>状态目录由 <code>issue_status</code> 独立建模，系统状态和工作区自定义状态共用同一解析路径。看板可以调整显示名称和顺序，而 Issue 仍使用稳定的状态 key，避免展示层变化破坏历史数据。</p>
+<h4 id="标签-依赖与层级"><a class="markdownIt-Anchor" href="#标签-依赖与层级"></a> 标签、依赖与层级</h4>
+<p>标签定义保存在 <code>issue_label</code>，<code>issue_to_label</code> 只保存任务与标签的连接，因此标签可以独立创建、归档和复用。相同的标签命名空间也服务于 <code>agent_to_label</code> 和 <code>skill_to_label</code>，让任务、智能体和 skill 可以使用一致的筛选方式。</p>
+<p><code>issue_dependency</code> 表达阻塞、被阻塞和关联等任务间关系；父子任务使用 <code>issue.parent_issue_id</code>，子任务状态变化则通过 <code>issue_child_event</code> 形成待处理事件。连接关系和事件分开后，层级结构负责表达当前组织方式，事件表负责保证异步状态传播不会因为重复投递而丢失或重复执行。</p>
+<h4 id="评论-活动与收件箱"><a class="markdownIt-Anchor" href="#评论-活动与收件箱"></a> 评论、活动与收件箱</h4>
+<p><code>comment</code> 同时承担讨论记录和触发智能体的入口：它可以形成线程，也可以追溯到产生它的运行。评论和任务上的表情反应分别由 <code>comment_reaction</code> 与 <code>issue_reaction</code> 保存，避免把反应状态塞进正文。</p>
+<p><code>activity_log</code> 是审计时间线，记录谁在何时对工作区或任务做了什么；它不取代 Issue 的当前状态。<code>inbox_item</code> 是面向成员或智能体的通知投影，表示一条已经产生的提醒；<code>issue_subscriber</code> 表示希望继续接收变化的订阅意愿。一个描述“订阅谁”的表和一个描述“通知什么”的表分开，才能分别处理退订、已读和通知重建。</p>
+<h4 id="项目-视图与附件"><a class="markdownIt-Anchor" href="#项目-视图与附件"></a> 项目、视图与附件</h4>
+<p><code>project</code> 为一组任务提供目标和负责人，<code>project_resource</code> 把仓库、目录或外部资源挂到项目上。项目是组织范围，任务仍然是实际协作对象，二者不会互相复制内容。</p>
+<p><code>issue_view</code> 保存筛选与展示的查询定义，<code>issue_view_preference</code> 只保存某个用户对该视图的显示偏好。视图是查询描述，不是任务缓存；任务列表仍由查询层根据当前事实重新计算。</p>
+<p><code>attachment</code> 是统一的文件引用索引，可以挂到任务、评论、Chat 或运行上；文件本体留在本地或对象存储，数据库只管理引用和生命周期。<code>issue_source_context</code> 保存从任务、评论或运行捕获的不可变上下文快照，<code>issue_source_context_object_intent</code> 则记录对象存储清理意图和重试进度，使快照删除可以异步完成而不丢记录。</p>
+<h4 id="唤醒规则"><a class="markdownIt-Anchor" href="#唤醒规则"></a> 唤醒规则</h4>
+<p><code>issue_wakeup</code> 把“以后什么时候再次唤醒智能体”从当前任务状态中分离出来，支持定时、事件过滤、间隔、过期和最大触发次数等策略。每次事件处理都会在 <code>issue_wakeup_receipt</code> 留下去重凭据，并记录实际创建的运行；即使同一事件重复投递，也不会重复启动运行。</p>
+<h3 id="agent-与执行链路"><a class="markdownIt-Anchor" href="#agent-与执行链路"></a> Agent 与执行链路</h3>
+<h4 id="agent-配置"><a class="markdownIt-Anchor" href="#agent-配置"></a> Agent 配置</h4>
+<p><code>agent</code> 描述智能体“应该怎样工作”：指令、模型、权限、可见性和并发限制属于配置；<code>agent_runtime</code> 描述“在哪里执行”：它代表某个守护进程提供的实际环境。配置与执行环境分开后，同一个智能体可以更换运行时，一个运行时也可以承载多个智能体。</p>
+<p>系统级智能体可以作为 Agent Builder 等内部流程的隐藏执行载体，普通列表会将其过滤。<code>agent_invocation_target</code> 保存公开调用授权，<code>agent_mcp_server</code> 连接智能体与工作区 MCP Server；这些授权关系依靠智能体所属工作区确定范围，不重复复制工作区字段。</p>
+<h4 id="runtime-与-profile"><a class="markdownIt-Anchor" href="#runtime-与-profile"></a> Runtime 与 Profile</h4>
+<p><code>runtime_profile</code> 描述某类运行时如何启动，<code>agent_runtime</code> 描述某个守护进程当前提供的在线实例。前者是可复用的协议和启动定义，后者是带有心跳、设备信息和在线状态的运行对象。<code>daemon_connection</code> 记录连接变化，<code>daemon_token</code> 负责守护进程认证，三者共同覆盖“定义、在线实例、连接凭据”三个生命周期。</p>
+<h4 id="任务队列"><a class="markdownIt-Anchor" href="#任务队列"></a> 任务队列</h4>
+<p><code>agent_task_queue</code> 是 Issue、Agent、Runtime 和一次运行之间的连接点。它既保存排队和执行状态，也保存来源、重试、重跑、审计归因、小队协作和派发时冻结的上下文。这样一次运行可以从任务、Chat、自动化或唤醒规则进入同一条执行链路，而不会为每个入口建立独立的任务模型。</p>
+<p>队列领取使用行锁和 <code>SKIP LOCKED</code>，多个守护进程可以并行扫描而不会领取同一条记录。运行完成后，结果不会直接覆盖 Issue 的描述或状态；服务会分别写入运行消息、评论、活动和事件，让当前状态、过程记录和审计时间线各自保持清晰。</p>
+<h4 id="消息与用量"><a class="markdownIt-Anchor" href="#消息与用量"></a> 消息与用量</h4>
+<p><code>task_message</code> 是一次运行的事件流，适合重建工具调用和输出过程；大输出可以保留截断标记，而不必把所有内容塞进任务主表。<code>task_usage</code> 保存单次运行的模型用量，小时聚合表则面向统计和配额查询。<code>task_usage_hourly_dirty</code> 表示需要重算的聚合桶，<code>task_usage_hourly_rollup_state</code> 记录聚合水位和最近一次处理结果，原始运行记录因此不必承担报表查询压力。</p>
+<h4 id="skills-与-squads"><a class="markdownIt-Anchor" href="#skills-与-squads"></a> Skills 与 Squads</h4>
+<p><code>skill</code> 是工作区级能力包，<code>skill_file</code> 保存其附属文件，<code>agent_skill</code> 决定某个智能体是否启用某项能力。能力定义和智能体配置分离后，同一个 skill 可以被多个智能体复用。</p>
+<p><code>squad</code> 把多个成员或智能体组织成由 Leader 协调的小队，<code>squad_member</code> 只记录成员类型、成员身份和角色。任务和自动化可以把小队作为负责人，具体执行时再由任务队列记录 Leader Task，组织关系与运行实例因此保持分离。</p>
+<h3 id="chat-与渠道数据"><a class="markdownIt-Anchor" href="#chat-与渠道数据"></a> Chat 与渠道数据</h3>
+<h4 id="chat-核心表"><a class="markdownIt-Anchor" href="#chat-核心表"></a> Chat 核心表</h4>
+<p><code>chat_session</code> 表示用户与智能体的持续会话，<code>chat_message</code> 保存会话中的消息和与运行的关联。一条用户消息可以创建一个统一的运行，再进入 <code>agent_task_queue</code>；因此 Web Chat、移动端 Chat 和外部聊天渠道共享同一条执行链路。<code>chat_draft_restore</code> 提供取消或失败后的恢复入口，<code>chat_pinned_agent</code> 只保存用户在工作区内的置顶顺序。</p>
+<h4 id="channel-表"><a class="markdownIt-Anchor" href="#channel-表"></a> Channel 表</h4>
+<p>通用 <code>channel_*</code> 表把外部平台拆成四层：安装记录负责工作区和渠道配置，用户与会话绑定负责外部身份映射，入站表负责去重和审计，投递表负责把运行结果送回外部聊天。卡片补丁、分块回复、上下文重建和媒体解析各自拥有独立的状态账本，因此某一阶段重试不会重复发送或破坏会话游标。</p>
+<p>这些表大多由应用层维护工作区、安装、绑定和 Chat 的生命周期。早期的 <code>lark_*</code> 表仍保留用于历史数据和迁移兼容，新业务路径统一使用带 <code>channel_type</code> 的通用模型；这是一种数据模型演进，而不是两套并行的业务入口。</p>
+<h3 id="自动化与外部集成"><a class="markdownIt-Anchor" href="#自动化与外部集成"></a> 自动化与外部集成</h3>
+<h4 id="autopilot"><a class="markdownIt-Anchor" href="#autopilot"></a> Autopilot</h4>
+<p><code>autopilot</code> 保存自动化规则，<code>autopilot_trigger</code> 把规则连接到 Cron、Webhook 或事件，<code>autopilot_run</code> 则记录一次实际触发。规则配置、触发条件和运行结果分开保存，使规则修改后仍能解释历史运行；<code>autopilot_rule_version</code> 保存发布时的快照，订阅者和协作者保存访问关系。</p>
+<p>配额表把“本时间段还能启动多少次”和“这一次是否已经预留额度”分开建模：<code>autopilot_quota_period</code> 维护工作区时间段的计数，<code>autopilot_quota_reservation</code> 通过幂等键记录预留、执行和结算。<code>webhook_delivery</code> 则把验签、去重、租约和重试从自动化规则中分离出来，便于可靠地重新投递外部事件。</p>
+<h4 id="vcs-与-github"><a class="markdownIt-Anchor" href="#vcs-与-github"></a> VCS 与 GitHub</h4>
+<p>通用 VCS 模型用 <code>vcs_connection</code> 保存连接，用 <code>vcs_pull_request</code> 保存 Pull Request 镜像，再由 <code>issue_vcs_pull_request</code> 建立任务与 PR 的关联，<code>vcs_commit_status</code> 保存提交检查。连接、外部对象和任务关联分开后，同一套任务模型可以接入不同版本控制服务。</p>
+<p>GitHub 专用表保留 GitHub 安装、PR、检查套件和检查运行等更细的对象；待处理安装和检查结果用于处理异步回调尚未完成绑定的中间状态。通用 VCS 与 GitHub 专用模型并存，是为了兼容不同集成能力，任务关联仍由各自的 link 表维护。</p>
+<h4 id="插件与-mcp"><a class="markdownIt-Anchor" href="#插件与-mcp"></a> 插件与 MCP</h4>
+<p>插件模型按“包、版本、文件、工作区安装”分层：版本和文件是不可变发布物，安装记录决定某个工作区启用哪个版本以及授予哪些权限。<code>plugin_storage</code> 和 <code>plugin_secret</code> 分别保存插件运行数据与加密密钥，Hook 调度和调用记录则独立记录计划、重试和结果。</p>
+<p><code>workspace_mcp_server</code> 保存工作区级工具配置，<code>agent_mcp_server</code> 决定某个智能体可以连接哪些 Server；<code>user_composio_connection</code> 保存用户授权的外部工具连接。插件、MCP 和 Composio 都是执行能力的来源，但它们的安装、授权和运行记录分别建模，避免把外部凭据直接混入智能体或任务主表。</p>
+<h2 id="数据访问层"><a class="markdownIt-Anchor" href="#数据访问层"></a> 数据访问层</h2>
+<h3 id="sql-与-sqlc"><a class="markdownIt-Anchor" href="#sql-与-sqlc"></a> SQL 与 sqlc</h3>
+<p>数据访问代码集中在 <code>server/pkg/db/queries/</code>。每个 SQL 文件按领域拆分，例如 <code>issue.sql</code>、<code>agent.sql</code>、<code>chat.sql</code>、<code>autopilot.sql</code> 和 <code>runtime.sql</code>。<code>server/sqlc.yaml</code> 把 <code>migrations/</code> 作为 schema，把这些查询生成到 <code>server/pkg/db/generated</code>，使用 pgx/v5：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">sql:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">engine:</span> <span class="string">&quot;postgresql&quot;</span></span><br><span class="line">    <span class="attr">queries:</span> <span class="string">&quot;pkg/db/queries/&quot;</span></span><br><span class="line">    <span class="attr">schema:</span> <span class="string">&quot;migrations/&quot;</span></span><br><span class="line">    <span class="attr">gen:</span></span><br><span class="line">      <span class="attr">go:</span></span><br><span class="line">        <span class="attr">package:</span> <span class="string">&quot;db&quot;</span></span><br><span class="line">        <span class="attr">out:</span> <span class="string">&quot;pkg/db/generated&quot;</span></span><br><span class="line">        <span class="attr">sql_package:</span> <span class="string">&quot;pgx/v5&quot;</span></span><br><span class="line">        <span class="attr">emit_json_tags:</span> <span class="literal">true</span></span><br></pre></td></tr></table></figure>
+<p>生成的 <code>db.Queries</code> 不知道业务含义，只持有一个 <code>DBTX</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> DBTX <span class="keyword">interface</span> &#123;</span><br><span class="line">    Exec(context.Context, <span class="type">string</span>, ...<span class="keyword">interface</span>&#123;&#125;) (pgconn.CommandTag, <span class="type">error</span>)</span><br><span class="line">    Query(context.Context, <span class="type">string</span>, ...<span class="keyword">interface</span>&#123;&#125;) (pgx.Rows, <span class="type">error</span>)</span><br><span class="line">    QueryRow(context.Context, <span class="type">string</span>, ...<span class="keyword">interface</span>&#123;&#125;) pgx.Row</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">New</span><span class="params">(db DBTX)</span></span> *Queries &#123; <span class="keyword">return</span> &amp;Queries&#123;db: db&#125; &#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(q *Queries)</span></span> WithTx(tx pgx.Tx) *Queries &#123;</span><br><span class="line">    <span class="keyword">return</span> &amp;Queries&#123;db: tx&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段代码解释了数据访问层的边界：SQL 是人工编写的，参数和返回行由 sqlc 生成成强类型 Go 方法，<code>WithTx</code> 则把同一组查询切换到事务连接。业务代码不需要手写 <code>rows.Scan</code>，也不会把 SQL 字符串散落在 Handler 中。</p>
+<h3 id="主库与只读副本"><a class="markdownIt-Anchor" href="#主库与只读副本"></a> 主库与只读副本</h3>
+<p>先从只有一个数据库的情况看起：创建任务、修改状态、查询列表，都访问同一台 PostgreSQL。这台负责接收写入的数据库就是<strong>主库</strong>。随着请求增多，大量查询会与写入争用数据库的计算资源和连接，任务创建、状态更新等操作也可能因此变慢。</p>
+<p><strong>只读副本</strong>是一台持续接收主库变更、供应用查询的数据库。PostgreSQL 的物理流复制通过传输并重放 WAL（记录数据库变更的日志），让副本逐步获得与主库相同的数据。把部分查询交给副本，就能分担主库的读取压力。不过，变更从主库传到副本需要时间：用户刚创建一个任务，主库已经保存成功，副本却可能还没收到它；此时若从副本刷新列表，新任务就会暂时“消失”。</p>
+<p>因此，Multica 按业务对数据新鲜度的要求选择数据库。需要马上看到刚提交的变化时，查询继续走主库，这里称为“强一致读取”；允许稍后刷新补齐变化时，才可以走副本，这里称为“最终一致读取”。例如，守护进程定期获取工作区列表，可以在下一次刷新时补齐变化；真正访问工作区资源时，各接口仍独立检查权限。副本成功返回旧数据不会触发自动回退，所以能否接受这种延迟，必须由业务主动判断。</p>
+<p>代码中的分工也沿着这个思路展开。<code>pgx/v5</code> 是 Go 访问 PostgreSQL 的驱动，它提供的 <code>pgxpool</code> 会维护一组可复用的连接，避免每次查询都重新连接数据库。服务默认只创建主库连接池；配置 <code>DATABASE_REPLICA_URL</code> 后，再为副本创建独立连接池。sqlc 生成的 <code>db.Queries</code> 可以接收任意一个连接池，所以相同的查询方法既能在主库执行，也能在副本执行。创建副本连接时，pgx 会检查目标连接是否只读；未配置副本或副本配置无效时，服务仍使用主库。</p>
+<p>选择工作由 <code>server/internal/dbreader/selector.go</code> 中的 <code>Selector</code> 完成。普通业务仍直接使用主库查询对象；允许延迟的业务则显式调用 <code>dbreader.Read</code>，声明 <code>EventualConsistency</code>，并提供一个可以重复执行、不会改变数据的查询。Selector 先尝试副本，如果连接失败或数据库暂时不可用，就在主库上重新执行一次。PostgreSQL 副本重放日志时也可能与正在执行的查询冲突并取消查询，这种情况同样可以回退主库；权限错误、SQL 错误或请求取消则直接返回。驱动提供的错误类型和 PostgreSQL 的 SQLSTATE 错误码，让代码能够区分这些情况。</p>
+<p>如果副本持续不可用，每个请求都先尝试它会增加等待时间。Selector 因此会在发现可用性故障后，暂停访问副本两秒，让请求直接走主库；之后放行一个真实查询试探，成功后恢复副本读取。这就是代码中的“熔断与恢复”。可选的 Prometheus 指标会记录查询走了哪台数据库、为什么回退，帮助观察副本是否分担了压力。这套方案把复制交给 PostgreSQL，把连接管理交给 pgx，把一致性选择和故障回退留在应用层。</p>
+<h3 id="service-组合业务操作"><a class="markdownIt-Anchor" href="#service-组合业务操作"></a> Service 组合业务操作</h3>
+<p>Handler 负责 HTTP 输入输出，Service 负责跨表校验、事务、状态变化和事件。以 <code>IssueService.Create</code> 为例，源码中的事务流程依次是：</p>
+<ol>
+<li><code>TxStarter.Begin</code> 开启事务，使用 <code>s.Queries.WithTx(tx)</code> 得到事务内查询对象。</li>
+<li>校验父 Issue、项目、标签和自定义属性是否属于当前工作区。</li>
+<li>锁定并检查重复 Issue。</li>
+<li>锁定工作区并分配 <code>issue.number</code>，计算看板位置。</li>
+<li>插入 Issue，必要时同时保存来源上下文、属性和标签关系；普通附件在提交后幂等绑定，媒体门控场景的延迟 Task 则与 Issue 一起提交。</li>
+<li>提交事务后发布 <code>EventIssueCreated</code>，再排入 Agent Task 或唤醒 Squad Leader。</li>
+</ol>
+<p>核心代码结构如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">tx, err := s.TxStarter.Begin(ctx)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> IssueCreateResult&#123;&#125;, fmt.Errorf(<span class="string">&quot;begin tx: %w&quot;</span>, err)</span><br><span class="line">&#125;</span><br><span class="line">qtx := s.Queries.WithTx(tx)</span><br><span class="line"><span class="comment">// qtx.GetIssueInWorkspace(...)</span></span><br><span class="line"><span class="comment">// qtx.IncrementIssueCounter(...)</span></span><br><span class="line"><span class="comment">// qtx.CreateIssue(...)</span></span><br><span class="line"><span class="keyword">if</span> err := tx.Commit(ctx); err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> IssueCreateResult&#123;&#125;, fmt.Errorf(<span class="string">&quot;commit issue: %w&quot;</span>, err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的提交边界很关键：Issue、编号、标签和必要的 Task 必须先成为一个一致状态；事件广播、分析上报和普通的 Agent 排队发生在提交之后，避免客户端收到一个数据库中还不存在的 Issue。</p>
+<p>AutopilotService 和 TaskService 使用同样的 <code>TxStarter</code> 接口。Autopilot 会在事务中创建运行、配额预留和规则版本；TaskService 会在事务中锁定 Chat session、创建消息和队列任务。不同入口（HTTP、Lark、Webhook、后台调度器）最终都调用 Service，因此不会各自实现一套不一致的写入规则。</p>
+<h3 id="并发与删除"><a class="markdownIt-Anchor" href="#并发与删除"></a> 并发与删除</h3>
+<p>数据访问层不仅是“执行 SELECT/INSERT”。Issue 更新查询会使用 <code>FOR UPDATE</code> 保护并发字段合并；队列领取使用行锁和 <code>SKIP LOCKED</code>；Chat session 在追加消息、切换 Runtime 和删除时有专门锁；配额表通过 <code>ON CONFLICT DO UPDATE</code> 锁住工作区时间段。</p>
+<p>删除同样由业务层掌控。删除 Issue 前，服务会锁定 Issue，清理附件、评论、Task、唤醒和来源上下文，并处理子 Issue 与重复标记；删除工作区则执行前面提到的固定清理计划。数据库中的索引和约束负责缩小查询范围、拒绝明显非法状态，跨表生命周期和权限仍由 Service 明确编排。</p>
+<h2 id="一次请求的完整路径"><a class="markdownIt-Anchor" href="#一次请求的完整路径"></a> 一次请求的完整路径</h2>
+<p>以“成员创建一个分配给 Agent 的 Issue”为例，调用链可以按下面的顺序阅读：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">HTTP Handler</span><br><span class="line">  └─ 解析 JSON、认证用户、取得 workspace_id</span><br><span class="line">      └─ IssueService.Create</span><br><span class="line">          ├─ db.Queries.WithTx(tx)</span><br><span class="line">          ├─ 检查 parent/project/label/property</span><br><span class="line">          ├─ 分配 issue.number 并 INSERT issue</span><br><span class="line">          ├─ 写 issue_to_label / source_context</span><br><span class="line">          ├─ COMMIT</span><br><span class="line">          ├─ 提交后幂等绑定 attachment</span><br><span class="line">          ├─ events.Bus 发布 issue.created</span><br><span class="line">          └─ TaskService.EnqueueAgentTask</span><br><span class="line">              └─ INSERT agent_task_queue</span><br><span class="line">                  └─ daemon claim → task_message / task_usage</span><br></pre></td></tr></table></figure>
+<p>客户端看到的 Issue 列表来自 <code>issue.sql</code> 的工作区过滤和分页查询；时间线来自 <code>comment</code>、<code>activity_log</code> 和实时事件；Agent 页面把 <code>agent</code>、<code>agent_runtime</code>、<code>skill</code> 和任务统计组合起来；运行详情再读取 <code>agent_task_queue</code>、<code>task_message</code> 和 <code>task_usage</code>。这些页面没有各自维护一份“真相”，而是通过查询层重新投影同一组数据库事实。</p>
+<p>理解这套模型后，阅读源码可以从三条线索开始：先从 <code>001_init.up.sql</code> 和 <code>models.go</code> 找到实体与字段，再从 <code>pkg/db/queries</code> 找到某个用例需要的 SQL，最后进入 <code>internal/service</code> 看事务、锁、权限和事件如何把多张表组合成一次业务操作。这样既能看清每张表的职责，也不会把数据库字段误认为完整的业务流程。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>Multica 的数据模型围绕三条主线展开：工作区限定数据和权限范围，任务（<code>issue</code>）承载协作内容与当前状态，运行（<code>agent_task_queue</code>）记录智能体的一次执行。评论、消息和用量补充过程记录，Chat、自动化与外部渠道复用这套协作和执行模型。</p>
+<p>数据访问层用 SQL 和 sqlc 表达查询，用 Service 组织跨表操作，再通过事务、锁和应用层校验维护一致性。只读副本分担允许延迟的查询，主库承担写入和需要及时看到结果的读取；理解这些边界，就能从表结构一路读到完整的业务流程。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/09/go-multica-02/" rel="next" title="Multica 学习 02：整体认识 Multica">
+      Multica 学习 02：整体认识 Multica <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%95%B0%E6%8D%AE%E6%8A%BD%E8%B1%A1"><span class="nav-number">1.</span> <span class="nav-text"> 核心数据抽象</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%BA%93%E8%A1%A8%E4%B8%80%E8%A7%88"><span class="nav-number">2.</span> <span class="nav-text"> 数据库表一览</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A4%E8%AF%81-%E7%AE%A1%E7%90%86%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%94%AF%E6%92%91"><span class="nav-number">2.1.</span> <span class="nav-text"> 认证、管理与运行支撑</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E4%B8%9A%E5%8A%A1%E8%A1%A8"><span class="nav-number">2.2.</span> <span class="nav-text"> 核心业务表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%8E%E9%9B%86%E6%88%90%E4%B8%BB%E8%A1%A8"><span class="nav-number">2.3.</span> <span class="nav-text"> 自动化与集成主表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%9A%E7%94%A8%E6%B8%A0%E9%81%93%E8%A1%A8"><span class="nav-number">2.4.</span> <span class="nav-text"> 通用渠道表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8D%8F%E4%BD%9C%E8%BE%85%E5%8A%A9%E8%A1%A8"><span class="nav-number">2.5.</span> <span class="nav-text"> 协作辅助表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B0%83%E5%BA%A6-%E7%BB%B4%E6%8A%A4%E4%B8%8E%E6%90%9C%E7%B4%A2"><span class="nav-number">2.6.</span> <span class="nav-text"> 调度、维护与搜索</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#issue-%E6%89%A9%E5%B1%95%E4%B8%8E%E6%9D%A5%E6%BA%90"><span class="nav-number">2.7.</span> <span class="nav-text"> Issue 扩展与来源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B8%A0%E9%81%93%E4%B8%8E%E5%8E%86%E5%8F%B2%E5%85%BC%E5%AE%B9"><span class="nav-number">2.8.</span> <span class="nav-text"> 渠道与历史兼容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#github-%E8%BE%85%E5%8A%A9%E8%A1%A8"><span class="nav-number">2.9.</span> <span class="nav-text"> GitHub 辅助表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8F%92%E4%BB%B6%E4%B8%8E%E5%A4%96%E9%83%A8%E6%9C%8D%E5%8A%A1%E8%BE%85%E5%8A%A9%E8%A1%A8"><span class="nav-number">2.10.</span> <span class="nav-text"> 插件与外部服务辅助表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BA%AB%E4%BB%BD%E4%B8%8E%E5%B7%A5%E4%BD%9C%E5%8C%BA"><span class="nav-number">2.11.</span> <span class="nav-text"> 身份与工作区</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%94%A8%E6%88%B7%E4%B8%8E%E6%88%90%E5%91%98"><span class="nav-number">2.11.1.</span> <span class="nav-text"> 用户与成员</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%B7%A5%E4%BD%9C%E5%8C%BA%E9%85%8D%E7%BD%AE"><span class="nav-number">2.11.2.</span> <span class="nav-text"> 工作区配置</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#issue-%E4%B8%8E%E5%8D%8F%E4%BD%9C%E5%AF%B9%E8%B1%A1"><span class="nav-number">2.12.</span> <span class="nav-text"> Issue 与协作对象</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#issue-%E4%B8%BB%E8%A1%A8"><span class="nav-number">2.12.1.</span> <span class="nav-text"> Issue 主表</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%A0%87%E7%AD%BE-%E4%BE%9D%E8%B5%96%E4%B8%8E%E5%B1%82%E7%BA%A7"><span class="nav-number">2.12.2.</span> <span class="nav-text"> 标签、依赖与层级</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E8%AF%84%E8%AE%BA-%E6%B4%BB%E5%8A%A8%E4%B8%8E%E6%94%B6%E4%BB%B6%E7%AE%B1"><span class="nav-number">2.12.3.</span> <span class="nav-text"> 评论、活动与收件箱</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE-%E8%A7%86%E5%9B%BE%E4%B8%8E%E9%99%84%E4%BB%B6"><span class="nav-number">2.12.4.</span> <span class="nav-text"> 项目、视图与附件</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%94%A4%E9%86%92%E8%A7%84%E5%88%99"><span class="nav-number">2.12.5.</span> <span class="nav-text"> 唤醒规则</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#agent-%E4%B8%8E%E6%89%A7%E8%A1%8C%E9%93%BE%E8%B7%AF"><span class="nav-number">2.13.</span> <span class="nav-text"> Agent 与执行链路</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#agent-%E9%85%8D%E7%BD%AE"><span class="nav-number">2.13.1.</span> <span class="nav-text"> Agent 配置</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#runtime-%E4%B8%8E-profile"><span class="nav-number">2.13.2.</span> <span class="nav-text"> Runtime 与 Profile</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E9%98%9F%E5%88%97"><span class="nav-number">2.13.3.</span> <span class="nav-text"> 任务队列</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%B6%88%E6%81%AF%E4%B8%8E%E7%94%A8%E9%87%8F"><span class="nav-number">2.13.4.</span> <span class="nav-text"> 消息与用量</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#skills-%E4%B8%8E-squads"><span class="nav-number">2.13.5.</span> <span class="nav-text"> Skills 与 Squads</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#chat-%E4%B8%8E%E6%B8%A0%E9%81%93%E6%95%B0%E6%8D%AE"><span class="nav-number">2.14.</span> <span class="nav-text"> Chat 与渠道数据</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#chat-%E6%A0%B8%E5%BF%83%E8%A1%A8"><span class="nav-number">2.14.1.</span> <span class="nav-text"> Chat 核心表</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#channel-%E8%A1%A8"><span class="nav-number">2.14.2.</span> <span class="nav-text"> Channel 表</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%87%AA%E5%8A%A8%E5%8C%96%E4%B8%8E%E5%A4%96%E9%83%A8%E9%9B%86%E6%88%90"><span class="nav-number">2.15.</span> <span class="nav-text"> 自动化与外部集成</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#autopilot"><span class="nav-number">2.15.1.</span> <span class="nav-text"> Autopilot</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#vcs-%E4%B8%8E-github"><span class="nav-number">2.15.2.</span> <span class="nav-text"> VCS 与 GitHub</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E6%8F%92%E4%BB%B6%E4%B8%8E-mcp"><span class="nav-number">2.15.3.</span> <span class="nav-text"> 插件与 MCP</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E8%AE%BF%E9%97%AE%E5%B1%82"><span class="nav-number">3.</span> <span class="nav-text"> 数据访问层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#sql-%E4%B8%8E-sqlc"><span class="nav-number">3.1.</span> <span class="nav-text"> SQL 与 sqlc</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BB%E5%BA%93%E4%B8%8E%E5%8F%AA%E8%AF%BB%E5%89%AF%E6%9C%AC"><span class="nav-number">3.2.</span> <span class="nav-text"> 主库与只读副本</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#service-%E7%BB%84%E5%90%88%E4%B8%9A%E5%8A%A1%E6%93%8D%E4%BD%9C"><span class="nav-number">3.3.</span> <span class="nav-text"> Service 组合业务操作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%B6%E5%8F%91%E4%B8%8E%E5%88%A0%E9%99%A4"><span class="nav-number">3.4.</span> <span class="nav-text"> 并发与删除</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%AC%A1%E8%AF%B7%E6%B1%82%E7%9A%84%E5%AE%8C%E6%95%B4%E8%B7%AF%E5%BE%84"><span class="nav-number">4.</span> <span class="nav-text"> 一次请求的完整路径</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">5.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">297</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
