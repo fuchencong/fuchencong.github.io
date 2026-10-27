@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="Multica 的一次运行，始于 Go 后端服务创建的任务队列，终于一条可查看的运行记录。daemon 领取任务后，在安装了 Claude Code、Codex、Cursor、OpenCode 等 Coding Agent 的机器上启动相应程序，再把过程和结果传回后端服务。不同 Coding Agent 的启动方式和输出格式各不相同。本文沿着一次 Run 的过程，介绍 Multica 如何统一这些">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Multica 学习 04：从 Coding Agent 到智能体">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/12/go-multica-04/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="Multica 的一次运行，始于 Go 后端服务创建的任务队列，终于一条可查看的运行记录。daemon 领取任务后，在安装了 Claude Code、Codex、Cursor、OpenCode 等 Coding Agent 的机器上启动相应程序，再把过程和结果传回后端服务。不同 Coding Agent 的启动方式和输出格式各不相同。本文沿着一次 Run 的过程，介绍 Multica 如何统一这些">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-12T08:53:00.000Z">
+<meta property="article:modified_time" content="2026-10-12T08:54:57.540Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/12/go-multica-04/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Multica 学习 04：从 Coding Agent 到智能体 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/12/go-multica-04/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Multica 学习 04：从 Coding Agent 到智能体
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-12 16:53:00" itemprop="dateCreated datePublished" datetime="2026-10-12T16:53:00+08:00">2026-10-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>Multica 的一次运行，始于 Go 后端服务创建的任务队列，终于一条可查看的运行记录。daemon 领取任务后，在安装了 Claude Code、Codex、Cursor、OpenCode 等 Coding Agent 的机器上启动相应程序，再把过程和结果传回后端服务。不同 Coding Agent 的启动方式和输出格式各不相同。本文沿着一次 Run 的过程，介绍 Multica 如何统一这些 Coding Agent，如何在它们之上配置自己的智能体，以及工具调用和 Coding Agent 输出如何被记录下来。</p>
+<span id="more"></span>
+<h2 id="运行时边界"><a class="markdownIt-Anchor" href="#运行时边界"></a> 运行时边界</h2>
+<p>先把“谁负责什么”分开，后面的代码就容易读了。Multica 的运行时由三类组件组成：</p>
+<p>本文会刻意区分两个容易混淆的概念：<strong>Coding Agent</strong> 指 Claude Code、Codex、Cursor 这类被 daemon 启动的底层程序；<strong>Multica 智能体</strong>指用户在工作区里配置的角色。后者包含名称、指令、skill、模型、工具和权限，前者负责根据这些上下文实际发起推理和工具调用。源码中的 <code>AgentData</code>、<code>agent_id</code> 等字段指的是 Multica 智能体，不是某个具体的 Coding Agent 程序。</p>
+<ul>
+<li><strong>Go 后端服务</strong>（<code>server/</code>）通过 HTTP API 和 WebSocket 保存智能体配置、Runtime 注册信息及 <code>agent_task_queue</code> 队列，负责权限校验、任务领取和状态转换；数据库保存这些持久化记录。</li>
+<li><strong>daemon</strong>运行在安装了这些 Coding Agent 的机器上，探测可用程序，准备任务工作目录，启动 Coding Agent 进程及其工具子进程，并上传运行事件。</li>
+<li><strong>Coding Agent</strong>是由 daemon 启动的底层程序，例如 Claude Code、Codex 或 Cursor。它接收 Multica 提供的提示和上下文，通过自己的协议调用工具、处理任务并返回结果。</li>
+</ul>
+<p>Go 后端服务和 daemon 之间既有 HTTP API，也有 WebSocket RPC。队列任务由后端服务产生，daemon 通过 claim 接口领取；实时连接用于心跳、任务可用通知和事件广播。Coding Agent 及其工具在 daemon 所在的机器上运行，代码仓库也主要在这台机器的任务工作目录中被读取和修改，因此 Multica 不需要把整个仓库上传到后端。</p>
+<p>从目录上看，边界也很明确：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">server/internal/service       创建、领取和完成一次 Run</span><br><span class="line">server/internal/handler       daemon API 与客户端 API</span><br><span class="line">server/internal/daemon        本机环境、队列轮询、进程生命周期</span><br><span class="line">server/pkg/agent              Coding Agent 适配器和统一事件模型</span><br><span class="line">server/internal/daemon/execenv 工作目录、上下文文件和 skill 注入</span><br><span class="line">packages/views                执行记录和时间线 UI</span><br></pre></td></tr></table></figure>
+<p>这里的 Runtime 不是模型本身，而是 daemon 可以启动的一套 Coding Agent 运行入口，通常对应 PATH 上发现的一个命令，例如 <code>claude</code> 或 <code>codex</code>。自定义 Runtime 则由 <code>runtime_profile</code> 提供 <code>protocol_family</code>、<code>command_name</code> 和固定参数。智能体是工作区里的长期配置，Run（数据库里的 <code>agent_task_queue</code> 记录）才是一次具体执行。</p>
+<h2 id="统一接口"><a class="markdownIt-Anchor" href="#统一接口"></a> 统一接口</h2>
+<p>不同 Coding Agent 的共同需求其实很少，Multica 把这部分压缩成一个小接口。<code>server/pkg/agent/agent.go</code> 中的定义如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Backend <span class="keyword">interface</span> &#123;</span><br><span class="line">    Execute(ctx context.Context, prompt <span class="type">string</span>, opts ExecOptions) (*Session, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Execute</code> 不直接返回一段字符串，而是返回一个 <code>Session</code>。这是设计的关键：Coding Agent 通常会在最终答案前产生很多中间事件，调用工具时还可能长时间没有文本输出，因此调用方需要同时消费事件流和最终结果。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Session <span class="keyword">struct</span> &#123;</span><br><span class="line">    Supplement       <span class="function"><span class="keyword">func</span><span class="params">(context.Context, <span class="type">string</span>)</span></span> <span class="type">error</span></span><br><span class="line">    SupplementReady  <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">bool</span></span><br><span class="line">    ToolActivity     <span class="function"><span class="keyword">func</span><span class="params">()</span></span> (<span class="type">int32</span>, time.Time)</span><br><span class="line">    InterruptBackgroundTools <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">bool</span></span><br><span class="line">    TerminalObserved <span class="function"><span class="keyword">func</span><span class="params">()</span></span> <span class="type">bool</span></span><br><span class="line">    Messages         &lt;-<span class="keyword">chan</span> Message</span><br><span class="line">    Result           &lt;-<span class="keyword">chan</span> Result</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中 <code>Messages</code> 是过程流，<code>Result</code> 只发送一次最终结果。几个可选回调让 daemon 不必了解某个 Coding Agent 的内部实现：<code>ToolActivity</code> 用于工具看门狗，<code>TerminalObserved</code> 用来区分“已经得到最终结果但还在清理”与“进程真的卡住”，<code>Supplement</code> 则为支持中的运行时追加一条用户消息。</p>
+<p>统一事件模型也很小：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    MessageText       MessageType = <span class="string">&quot;text&quot;</span></span><br><span class="line">    MessageThinking   MessageType = <span class="string">&quot;thinking&quot;</span></span><br><span class="line">    MessageToolUse    MessageType = <span class="string">&quot;tool-use&quot;</span></span><br><span class="line">    MessageToolResult MessageType = <span class="string">&quot;tool-result&quot;</span></span><br><span class="line">    MessageStatus     MessageType = <span class="string">&quot;status&quot;</span></span><br><span class="line">    MessageError      MessageType = <span class="string">&quot;error&quot;</span></span><br><span class="line">    MessageLog        MessageType = <span class="string">&quot;log&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> Message <span class="keyword">struct</span> &#123;</span><br><span class="line">    Type      MessageType</span><br><span class="line">    Content   <span class="type">string</span></span><br><span class="line">    Tool      <span class="type">string</span></span><br><span class="line">    CallID    <span class="type">string</span></span><br><span class="line">    Input     <span class="keyword">map</span>[<span class="type">string</span>]any</span><br><span class="line">    Output    <span class="type">string</span></span><br><span class="line">    Status    <span class="type">string</span></span><br><span class="line">    Level     <span class="type">string</span></span><br><span class="line">    SessionID <span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>适配器的工作就是把外部协议翻译成这些事件。例如，Claude 的 <code>stream-json</code>、Codex app-server 的通知、ACP 的 <code>session/update</code>，最终都会变成 <code>MessageToolUse</code>、<code>MessageToolResult</code>、<code>MessageThinking</code> 或 <code>MessageText</code>。daemon 只处理统一模型，不需要为每个供应商写一套任务循环。</p>
+<p><code>ExecOptions</code> 承载一次执行的差异化配置：工作目录、模型、超时、恢复用的会话 ID、MCP 配置、thinking level、服务等级、额外参数和 provider 需要的 system prompt。它还区分 <code>ExtraArgs</code>、智能体自己的 <code>CustomArgs</code> 和 Runtime profile 的 <code>LaunchPrefix</code>。后者必须放在可执行文件之后、所有 backend 参数之前，才能正确支持类似 <code>wrapper start profile --agent-flag</code> 的命令结构。</p>
+<p>最终结果同样有统一结构：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Result <span class="keyword">struct</span> &#123;</span><br><span class="line">    Status    <span class="type">string</span> <span class="comment">// completed, failed, aborted, timeout, cancelled</span></span><br><span class="line">    Output    <span class="type">string</span></span><br><span class="line">    Error     <span class="type">string</span></span><br><span class="line">    DurationMs <span class="type">int64</span></span><br><span class="line">    SessionID <span class="type">string</span></span><br><span class="line">    Usage     <span class="keyword">map</span>[<span class="type">string</span>]TokenUsage</span><br><span class="line">    ResumeRejected <span class="type">bool</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>ResumeRejected</code> 很有用：它表示“旧会话本身无法继续”，daemon 才会尝试创建新会话；网络错误、限流、认证失败不会被误判成会话损坏。</p>
+<h2 id="协议适配"><a class="markdownIt-Anchor" href="#协议适配"></a> 协议适配</h2>
+<p>统一接口解决的是调用方的复杂度，适配器解决的是协议复杂度。这里的“协议”指 <strong>daemon 与 Coding Agent 子进程之间的机器通信契约</strong>，不是模型 API，也不是 MCP。它至少包含四层：</p>
+<ol>
+<li><strong>启动和传输</strong>：启动什么命令、参数如何排列，prompt 通过 argv、stdin 还是请求消息发送，事件从 stdout 还是其他通道读取。</li>
+<li><strong>消息格式和分帧</strong>：输出是一行一个 JSON（JSONL/NDJSON），还是带 <code>id</code>、<code>method</code>、<code>params</code> 的 JSON-RPC 2.0 请求、响应和通知。</li>
+<li><strong>运行生命周期</strong>：如何初始化，如何创建或恢复 session/thread，如何开始一轮 turn，怎样表示文本、思考、工具调用、工具结果和最终完成。</li>
+<li><strong>控制语义</strong>：取消、权限确认、追加用户消息、错误分类、token 用量和会话 ID 如何表达。</li>
+</ol>
+<p><strong>定义这套协议是为了让 daemon 能把一次运行当成可观测、可控制的会话，而不是执行一个命令后等待一段最终字符串</strong>。没有协议，daemon 无法可靠地区分 <code>正在调用工具</code>、<code>已经生成最终答案但进程还在退出</code>、<code>会话恢复被拒绝</code> 和 <code>进程彻底卡住</code>；也无法把不同 Coding Agent 的中间事件、取消和恢复接入同一条任务时间线。适配器因此负责把某个 provider 的启动参数、握手、事件解析和控制请求翻译成统一的 <code>Session</code>、<code>Message</code> 和 <code>Result</code>。</p>
+<p>源码中的 backend 大致按下面的协议族分组。这里的“协议族”是 wire contract 的归类；同一族里的 Coding Agent 仍可能有版本差异和少量私有扩展：</p>
+<table>
+<thead>
+<tr>
+<th>协议族</th>
+<th>Coding Agent</th>
+<th>协议大意和适配器职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude <code>stream-json</code></td>
+<td>Claude Code、CodeBuddy、Qwen Code、Cursor</td>
+<td>CLI 以非交互模式启动，通过 stdin 接收 prompt，并在 stdout 输出逐行 JSON 事件。事件通常覆盖 assistant 文本增量、thinking、工具调用和工具结果；适配器要处理各家事件字段的差异，以及 stdin 是否需要继续打开。Claude 还会在运行中发送 <code>control_request</code>，所以 <code>claude.go</code> 不能写完 prompt 就关闭 stdin。</td>
+</tr>
+<tr>
+<td>Codex app-server</td>
+<td>Codex</td>
+<td>启动 <code>codex app-server --listen stdio://</code>，在 stdin/stdout 上使用双向 JSON-RPC 2.0 消息。daemon 先做 <code>initialize</code>，再用 <code>thread/start</code> 或 <code>thread/resume</code> 建立会话，用 <code>turn/start</code> 发起一轮；过程通知描述 turn、文本、工具和 token 用量，取消走 <code>turn/interrupt</code>。适配器必须维护 request ID、thread ID、turn 边界，并区分恢复失败和传输失败。</td>
+</tr>
+<tr>
+<td>ACP（Agent Client Protocol）</td>
+<td>Hermes、Kimi、Reasonix、Kiro、Qoder（含 <code>qoderclicn</code>）、Trae、Grok、QwenPaw、MCode、Dim、ZeroClaw</td>
+<td>一套标准化的 Agent Client Protocol，使用 JSON-RPC 2.0 over stdio。典型流程是 <code>initialize</code>、认证/能力协商、<code>session/new</code> 或 <code>session/resume</code>，再发送 prompt；agent 通过 <code>session/update</code> 推送文本、工具和状态，遇到权限请求时发 <code>session/request_permission</code>。源码复用共享 ACP client，但每个 agent 仍要处理自己的启动子命令、能力声明、session 恢复错误和少量扩展。</td>
+</tr>
+<tr>
+<td>OpenCode 风格 NDJSON</td>
+<td>OpenCode、CodeArts、DevEco</td>
+<td>以 <code>run --format json</code> 启动，stdout 是逐行 JSON 事件流，prompt 通常写入 stdin。三者的事件形状相近，但命令参数、配置环境变量和版本行为并不完全相同；例如 OpenCode 2.x 移除了 <code>--dir</code>，因此 <code>opencode.go</code> 必须按版本选择工作目录传递方式，CodeArts 和 DevEco 也保留独立适配器。</td>
+</tr>
+<tr>
+<td>Pi JSON event stream</td>
+<td>Pi、Oh-My-Pi（OMP）</td>
+<td><code>pi -p --mode json</code>（OMP 使用相同事件协议）通过 stdout 输出 turn、消息和工具执行事件，并用 session 文件保存会话。适配器要把 <code>turn_start</code>、<code>tool_execution_*</code>、<code>turn_end</code> 等事件转换成统一时间线，并处理自动重试和 session 路径。OMP 是 Runtime 身份，不是新的协议族，所以复用 Pi backend。</td>
+</tr>
+<tr>
+<td>Copilot JSONL</td>
+<td>GitHub Copilot CLI</td>
+<td><code>--output-format json</code> 输出自有的 JSONL envelope，每行有点号分隔的事件名（如 <code>session.start</code>、<code>assistant.message_delta</code>）和 <code>data</code>。prompt 通过 <code>-p</code> 参数传入；适配器要从多种事件拼出最终 assistant turn、会话 ID 和用量，并保留工具事件。</td>
+</tr>
+<tr>
+<td>OpenClaw JSONL</td>
+<td>OpenClaw</td>
+<td><code>openclaw agent --json</code> 在 stdout 输出 NDJSON，session ID 由 daemon 管理，stderr 仍是诊断日志。适配器要处理版本差异（新版本把 JSON 结果写到 stdout）、事件流和最终结果提取。</td>
+</tr>
+<tr>
+<td>DSH versioned JSONL</td>
+<td>DSH Runtime</td>
+<td>DSH 有自己的版本化 JSONL stdio 协议，不兼容 ACP。请求和事件带有 <code>v</code>、<code>type</code>、<code>request_id</code>、<code>session_id</code> 等字段；DSH 自己拥有 agent loop、session store、模型目录、工具和 MCP client，Multica 只负责把这些 frame 翻译成 <code>Backend</code> 事件。</td>
+</tr>
+<tr>
+<td>Antigravity print/stream JSON</td>
+<td>Antigravity CLI</td>
+<td><code>agy -p</code> 是一次性 prompt 通道，旧版本主要返回普通文本，新版本可返回 stream-json 事件和 token 用量；会话 ID 还可能只出现在日志或本地 transcript。适配器因此同时兼容纯文本、事件流和 transcript 回读。</td>
+</tr>
+</tbody>
+</table>
+<p>JSONL、NDJSON 和 JSON-RPC 2.0 不是同义词。JSONL/NDJSON 只规定“每行一个 JSON 值”的分帧方式，事件字段由 provider 自己定义；JSON-RPC 2.0 还规定请求、响应、通知、错误和 ID 的关联方式。ACP 和 Codex 都可以在 stdio 上使用 JSON-RPC，但它们的 method、session 生命周期和事件语义不同，不能因为都叫 JSON-RPC 就共用同一个 provider 适配器。反过来，多个 agent 即使都输出 JSONL，也不代表它们的事件 schema、prompt 输入方式或恢复语义相同。</p>
+<p>这些实现并不是一个“万能 JSON 解析器”。每个文件都保留了供应商特有的边界处理。例如 <code>server/pkg/agent/opencode.go</code> 会检查版本，因为 OpenCode 2.x 移除了 <code>--dir</code>；<code>server/pkg/agent/claude.go</code> 要保持 stdin 打开，以便处理运行中的 control request；ACP 适配器要识别 <code>session/resume</code> 的拒绝原因；DSH 则必须校验自己的协议版本和 <code>request_id</code>。这正是适配器存在的原因：上层只消费统一事件和最终结果，provider 的协议细节留在边界内。</p>
+<h2 id="backend-工厂与-runtime-身份"><a class="markdownIt-Anchor" href="#backend-工厂与-runtime-身份"></a> Backend 工厂与 Runtime 身份</h2>
+<p>协议适配负责解释 wire protocol；这一层负责根据 provider、Runtime profile 和启动配置选择正确的 backend。创建 backend 的入口仍然只有一个。协议族通过 <code>New</code> 构造，像 Oh-My-Pi 这样的内置 Runtime 身份则由 <code>ResolveBackend</code> 转到 <code>NewRuntime</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">ResolveBackend</span><span class="params">(provider <span class="type">string</span>, cfg Config)</span></span> (Backend, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">if</span> IsBuiltinRuntime(provider) &#123;</span><br><span class="line">        <span class="keyword">return</span> NewRuntime(provider, cfg)</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> New(provider, cfg)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>SupportedTypes</code> 是自定义 Runtime profile 的白名单，目前包含 <code>claude</code>、<code>codebuddy</code>、<code>codex</code>、<code>copilot</code>、<code>opencode</code>、<code>codearts</code>、<code>deveco</code>、<code>openclaw</code>、<code>hermes</code>、<code>pi</code>、<code>cursor</code>、<code>kimi</code>、<code>reasonix</code>、<code>dsh</code>、<code>kiro</code>、<code>antigravity</code>、<code>qoder</code>、<code>qoderclicn</code>、<code>traecli</code>、<code>grok</code>、<code>qwen</code>、<code>qwenpaw</code>、<code>mcode</code>、<code>dim</code> 和 <code>zeroclaw</code>。这张表和数据库里的 <code>protocol_family</code> 约束保持同步，避免用户保存一个没有对应 backend 的 profile。</p>
+<p>协议族和 Runtime 身份是两个概念。<code>builtin_runtimes.go</code> 里的 <code>BuiltinRuntime</code> 描述探测命令、显示名称、skill 目录、默认可执行文件和模型发现方式。当前的 <code>omp</code>（Oh-My-Pi）就是例子：它的 <code>ProtocolFamily</code> 是 <code>pi</code>，但有独立的命令、模型发现和展示名称。这样增加一个兼容同一协议的新 Coding Agent 时，不需要复制 Pi 的事件解析器。</p>
+<p>Go 后端服务在启动任务时把真实可执行文件、版本和 profile 固定参数传给 <code>agent.Config</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">backend, err := agent.ResolveBackend(provider, agent.Config&#123;</span><br><span class="line">    ExecutablePath: entry.Path,</span><br><span class="line">    LaunchPrefix:   profileFixedArgs,</span><br><span class="line">    CLIVersion:     resolvedVersion,</span><br><span class="line">    Env:            agentEnv,</span><br><span class="line">    TaskID:         task.ID,</span><br><span class="line">    RuntimeID:      task.RuntimeID,</span><br><span class="line">    BuiltinRuntime: !usesCustomProfileCommand,</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p><code>BuiltinRuntime</code> 用来限制只对经过验证的官方 Coding Agent 启用兼容性分支。一个自定义命令即使声明自己使用 Hermes 或 Pi 协议，也不能自动获得某个官方版本专属的参数假设。</p>
+<h2 id="智能体配置"><a class="markdownIt-Anchor" href="#智能体配置"></a> 智能体配置</h2>
+<p>Coding Agent 提供理解提示和调用工具的运行能力，Multica 的智能体才是面向用户配置的工作角色。<code>AgentData</code> 会随任务 claim 一起下发，里面包括名称、instructions、skills、模型、thinking level、环境变量、命令行参数和 MCP 配置。</p>
+<p>这解决了一个实际问题：用户需要的是 <code>代码审查员</code>、<code>发布助手</code> 或 <code>项目协调者</code>，而不是一条裸的 <code>claude</code> 命令。不同智能体可以使用同一个 Runtime，也可以让同一个智能体在不同机器的 Runtime 上运行；配置属于智能体，进程属于 Runtime。</p>
+<h3 id="上下文文件"><a class="markdownIt-Anchor" href="#上下文文件"></a> 上下文文件</h3>
+<p>每次 Run 的准备阶段，daemon 会调用 <code>execenv.InjectRuntimeConfig</code>，在隔离工作目录写入运行时能识别的上下文文件。Claude 读取 <code>CLAUDE.md</code>，Codex、OpenCode、Hermes 等读取 <code>AGENTS.md</code>，其他 Coding Agent 使用各自的规则目录。文件里包含 Multica 命令的使用约定、工作区信息、智能体指令和已安装 skill 的入口。</p>
+<p>这条路径比把所有内容都塞进每次 prompt 更稳定：上下文文件可以被 provider 原生加载，也更适合 prompt cache。只有确实不会读取该文件的 provider 才通过 <code>ExecOptions.SystemPrompt</code> 内联运行时 brief，当前判断集中在 <code>providerNeedsInlineSystemPrompt</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">providerNeedsInlineSystemPrompt</span><span class="params">(provider <span class="type">string</span>)</span></span> <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> provider &#123;</span><br><span class="line">    <span class="keyword">case</span> <span class="string">&quot;openclaw&quot;</span>, <span class="string">&quot;kimi&quot;</span>, <span class="string">&quot;traecli&quot;</span>, <span class="string">&quot;qwenpaw&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">false</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><strong>每轮的具体问题仍然通过 <code>BuildPrompt</code> 生成</strong>。Issue 任务会携带 Issue、触发评论、状态和项目上下文；Chat 任务会携带用户消息和附件；Autopilot run-only 任务则携带自动化说明和触发 payload。这样 <code>稳定的工作规则</code> 和 <code>这一轮的即时输入</code> 分层，恢复会话时也不会把旧的任务细节误当成新的系统规则。</p>
+<h3 id="skill-与工具"><a class="markdownIt-Anchor" href="#skill-与工具"></a> skill 与工具</h3>
+<p>Skill 在 Go 后端服务中是可复用的配置和文件包。claim 时，Go 后端服务把智能体允许使用的 skill 数据发给 daemon；daemon 在准备环境时把它们写入对应的原生目录，或通过 <code>.agent_context</code> 让 Coding Agent 发现。运行时还会合并智能体自己的 MCP 配置、Runtime 级 MCP、Remote MCP broker 和插件 hook MCP。</p>
+<p>一个 Multica 智能体因此拥有三层能力来源：</p>
+<ul>
+<li><strong>规则</strong>：instructions、工作区 context 和运行时 brief，决定它应该怎样工作。</li>
+<li><strong>知识</strong>：skill 文件、项目资源和仓库说明，决定它能读取哪些领域知识。</li>
+<li><strong>工具</strong>：Coding Agent 原生工具、Multica 命令、MCP server 和插件 hook，决定它能执行什么。</li>
+</ul>
+<p>daemon 还会注入任务范围的 <code>MULTICA_TOKEN</code>、<code>MULTICA_WORKSPACE_ID</code>、<code>MULTICA_TASK_ID</code> 等环境变量。Token 在 Go 后端服务 claim 时按智能体和 Task 绑定，daemon 不会把自己的高权限凭据传给子进程。Coding Agent 代表这个智能体调用 <code>multica issue</code>、<code>multica comment</code> 或 <code>multica repo checkout</code> 时，权限仍然落在这一次 Run 上。</p>
+<p>这就是 Multica 在 Coding Agent 之上构建“自己的智能体”的方式：不重新实现模型推理，也不要求每个 provider 支持 Multica 的全部概念，而是把身份、规则、skill、工具、权限和持久会话装配到一次受控的执行环境中。</p>
+<h2 id="一次运行"><a class="markdownIt-Anchor" href="#一次运行"></a> 一次运行</h2>
+<p>下面按实际调用顺序看一次 Run。任务可能来自 Issue、Chat、Autopilot 或 quick create，但进入 daemon 后都复用同一条执行链。</p>
+<h3 id="队列调度"><a class="markdownIt-Anchor" href="#队列调度"></a> 队列调度</h3>
+<p>用户操作最终会创建 <code>agent_task_queue</code> 记录，初始状态通常是 <code>queued</code>。daemon 的 batch poller 先从并发槽位信号量中取出可用 slot，再调用 claim 接口。Go 后端服务在事务中挑选可执行任务，将其变成 <code>dispatched</code>，同时返回 Runtime、智能体、项目、评论、会话和 skill 等完整上下文。</p>
+<p>daemon 收到任务后启动 <code>handleTask</code>。它先确认 Runtime 仍然在线、智能体身份没有被篡改，再为任务创建带完整 Task ID 的 logger，并开始准备阶段。</p>
+<h3 id="环境准备"><a class="markdownIt-Anchor" href="#环境准备"></a> 环境准备</h3>
+<p><code>runTask</code> 会依次完成这些工作：</p>
+<ul>
+<li>解析 Runtime profile 和可执行文件，必要时重新定位被升级替换的 Coding Agent 程序。</li>
+<li>准备或复用隔离工作目录、仓库缓存和本地 worktree。</li>
+<li>创建任务临时目录、MCP broker 和插件 hook server。</li>
+<li>根据智能体、Runtime 和任务上下文写入 <code>CLAUDE.md</code>、<code>AGENTS.md</code>、skill 文件及其他配置。</li>
+<li>检查旧会话是否能在当前工作目录、Codex rollout 或 Hermes session store 中找到。</li>
+<li>调用 Go 后端服务的 <code>StartTask</code>，把状态从 <code>dispatched</code> 变成 <code>running</code>。</li>
+</ul>
+<p><code>StartTask</code> 放在环境准备之后，是为了避免 Go 后端服务已经显示“运行中”，但工作目录还没有创建完成。准备阶段还有独立的 lease 和超时，失败会走统一的任务失败分类，不会留下一个看起来正在运行、实际没有进程的任务。</p>
+<h3 id="进程启动"><a class="markdownIt-Anchor" href="#进程启动"></a> 进程启动</h3>
+<p>环境就绪后，daemon 构造 prompt 和 <code>ExecOptions</code>，选择智能体的模型（智能体自己的设置优先，其次是 daemon 的 provider 默认值），然后调用 <code>agent.ResolveBackend(...).Execute(...)</code>。对于 Claude，backend 可能启动类似下面的命令；这只是示意，具体参数由 <code>buildClaudeArgs</code> 生成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">claude --output-format stream-json ...</span><br></pre></td></tr></table></figure>
+<p>对于 Codex，backend 连接 app-server；对于 ACP 运行时，backend 启动 stdio 进程并执行 <code>session/new</code> 或 <code>session/resume</code>。prompt 通常通过 stdin 或协议消息发送，不直接拼进命令行，避免长上下文触发操作系统的 argv 限制，也避免出现在进程列表中。</p>
+<h3 id="事件循环"><a class="markdownIt-Anchor" href="#事件循环"></a> 事件循环</h3>
+<p><code>executeAndDrain</code> 同时做四件事：读取 <code>Session.Messages</code>、把事件转成 <code>task_message</code>、等待 <code>Session.Result</code>，以及监控取消和无输出超时。</p>
+<p>工具事件会维护 <code>CallID → Tool</code> 映射，让乱序或缺少 tool 名称的结果仍能配对；文本和 thinking 片段会在相邻且类型相同的时候合并。每条事件都有 daemon 观察到的时间和递增 <code>seq</code>，同一次任务重试也继续使用原来的序号，避免两次尝试在时间线中交错。</p>
+<p>运行中的取消由 <code>watchTaskCancellation</code> 定期读取 Go 后端服务的任务状态触发。用户取消、任务被重新分配、后端服务把任务置为终态或任务行被删除，都会取消同一个 <code>context.Context</code>，最终由 backend 负责终止进程树。另有 idle watchdog：没有消息且消息队列为空时才判定无响应；工具调用尚未返回时使用更长的工具预算，避免把长时间的编译或测试误判成卡死。</p>
+<h3 id="终态回写"><a class="markdownIt-Anchor" href="#终态回写"></a> 终态回写</h3>
+<p>backend 发出 <code>Result</code> 后，daemon 先等待最后一批 transcript 刷新，再按 <code>completed</code>、<code>failed</code>、<code>cancelled</code> 或 <code>timeout</code> 调用 Go 后端服务接口。会话 ID、工作目录、分支名、错误原因和 token 用量分别回写到任务记录和用量表。后端服务的完成/失败接口使用状态条件更新，因此旧 daemon 或重复回调不会覆盖新一次运行的终态。</p>
+<h2 id="运行时间线"><a class="markdownIt-Anchor" href="#运行时间线"></a> 运行时间线</h2>
+<p><code>能否看到 Coding Agent 日志</code> 需要先区分两种日志。Multica 能稳定保存的是<strong>结构化的执行时间线</strong>，而不是每个 Coding Agent 的全部原始 stdout/stderr。</p>
+<h3 id="事件持久化"><a class="markdownIt-Anchor" href="#事件持久化"></a> 事件持久化</h3>
+<p>daemon 以约 500 毫秒为节奏批量调用 <code>/api/daemon/tasks/&#123;taskId&#125;/messages</code>。Go 后端服务的 <code>ReportTaskMessages</code> 会先做权限校验、敏感信息脱敏和 PostgreSQL 文本清理，再批量写入 <code>task_message</code>：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> task_message (</span><br><span class="line">    id UUID <span class="keyword">PRIMARY</span> KEY <span class="keyword">DEFAULT</span> gen_random_uuid(),</span><br><span class="line">    task_id UUID <span class="keyword">NOT</span> <span class="keyword">NULL</span> <span class="keyword">REFERENCES</span> agent_task_queue(id) <span class="keyword">ON</span> <span class="keyword">DELETE</span> CASCADE,</span><br><span class="line">    seq <span class="type">INTEGER</span> <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    type TEXT <span class="keyword">NOT</span> <span class="keyword">NULL</span>,</span><br><span class="line">    tool TEXT,</span><br><span class="line">    content TEXT,</span><br><span class="line">    input JSONB,</span><br><span class="line">    output TEXT,</span><br><span class="line">    created_at TIMESTAMPTZ <span class="keyword">NOT</span> <span class="keyword">NULL</span> <span class="keyword">DEFAULT</span> now(),</span><br><span class="line">    output_truncated <span class="type">BOOLEAN</span></span><br><span class="line">);</span><br></pre></td></tr></table></figure>
+<p>写入的类型包括：</p>
+<ul>
+<li><code>text</code>：Coding Agent 面向用户的输出片段。</li>
+<li><code>thinking</code>：provider 能提供的思考或 reasoning 片段。</li>
+<li><code>tool_use</code>：工具名、调用 ID 和结构化输入。</li>
+<li><code>tool_result</code>：工具输出。daemon 会先生成预览，过大的输出会标记 <code>output_truncated</code>。</li>
+<li><code>error</code>：运行过程中明确发出的错误事件。</li>
+</ul>
+<p><code>MessageStatus</code> 主要用于尽早保存会话 ID，不作为用户时间线的正文；<code>MessageLog</code> 当前主要由 Copilot 等适配器用于承载 provider 的提示或告警，而 daemon 的持久化分支不会把它当作普通 transcript 条目保存。因此，数据库里的时间线是“适合用户查看的运行记录”，不是 provider 原始协议的逐字转储。</p>
+<h3 id="实时与回放"><a class="markdownIt-Anchor" href="#实时与回放"></a> 实时与回放</h3>
+<p>Go 后端服务每批写入后，会为 Issue 或 Chat 任务发布 <code>task:message</code> 事件。Web、Desktop 和 Chat 页面通过 WebSocket 将新消息合并到 Query 缓存；断线或打开历史记录时，客户端调用 <code>GET /api/tasks/&#123;taskId&#125;/messages</code> 回放完整序列。前端的 <code>buildTimeline</code> 按 <code>seq</code> 排序，并把相邻的文本和 thinking 片段合并，工具调用和工具结果则保留为独立条目。</p>
+<p>因此，用户可以在运行过程中看到：</p>
+<ul>
+<li>Coding Agent 已经输出的文字和 reasoning（取决于 provider 是否提供）。</li>
+<li>调用了哪个工具、调用参数是什么。</li>
+<li>工具返回了什么结果，结果是否被截断。</li>
+<li>运行是完成、失败、取消还是超时，以及最终回答。</li>
+</ul>
+<p>这部分就是 Issue 详情页的 Execution log 和 Chat 的 live timeline 所展示的内容。</p>
+<h3 id="原始进程日志"><a class="markdownIt-Anchor" href="#原始进程日志"></a> 原始进程日志</h3>
+<p>Coding Agent 进程自己写到 stderr 的诊断信息走另一条路径。以 Claude 为例，backend 把 stderr 同时写入 daemon 的 <code>slog</code> 日志和一个有上限的 tail buffer；进程异常退出时，tail 会附加到 <code>Result.Error</code>，帮助解释 V8 崩溃、进程 panic 或 provider 错误。Codex、OpenCode 等 backend 也有各自的启动日志、stderr tail 和错误解析。</p>
+<p>这意味着当前实现的边界是：</p>
+<ul>
+<li><strong>能获取</strong>：结构化工具调用、工具结果、Coding Agent 文本、部分 thinking、错误事件、会话状态，以及 daemon 日志中的启动/退出/stderr 诊断。</li>
+<li><strong>不能保证</strong>：把每个 provider 的原始 stdout/stderr、所有内部调试帧、完整 ACP JSON 或 app-server 通信逐字保存到 <code>task_message</code>。</li>
+<li><strong>查看位置</strong>：用户可见内容在任务的 Execution log 或 Chat 时间线；原始进程诊断需要查看 daemon 日志，通常只有错误尾部会进入任务错误字段。</li>
+</ul>
+<p><strong>这个取舍是有意的。原始工具输出可能包含密钥、整个文件内容或二进制字节，直接保存会放大泄露和存储风险；结构化事件经过 daemon 和 Go 后端服务两侧脱敏，工具输出也有预览上限</strong>。需要排查 provider 协议问题时，应结合 Task ID 查看 daemon 日志，而不是把用户界面当作原始调试转储。</p>
+<h2 id="会话与恢复"><a class="markdownIt-Anchor" href="#会话与恢复"></a> 会话与恢复</h2>
+<p>一次 Run 结束后，Go 后端服务会保存 <code>session_id</code> 和 <code>work_dir</code>。下一次同一 Issue 或 Chat 会话产生任务时，daemon 会先判断工作目录和 provider 的会话存储是否仍然可达，再决定是否把 <code>ResumeSessionID</code> 传给 backend。</p>
+<p>不同 provider 的会话位置不同：Claude 会按工作目录查找项目会话，Codex 需要对应 rollout 文件，Hermes 使用任务 overlay 中的 session store，而 Pi/OMP 的会话 ID 本身可能是独立的 JSONL 路径。<code>gateResumeToReachableSession</code> 和各 backend 的 resume 检测把这些差异隔离起来。</p>
+<p>如果 provider 明确拒绝旧会话，daemon 只对这类“从会话本身无法恢复”的错误重试一次 fresh session；网络中断、配额、认证和模型不可用会保留会话指针，交给后续重试继续上下文。这样既能自愈损坏的会话，又不会把暂时性的 provider 故障变成无上下文的新对话。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>Multica 的运行时实现可以归纳成一条连续的分层：Go 后端服务用 Task 记录一次工作，daemon 把 Task 变成隔离环境，<code>Backend</code> 把各家 Coding Agent 变成统一的事件流，智能体配置再通过 instructions、skills、MCP 和任务 Token 把一个通用 Coding Agent 变成具体的 Multica 智能体。运行过程中的工具调用和 Coding Agent 输出会进入结构化时间线，daemon 自身则保留更适合排障的进程日志。</p>
+<p>理解这条链路后，新增一个 Coding Agent 的工作范围也很清楚：实现一个能把原生协议翻译成 <code>Session</code> 的 backend，补上 Runtime 探测和启动参数，再验证上下文文件、会话恢复、取消和事件解析。队列、权限、执行记录和 UI 不需要为这个 provider 重新发明一套系统。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/14/go-openmeter-01/" rel="prev" title="OpenMeter 学习 01：快速入门">
+      <i class="fa fa-chevron-left"></i> OpenMeter 学习 01：快速入门
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/10/go-multica-03/" rel="next" title="Multica 学习 03：数据模型">
+      Multica 学习 03：数据模型 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E8%BE%B9%E7%95%8C"><span class="nav-number">1.</span> <span class="nav-text"> 运行时边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%9F%E4%B8%80%E6%8E%A5%E5%8F%A3"><span class="nav-number">2.</span> <span class="nav-text"> 统一接口</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8D%8F%E8%AE%AE%E9%80%82%E9%85%8D"><span class="nav-number">3.</span> <span class="nav-text"> 协议适配</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#backend-%E5%B7%A5%E5%8E%82%E4%B8%8E-runtime-%E8%BA%AB%E4%BB%BD"><span class="nav-number">4.</span> <span class="nav-text"> Backend 工厂与 Runtime 身份</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%99%BA%E8%83%BD%E4%BD%93%E9%85%8D%E7%BD%AE"><span class="nav-number">5.</span> <span class="nav-text"> 智能体配置</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8A%E4%B8%8B%E6%96%87%E6%96%87%E4%BB%B6"><span class="nav-number">5.1.</span> <span class="nav-text"> 上下文文件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#skill-%E4%B8%8E%E5%B7%A5%E5%85%B7"><span class="nav-number">5.2.</span> <span class="nav-text"> skill 与工具</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%AC%A1%E8%BF%90%E8%A1%8C"><span class="nav-number">6.</span> <span class="nav-text"> 一次运行</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%98%9F%E5%88%97%E8%B0%83%E5%BA%A6"><span class="nav-number">6.1.</span> <span class="nav-text"> 队列调度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87"><span class="nav-number">6.2.</span> <span class="nav-text"> 环境准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9B%E7%A8%8B%E5%90%AF%E5%8A%A8"><span class="nav-number">6.3.</span> <span class="nav-text"> 进程启动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E4%BB%B6%E5%BE%AA%E7%8E%AF"><span class="nav-number">6.4.</span> <span class="nav-text"> 事件循环</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%88%E6%80%81%E5%9B%9E%E5%86%99"><span class="nav-number">6.5.</span> <span class="nav-text"> 终态回写</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E9%97%B4%E7%BA%BF"><span class="nav-number">7.</span> <span class="nav-text"> 运行时间线</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E4%BB%B6%E6%8C%81%E4%B9%85%E5%8C%96"><span class="nav-number">7.1.</span> <span class="nav-text"> 事件持久化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E6%97%B6%E4%B8%8E%E5%9B%9E%E6%94%BE"><span class="nav-number">7.2.</span> <span class="nav-text"> 实时与回放</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%9F%E5%A7%8B%E8%BF%9B%E7%A8%8B%E6%97%A5%E5%BF%97"><span class="nav-number">7.3.</span> <span class="nav-text"> 原始进程日志</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BC%9A%E8%AF%9D%E4%B8%8E%E6%81%A2%E5%A4%8D"><span class="nav-number">8.</span> <span class="nav-text"> 会话与恢复</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">300</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="一个按 Token 收费的 AI 服务，最初可能只需要一张用量表：请求完成后记下客户、模型和 Token 数量，月底求和，再乘上单价。随着事件增多，问题逐渐出现在记录和查询链路上：客户端重试可能产生重复记录，离线任务可能补报昨天的用量，逐条写入会拖慢存储，刚上报的事件也未必能立即查到。要得到可信的用量，首先需要弄清这些事件经过了哪些处理，以及每一步成功究竟意味着什么。 OpenMeter 把事件接">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OpenMeter 学习 02：架构总览">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/17/go-openmeter-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="一个按 Token 收费的 AI 服务，最初可能只需要一张用量表：请求完成后记下客户、模型和 Token 数量，月底求和，再乘上单价。随着事件增多，问题逐渐出现在记录和查询链路上：客户端重试可能产生重复记录，离线任务可能补报昨天的用量，逐条写入会拖慢存储，刚上报的事件也未必能立即查到。要得到可信的用量，首先需要弄清这些事件经过了哪些处理，以及每一步成功究竟意味着什么。 OpenMeter 把事件接">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-17T06:28:11.000Z">
+<meta property="article:modified_time" content="2026-10-27T06:32:28.282Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/17/go-openmeter-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>OpenMeter 学习 02：架构总览 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/17/go-openmeter-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OpenMeter 学习 02：架构总览
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-17 14:28:11" itemprop="dateCreated datePublished" datetime="2026-10-17T14:28:11+08:00">2026-10-17</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>一个按 Token 收费的 AI 服务，最初可能只需要一张用量表：请求完成后记下客户、模型和 Token 数量，月底求和，再乘上单价。随着事件增多，问题逐渐出现在记录和查询链路上：客户端重试可能产生重复记录，离线任务可能补报昨天的用量，逐条写入会拖慢存储，刚上报的事件也未必能立即查到。要得到可信的用量，首先需要弄清这些事件经过了哪些处理，以及每一步成功究竟意味着什么。</p>
+<p>OpenMeter 把事件接入、后台写入和计量查询拆开，分别交给 API server、Kafka、Sink worker 和 ClickHouse 协作完成。业务配置及其他需要事务约束的状态保存在 PostgreSQL，内部消息和通知机制则连接后续处理。理解这些组件之间的数据流和一致性边界，比记住项目用了哪些数据库更有帮助。</p>
+<span id="more"></span>
+<p>本文以仓库提交 <code>95794e610</code> 为依据，围绕进程分工、代码组织、启动与请求处理、事件接入、批量落库、计量查询和消息投递展开，最后介绍运行观测。代码片段均摘自当前实现，示意配置和简化 SQL 会单独说明。</p>
+<h2 id="系统轮廓"><a class="markdownIt-Anchor" href="#系统轮廓"></a> 系统轮廓</h2>
+<h3 id="数据与状态"><a class="markdownIt-Anchor" href="#数据与状态"></a> 数据与状态</h3>
+<p>使用记录和订阅状态对存储的要求差别很大。</p>
+<p>使用事件数量多，主要操作是追加写入，以及按客户、时间和业务维度扫描聚合。订阅、价格、账单则需要维护实体之间的约束，一次修改往往涉及多张表，而且不能只成功一半。OpenMeter 因此将两类数据放在不同的存储中：</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>主要职责</th>
+<th>典型数据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kafka</td>
+<td>分离事件接收与后台处理，承载使用事件及领域事件</td>
+<td>使用记录、订阅变更、账单变更</td>
+</tr>
+<tr>
+<td>ClickHouse</td>
+<td>保存使用事件，执行计量查询</td>
+<td>Token、请求数、时长及其聚合结果</td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td>维护需要事务约束的业务状态</td>
+<td>客户、计量器定义、订阅、额度快照、费用、账单、账务分录</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>按配置提供共享去重或查询进度状态</td>
+<td>事件去重键、长查询进度</td>
+</tr>
+<tr>
+<td>Svix</td>
+<td>承接 webhook 的对外投递</td>
+<td>投递请求、重试和投递结果</td>
+</tr>
+</tbody>
+</table>
+<p>这里容易忽略的是，<strong>计量器定义和用量数据分属两个存储</strong>。</p>
+<ul>
+<li>计量器定义决定某类事件怎样解释，属于业务配置</li>
+<li>海量事件及其查询则交给 ClickHouse</li>
+<li>Redis 是可选依赖，具体是否使用取决于配置</li>
+</ul>
+<h3 id="运行进程"><a class="markdownIt-Anchor" href="#运行进程"></a> 运行进程</h3>
+<p>项目把不同工作负载拆成了多个程序入口，但它们复用同一批 Go 领域包。部署上可以分开扩缩容，代码上仍然共享业务类型和服务实现。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">Usage ingestion</span><br><span class="line"></span><br><span class="line">  Application / SDK</span><br><span class="line">         |</span><br><span class="line">         | CloudEvents</span><br><span class="line">         v</span><br><span class="line">    API server ---&gt; Kafka (usage) ---&gt; Sink worker ---&gt; ClickHouse</span><br><span class="line">                                           |</span><br><span class="line">                                           +-- optional dedupe --&gt; Redis</span><br><span class="line"></span><br><span class="line">Domain processing</span><br><span class="line"></span><br><span class="line">    API server -- outbox -----------+</span><br><span class="line">                                    |</span><br><span class="line">   Sink worker -- stored notice ----+--&gt; Kafka (domain events / notices)</span><br><span class="line">                                                      |</span><br><span class="line">                         +----------------------------+------------+</span><br><span class="line">                         |                            |            |</span><br><span class="line">                         v                            v            v</span><br><span class="line">                  Balance worker              Billing worker   Notification</span><br><span class="line">                         |                            |          service</span><br><span class="line">                         +-- value / invoice events --+</span><br><span class="line">                                        |</span><br><span class="line">                                        +--&gt; Kafka (domain events / notices)</span><br><span class="line"></span><br><span class="line">State and delivery</span><br><span class="line"></span><br><span class="line">    API server / Balance worker / Billing worker -- query --&gt; ClickHouse</span><br><span class="line">    API server / Balance worker / Billing worker &lt;-- state --&gt; PostgreSQL</span><br><span class="line">    Notification service -- notification records ----------&gt; PostgreSQL</span><br><span class="line">    API server -- notification delivery --&gt; Svix -- webhook --&gt; Application</span><br></pre></td></tr></table></figure>
+<p>图中分成三个部分，分别展示事件的接入路径、业务处理过程，以及各进程依赖的存储和对外投递关系：</p>
+<ul>
+<li>
+<p><strong>Usage ingestion（使用事件接入）</strong>：这一部分负责把“客户消耗了一千二百 Token”这样的使用事实保存下来。业务应用通过 CloudEvents 向 API server 上报事件，API server 将其交给 Kafka 生产者；Sink worker 再消费消息，完成解析、校验、去重和批量写入 ClickHouse。图中的 Redis 是可选的去重存储。接收与落库异步进行，因此接入接口返回成功后，用量还需要经过后台处理才能被查询到。</p>
+</li>
+<li>
+<p><strong>Domain processing（后台业务处理）</strong>：这里的“领域”指额度、订阅、计费等业务范围。</p>
+<ul>
+<li>例如，用户通过 API 创建或修改订阅时，领域服务会在保存订阅状态的同一笔 PostgreSQL 事务中，将对应的变更事件写入 outbox（待发送消息表）；事务提交后，后台投递逻辑再将事件发送到 Kafka，供计费模块同步相关计费项目。</li>
+<li>另一类消息来自 Sink worker：它完成一批使用事件的 ClickHouse 写入后，按 namespace 和 subject 组织落库通知，携带受影响的计量器、时间标记和原始事件等信息，让下游知道哪些用量发生了更新，从而触发相关权益余额的重新计算</li>
+<li>各 worker 消费自己关心的消息：Balance worker 重算权益余额，Billing worker 执行计费同步等工作，Notification service 匹配通知规则并保存通知记录。余额和账单更新还会产生新事件，继续触发下游处理；返回 Kafka 的箭头表达的就是这层衔接。</li>
+</ul>
+</li>
+<li>
+<p><strong>State and delivery（状态存储与对外投递）</strong>：这一部分展示各进程共享的存储依赖，以及通知如何送到业务系统。API server、Balance worker 和 Billing worker 从 ClickHouse 查询用量，在 PostgreSQL 中读写客户、权益、订阅、费用和账单等业务状态；通知服务也将通知记录保存到 PostgreSQL。随后，API server 内的投递协调逻辑把待发送通知交给 Svix，由 Svix 向业务应用发送 webhook。图中这些连线贯穿前两部分，是它们工作时所依赖的数据和投递通道。</p>
+</li>
+</ul>
+<p>图中省略了定时任务和观测设施。各可执行程序的职责如下：</p>
+<ul>
+<li><code>server</code> 接收事件，提供管理和查询 API，并运行通知投递协调逻辑。</li>
+<li><code>sink-worker</code> 消费使用事件，完成解析、校验、去重和批量写入。</li>
+<li><code>balance-worker</code> 在用量或额度相关状态变化后重新计算客户的功能权益值。</li>
+<li><code>billing-worker</code> 处理订阅同步、费用推进和账单相关后台工作。</li>
+<li><code>notification-service</code> 匹配通知规则，生成持久化通知记录。</li>
+<li><code>jobs</code> 承担迁移、定期同步和生命周期推进等任务。</li>
+</ul>
+<p>这些职责之间通过事件和持久化状态衔接。一次请求无需同步等到所有 worker 完成，代价是不同阶段的完成时间并不相同。后文会重点分析接入确认、去重、消费位点和事务消息如何协调这些阶段。</p>
+<p>系统还提供一个可选的外部采集程序 Collector，用于采集、变换、缓冲并转发事件。它与接入服务内部名为 <code>Collector</code> 的 Go 接口是两个层面的概念。</p>
+<h3 id="业务示例"><a class="markdownIt-Anchor" href="#业务示例"></a> 业务示例</h3>
+<p>以一个 AI 服务为例。工作区标识为 <code>workspace-acme</code>，Token 计量器使用 <code>SUM</code> 聚合事件中的 <code>tokens</code> 字段。假设此前没有上报用量，这次模型调用消耗了一千二百 Token。下面用这条记录串起图中的三个部分。</p>
+<p><strong>Usage ingestion 对应这次消费的记录过程。</strong> 模型网关完成调用后，发送一条事件，携带工作区标识、发生时间、Token 数量以及稳定的事件 ID。API server 将事件交给 Kafka 生产者，Sink worker 随后消费并批量写入 ClickHouse。处理完成后，按该工作区查询计量器，就能得到一千二百 Token 的用量。</p>
+<p><strong>Domain processing 对应用量更新后的后台协作。</strong> 各组件通过消息衔接处理：</p>
+<ul>
+<li><strong>Sink worker</strong>：在用量写入后发布落库通知，说明哪些工作区和计量器的用量发生了更新。</li>
+<li><strong>Balance worker</strong>：接到相关通知后，查询这份用量，更新功能权益的计算结果，并发布新的值事件。具体额度算法留到下一篇讨论。</li>
+<li><strong>Notification service</strong>：如果值事件满足已配置的提醒规则，就保存一条待投递通知。</li>
+<li><strong>其他后台组件</strong>：消费各自关心的事件。比如订阅变更通过 outbox 触发计费处理，与使用事件的落库链路各自推进。</li>
+</ul>
+<p><strong>State and delivery 贯穿上述过程。</strong> 一千二百 Token 的原始事件保存在 ClickHouse，计量器定义、业务状态和通知记录保存在 PostgreSQL。查询接口和后台组件可以读取同一份用量。待投递通知先存入 PostgreSQL，再由 API server 内的投递协调逻辑交给 Svix，最终以 webhook 发送给业务应用。</p>
+<p>这条记录说明了三个不同的完成点：API 接收了事件，ClickHouse 已经能查到新增用量，下游通知最终送达业务系统。它们由同一次消费关联起来，但分别经过生产者、消费写入和消息投递流程，完成时间并不相同。</p>
+<h2 id="代码组织"><a class="markdownIt-Anchor" href="#代码组织"></a> 代码组织</h2>
+<p>在跟踪业务之前，先认识源码的分工，可以省去大量在生成代码中寻找逻辑的时间。</p>
+<h3 id="目录总览"><a class="markdownIt-Anchor" href="#目录总览"></a> 目录总览</h3>
+<p>仓库同时包含服务端、外部采集器、API 定义与客户端，以及本地运行和部署配置。下面保留与本文主线有关的目录，省略各领域内部的完整文件清单：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line">openmeter/</span><br><span class="line">|-- cmd/                         # 可执行程序入口</span><br><span class="line">|   |-- server/                  # HTTP API 与通知投递协调</span><br><span class="line">|   |-- sink-worker/             # 使用事件消费与落库</span><br><span class="line">|   |-- balance-worker/          # 权益余额重算</span><br><span class="line">|   |-- billing-worker/          # 计费后台处理</span><br><span class="line">|   |-- notification-service/    # 通知规则处理</span><br><span class="line">|   `-- jobs/                    # 迁移与定时任务</span><br><span class="line">|-- app/</span><br><span class="line">|   |-- common/                  # 跨入口复用的依赖构造与组装</span><br><span class="line">|   `-- config/                  # 配置解析、校验及默认值</span><br><span class="line">|-- openmeter/                   # 核心领域与基础设施实现</span><br><span class="line">|   |-- ingest/                  # 事件接入与 Kafka 转发</span><br><span class="line">|   |-- sink/                    # 消费缓冲、去重、批量写入</span><br><span class="line">|   |-- streaming/               # 用量查询接口与 ClickHouse 实现</span><br><span class="line">|   |-- meter/                   # 计量器定义与管理</span><br><span class="line">|   |-- customer/                # 客户与用量归属</span><br><span class="line">|   |-- productcatalog/          # 功能、套餐、价格等产品配置</span><br><span class="line">|   |-- subscription/            # 订阅时间表及变更流程</span><br><span class="line">|   |-- entitlement/             # 客户功能权益</span><br><span class="line">|   |-- credit/                  # 计量权益的额度消耗与余额快照</span><br><span class="line">|   |-- billing/                 # 费用、账单、计费同步与生命周期</span><br><span class="line">|   |-- ledger/                  # 账务分录、余额和更正</span><br><span class="line">|   |-- notification/            # 通知规则、记录与投递协调</span><br><span class="line">|   |-- watermill/               # 领域事件总线、Kafka 驱动与 outbox</span><br><span class="line">|   |-- server/                  # 服务端路由与旧版 API 适配</span><br><span class="line">|   `-- ent/</span><br><span class="line">|       |-- schema/              # PostgreSQL 实体模型定义</span><br><span class="line">|       `-- db/                  # Ent 生成的数据访问代码</span><br><span class="line">|-- api/</span><br><span class="line">|   |-- spec/                    # TypeSpec 定义及代码生成工具</span><br><span class="line">|   |-- client/                  # 多语言客户端</span><br><span class="line">|   `-- v3/</span><br><span class="line">|       |-- handlers/            # v3 HTTP 操作实现</span><br><span class="line">|       |-- server/              # v3 服务端组装与路由注册</span><br><span class="line">|       `-- client/              # 独立 Go SDK 模块</span><br><span class="line">|-- pkg/                         # 通用组件与工具包</span><br><span class="line">|   `-- framework/               # HTTP 传输、事务、锁等公共机制</span><br><span class="line">|-- collector/                   # 独立的外部事件采集程序与 Go 模块</span><br><span class="line">|-- test/                        # 跨领域测试与集成场景</span><br><span class="line">|-- e2e/                         # 通过 HTTP 访问服务的端到端测试模块</span><br><span class="line">|-- quickstart/                  # 本地评估配置与 Docker Compose</span><br><span class="line">|-- deploy/                     # Helm chart 等部署资源</span><br><span class="line">|-- docs/                       # 架构、开发指南与迁移说明</span><br><span class="line">|-- tools/                      # 开发及迁移辅助工具</span><br><span class="line">|-- Makefile                    # 常用开发任务入口</span><br><span class="line">`-- go.mod                      # 服务端主模块依赖</span><br></pre></td></tr></table></figure>
+<p>目录树最外层是整个项目，内部同名的 openmeter 目录承载主要业务实现。从调用关系看，HTTP 请求先经过服务入口和路由，再进入领域服务，最后由 adapter 访问数据库。公共装配层把这些实现连接起来，通用工具层则提供多个领域都会使用的机制。</p>
+<p>项目包含四个 Go 模块，分别服务于核心程序、外部采集器、可发布的 v3 Go SDK 和端到端测试。它们独立管理依赖，根模块的构建与测试不会自动覆盖其他嵌套模块。</p>
+<h3 id="领域分层"><a class="markdownIt-Anchor" href="#领域分层"></a> 领域分层</h3>
+<p>大部分领域拥有自己的 Go 包。领域根包通常放类型、接口、输入和错误；service 层实现业务规则和事务编排；adapter 层负责数据库访问和实体转换。HTTP 层将协议输入映射成领域调用，底层由 Ent 访问 PostgreSQL。</p>
+<p>例如，客户模块通过 Service 接口向调用方暴露能力，service 实现客户管理规则，adapter 处理客户实体的保存与查询。较早的模块还保留了 <code>Connector</code>、<code>Repo</code>、<code>driver</code> 等命名，阅读时应以实际调用关系为准。</p>
+<h3 id="服务装配"><a class="markdownIt-Anchor" href="#服务装配"></a> 服务装配</h3>
+<p>公共装配层和各程序入口共同完成依赖组装。以 API server 为例，<code>Application</code> 持有客户、计量、订阅、计费、消息发布等依赖，Wire 根据声明的构造器集合生成具体的组装代码。因此，同一个计费服务可以被 API 和后台 worker 共同使用，不需要复制业务逻辑。</p>
+<p>HTTP 入口同时保留旧版 API 和 v3 API。服务端统一注册两套路由，分别由各自的 handler 完成协议适配，最终调用共享的领域服务。本文从较容易跟踪的 v1 事件接入路径切入，再进入共享的领域实现。</p>
+<h2 id="启动与退出"><a class="markdownIt-Anchor" href="#启动与退出"></a> 启动与退出</h2>
+<h3 id="初始化顺序"><a class="markdownIt-Anchor" href="#初始化顺序"></a> 初始化顺序</h3>
+<p>API server 使用 Viper 处理配置，合并默认值、配置文件、环境变量及已绑定的命令行参数，再解码为配置结构并调用 <code>Validate()</code>。<code>--validate</code> 可以在校验后直接退出，这一步只检查配置，不等于依赖服务已经连通。</p>
+<p>通过校验后，主程序调用 Wire 生成的 <code>initializeApplication</code> 构造依赖，再按顺序完成数据库迁移、namespace 处理器注册和默认 namespace 初始化，并准备默认应用、默认计费配置及配置文件中的计量器。这里调用的是统一迁移入口，具体迁移行为仍受配置控制。随后才构造 HTTP 路由，启动各个长期运行的任务。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Configuration loading and validation</span><br><span class="line">                 |</span><br><span class="line">                 v</span><br><span class="line">Dependency construction (Wire)</span><br><span class="line">                 |</span><br><span class="line">                 v</span><br><span class="line">Database / namespace / meter initialization</span><br><span class="line">                 |</span><br><span class="line">                 v</span><br><span class="line">HTTP routes and runtime task registration</span><br><span class="line">                 |</span><br><span class="line">                 v</span><br><span class="line">API + telemetry + Kafka reports + notification reconciler</span><br></pre></td></tr></table></figure>
+<p>这张图以 API server 为例。Sink worker 的准备工作有所不同：它在消费循环开始前加载计量器缓存、初始化落库回调，并订阅相关 Kafka topic。不同入口复用基础设施，但各自负责启动前的必要准备。</p>
+<h3 id="任务协调"><a class="markdownIt-Anchor" href="#任务协调"></a> 任务协调</h3>
+<p>一个进程内部并不只有 HTTP 服务。API server 还需要持续读取 Kafka 生产者的投递报告，运行通知投递协调循环，并提供独立的观测接口。主程序通过 <code>run.Group</code> 将这些工作注册为成对的“运行函数”和“停止函数”。一个任务退出时，运行组会调用其他任务的停止逻辑，再等待退出。</p>
+<p>API server 和 Sink worker 都监听 <code>SIGINT</code>、<code>SIGTERM</code>，并使用反向停止顺序：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">group.Add(run.SignalHandler(ctx, syscall.SIGINT, syscall.SIGTERM))</span><br><span class="line"></span><br><span class="line">err = group.Run(run.WithReverseShutdownOrder())</span><br></pre></td></tr></table></figure>
+<p>API server 的退出流程还会将终止检查标记为正在退出；收到退出信号时，等待配置的传播时间，让就绪状态的变化有机会被外部负载均衡感知。之后 HTTP 服务通过带超时的 <code>Shutdown</code> 停止接收新连接，并等待活动请求结束。依赖清理函数则负责关闭相关资源。</p>
+<p>退出阶段需要按组件判断数据是否已经处理完成。Sink 的 <code>Close()</code> 与 flush 共用互斥锁，会等待正在执行的 flush 离开临界区，再停止消费状态和定时器；它本身不会主动把所有剩余缓冲再写一遍。尚未保存处理位点的消息，在后续恢复消费时可能重新读取。Outbox 关闭同样不意味着队列已经清空，仍待发送的记录可以留在 PostgreSQL 中等待后续进程处理。</p>
+<h2 id="请求处理"><a class="markdownIt-Anchor" href="#请求处理"></a> 请求处理</h2>
+<h3 id="协议适配"><a class="markdownIt-Anchor" href="#协议适配"></a> 协议适配</h3>
+<p>OpenMeter 使用 Chi 组织路由，并在请求外围安装请求标识、客户端地址处理、日志、异常恢复及 OpenTelemetry 等中间件。旧版 API 还使用 OpenAPI 请求校验中间件。两套 API 的适配细节有所不同，但共享的通用 HTTP 框架将处理过程拆成解码、操作执行和响应编码：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">HTTP request</span><br><span class="line">     |</span><br><span class="line">     v</span><br><span class="line">Routing and middleware</span><br><span class="line">     |</span><br><span class="line">     v</span><br><span class="line">Request decoder --&gt; Operation --&gt; Response encoder --&gt; HTTP response</span><br><span class="line">        |               |                |</span><br><span class="line">        +---------------+----------------+</span><br><span class="line">                        |</span><br><span class="line">                        v</span><br><span class="line">              Error handling / diagnostics</span><br></pre></td></tr></table></figure>
+<p>以事件接入为例，decoder 解析内容类型和事件正文，operation 调用 <code>IngestEvents</code>，encoder 返回空的 <code>204</code> 响应。它们通过通用 handler 连接起来，而不是在一段函数中同时处理协议和转发逻辑。</p>
+<p>这样的拆分也划定了校验边界：协议层处理格式与参数，领域服务维护自身约束，消费端继续校验 Kafka 消息。请求通过 HTTP 校验，并不能代替后续处理阶段的校验。</p>
+<h3 id="上下文与错误"><a class="markdownIt-Anchor" href="#上下文与错误"></a> 上下文与错误</h3>
+<p>通用 handler 从 <code>r.Context()</code> 取得请求上下文，并继续传给 decoder 和 operation。请求属性、日志关联信息以及调用取消信号，都可以沿着这条调用链传播。namespace 由 handler 使用注入的解码器解析，再放入服务输入；事件接入还会将其写进 Kafka 消息头，供 Sink 继续识别数据范围。</p>
+<p>当前 OSS API server 装配的是默认 namespace 的静态解码器，因此“代码携带 namespace”与“部署已经具备按请求身份隔离的多租户认证”是两件事。前者是各层传递范围的机制，后者取决于具体接入与认证装配。</p>
+<p>错误处理也集中在协议边界：decoder 或 operation 返回错误后，由错误编码器转换成 HTTP 响应；写响应失败则进入诊断处理，已经发送的响应头不会重新改写。框架还会同时检查请求上下文和错误类型，将客户端取消与内部操作取消区分开。这样，连接断开、参数错误和服务失败能够在日志与响应中保留不同含义。</p>
+<h2 id="事件接入"><a class="markdownIt-Anchor" href="#事件接入"></a> 事件接入</h2>
+<h3 id="事件格式"><a class="markdownIt-Anchor" href="#事件格式"></a> 事件格式</h3>
+<p>不同业务服务需要统一表达使用记录，同时又要保留各自的数据。OpenMeter 使用 CloudEvents 组织事件：外层提供身份、来源、类型和归属，<code>data</code> 保存业务字段。</p>
+<p>下面是一条用于说明后续链路的示例事件：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;specversion&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;completion-001&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-gateway&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;llm.completion&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;workspace-acme&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-10-01T10:00:00Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;tokens&quot;</span><span class="punctuation">:</span> <span class="number">1200</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;model&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-a&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>几个字段分别解决不同问题：</p>
+<ul>
+<li><code>source</code> 和 <code>id</code> 标识事件身份，生产者重试同一条事件时应保留它们。</li>
+<li><code>type</code> 表示事件类别，让计量器选择需要解释的事件。</li>
+<li><code>subject</code> 表示使用记录的归属键，例如工作区或租户在业务系统中的标识。</li>
+<li><code>time</code> 表示使用发生时间，<code>data</code> 中的 Token、模型等字段用于取值和分组。</li>
+</ul>
+<p>OpenMeter 还在处理链路中携带 namespace。事件身份、计量器查找和数据库查询都带有这个范围。不过，namespace 是领域隔离手段，具体怎样从请求解析出来由应用装配决定；当前 OSS server 的主入口使用默认 namespace 的静态解码器。</p>
+<h3 id="接收语义"><a class="markdownIt-Anchor" href="#接收语义"></a> 接收语义</h3>
+<p>v1 的 <code>POST /api/v1/events</code> 请求先经过路由分发，再由事件接入 handler 处理。handler 解析单条或批量 JSON，调用 <code>IngestEvents</code>，成功后返回 <code>204 No Content</code>。</p>
+<p>接入服务的 <code>processEvent</code> 方法在转发前统一时间：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> event.Time().IsZero() &#123;</span><br><span class="line">    logger.DebugContext(ctx, <span class="string">&quot;event does not have a timestamp&quot;</span>)</span><br><span class="line"></span><br><span class="line">    event.SetTime(time.Now().UTC())</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    event.SetTime(event.Time().UTC())</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这意味着客户端最好明确传入业务发生时间。否则，补报一条昨天的事件时，系统会把当前接收时间作为事件时间，后续聚合也就会进入不同的业务区间。</p>
+<p>之后，服务将事件交给 Kafka collector。它的 <code>Ingest</code> 方法通过以下调用转发消息：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">err = s.Producer.Produce(msg, <span class="literal">nil</span>)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    err = fmt.Errorf(<span class="string">&quot;producing kafka message: %w&quot;</span>, err)</span><br><span class="line">    <span class="keyword">return</span> err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>这里调用的是 Kafka 客户端的异步生产接口。最终投递报告由另外的循环处理，投递失败会在那里记录。因此，<strong>这条接入路径返回成功，表示事件已被本地生产者接受，不能直接解释为 Kafka 服务端已确认持久化，更不能解释为 ClickHouse 已经可以查到用量。</strong></p>
+<p>批量接入也不是一笔跨事件事务。<code>IngestEvents</code> 逐条转发，某条失败就返回；此前的事件可能已经交给生产者。调用方重试整批时，稳定的事件身份和正确配置的去重机制就很重要。</p>
+<h2 id="批量落库"><a class="markdownIt-Anchor" href="#批量落库"></a> 批量落库</h2>
+<h3 id="缓冲与分区"><a class="markdownIt-Anchor" href="#缓冲与分区"></a> 缓冲与分区</h3>
+<p>事件已经进入 Kafka，下一步是把消息高效地转成可查询数据。如果每收到一条就写一次 ClickHouse，会产生大量小批次写入；如果一直等到大批次，又会拉长低流量时的查询延迟。</p>
+<p>Sink worker 用两个条件控制刷新：<code>MinCommitCount</code> 达到消息数门槛，或者 <code>MaxCommitWait</code> 达到最长等待时间，任一条件满足就触发 <code>flush</code>。计时器通过 channel 通知消费主循环执行刷新，因此刷新错误可以向上传递，停止消费，而不会被计时器回调悄悄吞掉。</p>
+<p>另一个细节在 Kafka 消息键中。JSON 序列化器的 <code>SerializeKey</code> 方法直接复用了去重身份：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">dedupeItem := dedupe.Item&#123;</span><br><span class="line">    Namespace: namespace,</span><br><span class="line">    ID:        ev.ID(),</span><br><span class="line">    Source:    ev.Source(),</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> []<span class="type">byte</span>(dedupeItem.Key()), <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>在分区集合稳定、使用一致散列分区器的情况下，同一身份的重试消息会进入同一分区。这有助于减少多个消费者同时处理同一事件的竞争。它保证的范围是事件身份，不能由此推导出同一客户的全部事件都有全局顺序。</p>
+<h3 id="分区交接"><a class="markdownIt-Anchor" href="#分区交接"></a> 分区交接</h3>
+<p>增加 Sink 副本后，同一消费组会重新分配分区。扩容能分担消费，但也需要处理原进程缓冲中尚未完成的消息，否则新旧消费者可能在交接期间各自继续处理同一批数据。</p>
+<p>Sink 在 flush 前暂停当前分区，完成后再恢复消费；flush 与关闭流程之间还使用互斥锁协调。ClickHouse 写入变慢时，这个 worker 的消费推进也会放慢，已进入 Kafka 的待处理数据需要等待后续消费。批次大小和等待时间因此同时影响吞吐与延迟，不能只追求更大的批次。</p>
+<p>分区交接由 <code>rebalance</code> 回调处理：</p>
+<ul>
+<li><strong>获得分区</strong>：使用 <code>OffsetStored</code> 从已保存的消费位点恢复，增量加入新分区，并恢复当前分区集合的消费。</li>
+<li><strong>失去分区</strong>：先暂停消费，再增量撤销分区，移除缓冲中属于这些分区的消息。尚未提交位点的部分可由接手的消费者重新读取。</li>
+<li><strong>意外失去所有权</strong>：记录警告，因为分区可能已由其他消费者接手，位点提交未必还能成功。</li>
+</ul>
+<p>如果分区没有可用的已提交位点，还要看起始策略。当前 Sink 装配明确设置 <code>AutoOffsetResetLatest</code>，这时会从末尾开始。因此，创建新消费组不能直接视为从头重放历史事件；恢复行为需要结合已有位点和起始策略判断。</p>
+<h3 id="去重范围"><a class="markdownIt-Anchor" href="#去重范围"></a> 去重范围</h3>
+<p>Sink 的 <code>deduplicateAndResolveMeters</code> 会先去掉当前批次中的重复事件，再按配置查询共享或本地去重器。两者的覆盖范围不同：</p>
+<ul>
+<li>批内去重处理一次 flush 内的重复消息，即使没有配置外部去重器，这一步也存在。</li>
+<li>内存去重器依赖当前进程中的有限缓存，无法覆盖其他副本和进程重启。</li>
+<li>Redis 去重器可以共享去重状态，其覆盖时间取决于过期配置。</li>
+</ul>
+<p>当前默认配置中，接入侧的 <code>dedupe.enabled</code> 和 sink 侧的 <code>sink.dedupe.enabled</code> 都是 <code>false</code>；driver 默认名称是 <code>memory</code>。因此，不能只根据“项目支持 Redis”就认为部署已经具有跨批次去重。这两处开关需要分别配置，不能把一侧启用理解为整条链路都已启用。</p>
+<p>计量器匹配也发生在这里。Sink 按 namespace 和事件 <code>type</code> 从缓存中找到受影响的计量器，用于后续落库通知。<strong>当前存储实现保存的是原始事件，并不会为每个匹配到的计量器各写一份聚合值。</strong> 这一点会直接影响我们对查询架构的理解。</p>
+<h3 id="配置传播"><a class="markdownIt-Anchor" href="#配置传播"></a> 配置传播</h3>
+<p>计量器定义保存在 PostgreSQL，但高频事件处理不适合为每条消息都查询一次定义。Sink 因此通过 <code>NamespacedMeterCache</code> 在启动时加载计量器，按 namespace、事件类型建立索引，再根据 <code>MeterRefetchInterval</code> 周期刷新。</p>
+<p>刷新先构造新的索引，再在写锁保护下整体替换；读取匹配结果时使用读锁。如果后台刷新失败，程序会记录错误并保留旧缓存，等待下一轮刷新；首次加载失败则会阻止消费循环启动。这样避免了瞬时查询失败直接清空已有配置，但也意味着配置变更不会立即出现在所有 Sink 副本中。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Meter definitions (PostgreSQL)</span><br><span class="line">             |</span><br><span class="line">             | initial load / periodic refresh</span><br><span class="line">             v</span><br><span class="line">Sink cache: namespace --&gt; event type --&gt; meters</span><br><span class="line">             |</span><br><span class="line">             v</span><br><span class="line">Affected meters in stored-event notifications</span><br></pre></td></tr></table></figure>
+<p>这份缓存用于 Sink 匹配受影响的计量器，不是所有查询共享的全局缓存。新增计量器之后，Sink 何时能在落库通知中带上它，取决于本地缓存刷新；用量查询则根据自身解析得到的计量器定义生成 SQL。原始事件的保存也不要求每条事件都先找到匹配计量器。</p>
+<p>Kafka topic 的发现是另一套周期任务。Sink 根据 topic 名称规则筛选订阅对象，只有目标集合与当前订阅不同才调用 <code>SubscribeTopics</code>。因为即使 topic 集合没有变化，重复订阅仍会触发消费组重新加入；每个副本都周期性重复订阅，会使正常消费不断被分区重分配打断。</p>
+<h3 id="写入与位点"><a class="markdownIt-Anchor" href="#写入与位点"></a> 写入与位点</h3>
+<p>去重之后，<code>flush</code> 依次执行几个关键步骤：</p>
+<ol>
+<li>调用 <code>persistToStorage</code>，将有效事件批量写入存储。</li>
+<li>调用消费者的 <code>StoreMessage</code>，记录已处理位点。</li>
+<li>若配置了去重器，则写入去重身份。</li>
+<li>调用刷新成功回调，发布后续用量处理通知。</li>
+</ol>
+<p><code>StoreMessage</code> 是更新客户端维护的位点，正常情况下由消费者自动提交。Sink worker 创建消费者时明确设置：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">consumerConfig.EnableAutoCommit = <span class="literal">true</span></span><br><span class="line">consumerConfig.EnableAutoOffsetStore = <span class="literal">false</span></span><br></pre></td></tr></table></figure>
+<p>禁用自动存储位点，是为了避免“消息刚取出来，还没写入 ClickHouse，就被当成处理完成”。先写入再记录位点，可以让未完成的工作在恢复后重放。</p>
+<p>但 ClickHouse、Kafka 位点和 Redis 不在同一个事务中。如果写入已完成，进程却在记录位点或去重状态前崩溃，重放仍可能产生重复。这段实现包含针对部分失败的补救和日志，也明确存在需要根据日志协调状态的情形。将整条链路概括为无条件的 exactly-once，会掩盖这些失败窗口。</p>
+<p>落库后的通知同样有自己的边界：<code>OnFlushSuccess</code> 在 goroutine 中运行，失败会记录日志。它没有与原始事件写入组成原子提交。这解释了为什么后续领域不能只依赖一次通知就假设所有衍生状态永久正确。</p>
+<h3 id="异常事件"><a class="markdownIt-Anchor" href="#异常事件"></a> 异常事件</h3>
+<p>重试适合处理临时故障，但一条格式损坏的消息，无论读多少次也不会自行恢复。Sink 的 <code>parseMessage</code> 因此区分消息内容问题与操作失败：缺少 namespace、JSON 解析失败或 CloudEvents 校验失败时，返回带 <code>DROP</code> 状态的消息，由后续批处理跳过写入。批次继续完成后，这些消息的位点也会被记录，避免同一条坏消息反复阻塞消费。</p>
+<p>正常去重发现的重复消息也会被过滤。它与存储故障的处理不同：写入失败会向上返回，消费主循环结束本次运行，尚未提交位点的工作可以在恢复后重读。丢弃状态会进入处理指标，不能把“消费者仍在运行”当成“所有收到的事件都已有效落库”。</p>
+<h2 id="计量查询"><a class="markdownIt-Anchor" href="#计量查询"></a> 计量查询</h2>
+<h3 id="原始事件表"><a class="markdownIt-Anchor" href="#原始事件表"></a> 原始事件表</h3>
+<p>接下来要解决的是：同一批事件怎样服务于不同的计量方式。以 Token 为例，有的页面需要查询一个客户本月总量，有的需要按模型和小时分组，有的功能只统计特定模型。如果写入时就把事件压成一个计数，后续查询会失去许多可用信息。</p>
+<p>当前 ClickHouse connector 的做法是保留原始事件，由查询侧根据计量器定义生成 SQL。事件表建表逻辑的核心是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">sb.Define(<span class="string">&quot;time&quot;</span>, <span class="string">&quot;DateTime&quot;</span>)</span><br><span class="line">sb.Define(<span class="string">&quot;data&quot;</span>, <span class="string">&quot;String&quot;</span>)</span><br><span class="line">sb.Define(<span class="string">&quot;ingested_at&quot;</span>, <span class="string">&quot;DateTime&quot;</span>)</span><br><span class="line">sb.Define(<span class="string">&quot;stored_at&quot;</span>, <span class="string">&quot;DateTime&quot;</span>)</span><br><span class="line">sb.Define(fmt.Sprintf(<span class="string">&quot;INDEX %s_stored_at stored_at TYPE minmax GRANULARITY 4&quot;</span>, d.EventsTableName))</span><br><span class="line">sb.Define(<span class="string">&quot;store_row_id&quot;</span>, <span class="string">&quot;String&quot;</span>)</span><br><span class="line">sb.SQL(<span class="string">&quot;ENGINE = MergeTree&quot;</span>)</span><br><span class="line"></span><br><span class="line">sb.SQL(<span class="string">&quot;PARTITION BY toYYYYMM(time)&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>同一函数随后指定排序键：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">sb.SQL(<span class="string">&quot;ORDER BY (namespace, type, subject, toStartOfHour(time))&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>月分区对应事件时间范围；排序键则贴近典型查询中的 namespace、事件类型、归属和时间条件。<code>data</code> 保存为字符串，查询时再解析 JSON 字段。这个实现依靠 ClickHouse 的列式扫描和聚合能力，代价是查询阶段仍需读取事件并解释相关字段。</p>
+<p>这里使用普通 <code>MergeTree</code>。CloudEvents 的 <code>id</code> 也只是一个列，不能把它当作关系数据库的唯一键，更不能指望表引擎自动兜底所有重复写入。</p>
+<h3 id="计量器与-sql"><a class="markdownIt-Anchor" href="#计量器与-sql"></a> 计量器与 SQL</h3>
+<p>计量器描述“怎样从事件中取值并聚合”。下面是说明本文示例的配置片段：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">meters:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">slug:</span> <span class="string">llm_tokens</span></span><br><span class="line">    <span class="attr">eventType:</span> <span class="string">llm.completion</span></span><br><span class="line">    <span class="attr">aggregation:</span> <span class="string">SUM</span></span><br><span class="line">    <span class="attr">valueProperty:</span> <span class="string">$.tokens</span></span><br><span class="line">    <span class="attr">groupBy:</span></span><br><span class="line">      <span class="attr">model:</span> <span class="string">$.model</span></span><br></pre></td></tr></table></figure>
+<p><code>valueProperty</code> 定义数值路径，<code>groupBy</code> 定义可查询的维度路径。计量器不关心这些 Token 价值多少钱，也不决定客户拥有多少额度。</p>
+<p>计量查询构造器将计量器聚合类型映射为 ClickHouse 函数：<code>SUM</code> 对应 <code>sum</code>，<code>COUNT</code> 对应 <code>count</code>，<code>UNIQUE_COUNT</code> 对应 <code>uniqExact</code>，<code>LATEST</code> 对应按事件时间选择值的 <code>argMax</code>。数值提取有浮点和可选的 Decimal 精度分支，JSON 路径和值通过查询构造器传参。</p>
+<p>例如，查询一个工作区按小时、按模型分组的 Token 用量，在浮点分支下可以理解为下面的简化 SQL。这里用字面值替代实际参数，省略设置项和部分投影：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span></span><br><span class="line">    tumbleStart(<span class="type">time</span>, toIntervalHour(<span class="number">1</span>), <span class="string">&#x27;UTC&#x27;</span>) <span class="keyword">AS</span> windowstart,</span><br><span class="line">    <span class="built_in">sum</span>(ifNotFinite(toFloat64OrNull(<span class="built_in">JSON_VALUE</span>(data, <span class="string">&#x27;$.tokens&#x27;</span>)), <span class="keyword">NULL</span>)) <span class="keyword">AS</span> <span class="keyword">value</span>,</span><br><span class="line">    <span class="built_in">JSON_VALUE</span>(data, <span class="string">&#x27;$.model&#x27;</span>) <span class="keyword">AS</span> model</span><br><span class="line"><span class="keyword">FROM</span> events</span><br><span class="line"><span class="keyword">WHERE</span> namespace <span class="operator">=</span> <span class="string">&#x27;default&#x27;</span></span><br><span class="line">  <span class="keyword">AND</span> type <span class="operator">=</span> <span class="string">&#x27;llm.completion&#x27;</span></span><br><span class="line">  <span class="keyword">AND</span> subject <span class="operator">=</span> <span class="string">&#x27;workspace-acme&#x27;</span></span><br><span class="line">  <span class="keyword">AND</span> <span class="type">time</span> <span class="operator">&gt;=</span> toUnixTimestamp(<span class="string">&#x27;2026-10-01 00:00:00&#x27;</span>, <span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line">  <span class="keyword">AND</span> <span class="type">time</span> <span class="operator">&lt;</span> toUnixTimestamp(<span class="string">&#x27;2026-10-02 00:00:00&#x27;</span>, <span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line"><span class="keyword">GROUP</span> <span class="keyword">BY</span> windowstart, model</span><br><span class="line"><span class="keyword">ORDER</span> <span class="keyword">BY</span> windowstart</span><br></pre></td></tr></table></figure>
+<p>查询时间范围采用左闭右开区间 <code>[from, to)</code>。这样，连续两个区间在边界上的事件不会被重复包含。计量器本身还可以配置 <code>EventFrom</code>，实际起点取查询起点和该边界中较晚的一个。</p>
+<p>由此也能看出，不能把当前 connector 描述成“每个 meter 都拥有一个按分钟聚合的物化视图”。实际查询入口 <code>Connector.QueryMeter</code> 构造 <code>queryMeter</code>，再对事件表执行聚合。</p>
+<h3 id="时间的含义"><a class="markdownIt-Anchor" href="#时间的含义"></a> 时间的含义</h3>
+<p>原始表同时保存三个时间：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>主要作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>time</code></td>
+<td>使用发生时间</td>
+<td>决定用量属于哪个服务区间</td>
+</tr>
+<tr>
+<td><code>ingested_at</code></td>
+<td>接入链路记录的时间</td>
+<td>观察接入延迟、排查补报</td>
+</tr>
+<tr>
+<td><code>stored_at</code></td>
+<td>sink 为本次写入标记的时间</td>
+<td>限定一次计费计算可见的事件集合</td>
+</tr>
+</tbody>
+</table>
+<p><code>stored_at</code> 在 flush 中赋值，随后随原始事件写入；它是处理链路记录的写入时间标记，不是数据库另行生成的事务提交时刻。</p>
+<p>假设一条十点发生的事件十一点才补报。按 <code>time</code> 查询，它仍属于十点的用量；但如果查询同时要求 <code>stored_at</code> 早于十一点，就不会包含这条后到的记录。查询构造器支持同时使用业务时间范围和写入时间过滤，从而区分“哪个时间段的消费”和“截至某个处理时刻已经记录了哪些事件”。</p>
+<h2 id="消息与通知"><a class="markdownIt-Anchor" href="#消息与通知"></a> 消息与通知</h2>
+<h3 id="事务消息"><a class="markdownIt-Anchor" href="#事务消息"></a> 事务消息</h3>
+<p>前面多次提到领域事件。对订阅等事务状态来说，最危险的情形是：数据库已经提交，Kafka 发布却失败，后台处理永远不知道发生了变化。</p>
+<p>当前装配为 system-events topic 启用了 PostgreSQL outbox。Outbox 发布器复用调用方事务，写入消息，并注册提交后唤醒：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">_, err = client.EventOutbox.Create().</span><br><span class="line">    SetMessageID(msg.UUID).</span><br><span class="line">    SetTransactionID(tx.ID()).</span><br><span class="line">    SetTopic(topic).</span><br><span class="line">    SetPayload(msg.Payload).</span><br><span class="line">    SetMetadata(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span>(msg.Metadata)).Save(ctx)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;enqueue system event: %w&quot;</span>, err)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> tx.AfterCommit(p.signal)</span><br></pre></td></tr></table></figure>
+<p>这样，业务变更和待发送消息要么一起提交，要么一起回滚。提交后后台 worker 将消息发往 Kafka，也会通过周期重试继续处理积压。当前实现并非仅在后续有新消息发布时才重试。</p>
+<p>Outbox 仍有明确范围和限制：</p>
+<ul>
+<li>应用装配只为 system-events topic 开启 outbox，其他 topic 直接发布。</li>
+<li>同一个源事务的消息按序处理；其中一条失败时，后续消息暂缓，其他事务仍可继续。</li>
+<li>成功投递的记录会删除，但崩溃或数据库提交失败可能造成再次投递，消费者需要容忍重复。</li>
+<li>重试次数有限，默认达到十次后保留失败记录并跳过，需通过日志和队列状态发现与处理。</li>
+</ul>
+<p>因此，outbox 解决的是数据库变更与待发送消息的原子保存，并不意味着所有消费者一定且只会执行一次。</p>
+<h3 id="消费重试"><a class="markdownIt-Anchor" href="#消费重试"></a> 消费重试</h3>
+<p>消息成功投递到 Kafka，只解决了发布侧的问题。后台消费者执行时仍可能遇到依赖超时或临时错误，需要自己的恢复策略。使用默认 Watermill 路由的消费者将恢复、重试、超时和死信处理组合成中间件，围绕具体 handler 执行。</p>
+<p>重试间隔采用退避并加入随机扰动，次数和最大耗时由配置控制。如果设置了 <code>ProcessingTimeout</code>，每次尝试还会取得带超时的上下文。路由通过 <code>RestoreContext</code> 在尝试结束后恢复原上下文，避免第一次超时留下的取消状态，使下一次重试一开始就失效。超时信号仍需要 handler 及其依赖遵守，并不等于强制终止任意执行中的代码。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Kafka message --&gt; Handler attempt</span><br><span class="line">                       |</span><br><span class="line">                       +-- success --&gt; normal acknowledgement</span><br><span class="line">                       |</span><br><span class="line">                       +-- failure --&gt; retry with backoff</span><br><span class="line">                                            |</span><br><span class="line">                                            +-- still failing --&gt; DLQ</span><br></pre></td></tr></table></figure>
+<p>重试后仍失败的消息，由外层失败处理发送到配置的死信 topic（DLQ），留下独立检查和后续恢复的入口。路由正在关闭时会跳过这条死信路径，让消息保持可重新投递的状态，避免把关停导致的取消误判成不可恢复的坏消息。发送到死信队列也不等于业务已处理成功，仍需要后续排查。</p>
+<p>这里讨论的是后台消息路由，与前面的 Sink 主消费循环不同。Sink 对无效使用事件标记 <code>DROP</code>，并不是自动把它们都转入同一个死信队列；发布侧 outbox 的重试也独立于消费者的执行重试。区分这三层，才能知道失败消息最终留在哪里。</p>
+<h3 id="规则与投递"><a class="markdownIt-Anchor" href="#规则与投递"></a> 规则与投递</h3>
+<p>领域事件到了通知服务，还要经过用户配置的规则。例如，用量达到百分之八十可以发提醒，账单创建也可以触发 webhook。通知处理拥有独立的记录与投递流程，使外部 webhook 的延迟和失败可以单独处理。</p>
+<p>通知消费者负责匹配规则，生成保存历史内容的通知事件，并在同一事务中创建每个通知渠道（channel）的初始投递状态。没有匹配规则，就不会为该来源事件保存通知。</p>
+<p>实际向 Svix 发送和协调投递状态的，是 API server 内带主实例选举的投递协调循环。Svix 承担外部 HTTP 投递及重试，OpenMeter 维护自己的规则、渠道、通知记录和投递状态。这也是为什么不能仅凭进程名，就认为 <code>notification-service</code> 独自完成了 webhook 全流程。</p>
+<p>保存下来的消息内容是通知历史的依据。重发一条旧通知时，不应重新查询业务对象的当前状态来拼装，否则同一个通知 ID 在不同时间可能代表不同内容。通过持久化消息内容，投递和重发可以基于同一份历史记录完成。</p>
+<p>通知也不是逐请求阻断机制。余额阈值规则依赖重新计算后的值事件，既受上游异步延迟影响，也有自己的规则匹配和投递周期。它适合提醒与业务联动，不能替代业务调用路径上的准入判断。</p>
+<h2 id="运行观测"><a class="markdownIt-Anchor" href="#运行观测"></a> 运行观测</h2>
+<h3 id="健康状态"><a class="markdownIt-Anchor" href="#健康状态"></a> 健康状态</h3>
+<p>异步链路的运维不能只看 HTTP 成功率。接口可能正常返回，后台却在等待写入或重试消息。因此，OpenMeter 为 API 和 worker 提供独立的 telemetry HTTP 服务，暴露健康检查、可选的 Prometheus 指标，以及调试分析接口。</p>
+<p>健康接口表达的含义并不相同：</p>
+<table>
+<thead>
+<tr>
+<th>接口</th>
+<th>当前实现</th>
+<th>能说明的范围</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/healthz/live</code></td>
+<td>直接返回 <code>ok</code></td>
+<td>该 HTTP 处理路径仍能响应</td>
+</tr>
+<tr>
+<td><code>/healthz/ready</code></td>
+<td>返回已注册健康检查的汇总结果</td>
+<td>当前注册的检查是否通过，包括 API 的终止检查</td>
+</tr>
+<tr>
+<td><code>/healthz</code></td>
+<td>使用同一健康汇总处理器</td>
+<td>各检查的状态与诊断信息</td>
+</tr>
+</tbody>
+</table>
+<p>就绪检查不直接证明 Kafka 没有积压，也不保证最近上报的事件已经可查询；这些属于数据处理进度，需要通过指标和实际查询另外观察。进程退出时将终止检查变为失败，作用是让外部看到它正在退出，而不是报告某条事件的处理结果。</p>
+<h3 id="日志与指标"><a class="markdownIt-Anchor" href="#日志与指标"></a> 日志与指标</h3>
+<p>项目使用结构化日志和 OpenTelemetry 组织运行信息，HTTP 中间件记录请求指标与追踪信息，Sink 对接收、处理结果和接入延迟分别计数。下面三个指标直接对应前文的处理阶段；表中名称是源码中的 OpenTelemetry instrument 名称，Prometheus 导出时名称可能经过转换。</p>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>记录内容</th>
+<th>排查用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sink.kafka.messages</code></td>
+<td>从 Kafka 收到的消息数，带 namespace 维度</td>
+<td>消费端是否仍在取得消息</td>
+</tr>
+<tr>
+<td><code>sink.flush.events</code></td>
+<td>flush 处理的事件数，带 namespace 和状态维度</td>
+<td>处理是否推进，是否出现 <code>DROP</code></td>
+</tr>
+<tr>
+<td><code>sink.flush.ingest.delay</code></td>
+<td><code>stored_at - ingested_at</code> 的毫秒分布</td>
+<td>已处理事件从接入到本批写入标记的延迟</td>
+</tr>
+</tbody>
+</table>
+<p>延迟指标的计算直接使用前文介绍的时间标记：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">delay := message.StoredAt.Sub(*message.IngestedAt).Milliseconds()</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> delay &lt; <span class="number">0</span> &#123;</span><br><span class="line">    delay = <span class="number">0</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">s.flushIngestDelay.Record(ctx, delay, metric.WithAttributes(namespaceAttr))</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>stored_at</code> 在 flush 开始处理批次时赋值，因此该指标不等于完整的 ClickHouse 写入耗时，也不覆盖之后的业务计算和 webhook 投递。它只对符合记录条件的已处理消息采样；完全停滞的消费者可能没有新样本，不能把图表上最后一次较低的延迟当成当前仍然正常。</p>
+<p>HTTP 追踪也有自己的成本控制。通用 handler 可以额外创建操作级子 span，但默认关闭，避免每个请求都增加一层追踪记录。日志、指标和追踪分别适合定位具体错误、观察总体趋势和拆分调用耗时，不需要把每条事件内容都变成指标标签。</p>
+<h3 id="排查线索"><a class="markdownIt-Anchor" href="#排查线索"></a> 排查线索</h3>
+<p>假设客户端上报成功，但稍后仍查不到那一千二百 Token，可以沿着已有的阶段逐步缩小范围：</p>
+<ul>
+<li><strong>接入与生产者</strong>：确认事件身份、namespace 和发生时间，检查异步投递报告是否失败。HTTP 成功本身不足以证明 Kafka 服务端已接收。</li>
+<li><strong>消费与写入</strong>：查看消息接收数是否增长、flush 是否继续完成，以及是否有分区交接、写入错误或 <code>DROP</code>。结合 Kafka 客户端指标与消费位点判断是否积压。</li>
+<li><strong>查询条件</strong>：核对计量器的事件类型、取值路径、subject 和时间区间。事件落库与查询能够选中事件，是两个检查点。</li>
+<li><strong>后续处理</strong>：若用量已经可查，继续检查落库通知、消费者重试或死信记录；若通知已经保存，则检查 Svix 投递和通知状态协调。</li>
+</ul>
+<p>这些检查分别对应接入确认、持久化、查询可见和外部投递，避免把不同阶段的问题都归结为“事件丢了”。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>回到开头的 AI 服务，一条包含一千二百 Token 的使用记录，先由 API 接收并交给 Kafka 生产者，再由 Sink worker 校验、去重和批量写入 ClickHouse。查询时，计量器定义被转换成聚合 SQL；后台组件则通过内部事件获知数据变化。启动顺序、分区交接、配置刷新和退出协调维持各进程的运行，消息恢复与观测机制则帮助定位尚未完成的处理阶段。</p>
+<p>客户与产品、订阅时间表、计费同步、额度计算、费用与定价、账单生命周期，以及相关账务记录，属于这套基础架构承载的业务领域。它们如何使用计量结果、维护业务约束并协同工作，将在下一篇文章中展开。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/14/go-openmeter-01/" rel="next" title="OpenMeter 学习 01：快速入门">
+      OpenMeter 学习 01：快速入门 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%B3%BB%E7%BB%9F%E8%BD%AE%E5%BB%93"><span class="nav-number">1.</span> <span class="nav-text"> 系统轮廓</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E4%B8%8E%E7%8A%B6%E6%80%81"><span class="nav-number">1.1.</span> <span class="nav-text"> 数据与状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E8%BF%9B%E7%A8%8B"><span class="nav-number">1.2.</span> <span class="nav-text"> 运行进程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E7%A4%BA%E4%BE%8B"><span class="nav-number">1.3.</span> <span class="nav-text"> 业务示例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E7%BB%84%E7%BB%87"><span class="nav-number">2.</span> <span class="nav-text"> 代码组织</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E6%80%BB%E8%A7%88"><span class="nav-number">2.1.</span> <span class="nav-text"> 目录总览</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%86%E5%9F%9F%E5%88%86%E5%B1%82"><span class="nav-number">2.2.</span> <span class="nav-text"> 领域分层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E8%A3%85%E9%85%8D"><span class="nav-number">2.3.</span> <span class="nav-text"> 服务装配</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%80%80%E5%87%BA"><span class="nav-number">3.</span> <span class="nav-text"> 启动与退出</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9D%E5%A7%8B%E5%8C%96%E9%A1%BA%E5%BA%8F"><span class="nav-number">3.1.</span> <span class="nav-text"> 初始化顺序</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E5%8D%8F%E8%B0%83"><span class="nav-number">3.2.</span> <span class="nav-text"> 任务协调</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E5%A4%84%E7%90%86"><span class="nav-number">4.</span> <span class="nav-text"> 请求处理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8D%8F%E8%AE%AE%E9%80%82%E9%85%8D"><span class="nav-number">4.1.</span> <span class="nav-text"> 协议适配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%8A%E4%B8%8B%E6%96%87%E4%B8%8E%E9%94%99%E8%AF%AF"><span class="nav-number">4.2.</span> <span class="nav-text"> 上下文与错误</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8B%E4%BB%B6%E6%8E%A5%E5%85%A5"><span class="nav-number">5.</span> <span class="nav-text"> 事件接入</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E4%BB%B6%E6%A0%BC%E5%BC%8F"><span class="nav-number">5.1.</span> <span class="nav-text"> 事件格式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%A5%E6%94%B6%E8%AF%AD%E4%B9%89"><span class="nav-number">5.2.</span> <span class="nav-text"> 接收语义</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%89%B9%E9%87%8F%E8%90%BD%E5%BA%93"><span class="nav-number">6.</span> <span class="nav-text"> 批量落库</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%93%E5%86%B2%E4%B8%8E%E5%88%86%E5%8C%BA"><span class="nav-number">6.1.</span> <span class="nav-text"> 缓冲与分区</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E5%8C%BA%E4%BA%A4%E6%8E%A5"><span class="nav-number">6.2.</span> <span class="nav-text"> 分区交接</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%BB%E9%87%8D%E8%8C%83%E5%9B%B4"><span class="nav-number">6.3.</span> <span class="nav-text"> 去重范围</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%85%8D%E7%BD%AE%E4%BC%A0%E6%92%AD"><span class="nav-number">6.4.</span> <span class="nav-text"> 配置传播</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%99%E5%85%A5%E4%B8%8E%E4%BD%8D%E7%82%B9"><span class="nav-number">6.5.</span> <span class="nav-text"> 写入与位点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BC%82%E5%B8%B8%E4%BA%8B%E4%BB%B6"><span class="nav-number">6.6.</span> <span class="nav-text"> 异常事件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A1%E9%87%8F%E6%9F%A5%E8%AF%A2"><span class="nav-number">7.</span> <span class="nav-text"> 计量查询</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%9F%E5%A7%8B%E4%BA%8B%E4%BB%B6%E8%A1%A8"><span class="nav-number">7.1.</span> <span class="nav-text"> 原始事件表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A1%E9%87%8F%E5%99%A8%E4%B8%8E-sql"><span class="nav-number">7.2.</span> <span class="nav-text"> 计量器与 SQL</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%97%B6%E9%97%B4%E7%9A%84%E5%90%AB%E4%B9%89"><span class="nav-number">7.3.</span> <span class="nav-text"> 时间的含义</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B6%88%E6%81%AF%E4%B8%8E%E9%80%9A%E7%9F%A5"><span class="nav-number">8.</span> <span class="nav-text"> 消息与通知</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E5%8A%A1%E6%B6%88%E6%81%AF"><span class="nav-number">8.1.</span> <span class="nav-text"> 事务消息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B6%88%E8%B4%B9%E9%87%8D%E8%AF%95"><span class="nav-number">8.2.</span> <span class="nav-text"> 消费重试</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%A7%84%E5%88%99%E4%B8%8E%E6%8A%95%E9%80%92"><span class="nav-number">8.3.</span> <span class="nav-text"> 规则与投递</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E8%A7%82%E6%B5%8B"><span class="nav-number">9.</span> <span class="nav-text"> 运行观测</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%81%A5%E5%BA%B7%E7%8A%B6%E6%80%81"><span class="nav-number">9.1.</span> <span class="nav-text"> 健康状态</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%97%A5%E5%BF%97%E4%B8%8E%E6%8C%87%E6%A0%87"><span class="nav-number">9.2.</span> <span class="nav-text"> 日志与指标</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E7%BA%BF%E7%B4%A2"><span class="nav-number">9.3.</span> <span class="nav-text"> 排查线索</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">300</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>

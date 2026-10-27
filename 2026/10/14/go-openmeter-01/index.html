@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="很多产品的价格与资源消耗有关：API 按调用次数收费，AI 产品按 Token 收费，CI 平台按构建分钟收费。真正麻烦的地方通常不在“加一”，而在于事件来源很多、需要按客户和时间窗口聚合，还要处理重试、重复上报、迟到事件以及后续的额度和账单。OpenMeter 把这部分工作拆成一条可观察的事件链路：应用发送使用事件，系统把事件可靠地写入消息队列，再由 worker 校验、去重和保存；查询接口从用">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OpenMeter 学习 01：快速入门">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/14/go-openmeter-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="很多产品的价格与资源消耗有关：API 按调用次数收费，AI 产品按 Token 收费，CI 平台按构建分钟收费。真正麻烦的地方通常不在“加一”，而在于事件来源很多、需要按客户和时间窗口聚合，还要处理重试、重复上报、迟到事件以及后续的额度和账单。OpenMeter 把这部分工作拆成一条可观察的事件链路：应用发送使用事件，系统把事件可靠地写入消息队列，再由 worker 校验、去重和保存；查询接口从用">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-14T07:41:34.000Z">
+<meta property="article:modified_time" content="2026-10-14T07:42:54.557Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/14/go-openmeter-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>OpenMeter 学习 01：快速入门 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/14/go-openmeter-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OpenMeter 学习 01：快速入门
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-14 15:41:34" itemprop="dateCreated datePublished" datetime="2026-10-14T15:41:34+08:00">2026-10-14</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>很多产品的价格与资源消耗有关：API 按调用次数收费，AI 产品按 Token 收费，CI 平台按构建分钟收费。真正麻烦的地方通常不在“加一”，而在于事件来源很多、需要按客户和时间窗口聚合，还要处理重试、重复上报、迟到事件以及后续的额度和账单。OpenMeter 把这部分工作拆成一条可观察的事件链路：应用发送使用事件，系统把事件可靠地写入消息队列，再由 worker 校验、去重和保存；查询接口从用量存储中按计量器计算结果。这样，业务代码只需要描述“发生了什么”，不用在每个服务里重复实现计数和聚合逻辑。</p>
+<span id="more"></span>
+<p>本文使用仓库中的 <code>quickstart/</code> 目录完成一次真实部署，验证以下路径：</p>
+<ul>
+<li>Docker Compose 启动 OpenMeter API、worker 和依赖服务；</li>
+<li>通过 CloudEvents 上报一次 API 请求；</li>
+<li>等待异步处理完成并查询 <code>COUNT</code> 计量器；</li>
+<li>验证相同 <code>source</code> 和 <code>id</code> 的重复事件不会被重复计量；</li>
+<li>验证 <code>SUM</code> 计量器和 <code>groupBy</code> 查询。</li>
+</ul>
+<p>文中的命令都从仓库根目录下的 <code>quickstart/</code> 执行，读者可以直接复制运行。这个 Compose 配置使用 <code>latest</code> 镜像和开发级依赖，适合学习和本地评估，不是生产拓扑。</p>
+<h2 id="openmeter-简介"><a class="markdownIt-Anchor" href="#openmeter-简介"></a> OpenMeter 简介</h2>
+<p>OpenMeter 是面向 AI、API 和其他使用量产品的开源变现基础设施。它把产品中的请求、Token、计算时长等使用记录转换为可查询的实时用量，并在此基础上提供额度控制和使用量计费能力。项目采用 API-first 的设计，可以独立承担从原始事件到发票的完整链路，也可以只接入其中的计量、额度或计费部分。</p>
+<p>一个使用量产品通常要同时解决几件事：准确记录每次使用，按客户、时间窗口和业务维度聚合，判断客户是否还有可用额度，最后根据价格生成账单。OpenMeter 将这些问题拆成相互衔接的核心能力：</p>
+<ul>
+<li><strong>用量计量</strong>：接收符合 CloudEvents 规范的事件，通过计量器定义聚合次数、时长、Token 或其他数值。<code>subject</code> 标识使用者，<code>groupBy</code> 保存方法、路由、模型等维度；</li>
+<li><strong>产品与定价</strong>：定义 feature、plan、addon、rate card 和 subscription，支持固定费用、周期费用、按量、分层和套餐等价格形式；</li>
+<li><strong>额度与访问控制</strong>：根据客户的 entitlement、credit grant 和计量结果计算余额，供业务系统判断是否继续提供某项功能；</li>
+<li><strong>使用量计费</strong>：把订阅和用量转换为 charge、invoice，推进账单计算、收集和支付相关的生命周期；</li>
+<li><strong>开放集成</strong>：通过 REST API、JavaScript、Python 和 Go SDK 接入业务系统，并通过 webhook 或外部发票、支付和税务服务连接现有基础设施。</li>
+</ul>
+<h3 id="cloudevents-规范"><a class="markdownIt-Anchor" href="#cloudevents-规范"></a> CloudEvents 规范</h3>
+<p>CloudEvents 是 CNCF 推动的一种事件描述规范，目的是让不同服务产生的事件拥有统一的外层格式。无论事件来自 API 网关、模型服务还是任务调度器，接收方都可以用相同的方式读取事件身份、类型和来源，而不必为每个生产者编写一套解析逻辑。</p>
+<p>一个 OpenMeter 事件通常包含以下上下文字段：</p>
+<ul>
+<li><code>specversion</code>：CloudEvents 规范版本，示例使用 <code>1.0</code>；</li>
+<li><code>id</code>：事件在同一来源中的唯一标识，用于重试和去重；</li>
+<li><code>source</code>：产生事件的服务或系统；</li>
+<li><code>type</code>：事件类型，例如 <code>request</code> 或 <code>prompt</code>；</li>
+<li><code>subject</code>：事件归属的使用者，例如客户或工作区；</li>
+<li><code>data</code>：事件的业务数据，例如请求路由、执行时长或 Token 数量。</li>
+</ul>
+<p>OpenMeter 当前通过 JSON 格式接收 CloudEvents，<code>data</code> 可以是任意合法的 JSON 对象。计量器使用 JsonPath 从 <code>data</code> 中取值，例如 <code>$.duration_ms</code> 表示读取 <code>data.duration_ms</code>。因此，CloudEvents 负责统一事件的外层结构，计量器负责解释业务数据，两者结合后，同一种事件格式就可以服务于计数、求和和维度分组等不同场景。</p>
+<p>OpenMeter 负责用量和账单领域的核心状态，但不替代支付处理器、税务引擎或通用会计系统。它更像一层可组合的计费基础设施：产品可以先使用计量器和查询 API，之后再逐步加入 entitlement、订阅和 billing。本次入门先跑通最基础的事件计量链路，后面的组件和源码分析也会围绕这条链路展开。</p>
+<h2 id="运行组件"><a class="markdownIt-Anchor" href="#运行组件"></a> 运行组件</h2>
+<p>OpenMeter 把高吞吐的事件数据和需要事务一致性的业务状态放在不同的存储中。这是架构中最重要的分界：ClickHouse 负责事件和聚合查询，PostgreSQL 负责客户、计量器、产品目录、订阅、额度和账单状态。</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>在链路中的职责</th>
+<th>quickstart 中的服务</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API server</td>
+<td>接收事件、管理计量器、提供用量查询和管理 API</td>
+<td><code>openmeter</code></td>
+</tr>
+<tr>
+<td>Kafka</td>
+<td>把接收和处理解耦，承载使用事件及领域事件</td>
+<td><code>kafka</code></td>
+</tr>
+<tr>
+<td>Sink worker</td>
+<td>消费使用事件，校验、去重、匹配计量器并写入 ClickHouse</td>
+<td><code>sink-worker</code></td>
+</tr>
+<tr>
+<td>ClickHouse</td>
+<td>保存原始用量并执行计量聚合查询</td>
+<td><code>clickhouse</code></td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td>保存计量器和产品、客户、订阅、额度、账单等事务状态</td>
+<td><code>postgres</code></td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>quickstart 中用于 sink 去重，也可保存查询进度</td>
+<td><code>redis</code></td>
+</tr>
+<tr>
+<td>Balance worker</td>
+<td>依据使用量和 grant 重新计算 metered entitlement 余额</td>
+<td><code>balance-worker</code></td>
+</tr>
+<tr>
+<td>Billing worker</td>
+<td>同步订阅、计算 charge 并推进 invoice 生命周期</td>
+<td><code>billing-worker</code></td>
+</tr>
+<tr>
+<td>Notification service</td>
+<td>评估通知规则并记录待发送事件</td>
+<td><code>notification-service</code></td>
+</tr>
+<tr>
+<td>Jobs</td>
+<td>执行迁移、订阅同步等定时维护任务</td>
+<td><code>openmeter-jobs</code></td>
+</tr>
+<tr>
+<td>Svix</td>
+<td>提供 webhook 投递服务</td>
+<td><code>svix</code></td>
+</tr>
+</tbody>
+</table>
+<p>把这条运行链路按数据流拆开，可以分成几步：</p>
+<ol>
+<li>业务服务或 SDK 先把 CloudEvents 发送给 API server</li>
+<li>API server 将事件写入 Kafka，同时从 PostgreSQL 读取和保存计量器、客户、订阅等业务状态</li>
+<li>Sink worker 消费 Kafka 中的使用事件，完成校验、去重和计量器匹配后，把原始事件写入 ClickHouse，去重键保存在 Redis 中</li>
+<li>查询请求仍然由 API server 接收，再交给 ClickHouse 返回聚合后的用量</li>
+<li>Balance worker 和 Billing worker 也消费 Kafka 中的相关事件，分别负责额度计算和账单处理。</li>
+</ol>
+<p>Kafka 的意义是让 API 不必同步等待 ClickHouse 写入。API 返回成功，表示事件已经交给 collector；之后 sink worker 才会消费和落库。因此，刚上报事件时立刻查询到空数组是正常的，客户端需要等待一小段时间再查询。</p>
+<h2 id="本地环境"><a class="markdownIt-Anchor" href="#本地环境"></a> 本地环境</h2>
+<h3 id="工具准备"><a class="markdownIt-Anchor" href="#工具准备"></a> 工具准备</h3>
+<p>需要安装 Git、Docker Engine 或 Docker Desktop，以及 Docker Compose plugin。下面的命令确认工具可用：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">git --version</span><br><span class="line">docker --version</span><br><span class="line">docker compose version</span><br><span class="line">curl --version</span><br></pre></td></tr></table></figure>
+<p>quickstart 将 API 映射到 <code>127.0.0.1:48888</code>；Kafka、ClickHouse、PostgreSQL、Redis 和 Svix 只在 Compose 网络中互相访问，不需要占用宿主机的默认端口。</p>
+<h3 id="服务启动"><a class="markdownIt-Anchor" href="#服务启动"></a> 服务启动</h3>
+<p>从仓库根目录执行：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">git <span class="built_in">clone</span> https://github.com/openmeterio/openmeter.git</span><br><span class="line"><span class="built_in">cd</span> openmeter/quickstart</span><br><span class="line">docker compose up -d --<span class="built_in">wait</span></span><br></pre></td></tr></table></figure>
+<p><code>--wait</code> 会等待 Compose 文件中定义的健康检查完成。检查服务状态：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker compose ps</span><br></pre></td></tr></table></figure>
+<p>本次实测中，<code>openmeter</code>、<code>sink-worker</code>、<code>balance-worker</code>、<code>billing-worker</code>、<code>notification-service</code>、Kafka、ClickHouse、PostgreSQL、Redis 和 Svix 都进入了 <code>healthy</code> 状态；<code>openmeter-jobs</code> 没有 HTTP 健康检查，但容器保持运行。首次启动需要下载 OpenMeter、Kafka 和 ClickHouse 镜像，时间会明显长于后续启动。</p>
+<p>如果启动期间看到 worker 报 Kafka topic 尚不存在或连接超时，先以 <code>docker compose ps</code> 的最终状态为准。topic 会由 API 和 worker 在初始化阶段创建；容器没有变为 healthy 时，再查看：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker compose logs --<span class="built_in">tail</span>=100 openmeter sink-worker kafka</span><br></pre></td></tr></table></figure>
+<h2 id="计量器配置"><a class="markdownIt-Anchor" href="#计量器配置"></a> 计量器配置</h2>
+<p>业务服务上报的是一条条原始事件，但产品真正关心的通常不是事件本身，而是 <code>某个客户在一段时间内用了多少</code>。例如，同样一条 API 请求事件，既可以计入请求次数，也可以计入执行时长；同样一条模型调用事件，还可以分别统计输入 Token 和输出 Token。若把这些计算逻辑分散到各个业务服务中，产品改一次计费口径，就要同时修改生产事件的代码和查询逻辑。</p>
+<p><strong>计量器（meter）就是 OpenMeter 对这种计算口径的声明。它把四件事写在一起：要匹配哪种事件、从事件数据中取什么值、使用哪种聚合方式，以及按哪些维度拆分结果</strong>。事件生产方只负责如实上报使用事实，计量器则负责把这些事实解释成“请求数”“请求时长”或“Token 用量”等指标。这样，同一份事件可以被多个计量器复用，计费规则变化时也可以优先调整配置和后续的价格模型。</p>
+<p>在配置文件中，<code>meters</code> 是计量器列表，每个计量器通过 <code>slug</code> 定义稳定的查询名称。常见字段的关系如下：</p>
+<ul>
+<li><code>eventType</code> 决定计量器接收哪类事件，必须与 CloudEvent 的 <code>type</code> 对应；</li>
+<li><code>aggregation</code> 决定如何合并匹配到的事件，支持 <code>COUNT</code>、<code>SUM</code>、<code>AVG</code>、<code>MIN</code>、<code>MAX</code>、<code>UNIQUE_COUNT</code> 和 <code>LATEST</code>；</li>
+<li><code>valueProperty</code> 用 JsonPath 指向数值字段，<code>COUNT</code> 不需要它，其他需要数值的聚合通常都需要它；</li>
+<li><code>groupBy</code> 把事件中的字段映射为查询维度，例如按 HTTP 方法、路由或模型分别统计。</li>
+</ul>
+<p>quickstart 通过 <code>quickstart/config.yaml</code> 挂载配置。它预置了三个计量器：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">meters:</span></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">slug:</span> <span class="string">api_requests_total</span></span><br><span class="line">    <span class="attr">description:</span> <span class="string">API</span> <span class="string">Requests</span></span><br><span class="line">    <span class="attr">eventType:</span> <span class="string">request</span></span><br><span class="line">    <span class="attr">aggregation:</span> <span class="string">COUNT</span></span><br><span class="line">    <span class="attr">groupBy:</span></span><br><span class="line">      <span class="attr">method:</span> <span class="string">$.method</span></span><br><span class="line">      <span class="attr">route:</span> <span class="string">$.route</span></span><br><span class="line"></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">slug:</span> <span class="string">api_requests_duration</span></span><br><span class="line">    <span class="attr">description:</span> <span class="string">API</span> <span class="string">Request</span> <span class="string">Duration</span></span><br><span class="line">    <span class="attr">eventType:</span> <span class="string">request</span></span><br><span class="line">    <span class="attr">aggregation:</span> <span class="string">SUM</span></span><br><span class="line">    <span class="attr">valueProperty:</span> <span class="string">$.duration_ms</span></span><br><span class="line">    <span class="attr">groupBy:</span></span><br><span class="line">      <span class="attr">method:</span> <span class="string">$.method</span></span><br><span class="line">      <span class="attr">route:</span> <span class="string">$.route</span></span><br><span class="line"></span><br><span class="line">  <span class="bullet">-</span> <span class="attr">slug:</span> <span class="string">tokens_total</span></span><br><span class="line">    <span class="attr">description:</span> <span class="string">AI</span> <span class="string">Token</span> <span class="string">Usage</span></span><br><span class="line">    <span class="attr">eventType:</span> <span class="string">prompt</span></span><br><span class="line">    <span class="attr">aggregation:</span> <span class="string">SUM</span></span><br><span class="line">    <span class="attr">valueProperty:</span> <span class="string">$.tokens</span></span><br><span class="line">    <span class="attr">groupBy:</span></span><br><span class="line">      <span class="attr">model:</span> <span class="string">$.model</span></span><br><span class="line">      <span class="attr">type:</span> <span class="string">$.type</span></span><br></pre></td></tr></table></figure>
+<p>这几项配置表达了不同的业务含义：</p>
+<ul>
+<li><code>eventType</code> 先筛选事件类型，<code>api_requests_total</code> 只处理 <code>type=request</code> 的事件；</li>
+<li><code>COUNT</code> 每个匹配事件贡献 1，不要求事件数据中存在数值字段；</li>
+<li><code>SUM</code> 需要通过 <code>valueProperty</code> 找到数值，<code>$.duration_ms</code> 对应事件 <code>data.duration_ms</code>；</li>
+<li><code>groupBy</code> 从事件数据中提取维度，最终查询结果会把 <code>method</code> 和 <code>route</code> 原样带回来。</li>
+</ul>
+<p>服务启动时，API 会把配置中的计量器写入 PostgreSQL。日志中可以看到 <code>api_requests_total</code>、<code>api_requests_duration</code> 和 <code>tokens_total</code> 被创建；sink worker 定期刷新计量器缓存，所以事件到达时能够知道应该匹配哪些计量器。</p>
+<h2 id="cloudevents-事件"><a class="markdownIt-Anchor" href="#cloudevents-事件"></a> CloudEvents 事件</h2>
+<p>上报请求使用 CloudEvents JSON 格式。下面的事件表示 <code>blog-customer</code> 发起了一次 GET 请求：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;specversion&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;request&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blog-quickstart-1&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blog&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blog-customer&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;method&quot;</span><span class="punctuation">:</span> <span class="string">&quot;GET&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;route&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/hello&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>几个字段分别承担不同职责：<code>type</code> 与计量器的 <code>eventType</code> 匹配，<code>subject</code> 是使用量归属对象，<code>data</code> 保存业务字段，<code>source</code> 和 <code>id</code> 组成事件的稳定身份。生产环境应该保证同一个来源不会为不同事件重复使用同一个 ID。</p>
+<p>这个请求体里没有 <code>namespace</code> 字段。quickstart 启动时会创建默认 namespace，API server 通过静态 namespace decoder 把请求放入该 namespace；所以示例中的计量器和事件都属于同一个默认空间。多 namespace 部署时，namespace decoder 是选择目标 namespace 的入口，具体方式由 router 配置决定。</p>
+<p>API 路由是 <code>POST /api/v1/events</code>。<code>openmeter/ingest/httpdriver/ingest.go</code> 根据 <code>Content-Type</code> 解析单个事件或批量事件，成功后返回 <code>204 No Content</code>。解析完成后，<code>openmeter/ingest/service.go</code> 会补齐缺失的时间戳，并把事件交给 collector：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> event.Time().IsZero() &#123;</span><br><span class="line">    event.SetTime(time.Now().UTC())</span><br><span class="line">&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">    event.SetTime(event.Time().UTC())</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">err := s.collector.Ingest(ctx, namespace, event)</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>204</code> 代表 API 已经接收并转发事件，不代表 ClickHouse 立刻可查。这个区别正是后面轮询查询的原因。</p>
+<h2 id="第一次查询"><a class="markdownIt-Anchor" href="#第一次查询"></a> 第一次查询</h2>
+<p>发送事件：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">curl -sS -o /dev/null -w <span class="string">&#x27;HTTP %&#123;http_code&#125;\n&#x27;</span> \</span><br><span class="line">  -X POST http://localhost:48888/api/v1/events \</span><br><span class="line">  -H <span class="string">&#x27;Content-Type: application/cloudevents+json&#x27;</span> \</span><br><span class="line">  --data-raw <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;specversion&quot;: &quot;1.0&quot;,</span></span><br><span class="line"><span class="string">    &quot;type&quot;: &quot;request&quot;,</span></span><br><span class="line"><span class="string">    &quot;id&quot;: &quot;blog-quickstart-1&quot;,</span></span><br><span class="line"><span class="string">    &quot;source&quot;: &quot;blog&quot;,</span></span><br><span class="line"><span class="string">    &quot;subject&quot;: &quot;blog-customer&quot;,</span></span><br><span class="line"><span class="string">    &quot;data&quot;: &#123; &quot;method&quot;: &quot;GET&quot;, &quot;route&quot;: &quot;/hello&quot; &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>预期输出：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">HTTP 204</span><br></pre></td></tr></table></figure>
+<p>随后轮询计量器。一次查询返回 <code>&#123;&quot;data&quot;:[]&#125;</code> 并不表示事件丢失，只说明 sink 尚未完成消费：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">response=<span class="string">&#x27;&#x27;</span></span><br><span class="line"><span class="keyword">for</span> attempt <span class="keyword">in</span> $(<span class="built_in">seq</span> 1 20); <span class="keyword">do</span></span><br><span class="line">  response=$(curl -fsS \</span><br><span class="line">    <span class="string">&#x27;http://localhost:48888/api/v1/meters/api_requests_total/query?subject=blog-customer&#x27;</span>)</span><br><span class="line">  <span class="built_in">printf</span> <span class="string">&#x27;attempt=%s %s\n&#x27;</span> <span class="string">&quot;<span class="variable">$attempt</span>&quot;</span> <span class="string">&quot;<span class="variable">$response</span>&quot;</span></span><br><span class="line">  <span class="keyword">if</span> <span class="built_in">printf</span> <span class="string">&#x27;%s&#x27;</span> <span class="string">&quot;<span class="variable">$response</span>&quot;</span> | grep -q <span class="string">&#x27;&quot;value&quot;:1&#x27;</span>; <span class="keyword">then</span></span><br><span class="line">    <span class="built_in">break</span></span><br><span class="line">  <span class="keyword">fi</span></span><br><span class="line">  <span class="built_in">sleep</span> 1</span><br><span class="line"><span class="keyword">done</span></span><br></pre></td></tr></table></figure>
+<p>本次实测第一次查询返回空数组，第二次查询得到：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;groupBy&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blog-customer&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="number">1</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;windowStart&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-10-12T10:25:00Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">      <span class="attr">&quot;windowEnd&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-10-12T10:26:00Z&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>时间窗口会随实际运行时间变化；结果中的关键是 <code>subject</code> 为 <code>blog-customer</code>，<code>value</code> 为 <code>1</code>。</p>
+<h2 id="事件链路"><a class="markdownIt-Anchor" href="#事件链路"></a> 事件链路</h2>
+<p>现在沿源码把刚才的结果串起来。</p>
+<h3 id="api-与-kafka"><a class="markdownIt-Anchor" href="#api-与-kafka"></a> API 与 Kafka</h3>
+<p><code>openmeter/ingest/kafkaingest/collector.go</code> 的 <code>Collector.Ingest</code> 先根据 namespace 解析 Kafka topic，再序列化 CloudEvent 并发布消息。默认 topic 模板来自配置 <code>om_%s_events</code>，所以不同 namespace 的事件会进入不同 topic。这样既能让租户数据隔离，也能让 sink worker 按 namespace 刷新计量器。</p>
+<h3 id="sink-与-clickhouse"><a class="markdownIt-Anchor" href="#sink-与-clickhouse"></a> Sink 与 ClickHouse</h3>
+<p>Sink worker 从 Kafka 消费消息，先放入 buffer；达到 <code>minCommitCount</code> 或等待时间后触发 flush。flush 阶段会依次完成：</p>
+<ul>
+<li>解析 Kafka 消息中的 CloudEvent 和 namespace；</li>
+<li>用 <code>source + id</code> 检查重复事件；</li>
+<li>从 meter cache 找出受影响的计量器；</li>
+<li>校验事件数据并把结果写入 ClickHouse；</li>
+<li>提交 Kafka offset，并发布 ingest notification。</li>
+</ul>
+<p>仓库同时提供 API collector 层的可选去重包装，逻辑在 <code>openmeter/ingest/dedupe.go</code> 中很直接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">isUnique, err := d.Deduplicator.IsUnique(ctx, namespace, ev)</span><br><span class="line"><span class="keyword">if</span> isUnique &#123;</span><br><span class="line">    <span class="keyword">return</span> d.Collector.Ingest(ctx, namespace, ev)</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">return</span> <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>本次 quickstart 没有打开 API 层的全局 <code>dedupe</code>，而是在 <code>quickstart/config.yaml</code> 的 <code>sink.dedupe</code> 中启用了 Redis 去重，过期时间是 <code>768h</code>（32 天）。sink worker 在 flush 前用 <code>openmeter/sink/models/models.go</code> 生成包含 namespace、source 和 id 的去重键，落库成功后再写入 Redis。客户端因此可以在网络错误后安全重试同一个 <code>source</code> 和 <code>id</code>。</p>
+<h3 id="事件解析"><a class="markdownIt-Anchor" href="#事件解析"></a> 事件解析</h3>
+<p>计量器匹配后，<code>openmeter/meter/parse.go</code> 负责从 <code>data</code> 中提取数值和分组字段。<code>COUNT</code> 计量器不需要读取数值，源码直接让每个事件贡献 <code>1.0</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> meter.Aggregation == MeterAggregationCount &#123;</span><br><span class="line">    parsedEvent.Value = lo.ToPtr(<span class="number">1.0</span>)</span><br><span class="line">    <span class="keyword">return</span> parsedEvent, <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>对于 <code>SUM</code>、<code>AVG</code>、<code>MIN</code>、<code>MAX</code> 和 <code>LATEST</code>，<code>ValueProperty</code> 必须存在且能解析为有限的浮点数；<code>groupBy</code> 字段缺失时会被记为空字符串，而不会让整个事件因为缺一个维度就失败。</p>
+<h3 id="clickhouse-查询"><a class="markdownIt-Anchor" href="#clickhouse-查询"></a> ClickHouse 查询</h3>
+<p>查询入口是 <code>GET /api/v1/meters/&#123;meterIdOrSlug&#125;/query</code>，路由定义位于 <code>openmeter/server/router/meter.go</code>。handler 最终调用 <code>streaming.Connector.QueryMeter</code>，ClickHouse connector 再根据计量器聚合方式、时间窗口、subject 和 groupBy 生成查询。</p>
+<p>在 <code>openmeter/streaming/clickhouse/meter_query.go</code> 中，<code>COUNT</code> 对应 <code>count(*)</code>，小时窗口会使用 <code>tumbleStart</code> 和 <code>tumbleEnd</code> 计算窗口边界。也就是说，接口返回的 <code>windowStart</code> 和 <code>windowEnd</code> 并不是 API 层随手拼出的字段，而是 ClickHouse 聚合查询的结果。</p>
+<h2 id="重复事件"><a class="markdownIt-Anchor" href="#重复事件"></a> 重复事件</h2>
+<p>再次发送完全相同的 <code>source=blog</code> 和 <code>id=blog-quickstart-1</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">curl -sS -o /dev/null -w <span class="string">&#x27;HTTP %&#123;http_code&#125;\n&#x27;</span> \</span><br><span class="line">  -X POST http://localhost:48888/api/v1/events \</span><br><span class="line">  -H <span class="string">&#x27;Content-Type: application/cloudevents+json&#x27;</span> \</span><br><span class="line">  --data-raw <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;specversion&quot;: &quot;1.0&quot;,</span></span><br><span class="line"><span class="string">    &quot;type&quot;: &quot;request&quot;,</span></span><br><span class="line"><span class="string">    &quot;id&quot;: &quot;blog-quickstart-1&quot;,</span></span><br><span class="line"><span class="string">    &quot;source&quot;: &quot;blog&quot;,</span></span><br><span class="line"><span class="string">    &quot;subject&quot;: &quot;blog-customer&quot;,</span></span><br><span class="line"><span class="string">    &quot;data&quot;: &#123; &quot;method&quot;: &quot;GET&quot;, &quot;route&quot;: &quot;/hello&quot; &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>API 仍会返回 <code>204</code>，因为请求格式和转发流程都没有问题。等待两秒后再次查询，结果仍然是 <code>value: 1</code>，而不是 <code>2</code>。去重发生在消费和落库链路中，所以客户端不需要为了避免重复计量而改变正常的重试策略。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">sleep</span> 2</span><br><span class="line">curl <span class="string">&#x27;http://localhost:48888/api/v1/meters/api_requests_total/query?subject=blog-customer&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>为了让验证结果更明确，下一节再发送一个不同 <code>id</code> 的事件。最终按路由分组时，<code>GET /hello</code> 和 <code>POST /items</code> 各为 <code>1</code>；如果重复事件被计量，两行中的某一行就会变成 <code>2</code>。</p>
+<h2 id="聚合维度"><a class="markdownIt-Anchor" href="#聚合维度"></a> 聚合维度</h2>
+<p>再发送一个带时长的请求，验证 <code>SUM</code> 计量器：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">curl -sS -o /dev/null -w <span class="string">&#x27;HTTP %&#123;http_code&#125;\n&#x27;</span> \</span><br><span class="line">  -X POST http://localhost:48888/api/v1/events \</span><br><span class="line">  -H <span class="string">&#x27;Content-Type: application/cloudevents+json&#x27;</span> \</span><br><span class="line">  --data-raw <span class="string">&#x27;&#123;</span></span><br><span class="line"><span class="string">    &quot;specversion&quot;: &quot;1.0&quot;,</span></span><br><span class="line"><span class="string">    &quot;type&quot;: &quot;request&quot;,</span></span><br><span class="line"><span class="string">    &quot;id&quot;: &quot;blog-quickstart-2&quot;,</span></span><br><span class="line"><span class="string">    &quot;source&quot;: &quot;blog&quot;,</span></span><br><span class="line"><span class="string">    &quot;subject&quot;: &quot;blog-customer&quot;,</span></span><br><span class="line"><span class="string">    &quot;data&quot;: &#123; &quot;method&quot;: &quot;POST&quot;, &quot;route&quot;: &quot;/items&quot;, &quot;duration_ms&quot;: &quot;40&quot; &#125;</span></span><br><span class="line"><span class="string">  &#125;&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>轮询下面的接口，直到返回 <code>value: 40</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl <span class="string">&#x27;http://localhost:48888/api/v1/meters/api_requests_duration/query?subject=blog-customer&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>本次实测返回了 <code>value: 40</code>。注意 <code>duration_ms</code> 在事件里是字符串也可以工作，因为 <code>ParseEvent</code> 会把字符串解析为浮点数；生产事件最好统一字段类型，减少跨语言 SDK 的差异。</p>
+<p>按照小时、方法和路由分组：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">curl <span class="string">&#x27;http://localhost:48888/api/v1/meters/api_requests_total/query?subject=blog-customer&amp;windowSize=HOUR&amp;groupBy=method&amp;groupBy=route&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>本次实测得到两个分组：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span></span><br><span class="line">    <span class="punctuation">&#123;</span> <span class="attr">&quot;groupBy&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;method&quot;</span><span class="punctuation">:</span> <span class="string">&quot;POST&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;route&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/items&quot;</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span> <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blog-customer&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="number">1</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="punctuation">&#123;</span> <span class="attr">&quot;groupBy&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;method&quot;</span><span class="punctuation">:</span> <span class="string">&quot;GET&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;route&quot;</span><span class="punctuation">:</span> <span class="string">&quot;/hello&quot;</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span> <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blog-customer&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;value&quot;</span><span class="punctuation">:</span> <span class="number">1</span> <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;windowSize&quot;</span><span class="punctuation">:</span> <span class="string">&quot;HOUR&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>省略的窗口字段会随当前时间变化。这里可以看到，<code>COUNT</code> 计量器只负责数事件，维度由 <code>groupBy</code> 决定；同一个 subject 的不同路由不会被混成一行。</p>
+<h2 id="计量与计费边界"><a class="markdownIt-Anchor" href="#计量与计费边界"></a> 计量与计费边界</h2>
+<p>到这里只使用了 <code>meter</code> 和 <code>streaming</code> 两个核心部分。它们回答的是“客户用了多少”。如果产品还要回答“客户现在能不能继续用”或“这次使用应收多少钱”，则会进入另外两条链路：</p>
+<ul>
+<li>entitlement 将 feature、customer attribution 和 grant 联系起来，balance worker 在使用量变化后重新计算余额；</li>
+<li>product catalog 和 subscription 描述产品、价格和客户订阅，billing worker 再把可计费工作转换为 charge 和 invoice；</li>
+<li>ledger 保存不可变的会计分录，负责余额和资金流的账务表达。</li>
+</ul>
+<p>这些模块共享事件和 PostgreSQL 状态，但没有把所有逻辑塞进 sink worker。这样的边界让高吞吐的用量写入可以独立扩展，也让账单和余额的事务生命周期保持清晰。</p>
+<h2 id="环境清理"><a class="markdownIt-Anchor" href="#环境清理"></a> 环境清理</h2>
+<p>实验完成后删除容器和本地数据卷：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker compose down -v</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>本文从本地 Docker Compose 部署开始，完成了事件上报、异步查询、重复事件去重，以及 <code>COUNT</code>、<code>SUM</code> 和维度分组的验证。CloudEvents 统一事件格式，计量器定义统计口径，两者共同把业务中的使用记录变成可以查询的用量。</p>
+<p>沿着源码可以看到这条链路的分工：API 接收事件并交给 Kafka，sink worker 消费、去重后写入 ClickHouse，查询接口再根据计量器定义执行聚合；PostgreSQL 则保存计量器和其他业务状态。由于接收与落库分开执行，<code>204</code> 返回后需要等待异步处理完成，才能在查询中看到新增用量。</p>
+<p>这次实验覆盖的是计量能力。额度控制、订阅和账单在此基础上继续处理访问权限与费用，各自有独立的模块和生命周期。对于首次接入 OpenMeter 的产品，可以先确认事件字段、使用者归属和计量口径，再根据业务需要加入这些能力。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/17/go-openmeter-02/" rel="prev" title="OpenMeter 学习 02：架构总览">
+      <i class="fa fa-chevron-left"></i> OpenMeter 学习 02：架构总览
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/12/go-multica-04/" rel="next" title="Multica 学习 04：从 Coding Agent 到智能体">
+      Multica 学习 04：从 Coding Agent 到智能体 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#openmeter-%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text"> OpenMeter 简介</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#cloudevents-%E8%A7%84%E8%8C%83"><span class="nav-number">1.1.</span> <span class="nav-text"> CloudEvents 规范</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E7%BB%84%E4%BB%B6"><span class="nav-number">2.</span> <span class="nav-text"> 运行组件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%AC%E5%9C%B0%E7%8E%AF%E5%A2%83"><span class="nav-number">3.</span> <span class="nav-text"> 本地环境</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E5%87%86%E5%A4%87"><span class="nav-number">3.1.</span> <span class="nav-text"> 工具准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E5%90%AF%E5%8A%A8"><span class="nav-number">3.2.</span> <span class="nav-text"> 服务启动</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A1%E9%87%8F%E5%99%A8%E9%85%8D%E7%BD%AE"><span class="nav-number">4.</span> <span class="nav-text"> 计量器配置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#cloudevents-%E4%BA%8B%E4%BB%B6"><span class="nav-number">5.</span> <span class="nav-text"> CloudEvents 事件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E6%AC%A1%E6%9F%A5%E8%AF%A2"><span class="nav-number">6.</span> <span class="nav-text"> 第一次查询</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8B%E4%BB%B6%E9%93%BE%E8%B7%AF"><span class="nav-number">7.</span> <span class="nav-text"> 事件链路</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#api-%E4%B8%8E-kafka"><span class="nav-number">7.1.</span> <span class="nav-text"> API 与 Kafka</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sink-%E4%B8%8E-clickhouse"><span class="nav-number">7.2.</span> <span class="nav-text"> Sink 与 ClickHouse</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E4%BB%B6%E8%A7%A3%E6%9E%90"><span class="nav-number">7.3.</span> <span class="nav-text"> 事件解析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#clickhouse-%E6%9F%A5%E8%AF%A2"><span class="nav-number">7.4.</span> <span class="nav-text"> ClickHouse 查询</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%87%8D%E5%A4%8D%E4%BA%8B%E4%BB%B6"><span class="nav-number">8.</span> <span class="nav-text"> 重复事件</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%81%9A%E5%90%88%E7%BB%B4%E5%BA%A6"><span class="nav-number">9.</span> <span class="nav-text"> 聚合维度</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A1%E9%87%8F%E4%B8%8E%E8%AE%A1%E8%B4%B9%E8%BE%B9%E7%95%8C"><span class="nav-number">10.</span> <span class="nav-text"> 计量与计费边界</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E6%B8%85%E7%90%86"><span class="nav-number">11.</span> <span class="nav-text"> 环境清理</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">12.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">300</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
