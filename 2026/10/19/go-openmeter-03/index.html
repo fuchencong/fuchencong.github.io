@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="一个 AI 服务准备推出付费套餐：每月收取 20 美元平台费，包含十万 Token，超出部分每 Token 收取 0.00001 美元。客户可以升级套餐，运营可以额外赠送额度，企业客户还可以预付一笔余额。产品页面上，这些规则只占几行字。到了实现中，却会出现一连串需要分别回答的问题：赠送的额度月底是否清零；额度耗尽后是否继续放行；套餐升级从今天还是下个月生效；已经出账的费用能否跟着新价格重算。 Op">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OpenMeter 学习 03：业务领域与模型设计">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/19/go-openmeter-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="一个 AI 服务准备推出付费套餐：每月收取 20 美元平台费，包含十万 Token，超出部分每 Token 收取 0.00001 美元。客户可以升级套餐，运营可以额外赠送额度，企业客户还可以预付一笔余额。产品页面上，这些规则只占几行字。到了实现中，却会出现一连串需要分别回答的问题：赠送的额度月底是否清零；额度耗尽后是否继续放行；套餐升级从今天还是下个月生效；已经出账的费用能否跟着新价格重算。 Op">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-19T03:57:53.000Z">
+<meta property="article:modified_time" content="2026-10-29T04:03:57.751Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/19/go-openmeter-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>OpenMeter 学习 03：业务领域与模型设计 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/19/go-openmeter-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OpenMeter 学习 03：业务领域与模型设计
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-19 11:57:53" itemprop="dateCreated datePublished" datetime="2026-10-19T11:57:53+08:00">2026-10-19</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>一个 AI 服务准备推出付费套餐：每月收取 20 美元平台费，包含十万 Token，超出部分每 Token 收取 0.00001 美元。客户可以升级套餐，运营可以额外赠送额度，企业客户还可以预付一笔余额。产品页面上，这些规则只占几行字。到了实现中，却会出现一连串需要分别回答的问题：赠送的额度月底是否清零；额度耗尽后是否继续放行；套餐升级从今天还是下个月生效；已经出账的费用能否跟着新价格重算。</p>
+<p>OpenMeter 用客户、计量器、产品目录、订阅、权益、费用、账单和账务记录来承载这些规则。本文沿着这个 AI 服务展开，重点介绍各个概念为什么存在、源码怎样表达它们，以及相邻模型如何协作。</p>
+<span id="more"></span>
+<p>文中的 <strong>Invoice 统一称为“账单”</strong>，表示面向客户的费用结算单据，不直接等同于中国税务语境中的发票。代码中的 issuing 表示账单正式出具，是否另有税务开票流程取决于外部集成。</p>
+<h2 id="业务全景"><a class="markdownIt-Anchor" href="#业务全景"></a> 业务全景</h2>
+<h3 id="核心概念"><a class="markdownIt-Anchor" href="#核心概念"></a> 核心概念</h3>
+<p>先把本文中反复出现的名词放在同一张表里。后文会逐一展开它们之间的关系。</p>
+<table>
+<thead>
+<tr>
+<th>概念</th>
+<th>回答的问题</th>
+<th>AI 服务中的例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>客户（Customer）</td>
+<td>用量和商业关系归属于谁</td>
+<td>Acme 公司</td>
+</tr>
+<tr>
+<td>计量器（Meter）</td>
+<td>从事件中统计什么数值</td>
+<td>汇总模型调用的 Token 数</td>
+</tr>
+<tr>
+<td>功能（Feature）</td>
+<td>向客户提供哪项能力</td>
+<td>文本生成、审计日志</td>
+</tr>
+<tr>
+<td>费率卡（RateCard）</td>
+<td>一项服务采用什么权益与收费规则</td>
+<td>Token 额度模板、Token 阶梯价格</td>
+</tr>
+<tr>
+<td>套餐（Plan）</td>
+<td>多项服务怎样组合出售</td>
+<td>Pro 套餐及其试用、正式阶段</td>
+</tr>
+<tr>
+<td>订阅（Subscription）</td>
+<td>某位客户在各个时间段采用哪些规则</td>
+<td>Acme 从十月开始订阅 Pro</td>
+</tr>
+<tr>
+<td>权益（Entitlement）</td>
+<td>客户在某时刻能否使用某项功能</td>
+<td>文本生成功能可用，剩余额度 98,800 Token</td>
+</tr>
+<tr>
+<td>额度授予（Grant）</td>
+<td>某份功能额度的数量、有效期与消耗规则</td>
+<td>本月十万 Token、额外赠送两万 Token</td>
+</tr>
+<tr>
+<td>费用（Charge）</td>
+<td>一项收费安排如何计算并完成结算</td>
+<td>十月份 Token 费用及其计算记录</td>
+</tr>
+<tr>
+<td>账单（Invoice）</td>
+<td>哪些费用集中向客户结算</td>
+<td>平台费账单、月末用量账单</td>
+</tr>
+<tr>
+<td>账务记录（Ledger）</td>
+<td>价值的来源、消耗和支付怎样留痕</td>
+<td>预付余额减少、应收款产生、款项到账</td>
+</tr>
+</tbody>
+</table>
+<p>表中的 Grant 指功能额度领域的授予。账务侧也会出现 credit、grant 等词，代表的可能是预付价值。阅读源码时，需要结合所属领域判断其单位和用途。</p>
+<h3 id="模型关系"><a class="markdownIt-Anchor" href="#模型关系"></a> 模型关系</h3>
+<p>这些对象之间既有定义与实例的关系，也有计算与结算的关系。下面的 ASCII 图展示业务上的主要联系，不表示每条连线都是数据库外键。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">Product catalog</span><br><span class="line"></span><br><span class="line">  Meter &lt;---- Feature &lt;---- RateCard &lt;---- Phase &lt;---- Plan</span><br><span class="line">                              |</span><br><span class="line">                              | customer-specific schedule</span><br><span class="line">                              v</span><br><span class="line">                         Subscription &lt;---- Customer</span><br><span class="line">                              |</span><br><span class="line">                 +------------+------------------+</span><br><span class="line">                 |                               |</span><br><span class="line">                 v                               v</span><br><span class="line">           Entitlement                    Subscription sync</span><br><span class="line">                 |                               |</span><br><span class="line">                 v                     +---------+---------+</span><br><span class="line">        Grants + metered usage         |                   |</span><br><span class="line">                 |                     v                   v</span><br><span class="line">                 v                   Charge          Invoice lines</span><br><span class="line">        Balance / HasAccess            |</span><br><span class="line">                                       | calculations / credit allocation</span><br><span class="line">                                       v</span><br><span class="line">                                  Invoice lines</span><br><span class="line">                                       |</span><br><span class="line">                                       v</span><br><span class="line">                                    Invoice</span><br><span class="line">                                       |</span><br><span class="line">                                       v</span><br><span class="line">                           Invoicing / payment apps</span><br><span class="line"></span><br><span class="line">  Charge lifecycle -------------------&gt; Ledger</span><br></pre></td></tr></table></figure>
+<p>产品目录描述可出售的服务，订阅保存客户具体采用的服务安排。订阅中的相关条目会派生权益，计费同步则生成费用或账单行。费用生命周期还会协调额度抵扣、账单和账务处理。</p>
+<p>图中保留了“订阅直接生成账单行”和“先生成 Charge”两条分支。当前实现同时存在兼容路径与基于 Charge 的路径，已有计费对象继续由其原有后端管理；不能把所有订阅都理解为必然经过同一条收费流水线。</p>
+<h2 id="客户与用量"><a class="markdownIt-Anchor" href="#客户与用量"></a> 客户与用量</h2>
+<h3 id="客户身份"><a class="markdownIt-Anchor" href="#客户身份"></a> 客户身份</h3>
+<p>这里的工作区（Workspace）是示例 AI 服务中组织成员、项目和资源的业务空间。例如，Acme 可以为研发团队和客服团队各建一个工作区，分别管理成员、API 密钥和模型调用记录，再由公司统一付费。工作区是业务应用自己的概念，在 OpenMeter 中可以用事件的 <code>subject</code> 表示其用量归属。</p>
+<p>一家公司可能拥有多个工作区，而模型网关上报事件时只携带本次调用所属的工作区标识。如果把每个工作区都直接当作一个付费客户，公司统一结算时就会遇到困难。</p>
+<p>OpenMeter 将客户（Customer）与事件归属键（subject）分开。客户保存商业身份和联系信息，例如名称、账单地址、币种；事件的 <code>subject</code> 则表示这次用量在业务系统中的归属。</p>
+<p>源码中的 <code>CustomerUsageAttribution</code> 将两者连接起来。它的 <code>GetValues()</code> 返回可以归入该客户的所有键：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(ua CustomerUsageAttribution)</span></span> GetValues() []<span class="type">string</span> &#123;</span><br><span class="line">    attributions := []<span class="type">string</span>&#123;&#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> ua.Key != <span class="literal">nil</span> &#123;</span><br><span class="line">        attributions = <span class="built_in">append</span>(attributions, *ua.Key)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    attributions = <span class="built_in">append</span>(attributions, ua.SubjectKeys...)</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> attributions</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里有三个不同的身份：</p>
+<ul>
+<li><code>Customer.ID</code> 是 OpenMeter 内部的客户标识，用于业务对象之间的关联。</li>
+<li><code>Customer.Key</code> 是客户的外部业务键，同时参与用量归属。</li>
+<li><code>SubjectKeys</code> 是该客户额外关联的一组使用归属键。</li>
+</ul>
+<p>例如，Acme 的客户键是 <code>acme</code>，另有两个归属键 <code>workspace-a</code> 和 <code>workspace-b</code>。按该客户统计用量时，这三个键都参与归属匹配。内部客户 ID 用于查找客户，并不会自动成为事件匹配键。</p>
+<p>这允许模型网关继续按工作区上报，而订阅和账单围绕公司管理。客户也无需与应用中的某个登录用户一一对应：个人、团队、公司都可以成为客户，取决于业务把商业关系建在哪个层级。</p>
+<h3 id="命名空间"><a class="markdownIt-Anchor" href="#命名空间"></a> 命名空间</h3>
+<p>除了区分客户，OpenMeter 还需要区分不同组的数据。命名空间（namespace）就是这组数据的标识：客户、计量器、产品和权益等对象都记录自己所属的 namespace，查询时也会指定这个范围。</p>
+<p>以本文的 AI 服务为例，服务提供方可以将自己的套餐和客户放在同一个 namespace 中。Acme 和另一家公司分别是其中的两个 Customer，Acme 的两个工作区则通过 subject 关联到 Acme：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Namespace: ai-service</span><br><span class="line">  |</span><br><span class="line">  +-- Plans / Meters / Features</span><br><span class="line">  |</span><br><span class="line">  +-- Customer: Acme</span><br><span class="line">  |     +-- subject: workspace-a</span><br><span class="line">  |     +-- subject: workspace-b</span><br><span class="line">  |</span><br><span class="line">  +-- Customer: Another company</span><br><span class="line">        +-- subject: workspace-c</span><br></pre></td></tr></table></figure>
+<p>这个例子里，namespace 表示 AI 服务这一组数据，Customer 表示付费公司，subject 表示使用记录的归属。为 Acme 创建客户、关联工作区，就可以统计它的用量并管理订阅，无需为每位客户再建一套命名空间。图中的工作区来自业务应用，subject 连线表示用量归属关系。</p>
+<p>namespace 也不负责验证调用者身份。当前开源 API server 使用配置中的默认 namespace 处理请求；如果部署需要让不同调用方访问不同 namespace，还需要在接入层完成身份校验，并确定每次请求允许使用哪个 namespace。</p>
+<h3 id="使用事实"><a class="markdownIt-Anchor" href="#使用事实"></a> 使用事实</h3>
+<p>一次模型调用产生的 Token 数量是已经发生的事实。例如：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;specversion&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1.0&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;id&quot;</span><span class="punctuation">:</span> <span class="string">&quot;completion-001&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;source&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-gateway&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;llm.completion&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;subject&quot;</span><span class="punctuation">:</span> <span class="string">&quot;workspace-a&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;time&quot;</span><span class="punctuation">:</span> <span class="string">&quot;2026-10-01T10:00:00Z&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;data&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;tokens&quot;</span><span class="punctuation">:</span> <span class="number">1200</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;model&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-a&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p>计量器负责解释这些事实。一个 <code>SUM</code> 计量器可以选择 <code>llm.completion</code> 事件，提取 <code>data.tokens</code>，并保留按模型分组的能力。查询时，客户归属决定统计哪些 subject，计量器决定怎样取值和聚合。</p>
+<p>这条事件本身没有声明套餐价格、免费额度或付款状态。同样的 1,200 Token，可以用于用量展示、权益计算和费用计算，各自采用相应规则。</p>
+<h2 id="产品目录"><a class="markdownIt-Anchor" href="#产品目录"></a> 产品目录</h2>
+<h3 id="功能定义"><a class="markdownIt-Anchor" href="#功能定义"></a> 功能定义</h3>
+<p>假设 AI 服务的 Pro 套餐包含文本生成和审计日志两项功能：</p>
+<ul>
+<li><strong>文本生成</strong>：需要统计客户消耗了多少 Token，才能计算剩余额度和费用。</li>
+<li><strong>审计日志</strong>：产品规定 Pro 客户可以使用，免费客户不能使用。这个规则只涉及功能是否开放，无需统计日志条数。</li>
+</ul>
+<p>计量器能统计 Token 数，却不负责定义套餐提供哪些功能。OpenMeter 因此用功能（Feature）统一表示“文本生成”“审计日志”这样的产品能力：文本生成功能可以关联 Token 计量器，审计日志功能则可以不关联计量器。至于某位客户是否拥有这项功能，由后文的权益（Entitlement）表达。</p>
+<p>下面节选 <code>Feature</code> 中的两个计量相关字段，省略了字段注释：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">MeterID *<span class="type">string</span> <span class="string">`json:&quot;meterID,omitempty&quot;`</span></span><br><span class="line">MeterGroupByFilters MeterGroupByFilters <span class="string">`json:&quot;meterGroupByFilters,omitempty&quot;`</span></span><br></pre></td></tr></table></figure>
+<p>例如，<code>llm_tokens</code> 计量器统计所有模型的 Token，<code>premium_generation</code> 功能可以在此基础上限定模型维度，只关注高阶模型。过滤字段必须来自计量器声明的分组维度，不能任意引用事件 JSON 中的字段。</p>
+<p>计量器由此可以服务于多个业务定义；Feature 则为权益和收费提供产品侧的标识。模型中还有可选的单位成本配置（UnitCost），用于表达成本信息。成本与向客户出售服务的价格分别建模，两者并非必然相同。</p>
+<h3 id="费率卡"><a class="markdownIt-Anchor" href="#费率卡"></a> 费率卡</h3>
+<p>“文本生成”只确定了服务的名称，还没有说明每月授予多少额度、采用什么价格、何时收费。这些商业条款放在费率卡（RateCard）中。</p>
+<p><code>RateCardMeta</code> 的相关字段如下，节选中省略了展示、税务和其他元数据：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Feature *FeatureReference <span class="string">`json:&quot;-&quot;`</span></span><br><span class="line"></span><br><span class="line">EntitlementTemplate *EntitlementTemplate <span class="string">`json:&quot;entitlementTemplate,omitempty&quot;`</span></span><br><span class="line"></span><br><span class="line">Price *Price <span class="string">`json:&quot;price&quot;`</span></span><br></pre></td></tr></table></figure>
+<p>费率卡把功能引用、权益模板与价格放在一起，但它们各自仍有独立含义：</p>
+<ul>
+<li><strong>功能引用</strong>确定这份条款对应哪项服务。</li>
+<li><strong>权益模板</strong>规定订阅实例化时，客户应得到什么权益，例如每月十万 Token、额度耗尽后仍可访问。</li>
+<li><strong>价格</strong>规定计费用量怎样换算为费用，例如首十万 Token 免费，超出部分采用单价。</li>
+</ul>
+<p>固定平台费也可以是一张费率卡，并不需要为了收费而人为创建一份 Token 权益。反过来，没有价格的服务条目也可以提供权益。</p>
+<p>代码区分 <code>flat_fee</code> 和 <code>usage_based</code> 两类费率卡。前者适合固定收费，后者具有用量相关的收费安排。费率卡还有自己的计费周期，因此它承载的内容比“一个价格字段”更完整。</p>
+<h3 id="套餐与阶段"><a class="markdownIt-Anchor" href="#套餐与阶段"></a> 套餐与阶段</h3>
+<p>客户购买的通常是一组服务。套餐（Plan）将费率卡组合起来，并提供默认币种、计费周期和结算模式。套餐内部还有阶段（Phase），用于表达随时间变化的服务组合。</p>
+<p>源码中的层级很直接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Plan <span class="keyword">struct</span> &#123;</span><br><span class="line">    PlanMeta</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Phases</span></span><br><span class="line">    Phases []Phase <span class="string">`json:&quot;phases&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Phase <span class="keyword">struct</span> &#123;</span><br><span class="line">    PhaseMeta</span><br><span class="line"></span><br><span class="line">    <span class="comment">// RateCards</span></span><br><span class="line">    RateCards RateCards <span class="string">`json:&quot;rateCards&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>例如，一个套餐可以先提供七天试用，再进入正式阶段。试用阶段和正式阶段分别拥有费率卡，因此价格和权益模板可以不同。套餐校验要求非末尾阶段具有时长，末尾阶段不设置固定时长；客户实际何时结束服务，由订阅安排控制。</p>
+<p>套餐还具有 key 和 version。同一个 Pro 套餐可以发布新版本，而既有客户的订阅保留已经建立的条款。发布新版本不会自动把所有客户改到新价格，需要通过订阅的迁移或变更流程明确处理。</p>
+<p>附加项（Addon）用于表达套餐之外的可选服务，例如额外的功能包。它会影响订阅的目标内容，并保留自己的应用关系与数量历史，便于后续调整或移除。带有附加项的订阅需要使用对应工作流，通用运行中编辑并不能代替这套处理。</p>
+<h2 id="订阅时间表"><a class="markdownIt-Anchor" href="#订阅时间表"></a> 订阅时间表</h2>
+<h3 id="客户条款"><a class="markdownIt-Anchor" href="#客户条款"></a> 客户条款</h3>
+<p>套餐是可重复销售的定义，客户合同却各有起始日期、取消安排和定制内容。只保存一个 <code>customer.plan_id</code>，无法回答“这个客户在上周三实际采用哪套规则”。</p>
+<p>订阅（Subscription）保存客户具体的商业时间表。它可以从套餐创建，也允许没有目录套餐引用的定制安排。客户、开始与结束时间、账单币种、计费周期和结算模式，都是订阅自己的事实。</p>
+<p>完整目标内容由 <code>SubscriptionSpec</code> 表达：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> SubscriptionSpec <span class="keyword">struct</span> &#123;</span><br><span class="line">    CreateSubscriptionPlanInput     <span class="string">`json:&quot;,inline&quot;`</span></span><br><span class="line">    CreateSubscriptionCustomerInput <span class="string">`json:&quot;,inline&quot;`</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// We use pointers so Patches can manipulate the spec</span></span><br><span class="line">    Phases <span class="keyword">map</span>[<span class="type">string</span>]*SubscriptionPhaseSpec <span class="string">`json:&quot;phases&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>其中的阶段按相对订阅起点的偏移排列。一个阶段的结束由下一个阶段或订阅结束决定；阶段内的服务条目则保存费率卡和相对时间安排。</p>
+<p>订阅读取时还可以展开为 <code>SubscriptionView</code>，包含客户、阶段、条目、功能和权益等信息。Spec 用于描述目标内容，View 则把它与已保存的实体关联起来，供编辑和下游计费处理使用。</p>
+<h3 id="两类阶段"><a class="markdownIt-Anchor" href="#两类阶段"></a> 两类阶段</h3>
+<p>套餐和订阅都使用“阶段（Phase）”这个词，表达的是同一套服务安排在两个层面的模型：<strong>套餐阶段定义可供客户采用的规则，订阅阶段保存某位客户实际采用的安排</strong>。</p>
+<table>
+<thead>
+<tr>
+<th>对比</th>
+<th>套餐阶段（Plan Phase）</th>
+<th>订阅阶段（Subscription Phase）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>所属对象</td>
+<td>套餐（Plan）</td>
+<td>某位客户的订阅（Subscription）</td>
+</tr>
+<tr>
+<td>表达内容</td>
+<td>例如先试用七天，再进入正式阶段</td>
+<td>例如 Acme 从十月一日开始试用，十月八日起进入正式阶段</td>
+</tr>
+<tr>
+<td>服务规则</td>
+<td>通过费率卡（RateCard）定义该阶段的价格和权益模板</td>
+<td>通过服务条目（Subscription Item）保存客户采用的费率卡、时间安排及条目版本</td>
+</tr>
+<tr>
+<td>时间表示</td>
+<td>非末尾阶段配置时长（Duration）</td>
+<td>阶段规格保存相对订阅起点的偏移（StartAfter），持久化阶段记录实际开始时间（ActiveFrom）</td>
+</tr>
+</tbody>
+</table>
+<p>例如，Pro 套餐定义“试用七天，随后正式收费”。Acme 在十月一日零点开通，另一位客户在十月十日零点开通。从同一个套餐创建订阅后，两位客户的阶段时间不同：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Plan: Pro</span><br><span class="line">  trial: 7 days --&gt; regular</span><br><span class="line"></span><br><span class="line">Subscription: Acme</span><br><span class="line">  trial: [Oct 01, Oct 08) --&gt; regular: [Oct 08, ...)</span><br><span class="line"></span><br><span class="line">Subscription: Another customer</span><br><span class="line">  trial: [Oct 10, Oct 17) --&gt; regular: [Oct 17, ...)</span><br></pre></td></tr></table></figure>
+<p><strong>创建订阅时，工作流依据套餐阶段生成订阅阶段，并把费率卡转换为相应服务条目的规格。此后，订阅保存自己的客户条款和时间表。发布新套餐版本不会自动改写这些订阅阶段，客户的变更需要经过订阅工作流处理</strong>。</p>
+<h3 id="条目历史"><a class="markdownIt-Anchor" href="#条目历史"></a> 条目历史</h3>
+<p>一份订阅可以同时包含平台费和 Token 服务。它们在订阅中分别对应一个服务条目（Subscription Item），每个条目保存自己的费率卡，也就是这项服务采用的价格和权益规则。条目键（Item Key）用于在所属阶段内识别这项服务，例如用 <code>platform_fee</code> 表示平台费，用 <code>tokens</code> 表示 Token 服务。</p>
+<p>同一项服务的条款也可能在阶段中途变化。为单独说明这种变化，假设某位客户的 Token 服务没有免费区间：十月一日开始时，每 Token 收费 0.00001 美元；到了十月十五日，双方约定从当天零点起改为 0.00002 美元，平台费保持原样。如果直接把 Token 条目的单价覆盖成新价格，再计算十月上半月的费用时，就无法从这份条目得知当时约定的旧价格。OpenMeter 因此在同一个条目键下保留多个版本，每个版本都有自己的适用时间。</p>
+<p><code>SubscriptionPhaseSpec</code> 用下面的字段保存它们：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">ItemsByKey <span class="keyword">map</span>[<span class="type">string</span>][]*SubscriptionItemSpec <span class="string">`json:&quot;itemsByKey&quot;`</span></span><br></pre></td></tr></table></figure>
+<p>这层结构可以拆成两部分理解：</p>
+<ul>
+<li><code>map</code> 的键表示哪项服务，例如 <code>tokens</code>。</li>
+<li>键对应的切片保存这项服务的不同时间版本，每个元素是一份 <code>SubscriptionItemSpec</code>，其中包含该版本的费率卡和时间安排。</li>
+</ul>
+<p>在上面的调价例子中，<code>ItemsByKey[&quot;tokens&quot;]</code> 有两个元素，分别对应旧条款和新条款。下面用示意结构展示它们，省略实际字段：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Phase: regular</span><br><span class="line">  |</span><br><span class="line">  +-- ItemsByKey[&quot;platform_fee&quot;]</span><br><span class="line">  |     +-- [0]: original platform fee</span><br><span class="line">  |</span><br><span class="line">  +-- ItemsByKey[&quot;tokens&quot;]</span><br><span class="line">        +-- [0]: $0.00001 / Token, [Oct 01, Oct 15)</span><br><span class="line">        +-- [1]: $0.00002 / Token, [Oct 15, ...)</span><br></pre></td></tr></table></figure>
+<p>切片中有两个元素，表示 Token 服务先后采用两套条款，<strong>不是客户购买了两份 Token 服务</strong>。平台费没有变化，仍然只有原来的版本。</p>
+<p>两个 Token 版本在时间上的关系如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">Subscription: Oct 01 ------------------------------------&gt;</span><br><span class="line"></span><br><span class="line">Phase:        regular</span><br><span class="line"></span><br><span class="line">Item: tokens</span><br><span class="line">  v[0]        [Oct 01 -------- Oct 15)</span><br><span class="line">  v[1]                       [Oct 15 ---------------------&gt;</span><br></pre></td></tr></table></figure>
+<p><code>[Oct 01, Oct 15)</code> 表示包含十月一日零点、不包含十月十五日零点。因此，十月十四日发生的消费使用旧价格，十月十五日零点及之后的消费使用新价格。这个例子按消费发生时间选择条款，而不是按事件上报时间选择。</p>
+<p>图中的 <code>v[0]</code>、<code>v[1]</code> 就是切片中的版本位置。它们只描述这项服务的条款历史，与前文的套餐版本不同：套餐版本表示可销售方案的修订，条目版本表示某位客户的某项服务在不同时间采用的规则。</p>
+<p>这些版本位置还会参与后续计费同步的身份匹配，因此不能随意删去历史元素或调整顺序。另一方面，保存订阅变更时，某些数据库记录会被归档后重新创建，记录 ID 可能改变。要关联业务上的同一个条目版本，需要结合订阅、阶段键、条目键和版本位置识别，不能只依赖数据库记录 ID。</p>
+<p>实际编辑由订阅工作流构造新的目标 Spec，再由订阅服务保存阶段、条目及相关权益。上面的结构用于解释保存后的业务含义，并不意味着调用方可以绕过工作流直接修改版本数组。</p>
+<h3 id="周期与生效时间"><a class="markdownIt-Anchor" href="#周期与生效时间"></a> 周期与生效时间</h3>
+<p>月付订阅需要同时表达“多久一个周期”和“周期从哪里对齐”。这分别由 <code>BillingCadence</code> 和 <code>BillingAnchor</code> 承担。<code>P1M</code> 表示日历月周期，与固定三十天并不等价。</p>
+<p>例如，周期为一个月，锚点在每月一日，通常会形成十月一日至十一月一日这样的区间。若订阅或阶段提前结束，具体服务区间还要被相应边界截断。</p>
+<p>修改请求另有 <code>Timing</code>，表示命令何时生效。源码定义了两个枚举值：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    <span class="comment">// Immediate means the change will take effect immediately.</span></span><br><span class="line">    TimingImmediate TimingEnum = <span class="string">&quot;immediate&quot;</span></span><br><span class="line">    <span class="comment">// NextBillingCycle means the change will take effect at the start of the next billing cycle.</span></span><br><span class="line">    <span class="comment">// This value is only supported for aligned subscriptions.</span></span><br><span class="line">    TimingNextBillingCycle TimingEnum = <span class="string">&quot;next_billing_cycle&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>next_billing_cycle</code> 根据当前时间所在的对齐计费周期，解析到该周期结束。不同操作允许的时间不同：运行中编辑不接受任意自定义时刻；对齐订阅的自定义取消时间必须落在计费边界。</p>
+<p>订阅状态同样与时间有关。一个有未来结束时间、当前仍提供服务的订阅，可以返回 <code>canceled</code>，表示取消已经安排；到结束时间才变成 <code>inactive</code>。因此，看到 <code>canceled</code> 不能直接断言客户此刻已经失去权益。</p>
+<p>取消会缩短订阅及其派生对象的有效期，继续订阅则移除可撤销的结束安排。删除还有自己的可见性与清理规则，不能与取消混用。</p>
+<h2 id="功能权益"><a class="markdownIt-Anchor" href="#功能权益"></a> 功能权益</h2>
+<h3 id="权益类型"><a class="markdownIt-Anchor" href="#权益类型"></a> 权益类型</h3>
+<p>客户订阅了 Pro，还需要回答具体的访问问题：是否拥有审计日志、采用什么配置、文本生成还剩多少额度。权益（Entitlement）就是客户与某项功能在一段时间内的授权关系。</p>
+<p>OpenMeter 提供三类权益：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>业务含义</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boolean</code></td>
+<td>有效期间允许使用功能</td>
+<td>开启审计日志</td>
+</tr>
+<tr>
+<td><code>static</code></td>
+<td>允许使用，并携带一份固定 JSON 配置</td>
+<td>模型白名单、服务配置</td>
+</tr>
+<tr>
+<td><code>metered</code></td>
+<td>根据计量结果与额度计算访问状态</td>
+<td>每月十万 Token</td>
+</tr>
+</tbody>
+</table>
+<p>static 中的配置由业务应用解释。例如，JSON 可以声明某种服务档位，但 OpenMeter 不会因此自动替应用限制并发数。</p>
+<p>权益可以直接创建，也可以由订阅中的权益模板生成。对于订阅管理的权益，订阅服务在保存客户时间表时同步安排其有效期；后续账单同步属于另一个过程。</p>
+<p>同一客户、同一功能在同一时刻最多有一份有效权益。权益开始时间包含在有效期内，结束时间不包含。覆盖或删除通过结束、替换历史定义表达，而不是把过去的权益含义直接改掉。</p>
+<h3 id="访问判断"><a class="markdownIt-Anchor" href="#访问判断"></a> 访问判断</h3>
+<p>计量权益的值包含余额（Balance）、周期内用量（UsageInPeriod）、超额用量（Overage）和各份授予的余额。它还根据软限制配置返回 <code>HasAccess</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(m *MeteredEntitlementValue)</span></span> HasAccess() <span class="type">bool</span> &#123;</span><br><span class="line">    <span class="keyword">if</span> m.isSoftLimit &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> m.Balance &gt; <span class="number">0</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段方法在权益有效性检查之后执行。它表达了两种访问政策：</p>
+<ul>
+<li>硬限制：余额大于零时允许访问，耗尽后不允许。</li>
+<li>软限制：额度耗尽后仍允许访问，用量和超额部分继续计算。</li>
+</ul>
+<p>开头的 AI 套餐允许超额付费，因此示例采用软限制。若采用硬限制，产品希望的是到量停用，就不能再假设客户会按正常流程持续产生超额消费。</p>
+<p>不过，查询一次 <code>HasAccess</code> 并没有预留下一次模型调用所需的 Token。事件异步进入计量系统，多个并发请求也可能同时看到正余额。业务若要求严格控制单次调用和并发超额，还需要在调用入口设计相应的额度预留或流量控制；这段读取逻辑本身不提供这类保证。</p>
+<h2 id="额度与授予"><a class="markdownIt-Anchor" href="#额度与授予"></a> 额度与授予</h2>
+<h3 id="授予规则"><a class="markdownIt-Anchor" href="#授予规则"></a> 授予规则</h3>
+<p>“本月可用十万 Token”只涉及一份额度。实际产品还会出现活动赠送、补偿、额外购买等多份额度，它们的有效期和消耗顺序可能不同。</p>
+<p>额度授予（Grant）将每份额度单独记录。它包含数量、所属权益、生效时间、过期时间、优先级和周期补充配置。额度计算由 Credit 领域负责；这里的 credit 计量单位随功能而定，可以是 Token、请求次数或换算后的资源单位。</p>
+<p>例如，Acme 同时拥有两份授予：</p>
+<table>
+<thead>
+<tr>
+<th>授予</th>
+<th>数量</th>
+<th>优先级</th>
+<th>有效期</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临时额度</td>
+<td>100,000 Token</td>
+<td>2</td>
+<td>本月</td>
+</tr>
+<tr>
+<td>活动赠送</td>
+<td>20,000 Token</td>
+<td>1</td>
+<td>本周</td>
+</tr>
+</tbody>
+</table>
+<p>消耗时先使用优先级数值较小的授予。若优先级相同，再比较过期时间，较早过期的先用；仍相同时按创建时间排序，最后用 ID 保持确定顺序。排序器中的第一项比较如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> priorityOrder := cmp.Compare(i.Priority, j.Priority); priorityOrder != <span class="number">0</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> priorityOrder</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因此，示例中的活动赠送先被消耗，即使临时额度更早创建。排序测试还覆盖了无过期时间、相同过期时间和创建时间相同时的行为。</p>
+<p><strong>Grant 保存的是授予定义，余额是结合用量计算出来的结果。作废一份授予会结束它的有效期，但历史查询仍需知道它在过去曾经有效。</strong></p>
+<h3 id="余额计算"><a class="markdownIt-Anchor" href="#余额计算"></a> 余额计算</h3>
+<p>最简单的情况下，一份十万 Token 授予减去 1,200 Token 用量，剩余 98,800。随着生效、到期、周期补充和重置加入，这个计算就需要沿时间推进。</p>
+<p>Credit 引擎把授予状态变化、周期补充和使用周期重置等边界纳入计算。在各段内按确定顺序消耗有效授予，无法被覆盖的用量记为 Overage，并保留消耗历史。</p>
+<p>这也解释了为什么不能总用“累计授予减去累计用量”求余额。假设一份赠送额度周五才生效，周一的消费不能因为周五到账就被当作当时已有额度；而一份周二过期的额度，也不能用于覆盖周三的新消费。</p>
+<p><strong>功能额度不足和货币欠款是不同的结果。</strong> 十万 Token 用尽后，Credit 可以得到两万 Token 的超额用量，但它不知道这两万 Token 是免费、收取 0.20 美元，还是按另一套阶梯价格计费。金额由价格与费用模型决定。</p>
+<h3 id="重置与补充"><a class="markdownIt-Anchor" href="#重置与补充"></a> 重置与补充</h3>
+<p>月度套餐通常有用量周期，但“新周期开始”并不只有一种处理方式。OpenMeter 区分授予自身的周期补充和权益使用周期的重置：</p>
+<ul>
+<li><strong>授予补充（Recurrence）</strong>：在授予自己的周期点，将这份授予余额恢复到它定义的数量。</li>
+<li><strong>使用重置（Reset）</strong>：结束当前使用周期，对仍有效的授予应用结转上下限，再开始新的周期。</li>
+</ul>
+<p>结转余额的核心公式是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(g Grant)</span></span> RolloverBalance(endingBalance <span class="type">float64</span>) <span class="type">float64</span> &#123;</span><br><span class="line">    <span class="comment">// At a rollover the maximum balance that can remain is the ResetMaxRollover,</span></span><br><span class="line">    <span class="comment">// while the minimum that has to be granted is ResetMinRollover.</span></span><br><span class="line">    <span class="keyword">return</span> math.Min(g.ResetMaxRollover, math.Max(g.ResetMinRollover, endingBalance))</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>例如，周期结束时还剩 30,000 Token，最低结转为零、最高结转为 20,000，则留下 20,000。若最低与最高都设置为某个固定数量，重置也能将余额恢复到该数量。</p>
+<p>权益的 <code>IssueAfterReset</code> 就利用了这个规则。创建默认授予时，代码将 <code>ResetMinRollover</code> 和 <code>ResetMaxRollover</code> 都设置为默认数量，并且不设置授予过期时间。因而，“每月恢复十万 Token”可以通过同一份授予在使用周期重置时恢复余额实现，不必每个月再插入一份新授予。</p>
+<p><code>PreserveOverageAtReset</code> 决定是否保留超额用量。保留时，先计算结转余额，再让旧周期的超额消耗新周期可用额度。重置涉及余额和使用周期时间线，需要一起完成，不能只改其中一份状态。</p>
+<h3 id="计算快照"><a class="markdownIt-Anchor" href="#计算快照"></a> 计算快照</h3>
+<p>历史越长，从权益起点重新计算的成本越高。Credit 因此保存余额快照（Balance Snapshot），作为某个时刻的完整计算检查点。后续读取可以从最近的可用快照继续，而不必每次重放全部历史。</p>
+<p>快照保存的不只有一个剩余额度数字，还包括各授予余额、用量周期状态和继续计算所需的信息。当前实现的快照是独立检查点，不要求保留完整的前序快照链。</p>
+<p>快照也带来正确性约束：如果新增或作废授予影响了过去的计算，相关快照及其后的快照就需要失效。源码在这些输入变更路径上安排失效处理；保存快照时还使用可配置宽限窗口，让近期用量保留重新计算的空间。这个窗口不能被理解成对任意久远的补报都自动兜底。</p>
+<p>此外，Credit 的时间分辨率是一分钟。非整分钟的余额读取会向上取整，以包含当前不完整分钟的用量；授予和重置等时间也按分钟处理。这里不能依赖同一分钟内几秒钟的先后顺序表达精细的访问变化。</p>
+<h2 id="数量与价格"><a class="markdownIt-Anchor" href="#数量与价格"></a> 数量与价格</h2>
+<h3 id="计费单位"><a class="markdownIt-Anchor" href="#计费单位"></a> 计费单位</h3>
+<p>事件中的原始单位未必就是售卖单位。模型网关可以上报 Token，但产品以千 Token 报价；存储系统上报字节，而产品按 GB 出售。</p>
+<p><code>UnitConfig</code> 描述费率卡上的数量换算，支持乘法、除法和舍入。它的 <code>Apply</code> 方法分别返回精确换算数量与账单数量，下面节选实际换算部分：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">switch</span> c.Operation &#123;</span><br><span class="line"><span class="keyword">case</span> UnitConfigOperationMultiply:</span><br><span class="line">    converted = raw.Mul(c.ConversionFactor)</span><br><span class="line"><span class="keyword">case</span> UnitConfigOperationDivide:</span><br><span class="line">    converted = raw.Div(c.ConversionFactor)</span><br><span class="line"><span class="keyword">default</span>:</span><br><span class="line">    <span class="keyword">return</span> raw, raw</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">invoiced = converted</span><br></pre></td></tr></table></figure>
+<p>例如，除以 1,000 后，1,200 Token 变成 1.2 个千 Token 单位。若账单配置为整数向上取整，账单数量可以是 2；权益计算仍使用精确的 1.2。</p>
+<p>因此，<strong>配置单位换算后，授予也必须使用换算后的单位</strong>。若额度是十万 Token，按千 Token 计算时就应表达为 100 个单位，不能继续填 100,000。单位换算会随费率卡保存到相应权益，避免计费与额度计算各自使用一套换算规则。</p>
+<p>源码测试用字节转 GB 验证了这一区别：100 GB 授予消耗 99.3 GB 后，余额仍是 0.7 GB。计费舍入不会提前把权益余额扣到零。本文主示例保持原始 Token 单位，不启用额外换算。</p>
+<h3 id="价格类型"><a class="markdownIt-Anchor" href="#价格类型"></a> 价格类型</h3>
+<p>价格（Price）负责把计费数量变成金额。当前源码包含五类：</p>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>含义</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>flat</code></td>
+<td>固定金额</td>
+<td>每月平台费</td>
+</tr>
+<tr>
+<td><code>unit</code></td>
+<td>数量乘以单价</td>
+<td>每 Token 固定单价</td>
+</tr>
+<tr>
+<td><code>tiered</code></td>
+<td>根据数量区间计算</td>
+<td>免费区间、用量阶梯</td>
+</tr>
+<tr>
+<td><code>package</code></td>
+<td>按固定大小的资源包收费，不足一包按一包计算</td>
+<td>每千次请求一包</td>
+</tr>
+<tr>
+<td><code>dynamic</code></td>
+<td>将输入量按配置倍数换算为金额</td>
+<td>已计算成本的加价收费</td>
+</tr>
+</tbody>
+</table>
+<p>价格中的金额使用十进制数值类型。计量和权益代码中的某些数量仍使用 <code>float64</code>，不能由金额类型推断整个系统都采用同一种数值表示。</p>
+<p>阶梯价格还分为两种模式：</p>
+<ul>
+<li><strong>分段阶梯（graduated）</strong>：每段数量采用该段单价，最后求和。</li>
+<li><strong>整量阶梯（volume）</strong>：总数量决定命中的档位，全部数量采用该档位规则。</li>
+</ul>
+<p>假设前一千单位单价 1 美元，超过一千的档位单价 0.8 美元，总量为 1,500，且各档没有额外固定费：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">graduated: 1,000 x $1 + 500 x $0.8 = $1,400</span><br><span class="line">volume:    1,500 x $0.8             = $1,200</span><br></pre></td></tr></table></figure>
+<p>两者差异会影响后续累计计费与价格修正。不能只看到“阶梯价”就按一种公式实现。</p>
+<h3 id="免费用量"><a class="markdownIt-Anchor" href="#免费用量"></a> 免费用量</h3>
+<p>开头的“包含十万 Token”需要同时落到访问规则与收费规则上。</p>
+<p>权益模板可以创建十万 Token 的默认授予，供余额与访问判断使用。价格则另行配置为分段阶梯：前十万 Token 单价为零，之后每 Token 0.00001 美元。若总用量是十二万 Token：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Entitlement:</span><br><span class="line">  grant = 100,000 Token</span><br><span class="line">  usage = 120,000 Token</span><br><span class="line">  balance = 0</span><br><span class="line">  overage = 20,000 Token</span><br><span class="line">  hasAccess = true (soft limit)</span><br><span class="line"></span><br><span class="line">Pricing:</span><br><span class="line">  100,000 x $0 + 20,000 x $0.00001 = $0.20</span><br></pre></td></tr></table></figure>
+<p><strong>创建十万 Token 的 Grant 不会自动给价格增加免费区间。</strong> 同理，运营额外赠送两万 Token 的权益额度，也不会自动调整阶梯边界或货币账务余额。如果活动承诺的是“这两万 Token 也不收费”，还必须在收费安排中表达对应优惠。</p>
+<p>这三个常见需求需要分别识别：</p>
+<ul>
+<li>增加可用次数或资源额度，属于权益与授予。</li>
+<li>减少用于定价的数量，属于用量优惠，例如 <code>Discounts.Usage</code>。</li>
+<li>用预付价值抵扣费用，属于费用结算与账务。</li>
+</ul>
+<p>它们可以在同一个产品中配合使用，但不能因为都叫“赠送额度”就只修改一处状态。</p>
+<h3 id="优惠与分摊"><a class="markdownIt-Anchor" href="#优惠与分摊"></a> 优惠与分摊</h3>
+<p>实际计算还可能有百分比优惠、最低消费和最高金额。当前通用定价实现将数量换算、数量舍入、用量优惠放在价格计算之前，再对价格结果应用相关金额规则。</p>
+<p>金额上限限制的是这项服务的收费结果，不会自动阻止继续使用；最低消费也不表示客户已经消耗了相应资源。把这些金额规则当作访问额度，会让产品行为偏离配置含义。</p>
+<p>服务在周期中途开始或结束时，还可能需要按比例分摊（Proration）。模型保留实际服务期间（ServicePeriod）和完整服务期间（FullServicePeriod），为分摊保留参照。是否启用以及订阅结束如何计费，由相应配置控制。</p>
+<p>例如，一个完整三十天服务周期的固定费用为 20 美元，实际只提供十五天服务。在启用适用的价格分摊规则时，可以得到 10 美元。该例不表示每次取消都默认退款，也不表示系统会把功能授予自动减半；费用分摊、退款与权益额度各有自己的规则。</p>
+<h2 id="计费同步"><a class="markdownIt-Anchor" href="#计费同步"></a> 计费同步</h2>
+<h3 id="目标与现状"><a class="markdownIt-Anchor" href="#目标与现状"></a> 目标与现状</h3>
+<p>客户时间表保存成功后，需要为相应服务生成收费对象。消息可能重复，后台也可能在处理中失败，因此“每收到一次订阅事件就新增一笔费用”会重复收费。</p>
+<p>订阅计费同步（Subscription sync）采用目标与现状比较的方式。它读取已经提交的订阅视图，在给定时间范围内展开应有的计费项目，再与已有账单行和 Charge 对比，生成创建、更新或删除计划。</p>
+<p>其主要步骤是：</p>
+<ul>
+<li>读取该订阅已有的计费对象。</li>
+<li>按阶段、条目版本和周期生成目标服务区间。</li>
+<li>通过稳定业务标识匹配目标与现有对象。</li>
+<li>在同一计费事务中应用差异，并更新下次同步时间。</li>
+</ul>
+<p>重复执行同一份目标，应收敛到同一结果。订阅事件提供及时触发，周期协调任务修复遗漏或失败；某些入口还会在同步后收集可出账项目，使预先收费的固定费用能够及时生成账单。</p>
+<p>同步有自己的生成范围。它通常扩展到传入时刻所在的对齐计费周期末尾，并不会在订阅创建当天一次性生成无限未来的全部费用。</p>
+<h3 id="稳定身份"><a class="markdownIt-Anchor" href="#稳定身份"></a> 稳定身份</h3>
+<p>周期计费项目的标识由订阅路径和周期组成，源码形式如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&#123;subscriptionID&#125;/&#123;phaseKey&#125;/&#123;itemKey&#125;/v[&#123;itemVersion&#125;]/period[&#123;periodIndex&#125;]</span><br></pre></td></tr></table></figure>
+<p>它把前面介绍的条目版本与某个收费周期关联起来。即使持久化子实体被重建，也可以继续识别这份服务安排；是否复用或替换现有 Charge，还要比较相关计费条款及已发生的结算历史。</p>
+<p>当前同步既支持生成兼容账单行，也支持生成 Charge。已存在对象的持久化归属决定后续由哪套后端处理，新对象则根据可用能力、功能开关、价格和结算模式路由。</p>
+<p>无论采用哪条路径，已经不可变的账单历史都不会因为订阅改了，就被悄悄覆盖。同步会报告相关差异，后续修正需要遵循收费和账单各自的规则。</p>
+<h2 id="费用模型"><a class="markdownIt-Anchor" href="#费用模型"></a> 费用模型</h2>
+<h3 id="收费安排与执行记录"><a class="markdownIt-Anchor" href="#收费安排与执行记录"></a> 收费安排与执行记录</h3>
+<p>一项服务可能经历多次用量计算、额度抵扣和支付处理。如果只保留账单行，很难完整表达“原来约定收什么”和“目前已经执行到哪里”。</p>
+<p>费用（Charge）保存一项收费安排，以及履行它时产生的状态和结果。当前有三类：固定费用（flat fee）、用量费用（usage based）和预付额度购买（credit purchase）。第三类属于账务价值的授予与结算，不是前面功能额度的 Grant。</p>
+<p>以用量费用为例，模型分为：</p>
+<ul>
+<li><strong>收费意图（Intent）</strong>：客户、价格、币种、服务期间、结算方式和来源关系。</li>
+<li><strong>执行状态（State / Status）</strong>：下次处理时间、当前生命周期阶段及其他持久化状态。</li>
+<li><strong>执行记录（Realizations）</strong>：已经完成的计算批次、抵扣、修正、支付及账务引用。</li>
+</ul>
+<p>源码中用量费用的聚合类型如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Charge <span class="keyword">struct</span> &#123;</span><br><span class="line">    ChargeBase</span><br><span class="line"></span><br><span class="line">    Realizations RealizationRuns <span class="string">`json:&quot;realizations&quot;`</span></span><br><span class="line">    Expands      Expands         <span class="string">`json:&quot;expands&quot;`</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>Charge 的状态由对应类型的状态机控制，计算和持久化子服务执行具体工作。账单行引擎（Line Engine）将 Charge 的结果映射为账单行，再把账单出具、支付授权和结算等进展反馈给费用生命周期。</p>
+<p>这样，账单负责单据与流程，费用负责一项收费安排的执行。两者需要协作，但并不承担彼此的全部职责。</p>
+<h3 id="结算方式"><a class="markdownIt-Anchor" href="#结算方式"></a> 结算方式</h3>
+<p>固定费用和用量费用支持两种结算模式：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> (</span><br><span class="line">    CreditThenInvoiceSettlementMode SettlementMode = <span class="string">&quot;credit_then_invoice&quot;</span></span><br><span class="line">    CreditOnlySettlementMode        SettlementMode = <span class="string">&quot;credit_only&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p><code>credit_then_invoice</code> 先消耗符合条件的正向账务余额，剩余部分进入账单结算；<code>credit_only</code> 通过额度账务实现消耗，当前余额投影可以体现负向敞口。因此，<code>credit_only</code> 也不能直接翻译成“余额不足时所有请求一定被拒绝”。访问控制仍需按权益和应用调用策略判断。</p>
+<p>这里抵扣的是账务价值。例如，一项 Token 费用为 3 美元，客户有 2 美元符合使用条件的预付余额，采用 <code>credit_then_invoice</code> 时，可先覆盖 2 美元，余下 1 美元进入账单。它与“还剩两万 Token”属于不同单位的模型。</p>
+<p>预付额度购买另有促销赠送（promotional）、外部结算（external）和账单结算（invoice）三种安排。对于需要付款的购买，额度发放、支付授权、支付结算分别保存；当前流程可以先发放额度，再进入待付款阶段，因此“余额已经增加”不足以证明资金已经到账。</p>
+<p>模型还支持受管理的自定义币种。相关费用会保存自己的币种身份和适用的价值换算依据；标准账单使用法定货币。同一个显示名称不能替代完整币种身份，功能 Token 也不会只因名称相似就自动变成账务币种。</p>
+<h3 id="累计计算"><a class="markdownIt-Anchor" href="#累计计算"></a> 累计计算</h3>
+<p>一个用量费用可能分多次结算。如果每次都把累计总量完整收费，会产生重复；若只按新到事件计算，又可能漏掉晚到事件和阶梯价格变化。</p>
+<p>用量费用保存多次执行批次（Realization Run）。每次记录事件时间上界、落库时间截点、累计计量结果、金额明细及相关引用。当前首选的 Delta 定价引擎使用这样的计算方式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">本次应记费用明细</span><br><span class="line">  = 当前累计用量按价格重新计算的明细</span><br><span class="line">  - 之前已经记入的费用明细</span><br></pre></td></tr></table></figure>
+<p>例如，单价为每单位 10 美元，上次累计五单位、已记 50 美元，本次累计八单位、应记总额 80 美元，那么新增费用是 30 美元。</p>
+<p>源码通过下面的调用计算明细差额：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">remainingDetailedLines, err := subtract.SubtractRatedRunDetails(</span><br><span class="line">    currentDetailedLines,</span><br><span class="line">    alreadyBilledDetailedLines,</span><br><span class="line">    uniqueReferenceIDGenerator&#123;&#125;,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>相减前，代码先从已计费明细中排除账务抵扣。预付余额分配的变化属于结算变化，不应被误认为用量或价格变化。相减的对象也是价格明细，不是只减一个总数量：整量阶梯换档可能让全部数量采用新的单价，需要同时表达旧价格部分的抵消和新价格部分的计算。</p>
+<p>记录两种时间边界也有实际作用：服务期间限定消费发生在哪段时间，<code>StoredAtLT</code> 限定本轮可见的落库事件集合。一条补报用量可以在后续累计计算中被纳入，不能只看它是哪个时间段发生的，就认为之前必然已经计费。</p>
+<p>当前 Delta 引擎把差额放在本轮执行的服务期间。仓库另有保留原服务期间的修正引擎，但文档明确指出其账单修正支持尚不完整，当前首选引擎仍是 Delta。因而不能笼统声称晚到用量都会被自动记回原账单期间，也不能据此承诺任意已完成费用都会自动重新开启结算。</p>
+<h2 id="账单生命周期"><a class="markdownIt-Anchor" href="#账单生命周期"></a> 账单生命周期</h2>
+<h3 id="待出账项目"><a class="markdownIt-Anchor" href="#待出账项目"></a> 待出账项目</h3>
+<p>固定月费可以在周期开始时收费，用量费用通常需要等到服务结束后确定。它们都需要一个位置，保存“已经安排、尚未进入正式结算”的项目。</p>
+<p>待出账账单（Gathering Invoice）承担这项工作。同一客户、同一法定货币最多有一张活动的待出账账单，项目可以持续加入和调整；没有剩余项目时，这张暂存对象会被删除。</p>
+<p>达到条件的项目被收集到标准账单（Standard Invoice）。转换时保留账单行身份，但暂存表示会被标准账单行替代。标准账单随后承担数量快照、金额计算、外部同步和支付流程。</p>
+<p>这里的 collection 指收集待出账项目、完成相关数量处理，不能看到这个词就理解成支付机构已经收款。</p>
+<p>不同时间字段也要分开：</p>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>服务期间（ServicePeriod）</td>
+<td>这项服务实际对应的时间范围</td>
+</tr>
+<tr>
+<td>可出账时间（InvoiceAt）</td>
+<td>待出账项目何时具备进入账单的时间条件</td>
+</tr>
+<tr>
+<td>待出账收集时间</td>
+<td>协调任务何时重新检查这些项目</td>
+</tr>
+<tr>
+<td>标准账单收集截止时间</td>
+<td>本轮数量快照和收集采用的处理截止点</td>
+</tr>
+</tbody>
+</table>
+<p>用量账单可配置服务结束后的收集窗口，给迟到记录保留一些时间。窗口不是无限等待；最终账单内容取决于该轮实际采用的边界。</p>
+<h3 id="计费配置"><a class="markdownIt-Anchor" href="#计费配置"></a> 计费配置</h3>
+<p>生成账单还需要知道由谁提供服务、由哪个集成计算税务、如何正式出具单据、通过什么渠道收款。这些由计费配置（Billing Profile）和客户覆盖配置共同决定。</p>
+<p>Billing Profile 选择税务、账单与支付应用，并配置自动推进、草稿等待、付款期限等规则。客户可以选择特定配置，或覆盖支持的工作流选项。</p>
+<p>标准账单创建时会保存当时适用的客户、供应方、工作流配置和应用引用。以后客户改名、修改地址或切换支付集成，既有账单不应追随当前配置重新解释自己的历史。</p>
+<p>账单行下面还有计算明细。例如，Token 阶梯价可以展开为免费段和付费段。收费条目与计算明细分别服务于“这张单据收哪项费用”和“这个金额怎样得到”，明细不再反过来成为订阅条款的来源。</p>
+<h3 id="状态推进"><a class="markdownIt-Anchor" href="#状态推进"></a> 状态推进</h3>
+<p>一张标准账单需要依次完成本地计算、外部同步和支付，单个数据库事务无法覆盖所有外部操作。OpenMeter 用状态机保存每一步的进展，并设置可重试的失败状态。</p>
+<p>下面是主要阶段的简化图，省略了校验、审批、删除和失败分支：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Draft</span><br><span class="line">  |</span><br><span class="line">  | quantities / calculation / validation / app sync</span><br><span class="line">  v</span><br><span class="line">Ready to issue</span><br><span class="line">  |</span><br><span class="line">  | line finalization / external issuing / charge booking</span><br><span class="line">  v</span><br><span class="line">Issued</span><br><span class="line">  |</span><br><span class="line">  | payment processing / authorization / settlement</span><br><span class="line">  v</span><br><span class="line">Paid</span><br></pre></td></tr></table></figure>
+<p>源码中的具体状态比这张图更细，例如：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">StandardInvoiceStatusIssuingLineFinalization       StandardInvoiceStatus = <span class="string">&quot;issuing.line_finalization&quot;</span></span><br><span class="line">StandardInvoiceStatusIssuingLineFinalizationFailed StandardInvoiceStatus = <span class="string">&quot;issuing.line_finalization_failed&quot;</span></span><br><span class="line">StandardInvoiceStatusIssuingSyncing                StandardInvoiceStatus = <span class="string">&quot;issuing.syncing&quot;</span></span><br><span class="line">StandardInvoiceStatusIssuingSyncFailed             StandardInvoiceStatus = <span class="string">&quot;issuing.failed&quot;</span></span><br><span class="line">StandardInvoiceStatusIssuingChargeBooking          StandardInvoiceStatus = <span class="string">&quot;issuing.charge_booking&quot;</span></span><br><span class="line">StandardInvoiceStatusIssuingChargeBookingFailed    StandardInvoiceStatus = <span class="string">&quot;issuing.charge_booking_failed&quot;</span></span><br></pre></td></tr></table></figure>
+<p>这些中间状态使重试可以针对失败步骤继续，而不必从头重复已经稳定完成的处理。<code>issued</code> 表示账单已经出具，<code>paid</code> 才表示付款流程到达已付款状态；费用算完、账单发出与款项到账分别有自己的完成点。</p>
+<p>业务校验也区分警告和关键问题。警告可以伴随可用结果继续推进，关键问题会阻止相应步骤，依赖超时等系统故障则走操作失败处理。业务上能够解释的“数据暂缺”，不一定应该被抹平成一个通用内部错误。</p>
+<p>账单通知是另一套异步流程。账单状态产生事件，通知规则匹配后保存历史内容，再安排 webhook 投递。通知未送达并不自动意味着账单生成失败，收到通知也不能代替查询账单实际支付状态。</p>
+<h2 id="账务模型"><a class="markdownIt-Anchor" href="#账务模型"></a> 账务模型</h2>
+<h3 id="价值记录"><a class="markdownIt-Anchor" href="#价值记录"></a> 价值记录</h3>
+<p>客户充值五十美元、使用服务、余额到期、收到退款或完成支付，都需要说明价值从哪里来、到哪里去。只更新一个 <code>balance</code> 字段，无法充分保留这些关系，也很难纠正已经发生的操作。</p>
+<p>Ledger 保存不可变的交易组、交易和分录。每笔交易中的有符号金额必须按币种身份分别平衡。校验器先按币种归集，再检查总和是否为零；正负分录共同表达一次价值变化，而不是凭空增减余额。</p>
+<p>常见账户用途包括：</p>
+<table>
+<thead>
+<tr>
+<th>账户类型</th>
+<th>业务含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>customer_fbo</code></td>
+<td>客户持有的预付价值；名称不代表真实银行托管账户</td>
+</tr>
+<tr>
+<td><code>customer_receivable</code></td>
+<td>客户应付的价值及其授权阶段</td>
+</tr>
+<tr>
+<td><code>customer_accrued</code></td>
+<td>已确认消耗、尚未确认为收入的价值</td>
+</tr>
+<tr>
+<td><code>earnings</code></td>
+<td>已确认的业务收入</td>
+</tr>
+<tr>
+<td><code>wash</code></td>
+<td>与外部支付或现金边界相关的对方科目</td>
+</tr>
+<tr>
+<td><code>breakage</code></td>
+<td>到期或作废的未用额度</td>
+</tr>
+</tbody>
+</table>
+<p>平衡只是基本条件。账户之间允许怎样流转、是否保留币种和来源信息，还要通过额外规则校验。实际记账地址是子账户，币种、功能或套餐限制、优先级、成本和税务维度会参与其身份。</p>
+<p>因此，同样显示为五美元的两份余额也未必能合并：一份可能只能抵扣某项功能，另一份没有限制；它们还可能来自不同购买。结算时需要根据用途筛选合格来源。</p>
+<p>以消耗四单位预付价值为例，可以用下面的简化分录说明其含义。图中省略来源、税务和其他路由维度：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">customer_fbo       -4</span><br><span class="line">customer_accrued   +4</span><br><span class="line">                  --</span><br><span class="line">                   0</span><br></pre></td></tr></table></figure>
+<p>客户可用价值减少四单位，同时进入已消耗、待确认收入的科目，合计仍为零。后续何时确认收入、怎样处理支付或到期，由相应生命周期决定，不能在余额减少时就把所有步骤视为已经完成。</p>
+<h3 id="余额与修正"><a class="markdownIt-Anchor" href="#余额与修正"></a> 余额与修正</h3>
+<p>账务余额是对分录的投影。客户侧余额视图还可能结合尚未入账的费用影响，因此“页面余额”“已入账余额”和“某项功能剩余额度”要分别理解。</p>
+<p>例如，功能权益还有 98,800 Token，并不意味着账务账户中有 98,800 个美元或可通用的点数。相反，客户账务余额充足，也不必然意味着某项 boolean 权益已开启。</p>
+<p>费用生命周期决定什么时候产生经济效果，Ledger 的适配层负责把效果转成合法分录。<code>CommitGroup</code> 会在事务中锁定受影响账户并原子保存交易组，但它本身不会把同样的重复调用自动去重。调用领域仍需保存执行结果引用，使消息重试与生命周期重入安全。</p>
+<p>发生纠正时，系统依据原分录生成抵消和替代记录，保留来源及修正关系。已经发生的历史因此仍能解释，而不是直接把旧分录改成另一个数值。</p>
+<p>这种历史约束也适用于预付额度的到期：到期记录采用自己的记账生效时间。查询到期之前的余额，不应提前包含未来的过期影响；查询到期之后，则要反映未使用部分已经失效。</p>
+<h2 id="完整示例"><a class="markdownIt-Anchor" href="#完整示例"></a> 完整示例</h2>
+<p>回到开头的 AI 套餐。为避免时间和价格规则混杂，假设客户从十月一日零点开始，按自然月对齐，没有中途变更、税费、其他优惠或账务预付余额，也不开启周期内分次出账。</p>
+<p>产品明确配置两张费率卡：平台费每月 20 美元、周期开始时收费；Token 服务每月授予十万 Token，采用软限制，价格为首十万免费、超出部分每 Token 0.00001 美元。</p>
+<h3 id="服务开通"><a class="markdownIt-Anchor" href="#服务开通"></a> 服务开通</h3>
+<p>Acme 创建客户记录，关联 <code>workspace-a</code> 和 <code>workspace-b</code>。订阅工作流从套餐生成该客户的 Spec，保存十月份开始的服务安排，并按 Token 费率卡的模板创建计量权益及默认授予。</p>
+<p>计费同步随后根据已提交的订阅建立相应费用或待出账项目。平台费具备预先收费条件，可以在开通阶段进入账单流程；Token 服务则保留本周期的用量收费安排。</p>
+<p>此时，“权益已经建立”和“平台费已经付款”仍是两件事，实际支付进度由费用和账单各自的状态表示。</p>
+<h3 id="使用过程"><a class="markdownIt-Anchor" href="#使用过程"></a> 使用过程</h3>
+<p>模型网关为 <code>workspace-a</code> 上报 1,200 Token。待事件写入可供查询后，各领域分别使用这份事实：</p>
+<ul>
+<li><strong>计量</strong>：按客户归属查询，可将这个工作区的用量计入 Acme。</li>
+<li><strong>权益</strong>：在示例没有其他用量的前提下，十万授予剩余 98,800 Token，允许访问。</li>
+<li><strong>通知</strong>：若重新计算产生的值事件满足提醒规则，保存相应通知并进入投递流程。</li>
+<li><strong>计费</strong>：Token 价格仍按其服务期间和收费时间推进；已存在的平台费账单继续自己的生命周期。</li>
+</ul>
+<p>使用事件使查询和计算输入发生变化，并不需要让一条事件同步完成全部收费操作。</p>
+<h3 id="周期结算"><a class="markdownIt-Anchor" href="#周期结算"></a> 周期结算</h3>
+<p>到了本周期结束后的配置收集时点，两个工作区在十月份合计消耗十二万 Token，且这十二万都落在本轮可见的用量范围内。下表列出这份用量对应的结果，其中权益一行描述十月周期结束、尚未重置时的计算状态：</p>
+<table>
+<thead>
+<tr>
+<th>模型</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计量器</td>
+<td>Acme 本周期用量 120,000 Token</td>
+</tr>
+<tr>
+<td>十月权益计算</td>
+<td>重置前余额零，超额 20,000 Token，软限制继续允许访问</td>
+</tr>
+<tr>
+<td>Token 价格</td>
+<td>100,000 × 0 + 20,000 × 0.00001 = 0.20 美元</td>
+</tr>
+<tr>
+<td>Token 费用</td>
+<td>完成相应用量快照、定价和结算推进</td>
+</tr>
+<tr>
+<td>标准账单</td>
+<td>收集符合条件的 Token 项目，计算并向外部应用同步</td>
+</tr>
+<tr>
+<td>支付与账务</td>
+<td>随生命周期记录出具、授权和结算对应的事实</td>
+</tr>
+</tbody>
+</table>
+<p>本周期的平台费与 Token 费合计 20.20 美元，但平台费在期初、Token 费用在期后具备收费条件，可能分别形成账单。这个合计不表示系统必然在月底生成一张 20.20 美元的账单。</p>
+<p>十一月的权益按新使用周期及重置规则计算。即使用量账单仍在处理，当前可用额度也不能继续用十月重置前的结果表示。</p>
+<p>如果客户下月升级套餐，订阅需要明确新条款及生效时间，再由计费同步整理相应收费对象。已经出具的十月账单保留其历史条款和结果。</p>
+<p>从这个例子可以看到，OpenMeter 反复区分几类事实：实际消耗、客户条款、访问政策、费用计算和价值结算。它们通过清晰的引用、时间边界和生命周期联系起来，使同一份用量既能解释“还可使用多少”，也能解释“这笔费用从何而来”。</p>
+<h2 id="概念关系总览"><a class="markdownIt-Anchor" href="#概念关系总览"></a> 概念关系总览</h2>
+<p>前面的例子涉及定义、使用和结算几个过程。下面按这些过程整理概念之间的关系；表中的“包含”“关联”“生成”分别表示不同关系，不要求所有对象在同一步创建。</p>
+<h3 id="客户与产品"><a class="markdownIt-Anchor" href="#客户与产品"></a> 客户与产品</h3>
+<table>
+<thead>
+<tr>
+<th>关系</th>
+<th>具体含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>命名空间（Namespace）划分客户（Customer）、套餐（Plan）等数据的所属范围</td>
+<td>本文的 AI 服务可以在同一个命名空间中管理多个客户及其可购买的套餐。</td>
+</tr>
+<tr>
+<td>客户（Customer）在业务应用中拥有工作区（Workspace）</td>
+<td>Acme 可以分别为研发和客服建立工作区。工作区由 AI 服务自身管理，OpenMeter 记录对应的客户与用量归属。</td>
+</tr>
+<tr>
+<td>工作区（Workspace）的标识作为事件归属键（Subject），关联到客户（Customer）</td>
+<td>网关按工作区上报使用事件（Usage Event），客户用量归属（CustomerUsageAttribution）将多个工作区的使用记录归入同一客户。</td>
+</tr>
+<tr>
+<td>计量器（Meter）从使用事件（Usage Event）中统计用量（Usage）</td>
+<td>例如提取每次调用的 Token 数，按客户和时间范围求和。</td>
+</tr>
+<tr>
+<td>功能（Feature）按需关联计量器（Meter）</td>
+<td>文本生成关联 Token 计量器；只需控制是否开放的审计日志可以不关联计量器。</td>
+</tr>
+<tr>
+<td>套餐（Plan）包含套餐阶段（Plan Phase），套餐阶段包含费率卡（RateCard）</td>
+<td>定义可供客户采用的服务规则，例如先试用七天，再正式收费。</td>
+</tr>
+<tr>
+<td>费率卡（RateCard）组合功能（Feature）、权益模板（EntitlementTemplate）和价格（Price）</td>
+<td>它描述一项服务提供什么、授予什么权益、怎样收费。各项内容按服务需要配置，例如固定平台费可以没有功能权益。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="订阅与访问"><a class="markdownIt-Anchor" href="#订阅与访问"></a> 订阅与访问</h3>
+<table>
+<thead>
+<tr>
+<th>关系</th>
+<th>具体含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>客户（Customer）通过订阅（Subscription）采用套餐（Plan）中的条款</td>
+<td>套餐提供可销售的定义，订阅保存这位客户的开始时间、周期和具体服务安排；定制订阅也可以没有目录套餐引用。</td>
+</tr>
+<tr>
+<td>订阅（Subscription）包含订阅阶段（Subscription Phase），订阅阶段组织服务条目（Subscription Item）</td>
+<td>从套餐创建时，将套餐阶段的规则落实为客户自己的时间表，条目保存采用的费率卡；同一服务中途调整时，用条目版本保留新旧安排。</td>
+</tr>
+<tr>
+<td>订阅（Subscription）依据权益模板（EntitlementTemplate）生成客户权益（Entitlement）</td>
+<td>套餐定义模板，创建订阅时才为具体客户建立相应权益，并使其有效期与服务条目对齐。权益也可以直接创建。</td>
+</tr>
+<tr>
+<td>权益（Entitlement）连接客户（Customer）与功能（Feature）</td>
+<td>它表达某位客户在某段时间是否可以使用这项功能，以及相关配置或额度状态。</td>
+</tr>
+<tr>
+<td>计量权益（Metered Entitlement）拥有额度授予（Grant），额度计算（Credit）结合用量（Usage）计算权益余额（Balance）</td>
+<td>多份授予按优先级和有效期消耗，未覆盖的用量记为超额用量（Overage）。</td>
+</tr>
+<tr>
+<td>权益余额（Balance）与软限制（Soft Limit）共同决定访问结果（HasAccess）</td>
+<td>硬限制在余额耗尽后返回不可访问，软限制继续允许访问；实际调用是否放行，由业务应用使用这个结果决定。</td>
+</tr>
+</tbody>
+</table>
+<p>因此，“套餐产生权益”可以更准确地展开为：<strong>套餐（Plan）中的费率卡（RateCard）定义权益模板（EntitlementTemplate），订阅（Subscription）再将模板落实为某位客户（Customer）的权益（Entitlement）</strong>。</p>
+<h3 id="收费与结算"><a class="markdownIt-Anchor" href="#收费与结算"></a> 收费与结算</h3>
+<table>
+<thead>
+<tr>
+<th>关系</th>
+<th>具体含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>订阅计费同步（Subscription sync）将订阅（Subscription）的服务安排转成费用（Charge）或兼容账单行（Invoice Line）</td>
+<td>它比较目标和现状，整理相应周期的收费对象；已有对象继续由原有后端管理。</td>
+</tr>
+<tr>
+<td>用量费用（Usage-based Charge）结合用量（Usage）与价格（Price）计算金额，并保存执行批次（Realization Run）</td>
+<td>批次记录本轮计算边界、结果及相关引用，支持累计计算和后续结算。</td>
+</tr>
+<tr>
+<td>费用（Charge）按结算模式（Settlement Mode）使用账务余额（Customer Credit Balance）</td>
+<td>例如先抵扣合格的预付价值，再将未覆盖部分交给账单流程。这里的账务余额与功能额度余额分别计算。</td>
+</tr>
+<tr>
+<td>待出账账单（Gathering Invoice）暂存账单行（Invoice Line），符合条件的行被收集到标准账单（Standard Invoice）</td>
+<td>前者保存待处理项目，后者进入计算、出具和支付流程。一位客户可以先后产生多张标准账单。</td>
+</tr>
+<tr>
+<td>计费配置（Billing Profile）选择税务应用（Tax App）、账单应用（Invoicing App）和支付应用（Payment App）</td>
+<td>标准账单保存当时适用的配置与应用引用，并据此推进后续流程。</td>
+</tr>
+<tr>
+<td>费用（Charge）的生命周期通过账务记录（Ledger）保存相关价值变化</td>
+<td>授予预付价值、消耗、应收和支付等效果以分录留痕；账单（Invoice）同时保留面向客户的结算单据及其状态。</td>
+</tr>
+<tr>
+<td>权益值事件（Entitlement Value Event）或账单事件（Invoice Event）经过通知规则（Notification Rule）匹配，生成通知事件（Notification Event）</td>
+<td>通知事件保存历史内容，再通过通知渠道（Channel）安排投递；源事件本身不等于已经生成或送达一条通知。</td>
+</tr>
+</tbody>
+</table>
+<p>在这些关系中，同一份用量（Usage）有两个主要用途：与额度授予（Grant）一起计算权益（Entitlement）的可用额度，与价格（Price）一起计算费用（Charge）。免费用量、访问限制和预付价值需要分别配置，才能共同实现产品对客户的承诺。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>OpenMeter 围绕客户（Customer）组织用量与商业关系：计量器（Meter）统计实际消耗，功能（Feature）、费率卡（RateCard）和套餐（Plan）定义可出售的服务，订阅（Subscription）将这些规则落实为客户自己的时间表。</p>
+<p>服务开通后，权益（Entitlement）和额度授予（Grant）回答客户能用什么、还剩多少额度；价格（Price）与费用（Charge）计算应收金额，账单（Invoice）推进出账和支付，账务记录（Ledger）保留价值变化及其来源。功能额度、免费用量和预付余额分别建模，需要通过明确的配置共同实现产品规则。</p>
+<p>这些模型还共同保留了时间信息：条款何时生效、额度何时有效、用量属于哪个期间、费用已经执行到哪一步。理解这些边界，才能在套餐变更、周期重置和重复处理时，继续解释客户当时享有什么服务，以及每笔费用如何产生。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/17/go-openmeter-02/" rel="next" title="OpenMeter 学习 02：架构总览">
+      OpenMeter 学习 02：架构总览 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%9A%E5%8A%A1%E5%85%A8%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text"> 业务全景</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5"><span class="nav-number">1.1.</span> <span class="nav-text"> 核心概念</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E5%85%B3%E7%B3%BB"><span class="nav-number">1.2.</span> <span class="nav-text"> 模型关系</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E4%B8%8E%E7%94%A8%E9%87%8F"><span class="nav-number">2.</span> <span class="nav-text"> 客户与用量</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E8%BA%AB%E4%BB%BD"><span class="nav-number">2.1.</span> <span class="nav-text"> 客户身份</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E5%90%8D%E7%A9%BA%E9%97%B4"><span class="nav-number">2.2.</span> <span class="nav-text"> 命名空间</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E4%BA%8B%E5%AE%9E"><span class="nav-number">2.3.</span> <span class="nav-text"> 使用事实</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%A7%E5%93%81%E7%9B%AE%E5%BD%95"><span class="nav-number">3.</span> <span class="nav-text"> 产品目录</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8A%9F%E8%83%BD%E5%AE%9A%E4%B9%89"><span class="nav-number">3.1.</span> <span class="nav-text"> 功能定义</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B4%B9%E7%8E%87%E5%8D%A1"><span class="nav-number">3.2.</span> <span class="nav-text"> 费率卡</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A5%97%E9%A4%90%E4%B8%8E%E9%98%B6%E6%AE%B5"><span class="nav-number">3.3.</span> <span class="nav-text"> 套餐与阶段</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A2%E9%98%85%E6%97%B6%E9%97%B4%E8%A1%A8"><span class="nav-number">4.</span> <span class="nav-text"> 订阅时间表</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E6%9D%A1%E6%AC%BE"><span class="nav-number">4.1.</span> <span class="nav-text"> 客户条款</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%A4%E7%B1%BB%E9%98%B6%E6%AE%B5"><span class="nav-number">4.2.</span> <span class="nav-text"> 两类阶段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9D%A1%E7%9B%AE%E5%8E%86%E5%8F%B2"><span class="nav-number">4.3.</span> <span class="nav-text"> 条目历史</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%A8%E6%9C%9F%E4%B8%8E%E7%94%9F%E6%95%88%E6%97%B6%E9%97%B4"><span class="nav-number">4.4.</span> <span class="nav-text"> 周期与生效时间</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8A%9F%E8%83%BD%E6%9D%83%E7%9B%8A"><span class="nav-number">5.</span> <span class="nav-text"> 功能权益</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9D%83%E7%9B%8A%E7%B1%BB%E5%9E%8B"><span class="nav-number">5.1.</span> <span class="nav-text"> 权益类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%BF%E9%97%AE%E5%88%A4%E6%96%AD"><span class="nav-number">5.2.</span> <span class="nav-text"> 访问判断</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A2%9D%E5%BA%A6%E4%B8%8E%E6%8E%88%E4%BA%88"><span class="nav-number">6.</span> <span class="nav-text"> 额度与授予</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8E%88%E4%BA%88%E8%A7%84%E5%88%99"><span class="nav-number">6.1.</span> <span class="nav-text"> 授予规则</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%99%E9%A2%9D%E8%AE%A1%E7%AE%97"><span class="nav-number">6.2.</span> <span class="nav-text"> 余额计算</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%87%8D%E7%BD%AE%E4%B8%8E%E8%A1%A5%E5%85%85"><span class="nav-number">6.3.</span> <span class="nav-text"> 重置与补充</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A1%E7%AE%97%E5%BF%AB%E7%85%A7"><span class="nav-number">6.4.</span> <span class="nav-text"> 计算快照</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B0%E9%87%8F%E4%B8%8E%E4%BB%B7%E6%A0%BC"><span class="nav-number">7.</span> <span class="nav-text"> 数量与价格</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A1%E8%B4%B9%E5%8D%95%E4%BD%8D"><span class="nav-number">7.1.</span> <span class="nav-text"> 计费单位</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%B7%E6%A0%BC%E7%B1%BB%E5%9E%8B"><span class="nav-number">7.2.</span> <span class="nav-text"> 价格类型</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%8D%E8%B4%B9%E7%94%A8%E9%87%8F"><span class="nav-number">7.3.</span> <span class="nav-text"> 免费用量</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%98%E6%83%A0%E4%B8%8E%E5%88%86%E6%91%8A"><span class="nav-number">7.4.</span> <span class="nav-text"> 优惠与分摊</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%AE%A1%E8%B4%B9%E5%90%8C%E6%AD%A5"><span class="nav-number">8.</span> <span class="nav-text"> 计费同步</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%9B%AE%E6%A0%87%E4%B8%8E%E7%8E%B0%E7%8A%B6"><span class="nav-number">8.1.</span> <span class="nav-text"> 目标与现状</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A8%B3%E5%AE%9A%E8%BA%AB%E4%BB%BD"><span class="nav-number">8.2.</span> <span class="nav-text"> 稳定身份</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B4%B9%E7%94%A8%E6%A8%A1%E5%9E%8B"><span class="nav-number">9.</span> <span class="nav-text"> 费用模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%94%B6%E8%B4%B9%E5%AE%89%E6%8E%92%E4%B8%8E%E6%89%A7%E8%A1%8C%E8%AE%B0%E5%BD%95"><span class="nav-number">9.1.</span> <span class="nav-text"> 收费安排与执行记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%93%E7%AE%97%E6%96%B9%E5%BC%8F"><span class="nav-number">9.2.</span> <span class="nav-text"> 结算方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%B4%AF%E8%AE%A1%E8%AE%A1%E7%AE%97"><span class="nav-number">9.3.</span> <span class="nav-text"> 累计计算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B4%A6%E5%8D%95%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F"><span class="nav-number">10.</span> <span class="nav-text"> 账单生命周期</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BE%85%E5%87%BA%E8%B4%A6%E9%A1%B9%E7%9B%AE"><span class="nav-number">10.1.</span> <span class="nav-text"> 待出账项目</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A1%E8%B4%B9%E9%85%8D%E7%BD%AE"><span class="nav-number">10.2.</span> <span class="nav-text"> 计费配置</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E6%8E%A8%E8%BF%9B"><span class="nav-number">10.3.</span> <span class="nav-text"> 状态推进</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%B4%A6%E5%8A%A1%E6%A8%A1%E5%9E%8B"><span class="nav-number">11.</span> <span class="nav-text"> 账务模型</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%B7%E5%80%BC%E8%AE%B0%E5%BD%95"><span class="nav-number">11.1.</span> <span class="nav-text"> 价值记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%99%E9%A2%9D%E4%B8%8E%E4%BF%AE%E6%AD%A3"><span class="nav-number">11.2.</span> <span class="nav-text"> 余额与修正</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%8C%E6%95%B4%E7%A4%BA%E4%BE%8B"><span class="nav-number">12.</span> <span class="nav-text"> 完整示例</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E5%BC%80%E9%80%9A"><span class="nav-number">12.1.</span> <span class="nav-text"> 服务开通</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E8%BF%87%E7%A8%8B"><span class="nav-number">12.2.</span> <span class="nav-text"> 使用过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%A8%E6%9C%9F%E7%BB%93%E7%AE%97"><span class="nav-number">12.3.</span> <span class="nav-text"> 周期结算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A6%82%E5%BF%B5%E5%85%B3%E7%B3%BB%E6%80%BB%E8%A7%88"><span class="nav-number">13.</span> <span class="nav-text"> 概念关系总览</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E4%B8%8E%E4%BA%A7%E5%93%81"><span class="nav-number">13.1.</span> <span class="nav-text"> 客户与产品</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A2%E9%98%85%E4%B8%8E%E8%AE%BF%E9%97%AE"><span class="nav-number">13.2.</span> <span class="nav-text"> 订阅与访问</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%94%B6%E8%B4%B9%E4%B8%8E%E7%BB%93%E7%AE%97"><span class="nav-number">13.3.</span> <span class="nav-text"> 收费与结算</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">14.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">301</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
