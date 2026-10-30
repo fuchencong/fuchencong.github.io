@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="用 Go 调用大模型，最先遇到的问题通常不是发出一个 HTTP 请求，而是如何让模型、提示词、历史消息和外部资料可以逐步组合。每个模型服务的请求格式、鉴权方式和流式响应又不完全相同，如果业务代码直接绑定某一家服务，后续替换模型就要重新改一遍调用链。LangChainGo 是 LangChain 的 Go 实现，为这些常见需求提供了可组合的组件。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LangChainGo 学习：快速入门">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/30/go-langchaingo-01/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="用 Go 调用大模型，最先遇到的问题通常不是发出一个 HTTP 请求，而是如何让模型、提示词、历史消息和外部资料可以逐步组合。每个模型服务的请求格式、鉴权方式和流式响应又不完全相同，如果业务代码直接绑定某一家服务，后续替换模型就要重新改一遍调用链。LangChainGo 是 LangChain 的 Go 实现，为这些常见需求提供了可组合的组件。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-30T04:23:40.000Z">
+<meta property="article:modified_time" content="2026-10-30T04:27:14.286Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/30/go-langchaingo-01/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>LangChainGo 学习：快速入门 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/30/go-langchaingo-01/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          LangChainGo 学习：快速入门
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-30 12:23:40" itemprop="dateCreated datePublished" datetime="2026-10-30T12:23:40+08:00">2026-10-30</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>用 Go 调用大模型，最先遇到的问题通常不是发出一个 HTTP 请求，而是如何让模型、提示词、历史消息和外部资料可以逐步组合。每个模型服务的请求格式、鉴权方式和流式响应又不完全相同，如果业务代码直接绑定某一家服务，后续替换模型就要重新改一遍调用链。<a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo">LangChainGo</a> 是 <a target="_blank" rel="noopener" href="https://github.com/langchain-ai/langchain">LangChain</a> 的 Go 实现，为这些常见需求提供了可组合的组件。</p>
+<span id="more"></span>
+<h2 id="项目概览"><a class="markdownIt-Anchor" href="#项目概览"></a> 项目概览</h2>
+<p>LangChainGo 是一个用于开发大模型应用的 Go 库，可以集成到已有的命令行程序、HTTP 服务或后台任务中。模型生成回答，LangChainGo 则负责把模型调用与应用中的提示词、数据和工具连接起来。</p>
+<h3 id="核心功能"><a class="markdownIt-Anchor" href="#核心功能"></a> 核心功能</h3>
+<ul>
+<li><strong>模型接入</strong>：连接 OpenAI、Anthropic、Ollama 等服务，使用统一接口发送消息，并支持流式输出；具体能力取决于模型和对应实现。</li>
+<li><strong>提示词管理</strong>：通过模板填入问题、背景资料等变量，复用固定的回答要求。</li>
+<li><strong>流程组合</strong>：把提示词生成、模型调用和结果解析串成链，用于摘要、问答等任务。</li>
+<li><strong>对话记忆</strong>：保存历史消息，在后续请求中提供上下文。</li>
+<li><strong>文档检索</strong>：配合文本切分、向量生成和向量存储，查找与问题相关的资料，再交给模型回答。</li>
+<li><strong>工具调用</strong>：让智能体根据问题选择工具，由程序执行查询、计算等操作，再把结果交回模型。</li>
+</ul>
+<h3 id="实现思路"><a class="markdownIt-Anchor" href="#实现思路"></a> 实现思路</h3>
+<p>这些功能通过 Go 接口连接。例如，模型接入层实现 <code>llms.Model</code>，上层代码通过它调用模型；不同服务的实现负责转换消息格式、设置鉴权信息和处理响应。文档检索也遵循同样的方式：上层通过 <code>schema.Retriever</code> 获取相关文档，具体实现负责查询数据源。</p>
+<p>在此基础上，链把多个步骤组织成完整流程。以对话为例，先读取历史，再生成提示词并调用模型，最后保存本轮消息。提示词、模型和记忆各自负责一部分工作，链负责把它们连接起来。</p>
+<p>使用时可以按需求逐步加入组件：单次问答只需模型调用，重复使用的提示词可以提取为模板，多轮对话再加入记忆。下面的组件地图展示了这些能力对应的包，以及它们在一次请求中的位置。</p>
+<h2 id="组件地图"><a class="markdownIt-Anchor" href="#组件地图"></a> 组件地图</h2>
+<p>一次请求可以先用下面的链路来理解：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">[业务输入] ---------------------+</span><br><span class="line">[memory 对话历史] --------------+--&gt; [prompts 提示词模板]</span><br><span class="line">[embeddings + vectorstores] ----+</span><br><span class="line">                                               |</span><br><span class="line">                                               v</span><br><span class="line">                                         [llms.Model]</span><br><span class="line">                                               |</span><br><span class="line">                                               v</span><br><span class="line">                                       [provider 适配器]</span><br><span class="line">                                               |</span><br><span class="line">                                               v</span><br><span class="line">                                          [模型服务]</span><br><span class="line">                                               |</span><br><span class="line">                                               v</span><br><span class="line">                                       [ContentResponse]</span><br><span class="line">                                               |</span><br><span class="line">                                               v</span><br><span class="line">                                     [输出解析 / 业务结果]</span><br></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>解决的问题</th>
+<th>关键接口或类型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>llms</code></td>
+<td>统一文本、聊天、多模态模型调用</td>
+<td><code>llms.Model</code>、<code>MessageContent</code>、<code>ContentResponse</code></td>
+</tr>
+<tr>
+<td><code>llms/anthropic</code>、<code>llms/openai</code> 等</td>
+<td>把统一请求转换成具体 provider 的 HTTP 请求</td>
+<td><code>New</code>、<code>Option</code></td>
+</tr>
+<tr>
+<td><code>prompts</code></td>
+<td>用变量生成稳定、可复用的提示词</td>
+<td><code>PromptTemplate</code>、<code>ChatPromptTemplate</code></td>
+</tr>
+<tr>
+<td><code>chains</code></td>
+<td>编排提示词、模型、解析器和记忆</td>
+<td><code>Chain</code>、<code>LLMChain</code></td>
+</tr>
+<tr>
+<td><code>memory</code></td>
+<td>保存本轮之前的消息或摘要</td>
+<td><code>ConversationBuffer</code>、<code>ChatMessageHistory</code></td>
+</tr>
+<tr>
+<td><code>embeddings</code></td>
+<td>把文本变成向量</td>
+<td><code>Embedder</code></td>
+</tr>
+<tr>
+<td><code>vectorstores</code></td>
+<td>保存向量并按相似度查询文档</td>
+<td><code>VectorStore</code>、<code>Retriever</code></td>
+</tr>
+<tr>
+<td><code>agents</code> / <code>tools</code></td>
+<td>让模型选择并调用外部工具</td>
+<td>agent、tool 接口</td>
+</tr>
+</tbody>
+</table>
+<p>后面的代码只实现一个小型的 Go 问答程序：默认模式使用提示词模板回答一个问题，<code>-chat</code> 模式使用对话链保留上下文。这样既能验证最短路径，也能看到组件如何逐层接入。</p>
+<h2 id="环境准备"><a class="markdownIt-Anchor" href="#环境准备"></a> 环境准备</h2>
+<p>LangChainGo 作为依赖安装在自己的 Go 项目中。先准备 Go 开发环境；本文所分析的源码在 <code>go.mod</code> 中声明了 Go <code>1.26.0</code>，示例使用 Go <code>1.26.10</code> 验证。</p>
+<p>创建一个独立的示例项目，并安装本文使用的包：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">go version</span><br><span class="line"><span class="built_in">mkdir</span> langchaingo-demo</span><br><span class="line"><span class="built_in">cd</span> langchaingo-demo</span><br><span class="line">go mod init example.com/langchaingo-demo</span><br><span class="line">go get github.com/tmc/langchaingo/llms/anthropic</span><br><span class="line">go get github.com/tmc/langchaingo/prompts</span><br><span class="line">go get github.com/tmc/langchaingo/chains</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>go.mod</code> 属于 <code>langchaingo-demo</code>，Go 会下载 LangChainGo 及所需依赖。下文“完整示例”一节给出了全部代码，将它保存为项目目录下的 <code>main.go</code> 即可。后续命令都在 <code>langchaingo-demo</code> 中执行。</p>
+<p>阅读实现时，可以另行克隆 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo">LangChainGo 源码仓库</a>，对照本文提到的文件查看。源码仓库用于阅读或修改库本身；上面的示例项目通过 Go Modules 引用这个库，两者有各自的 <code>go.mod</code>。</p>
+<h3 id="网关配置"><a class="markdownIt-Anchor" href="#网关配置"></a> 网关配置</h3>
+<p>本文使用 <code>llms/anthropic</code>，因为 Anthropic 兼容网关也可以通过它的 <code>WithBaseURL</code> 选项接入。示例支持两组变量：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">export</span> ANTHROPIC_AUTH_TOKEN=<span class="string">&#x27;&lt;你的网关令牌&gt;&#x27;</span></span><br><span class="line"><span class="built_in">export</span> ANTHROPIC_BASE_URL=<span class="string">&#x27;https://ai-api-gateway.app.baizhi.cloud/api/anthropic&#x27;</span></span><br><span class="line"><span class="built_in">export</span> ANTHROPIC_MODEL=<span class="string">&#x27;deepseek-flash&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>使用其他 Anthropic 兼容服务时，将地址、模型名和令牌替换为服务商提供的值。如果使用 Anthropic 官方 API，可以改为：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">export</span> ANTHROPIC_API_KEY=<span class="string">&#x27;&lt;你的 Anthropic API key&gt;&#x27;</span></span><br><span class="line"><span class="built_in">unset</span> ANTHROPIC_AUTH_TOKEN</span><br><span class="line"><span class="built_in">unset</span> ANTHROPIC_BASE_URL</span><br><span class="line"><span class="built_in">export</span> ANTHROPIC_MODEL=<span class="string">&#x27;claude-sonnet-4-6&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>Anthropic provider 默认从 <code>ANTHROPIC_API_KEY</code> 读取密钥。本例同时支持 <code>ANTHROPIC_AUTH_TOKEN</code>，优先使用它的值，再通过 <code>anthropic.WithToken</code> 显式传给客户端。</p>
+<h2 id="基础调用"><a class="markdownIt-Anchor" href="#基础调用"></a> 基础调用</h2>
+<p>先看最小的模型调用。<code>llms.Model</code> 在 <code>llms/llms.go</code> 中定义了统一入口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Model <span class="keyword">interface</span> &#123;</span><br><span class="line">    GenerateContent(context.Context, []MessageContent, ...CallOption) (*ContentResponse, <span class="type">error</span>)</span><br><span class="line">    Call(context.Context, <span class="type">string</span>, ...CallOption) (<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>GenerateContent</code> 接受一组带角色的消息，是完整能力的入口</li>
+<li><code>Call</code> 保留了早期的单字符串接口</li>
+</ul>
+<p>业务代码依赖的是这个接口，所以把 Anthropic 换成 OpenAI、Ollama 或其他 provider 时，调用层不需要跟着更换类型。</p>
+<h3 id="模型初始化"><a class="markdownIt-Anchor" href="#模型初始化"></a> 模型初始化</h3>
+<p>示例中的模型初始化如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newModel</span><span class="params">()</span></span> (*anthropic.LLM, <span class="type">error</span>) &#123;</span><br><span class="line">    token := firstNonEmpty(</span><br><span class="line">        os.Getenv(<span class="string">&quot;ANTHROPIC_AUTH_TOKEN&quot;</span>),</span><br><span class="line">        os.Getenv(<span class="string">&quot;ANTHROPIC_API_KEY&quot;</span>),</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">if</span> token == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;missing API token&quot;</span>)</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    opts := []anthropic.Option&#123;anthropic.WithToken(token)&#125;</span><br><span class="line">    <span class="keyword">if</span> model := os.Getenv(<span class="string">&quot;ANTHROPIC_MODEL&quot;</span>); model != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        opts = <span class="built_in">append</span>(opts, anthropic.WithModel(model))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> baseURL := os.Getenv(<span class="string">&quot;ANTHROPIC_BASE_URL&quot;</span>); baseURL != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">        opts = <span class="built_in">append</span>(opts, anthropic.WithBaseURL(baseURL))</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> anthropic.New(opts...)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这段代码里的 <code>Option</code> 不是装饰性的配置集合。<code>anthropic.New</code> 会把选项应用到内部 client，client 保存 token、模型名、基础地址和 HTTP client；真正发送请求时再把基础地址和 <code>/messages</code> 拼起来。官方默认基础地址本身带有 <code>/v1</code>，兼容网关则可以把所需的前缀直接放进 <code>ANTHROPIC_BASE_URL</code>，同时设置 <code>x-api-key</code>、<code>anthropic-version</code> 等请求头。</p>
+<p>这两个变量都用于提供访问凭据，但用途有所不同：</p>
+<ul>
+<li><strong><code>ANTHROPIC_API_KEY</code></strong>：保存从 Anthropic 控制台获取的 API 密钥，直接调用官方 API 时通常使用它。HTTP 请求可以通过 <code>x-api-key</code> 请求头携带这把密钥。</li>
+<li><strong><code>ANTHROPIC_AUTH_TOKEN</code></strong>：供支持此配置的客户端读取认证令牌。例如，<a target="_blank" rel="noopener" href="https://github.com/anthropics/anthropic-sdk-python/blob/main/src/anthropic/_client.py">Anthropic 官方 Python SDK</a> 会将它放入 <code>Authorization: Bearer &lt;token&gt;</code> 请求头。使用 API key 时，无须再配置这个变量。</li>
+</ul>
+<p>直接使用官方 API 时，按前面的配置设置 <code>ANTHROPIC_API_KEY</code> 即可。本文示例对 <code>ANTHROPIC_AUTH_TOKEN</code> 的读取属于额外适配；LangChainGo 当前仍通过 <code>x-api-key</code> 发送传入的凭据。</p>
+<h3 id="单次问答"><a class="markdownIt-Anchor" href="#单次问答"></a> 单次问答</h3>
+<p>最短的文本调用可以使用 <code>llms.GenerateFromSinglePrompt</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">answer, err := llms.GenerateFromSinglePrompt(</span><br><span class="line">    ctx,</span><br><span class="line">    llm,</span><br><span class="line">    <span class="string">&quot;请用三句话解释 Go 的 context.Context 为什么重要。&quot;</span>,</span><br><span class="line">    llms.WithMaxTokens(<span class="number">400</span>),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这个辅助函数的实现很直白：它把字符串包装成一个 <code>ChatMessageTypeHuman</code> 消息，调用 <code>GenerateContent</code>，然后取第一项 <code>ContentResponse.Choices</code> 的 <code>Content</code>。因此它适合单一问题；需要多轮消息、图片或工具调用时，就应该直接使用 <code>GenerateContent</code>。</p>
+<h3 id="流式输出"><a class="markdownIt-Anchor" href="#流式输出"></a> 流式输出</h3>
+<p>模型响应可能需要几秒钟。如果等完整文本生成后再显示，命令行程序会显得像是卡住了。LangChainGo 把流式处理放进 <code>CallOption</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">answer, err := llms.GenerateFromSinglePrompt(ctx, llm, prompt,</span><br><span class="line">    llms.WithStreamingFunc(<span class="function"><span class="keyword">func</span><span class="params">(_ context.Context, chunk []<span class="type">byte</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">        fmt.Print(<span class="type">string</span>(chunk))</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">    &#125;),</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>provider 收到这个回调后会打开流式响应，并在读取每个事件时调用它。回调返回错误即可中止读取。示例仍然接收最终的 <code>answer</code>，这是为了兼容某些不返回流式片段的服务；如果回调已经打印了片段，程序只需要在最后补一个换行即可。</p>
+<h2 id="提示词模板"><a class="markdownIt-Anchor" href="#提示词模板"></a> 提示词模板</h2>
+<p>把提示词直接写在函数里，问题一多就会出现字符串重复、变量拼错和格式不一致。<code>prompts.PromptTemplate</code> 解决的是“把固定说明和运行时输入分开”这个问题。</p>
+<p>示例中的模板和渲染代码是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">template := prompts.NewPromptTemplate(</span><br><span class="line">    <span class="string">&quot;你是一名 Go 教程作者。请用清晰、简洁的中文回答。\n&quot;</span>+</span><br><span class="line">        <span class="string">&quot;主题：&#123;&#123;.topic&#125;&#125;\n问题：&#123;&#123;.question&#125;&#125;&quot;</span>,</span><br><span class="line">    []<span class="type">string</span>&#123;<span class="string">&quot;topic&quot;</span>, <span class="string">&quot;question&quot;</span>&#125;,</span><br><span class="line">)</span><br><span class="line"></span><br><span class="line">prompt, err := template.Format(<span class="keyword">map</span>[<span class="type">string</span>]any&#123;</span><br><span class="line">    <span class="string">&quot;topic&quot;</span>:    <span class="string">&quot;Go 基础&quot;</span>,</span><br><span class="line">    <span class="string">&quot;question&quot;</span>: question,</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p><code>NewPromptTemplate</code> 默认使用 Go template 语法。源码中的 <code>Format</code> 先合并 partial variables 和本次传入的 values，再调用 <code>RenderTemplate</code>；渲染失败会直接返回错误。<code>InputVariables</code> 主要用于描述模板需要哪些输入，链在执行前会根据它做输入校验。</p>
+<p>如果模型需要明确的 system、human、AI 角色，可以使用 <code>ChatPromptTemplate</code> 和对应的 message formatter：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">chatPrompt := prompts.NewChatPromptTemplate([]prompts.MessageFormatter&#123;</span><br><span class="line">    prompts.NewSystemMessagePromptTemplate(</span><br><span class="line">        <span class="string">&quot;你是一名 Go 教程作者。&quot;</span>,</span><br><span class="line">        <span class="literal">nil</span>,</span><br><span class="line">    ),</span><br><span class="line">    prompts.NewHumanMessagePromptTemplate(</span><br><span class="line">        <span class="string">&quot;请解释 &#123;&#123;.topic&#125;&#125;。&quot;</span>,</span><br><span class="line">        []<span class="type">string</span>&#123;<span class="string">&quot;topic&quot;</span>&#125;,</span><br><span class="line">    ),</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure>
+<p>调用 <code>chatPrompt.FormatMessages</code> 后，会得到一组带角色的消息：上面的第一条是 system 消息，第二条是 human 消息。模型可以据此区分系统指令和用户问题。</p>
+<h2 id="链式编排"><a class="markdownIt-Anchor" href="#链式编排"></a> 链式编排</h2>
+<p>当一次请求包含 <code>准备输入、调用模型、解析输出、写入记忆</code> 等步骤时，把这些步骤分散在业务函数中很快会变得难以维护。<code>chains.Chain</code> 约定了统一的输入、输出和记忆接口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Chain <span class="keyword">interface</span> &#123;</span><br><span class="line">    Call(context.Context, <span class="keyword">map</span>[<span class="type">string</span>]any, ...ChainCallOption) (<span class="keyword">map</span>[<span class="type">string</span>]any, <span class="type">error</span>)</span><br><span class="line">    GetMemory() schema.Memory</span><br><span class="line">    GetInputKeys() []<span class="type">string</span></span><br><span class="line">    GetOutputKeys() []<span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>chains.NewLLMChain</code> 是最常用的实现。它持有一个 <code>prompts.FormatPrompter</code> 和一个 <code>llms.Model</code>。调用时，源码依次完成三件事：</p>
+<ul>
+<li>用输入值格式化 prompt；</li>
+<li>调用 <code>llms.GenerateFromSinglePrompt</code>；</li>
+<li>使用 <code>OutputParser</code> 解析模型文本，并放入默认的 <code>text</code> 输出键。</li>
+</ul>
+<p>执行链时，使用包级函数 <code>chains.Call(ctx, chain, inputs)</code>。它会先读取历史记录，再执行链并校验输入输出，最后保存本轮输入和结果。如果直接调用 <code>chain.Call(ctx, inputs)</code>，就会跳过这些外围步骤，只执行链自身的逻辑。<code>chains.Run</code> 封装了 <code>chains.Call</code>，适合只有一个输入和一个字符串输出的场景。</p>
+<p>这使得一个简单的模板和模型可以升级成可组合的链：先用一个链生成摘要，再把摘要交给下一个链；或者让检索链先拿到文档，再交给问答链生成答案。每个链仍然只关心自己的输入输出。</p>
+<h2 id="对话记忆"><a class="markdownIt-Anchor" href="#对话记忆"></a> 对话记忆</h2>
+<p>单次调用不会自动记住上一轮消息。把前一轮文本手动拼接到新 prompt 中，既容易漏消息，也会让业务代码承担存储和格式化责任。<code>memory.NewConversationBuffer</code> 提供了一个内存中的消息历史：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">chatMemory := memory.NewConversationBuffer()</span><br><span class="line">conversation := chains.NewConversation(llm, chatMemory)</span><br><span class="line"></span><br><span class="line">answer, err := chains.Run(ctx, conversation, input, chains.WithMaxTokens(<span class="number">400</span>))</span><br></pre></td></tr></table></figure>
+<p><code>NewConversation</code> 使用仓库内置的对话模板，其中包含 <code>history</code>、<code>input</code> 和 <code>AI</code> 前缀。每次 <code>chains.Run</code> 进入公共调用流程时，<code>ConversationBuffer.LoadMemoryVariables</code> 读取历史并生成 <code>history</code> 字符串；模型返回后，<code>SaveContext</code> 再把当前 human 和 AI 消息写回 <code>ChatMessageHistory</code>。</p>
+<p>示例的 <code>-chat</code> 模式正是这段流程的命令行版本：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go run . -chat</span><br></pre></td></tr></table></figure>
+<p>聊天模式同样设置了 <code>chains.WithMaxTokens(400)</code> 和流式回调。这样做一方面能尽快显示回答，另一方面兼容本文使用的网关：它在流式响应中可能只发送片段、把最终的 <code>Content</code> 留空。示例会把片段累积起来，并在这种情况下把最后一条空的 AI 消息替换为完整文本；消息的加载、执行和保存流程仍由 <code>chains.Call</code> 负责。</p>
+<p>默认的 buffer 只存在于当前进程；需要跨进程保存时，可以把 <code>schema.ChatMessageHistory</code> 换成 SQLite、MongoDB、Cloud SQL 或 Zep 等实现，再通过 <code>memory.WithChatHistory</code> 注入。</p>
+<p>这里有一个容易忽略的边界：memory 负责保存和提供历史，不负责判断历史是否正确，也不会自动解决上下文长度问题。长对话需要 <code>WindowMemory</code> 或 <code>TokenBuffer</code>，还需要根据模型的 token 限制选择裁剪或摘要策略。</p>
+<h2 id="文档问答"><a class="markdownIt-Anchor" href="#文档问答"></a> 文档问答</h2>
+<p>当问题涉及自己的文档时，单纯把整篇文档塞进 prompt 会遇到上下文长度、成本和相关性三个问题。LangChainGo 的文档问答路径把它拆成几个可以替换的环节。</p>
+<p>首先用 <code>textsplitter</code> 把长文本分成带重叠的小块。<code>RecursiveCharacter</code> 默认按空行、换行、空格和字符逐级切分，并使用 4000 的 chunk size 和 200 的 overlap；这些数值可以通过 option 调整。重叠的作用是避免一句话刚好被切到两个块的边界。</p>
+<p>接着由 <code>embeddings.Embedder</code> 为文本块和用户问题生成向量，再交给 <code>vectorstores.VectorStore</code> 保存和查询：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Embedder <span class="keyword">interface</span> &#123;</span><br><span class="line">    EmbedDocuments(context.Context, []<span class="type">string</span>) ([][]<span class="type">float32</span>, <span class="type">error</span>)</span><br><span class="line">    EmbedQuery(context.Context, <span class="type">string</span>) ([]<span class="type">float32</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">type</span> VectorStore <span class="keyword">interface</span> &#123;</span><br><span class="line">    AddDocuments(context.Context, []schema.Document, ...Option) ([]<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">    SimilaritySearch(context.Context, <span class="type">string</span>, <span class="type">int</span>, ...Option) ([]schema.Document, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>文档存好后，下一步是根据问题查找资料。例如，用户问“报销需要哪些材料”，程序需要先从制度文档中找出与报销相关的段落。<code>vectorstores.ToRetriever</code> 为向量存储提供了一个查询入口，并指定每次返回多少个文档片段。调用它的 <code>GetRelevantDocuments</code> 方法，就能获得这些片段。</p>
+<p>有了相关资料，还需要把资料和问题一起交给模型。<code>chains.NewRetrievalQAFromLLM</code> 将这两个步骤串起来：先查询文档，再把找到的片段放进提示词，让模型结合资料回答问题。在上面的例子中，模型收到的是用户的问题和检索到的报销规定。</p>
+<p>源码中，查询资料由 <code>Retriever</code> 负责，整理资料并调用模型由 <code>CombineDocumentsChain</code> 负责。因此，更换向量数据库时，只要提供同样的文档查询接口，后面的回答流程就可以继续使用。</p>
+<h2 id="工具与智能体"><a class="markdownIt-Anchor" href="#工具与智能体"></a> 工具与智能体</h2>
+<p>有些问题不能只靠模型已有知识解决，例如查询实时天气、访问数据库或调用内部 API。这时可以把外部能力实现为 <code>tools</code>，再交给 <code>agents</code> 的执行器。模型负责选择工具和生成参数，执行器负责真正调用工具，并把工具结果作为下一轮消息送回模型。</p>
+<p>这条路径比普通 chain 多了一层循环，因此要特别关注工具参数校验、最大迭代次数和超时。入门阶段先把模型、prompt、chain 和 memory 跑通，再引入 agent，排错范围会小很多。</p>
+<h2 id="完整示例"><a class="markdownIt-Anchor" href="#完整示例"></a> 完整示例</h2>
+<p>下面把模型配置、提示词模板和对话记忆放进同一个程序。将这段代码保存为 <code>langchaingo-demo</code> 目录下的 <code>main.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;bufio&quot;</span></span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;flag&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;log&quot;</span></span><br><span class="line">	<span class="string">&quot;os&quot;</span></span><br><span class="line">	<span class="string">&quot;strings&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/chains&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/llms&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/llms/anthropic&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/memory&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/prompts&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	chat := flag.Bool(<span class="string">&quot;chat&quot;</span>, <span class="literal">false</span>, <span class="string">&quot;start an interactive conversation&quot;</span>)</span><br><span class="line">	question := flag.String(<span class="string">&quot;question&quot;</span>, <span class="string">&quot;请用三句话解释 Go 的 context.Context 为什么重要。&quot;</span>, <span class="string">&quot;question for the model&quot;</span>)</span><br><span class="line">	flag.Parse()</span><br><span class="line"></span><br><span class="line">	llm, err := newModel()</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> *chat &#123;</span><br><span class="line">		runChat(llm)</span><br><span class="line">		<span class="keyword">return</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	runPrompt(llm, *question)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">newModel</span><span class="params">()</span></span> (*anthropic.LLM, <span class="type">error</span>) &#123;</span><br><span class="line">	token := firstNonEmpty(os.Getenv(<span class="string">&quot;ANTHROPIC_AUTH_TOKEN&quot;</span>), os.Getenv(<span class="string">&quot;ANTHROPIC_API_KEY&quot;</span>))</span><br><span class="line">	<span class="keyword">if</span> token == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span>, fmt.Errorf(<span class="string">&quot;missing API token: set ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY&quot;</span>)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	opts := []anthropic.Option&#123;anthropic.WithToken(token)&#125;</span><br><span class="line">	<span class="keyword">if</span> model := os.Getenv(<span class="string">&quot;ANTHROPIC_MODEL&quot;</span>); model != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		opts = <span class="built_in">append</span>(opts, anthropic.WithModel(model))</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> baseURL := os.Getenv(<span class="string">&quot;ANTHROPIC_BASE_URL&quot;</span>); baseURL != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		opts = <span class="built_in">append</span>(opts, anthropic.WithBaseURL(baseURL))</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">return</span> anthropic.New(opts...)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">runPrompt</span><span class="params">(llm llms.Model, question <span class="type">string</span>)</span></span> &#123;</span><br><span class="line">	template := prompts.NewPromptTemplate(</span><br><span class="line">		<span class="string">&quot;你是一名 Go 教程作者。请用清晰、简洁的中文回答。\n主题：&#123;&#123;.topic&#125;&#125;\n问题：&#123;&#123;.question&#125;&#125;&quot;</span>,</span><br><span class="line">		[]<span class="type">string</span>&#123;<span class="string">&quot;topic&quot;</span>, <span class="string">&quot;question&quot;</span>&#125;,</span><br><span class="line">	)</span><br><span class="line">	prompt, err := template.Format(<span class="keyword">map</span>[<span class="type">string</span>]any&#123;</span><br><span class="line">		<span class="string">&quot;topic&quot;</span>:    <span class="string">&quot;Go 基础&quot;</span>,</span><br><span class="line">		<span class="string">&quot;question&quot;</span>: question,</span><br><span class="line">	&#125;)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)</span><br><span class="line">	<span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">	answer, err := llms.GenerateFromSinglePrompt(ctx, llm, prompt,</span><br><span class="line">		llms.WithMaxTokens(<span class="number">400</span>),</span><br><span class="line">		llms.WithStreamingFunc(<span class="function"><span class="keyword">func</span><span class="params">(_ context.Context, chunk []<span class="type">byte</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">			fmt.Print(<span class="type">string</span>(chunk))</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">		&#125;),</span><br><span class="line">	)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> answer != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		fmt.Println()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">runChat</span><span class="params">(llm llms.Model)</span></span> &#123;</span><br><span class="line">	chatMemory := memory.NewConversationBuffer()</span><br><span class="line">	conversation := chains.NewConversation(llm, chatMemory)</span><br><span class="line"></span><br><span class="line">	reader := bufio.NewScanner(os.Stdin)</span><br><span class="line">	fmt.Println(<span class="string">&quot;LangChainGo 对话示例，输入 quit 结束。&quot;</span>)</span><br><span class="line">	<span class="keyword">for</span> &#123;</span><br><span class="line">		fmt.Print(<span class="string">&quot;你：&quot;</span>)</span><br><span class="line">		<span class="keyword">if</span> !reader.Scan() &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		input := strings.TrimSpace(reader.Text())</span><br><span class="line">		<span class="keyword">if</span> input == <span class="string">&quot;quit&quot;</span> &#123;</span><br><span class="line">			<span class="keyword">return</span></span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> input == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)</span><br><span class="line">		<span class="keyword">var</span> streamed strings.Builder</span><br><span class="line">		streamStarted := <span class="literal">false</span></span><br><span class="line">		answer, err := chains.Run(ctx, conversation, input,</span><br><span class="line">			chains.WithMaxTokens(<span class="number">400</span>),</span><br><span class="line">			chains.WithStreamingFunc(<span class="function"><span class="keyword">func</span><span class="params">(_ context.Context, chunk []<span class="type">byte</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">				<span class="keyword">if</span> !streamStarted &#123;</span><br><span class="line">					fmt.Print(<span class="string">&quot;AI：&quot;</span>)</span><br><span class="line">					streamStarted = <span class="literal">true</span></span><br><span class="line">				&#125;</span><br><span class="line">				fmt.Print(<span class="type">string</span>(chunk))</span><br><span class="line">				streamed.Write(chunk)</span><br><span class="line">				<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">			&#125;),</span><br><span class="line">		)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			cancel()</span><br><span class="line">			fmt.Printf(<span class="string">&quot;调用失败：%v\n&quot;</span>, err)</span><br><span class="line">			<span class="keyword">continue</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		<span class="keyword">if</span> answer == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">			answer = streamed.String()</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> streamed.Len() &gt; <span class="number">0</span> &#123;</span><br><span class="line">			fmt.Println()</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			fmt.Printf(<span class="string">&quot;AI：%s\n&quot;</span>, answer)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> streamed.Len() &gt; <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">if</span> err := replaceEmptyLastAIMessage(ctx, chatMemory, answer); err != <span class="literal">nil</span> &#123;</span><br><span class="line">				cancel()</span><br><span class="line">				fmt.Printf(<span class="string">&quot;保存对话历史失败：%v\n&quot;</span>, err)</span><br><span class="line">				<span class="keyword">continue</span></span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line">		cancel()</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">replaceEmptyLastAIMessage</span><span class="params">(ctx context.Context, chatMemory *memory.ConversationBuffer, answer <span class="type">string</span>)</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	messages, err := chatMemory.ChatHistory.Messages(ctx)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> || <span class="built_in">len</span>(messages) == <span class="number">0</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> err</span><br><span class="line">	&#125;</span><br><span class="line">	last, ok := messages[<span class="built_in">len</span>(messages)<span class="number">-1</span>].(llms.AIChatMessage)</span><br><span class="line">	<span class="keyword">if</span> !ok || last.Content != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line">	messages[<span class="built_in">len</span>(messages)<span class="number">-1</span>] = llms.AIChatMessage&#123;Content: answer&#125;</span><br><span class="line">	<span class="keyword">return</span> chatMemory.ChatHistory.SetMessages(ctx, messages)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">firstNonEmpty</span><span class="params">(values ...<span class="type">string</span>)</span></span> <span class="type">string</span> &#123;</span><br><span class="line">	<span class="keyword">for</span> _, value := <span class="keyword">range</span> values &#123;</span><br><span class="line">		<span class="keyword">if</span> value != <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> value</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="string">&quot;&quot;</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="示例运行"><a class="markdownIt-Anchor" href="#示例运行"></a> 示例运行</h2>
+<p>默认模式的完整命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go run .</span><br></pre></td></tr></table></figure>
+<p>终端会看到类似下面的流式输出，具体措辞由模型决定：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">`context.Context` 提供统一机制，在调用链和多个 goroutine 之间传播取消信号、超时和截止时间。</span><br></pre></td></tr></table></figure>
+<p>也可以指定自己的问题：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">go run . \</span><br><span class="line">  -question <span class="string">&#x27;请给出一个适合初学者的 Go 接口示例，并说明隐式实现。&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>示例使用流式回调，终端会边生成边打印内容。没有配置 token 时，程序会在初始化阶段给出明确错误；网关返回非 2xx 状态时，Anthropic client 会读取响应中的错误消息并向上包装，便于定位鉴权、模型名或网关地址问题。</p>
+<p>在不访问模型的情况下，也可以先验证源码和依赖：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">go <span class="built_in">test</span> .</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>本文从一个 Go 问答程序出发，介绍了模型配置、单次问答和流式输出，再通过提示词模板、链和对话记忆，实现了能够保留上下文的聊天示例。结合源码，我们也了解了文档问答中“先查资料、再生成回答”的过程，以及工具和智能体的作用。</p>
+<p>这些功能通过接口连接，可以按应用需要逐步组合。理解了模型、提示词、链和记忆之间的关系，就有了继续开发文档问答或工具调用应用的基础。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/19/go-openmeter-03/" rel="next" title="OpenMeter 学习 03：业务领域与模型设计">
+      OpenMeter 学习 03：业务领域与模型设计 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE%E6%A6%82%E8%A7%88"><span class="nav-number">1.</span> <span class="nav-text"> 项目概览</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E5%8A%9F%E8%83%BD"><span class="nav-number">1.1.</span> <span class="nav-text"> 核心功能</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E7%8E%B0%E6%80%9D%E8%B7%AF"><span class="nav-number">1.2.</span> <span class="nav-text"> 实现思路</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BB%84%E4%BB%B6%E5%9C%B0%E5%9B%BE"><span class="nav-number">2.</span> <span class="nav-text"> 组件地图</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87"><span class="nav-number">3.</span> <span class="nav-text"> 环境准备</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BD%91%E5%85%B3%E9%85%8D%E7%BD%AE"><span class="nav-number">3.1.</span> <span class="nav-text"> 网关配置</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9F%BA%E7%A1%80%E8%B0%83%E7%94%A8"><span class="nav-number">4.</span> <span class="nav-text"> 基础调用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E5%88%9D%E5%A7%8B%E5%8C%96"><span class="nav-number">4.1.</span> <span class="nav-text"> 模型初始化</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8D%95%E6%AC%A1%E9%97%AE%E7%AD%94"><span class="nav-number">4.2.</span> <span class="nav-text"> 单次问答</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B5%81%E5%BC%8F%E8%BE%93%E5%87%BA"><span class="nav-number">4.3.</span> <span class="nav-text"> 流式输出</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8F%90%E7%A4%BA%E8%AF%8D%E6%A8%A1%E6%9D%BF"><span class="nav-number">5.</span> <span class="nav-text"> 提示词模板</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%93%BE%E5%BC%8F%E7%BC%96%E6%8E%92"><span class="nav-number">6.</span> <span class="nav-text"> 链式编排</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AF%B9%E8%AF%9D%E8%AE%B0%E5%BF%86"><span class="nav-number">7.</span> <span class="nav-text"> 对话记忆</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E9%97%AE%E7%AD%94"><span class="nav-number">8.</span> <span class="nav-text"> 文档问答</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E4%B8%8E%E6%99%BA%E8%83%BD%E4%BD%93"><span class="nav-number">9.</span> <span class="nav-text"> 工具与智能体</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%8C%E6%95%B4%E7%A4%BA%E4%BE%8B"><span class="nav-number">10.</span> <span class="nav-text"> 完整示例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%A4%BA%E4%BE%8B%E8%BF%90%E8%A1%8C"><span class="nav-number">11.</span> <span class="nav-text"> 示例运行</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">12.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">302</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
