@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="一个大模型应用最初可能只有几十行代码：接收问题，发送请求，输出回答。加入多轮对话后，需要保存历史消息；加入企业文档后，需要先查找相关资料；再接入报销系统，就需要查询业务数据、处理工具结果。模型调用始终存在，但应用的大部分工作逐渐变成了这些步骤之间的配合。 LangChainGo 是 LangChain 的 Go 实现。它把模型接入、提示词、流程编排、对话记忆、文档检索和工具调用拆成不同组件，通过接">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LangChainGo 学习 02：架构原理">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/11/05/go-langchaingo-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="一个大模型应用最初可能只有几十行代码：接收问题，发送请求，输出回答。加入多轮对话后，需要保存历史消息；加入企业文档后，需要先查找相关资料；再接入报销系统，就需要查询业务数据、处理工具结果。模型调用始终存在，但应用的大部分工作逐渐变成了这些步骤之间的配合。 LangChainGo 是 LangChain 的 Go 实现。它把模型接入、提示词、流程编排、对话记忆、文档检索和工具调用拆成不同组件，通过接">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-11-05T07:23:10.000Z">
+<meta property="article:modified_time" content="2026-11-10T07:31:43.971Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/05/go-langchaingo-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>LangChainGo 学习 02：架构原理 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/05/go-langchaingo-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          LangChainGo 学习 02：架构原理
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-11-05 15:23:10" itemprop="dateCreated datePublished" datetime="2026-11-05T15:23:10+08:00">2026-11-05</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>一个大模型应用最初可能只有几十行代码：接收问题，发送请求，输出回答。加入多轮对话后，需要保存历史消息；加入企业文档后，需要先查找相关资料；再接入报销系统，就需要查询业务数据、处理工具结果。模型调用始终存在，但应用的大部分工作逐渐变成了这些步骤之间的配合。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo">LangChainGo</a> 是 <a target="_blank" rel="noopener" href="https://github.com/langchain-ai/langchain">LangChain</a> 的 Go 实现。它把模型接入、提示词、流程编排、对话记忆、文档检索和工具调用拆成不同组件，通过接口组合起来。本文以一个报销制度问答应用为线索，沿着请求的执行过程，介绍这些组件的职责与实现。</p>
+<span id="more"></span>
+<h2 id="整体结构"><a class="markdownIt-Anchor" href="#整体结构"></a> 整体结构</h2>
+<p><strong>LangChainGo 作为 Go 库运行在应用进程中</strong>。应用创建所需组件，再调用它们；模型服务、向量数据库和业务系统位于这些组件的另一端。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">[命令行程序 / HTTP 服务 / 后台任务]</span><br><span class="line">                  |</span><br><span class="line">                  v</span><br><span class="line">       [chains 流程编排] &lt;----- [memory 对话历史]</span><br><span class="line">                  |</span><br><span class="line">         +--------+--------+</span><br><span class="line">         |                 |</span><br><span class="line">         v                 v</span><br><span class="line"> [prompts 提示词模板]  [Retriever 文档查询]</span><br><span class="line">         |                 |</span><br><span class="line">         v                 v</span><br><span class="line">    [llms.Model]     [vectorstores + embeddings]</span><br><span class="line">         |                 |</span><br><span class="line">         v                 v</span><br><span class="line">   [模型服务适配器]     [向量数据库 / 向量服务]</span><br><span class="line">         |</span><br><span class="line">         v</span><br><span class="line">     [模型服务]</span><br><span class="line"></span><br><span class="line">[agents.Executor] ---&gt; [Agent.Plan 选择下一步]</span><br><span class="line">         |                       ^</span><br><span class="line">         v                       |</span><br><span class="line">    [tools 工具] -------- [工具执行结果]</span><br><span class="line">         |</span><br><span class="line">         v</span><br><span class="line"> [业务系统 / 搜索服务 / 计算逻辑]</span><br></pre></td></tr></table></figure>
+<p>图中有两种常见流程。普通问答按照事先安排的步骤执行：准备提示词、调用模型、解析回答。智能体则多了一个判断过程：模型可能先选择工具，程序执行后，再让模型决定继续调用工具还是给出答案。</p>
+<p>这些能力可以分别采用。一个摘要接口只需要模型和提示词；制度问答还需要文档检索；查询报销进度时，再加入访问业务系统的工具。理解架构的关键，是看清每个步骤接收什么、返回什么，以及由谁安排执行顺序。</p>
+<h2 id="目录地图"><a class="markdownIt-Anchor" href="#目录地图"></a> 目录地图</h2>
+<p>仓库主要按能力组织包，公共接口和具体接入实现分开存放：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">langchaingo/</span><br><span class="line">|-- llms/              模型接口、消息、调用选项</span><br><span class="line">|   |-- openai/        OpenAI 接入及内部 HTTP client</span><br><span class="line">|   |-- anthropic/     Anthropic 接入及内部 HTTP client</span><br><span class="line">|   |-- ollama/        Ollama 接入</span><br><span class="line">|   `-- cache/         模型响应缓存</span><br><span class="line">|-- prompts/           字符串模板、聊天模板、模板渲染</span><br><span class="line">|-- outputparser/      模型输出解析</span><br><span class="line">|-- chains/            模型链、文档问答、文档组合等流程</span><br><span class="line">|-- memory/            对话历史及不同保留策略</span><br><span class="line">|-- documentloaders/   文本、HTML、PDF 等资料读取</span><br><span class="line">|-- textsplitter/      长文本切分</span><br><span class="line">|-- embeddings/        文本向量生成</span><br><span class="line">|-- vectorstores/      向量存储接入及检索器</span><br><span class="line">|-- agents/            智能体决策与执行循环</span><br><span class="line">|-- tools/             工具接口和具体工具</span><br><span class="line">|-- schema/            文档、记忆、检索等共享类型与接口</span><br><span class="line">|-- callbacks/         模型、链、工具等执行事件</span><br><span class="line">`-- httputil/          HTTP client、Transport 等公共能力</span><br></pre></td></tr></table></figure>
+<p>例如，<code>chains.LLMChain</code> 持有 <code>llms.Model</code>，并没有指定必须使用哪个模型服务。<code>chains.RetrievalQA</code> 持有 <code>schema.Retriever</code>，也没有指定必须使用哪种向量数据库。具体实现由创建组件的代码传进去。</p>
+<p><code>schema</code> 集中了多个模块需要共同理解的对象，如文档、历史消息存储接口、检索接口和智能体步骤。模型消息与调用接口则主要定义在 <code>llms</code> 中。阅读源码时，可以先看这些约定，再进入某个具体实现。</p>
+<h2 id="模型接入"><a class="markdownIt-Anchor" href="#模型接入"></a> 模型接入</h2>
+<h3 id="统一接口"><a class="markdownIt-Anchor" href="#统一接口"></a> 统一接口</h3>
+<p>不同模型服务的请求格式、消息角色和响应字段各不相同。如果问答流程直接处理这些差异，更换服务就会牵动提示词、记忆和工具调用代码。LangChainGo 通过 <code>llms.Model</code> 将模型调用集中到一个入口。</p>
+<p>下面是 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/llms/llms.go"><code>llms/llms.go</code></a> 中的接口，省略了注释：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Model <span class="keyword">interface</span> &#123;</span><br><span class="line">    GenerateContent(ctx context.Context, messages []MessageContent, options ...CallOption) (*ContentResponse, <span class="type">error</span>)</span><br><span class="line">    Call(ctx context.Context, prompt <span class="type">string</span>, options ...CallOption) (<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>GenerateContent</code> 接收消息序列，返回统一的响应对象。<code>Call</code> 是为兼容早期代码保留的字符串接口，源码已将它标记为弃用；新的单次文本调用可以使用 <code>GenerateFromSinglePrompt</code>，它会把文本包装成一条用户消息，再调用 <code>GenerateContent</code>。</p>
+<p>这个接口统一了调用方式，但具体模型支持哪些输入和参数，仍然由模型服务及对应实现决定。例如，具备图片内容类型，不代表所有模型都支持图片。</p>
+<h3 id="消息与响应"><a class="markdownIt-Anchor" href="#消息与响应"></a> 消息与响应</h3>
+<p>一条消息可能同时包含文字、图片或工具结果，单个字符串无法完整描述。为此，<a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/llms/generatecontent.go"><code>llms/generatecontent.go</code></a> 将消息拆成角色和内容片段：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> MessageContent <span class="keyword">struct</span> &#123;</span><br><span class="line">    Role  ChatMessageType</span><br><span class="line">    Parts []ContentPart</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>Role</code> 表示消息来自系统、用户、模型或工具；<code>Parts</code> 保存具体内容。常见片段包括 <code>TextContent</code>、<code>ImageURLContent</code>、<code>BinaryContent</code>、<code>ToolCall</code> 和 <code>ToolCallResponse</code>。</p>
+<p>响应则放在 <code>ContentResponse.Choices</code> 中。每个 <code>ContentChoice</code> 可以包含回答文本、停止原因、用量信息以及工具调用。这样，普通问答可以读取文本，工具执行流程可以读取工具名称和参数。</p>
+<p>读取响应时，还要留意不同服务对 <code>Choices</code> 的组织方式。OpenAI 实现通常用它表示候选回答，Anthropic 实现则将响应中的内容块逐项转换为 choice。需要处理工具或多种内容时，应结合具体实现读取，不能一律只取第一项文本。</p>
+<h3 id="服务适配"><a class="markdownIt-Anchor" href="#服务适配"></a> 服务适配</h3>
+<p>发送请求前，适配器会把消息转换成模型服务要求的格式。以 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/llms/openai/openaillm.go"><code>llms/openai/openaillm.go</code></a> 为例，<code>GenerateContent</code> 主要完成以下工作：</p>
+<ul>
+<li>应用本次调用的选项，确定模型和生成参数。</li>
+<li>将 human、AI 等消息角色转换为服务使用的 user、assistant 等角色。</li>
+<li>整理图片、工具调用和工具结果，生成请求结构。</li>
+<li>调用内部 client，再把响应转换为 <code>ContentResponse</code>。</li>
+</ul>
+<p>内部 client 位于 <code>llms/openai/internal/openaiclient</code>，负责构造 URL、设置请求头、发送 HTTP 请求和读取响应。Anthropic 也采用了外层消息转换、内层 HTTP client 的分工，但具体消息格式和事件解析各自实现。</p>
+<p>配置也分为两类：构造函数的选项用于设置密钥、基础地址、默认模型和 HTTP client；<code>llms.CallOption</code> 用于设置本次生成的参数，例如输出长度和流式回调。创建模型对象后，同一个对象可以被多个流程使用，每次调用再传入各自的选项。</p>
+<h2 id="提示词与解析"><a class="markdownIt-Anchor" href="#提示词与解析"></a> 提示词与解析</h2>
+<p>模型接通以后，下一个问题是如何稳定地组织输入和读取输出。以报销制度问答为例，固定要求是“根据资料回答”，变化的部分是用户问题和查到的制度内容。<code>prompts</code> 管理这些输入，<code>outputparser</code> 处理模型返回的文本。</p>
+<h3 id="提示词模板"><a class="markdownIt-Anchor" href="#提示词模板"></a> 提示词模板</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/prompts/prompt_template.go"><code>prompts/prompt_template.go</code></a> 中，<code>NewPromptTemplate</code> 默认采用 Go template 语法。<code>Format</code> 先合并预设变量和本次输入，再交给模板渲染器；同名变量以本次输入为准。</p>
+<p>模板中的 <code>&#123;&#123;.question&#125;&#125;</code>、<code>&#123;&#123;.context&#125;&#125;</code> 因此可以分别填入问题与资料。Go 模板渲染器设置了 <code>missingkey=error</code>，缺少变量时会返回错误，避免把不完整的提示词继续发给模型。</p>
+<p>提示词有两种常见形式：一种是“请根据资料回答这个问题”这样的整段文本，另一种是分别包含系统指令和用户问题的消息列表。为了让后续组件能使用这两种模板，字符串模板和聊天模板都提供了 <code>FormatPrompt(values)</code> 方法：填入变量后，返回一个 <code>PromptValue</code>，表示已经准备好的提示词。</p>
+<p><code>PromptValue</code> 定义在 <code>llms/prompts.go</code>，提供两种读取结果的方式：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> PromptValue <span class="keyword">interface</span> &#123;</span><br><span class="line">    String() <span class="type">string</span></span><br><span class="line">    Messages() []ChatMessage</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong><code>String()</code></strong>：将提示词作为一段文本读取。</li>
+<li><strong><code>Messages()</code></strong>：将提示词作为带角色的消息列表读取。</li>
+</ul>
+<p>两种模板返回的具体对象不同，转换方式也不同：</p>
+<table>
+<thead>
+<tr>
+<th>模板结果</th>
+<th><code>String()</code> 的结果</th>
+<th><code>Messages()</code> 的结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>StringPromptValue</code></td>
+<td>原始文本</td>
+<td>将整段文本放入一条 human 消息</td>
+</tr>
+<tr>
+<td><code>ChatPromptValue</code></td>
+<td>将各条消息加上角色前缀，拼成文本</td>
+<td>保留各条消息及其角色</td>
+</tr>
+</tbody>
+</table>
+<p>例如，聊天模板生成了“system：根据报销制度回答”和“human：报销需要哪些材料”两条消息。调用 <code>Messages()</code> 会得到这两条独立消息；调用 <code>String()</code> 则得到一段包含角色前缀的文本。后续组件可以按需要读取结果，再发起模型调用。</p>
+<h3 id="输出解析"><a class="markdownIt-Anchor" href="#输出解析"></a> 输出解析</h3>
+<p>如果程序只负责显示回答，读取字符串就够了。但如果下一步需要从回答中提取字段、评分或列表，就需要一层解析逻辑。</p>
+<p><code>schema.OutputParser</code> 提供 <code>Parse</code> 和 <code>ParseWithPrompt</code> 等方法。<code>LLMChain</code> 默认使用 <code>outputparser.Simple</code>，其 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/outputparser/simple.go"><code>ParseWithPrompt</code></a> 实现只有一次字符串处理：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(p Simple)</span></span> ParseWithPrompt(text <span class="type">string</span>, _ llms.PromptValue) (any, <span class="type">error</span>) &#123;</span><br><span class="line">    <span class="keyword">return</span> strings.TrimSpace(text), <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>默认解析器只去掉文本首尾的空白。需要更严格的结果时，可以替换解析器；解析失败会返回错误，由调用方决定如何处理。这里区分了两项工作：提示词表达期望格式，解析器检查模型实际返回了什么。</p>
+<h2 id="链的执行"><a class="markdownIt-Anchor" href="#链的执行"></a> 链的执行</h2>
+<p>模板和模型可以单独使用，但完整问答还包含读取历史、检查输入、解析回答和保存结果等步骤。如果每个接口都重新写一遍，处理顺序很容易出现差异。<code>chains</code> 将这些步骤组织成可复用的执行流程。</p>
+<h3 id="调用约定"><a class="markdownIt-Anchor" href="#调用约定"></a> 调用约定</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/chains/chains.go"><code>chains/chains.go</code></a> 定义了 <code>Chain</code>，省略注释后如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Chain <span class="keyword">interface</span> &#123;</span><br><span class="line">    Call(ctx context.Context, inputs <span class="keyword">map</span>[<span class="type">string</span>]any, options ...ChainCallOption) (<span class="keyword">map</span>[<span class="type">string</span>]any, <span class="type">error</span>)</span><br><span class="line">    GetMemory() schema.Memory</span><br><span class="line">    GetInputKeys() []<span class="type">string</span></span><br><span class="line">    GetOutputKeys() []<span class="type">string</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>输入输出通过具名字段传递。例如，普通模型链可以接收 <code>question</code>，返回 <code>text</code>；文档问答链接收 <code>query</code>，内部再准备问题和文档。<code>GetInputKeys</code>、<code>GetOutputKeys</code> 说明需要哪些字段，执行时据此检查字段是否齐全。具体字段的类型通常还要由各个链自行检查。</p>
+<p>包级函数 <code>chains.Call(ctx, chain, inputs)</code> 负责安排公共步骤，执行顺序如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">调用者输入</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">复制输入，加载并合并记忆变量</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">检查输入字段</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">执行 chain.Call</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">检查输出字段</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">保存本轮输入与输出</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">返回结果</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>chains.Call</code> 是包里的函数，<code>chain.Call</code> 是某个链对象的方法。前者安排完整流程，后者执行该链自己的工作。因此，业务代码通常调用前者；只有一个输入和一个字符串输出时，还可以使用 <code>chains.Run</code>，它内部仍然经过 <code>chains.Call</code>。</p>
+<h3 id="模型链"><a class="markdownIt-Anchor" href="#模型链"></a> 模型链</h3>
+<p>最基础的实现是 <code>LLMChain</code>。它持有提示词模板、模型、记忆和解析器，执行主体见 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/chains/llm.go"><code>chains/llm.go</code></a>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">promptValue, err := c.Prompt.FormatPrompt(values)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">result, err := llms.GenerateFromSinglePrompt(ctx, c.LLM, promptValue.String(), getLLMCallOptions(options...)...)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">finalOutput, err := c.OutputParser.ParseWithPrompt(result, promptValue)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> <span class="keyword">map</span>[<span class="type">string</span>]any&#123;c.OutputKey: finalOutput&#125;, <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>这段代码对应三个连续步骤：生成提示词，调用模型，解析回答。默认输出字段是 <code>text</code>。源码中也能看到，当前这条调用路径使用 <code>promptValue.String()</code>，最终走单条文本提示的调用方式。</p>
+<p><code>NewLLMChain</code> 默认装入 <code>memory.Simple</code>。这个实现的加载和保存方法都不记录内容，因此，创建模型链本身不会自动获得对话记忆。需要连续对话时，再显式提供保存历史的实现。</p>
+<p>更复杂的链也沿用同一个接口。例如，文档问答链在内部调用模型链，智能体执行器本身也实现 <code>Chain</code>。这样，外层可以复用相同的执行入口，而各个对象负责不同的具体步骤。</p>
+<h2 id="对话记忆"><a class="markdownIt-Anchor" href="#对话记忆"></a> 对话记忆</h2>
+<p>用户先问“报销需要哪些材料”，接着问“电子发票也可以吗”，第二个问题依赖上一轮内容。模型 API 的一次调用通常需要程序主动附上历史。LangChainGo 将这项工作拆成 <code>如何组织历史</code> 和 <code>历史保存在哪里</code> 两部分。</p>
+<h3 id="历史存储"><a class="markdownIt-Anchor" href="#历史存储"></a> 历史存储</h3>
+<p><code>schema.ChatMessageHistory</code> 约定消息的添加、读取、替换和清空。默认实现位于 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/memory/chat.go"><code>memory/chat.go</code></a>，实际保存的是一个切片：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> ChatMessageHistory <span class="keyword">struct</span> &#123;</span><br><span class="line">    messages []llms.ChatMessage</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>AddUserMessage</code>、<code>AddAIMessage</code> 向切片追加内容，<code>Messages</code> 返回历史。这个对象的生命周期跟随应用进程。需要持久化时，可以用 <code>memory/sqlite3</code>、<code>memory/mongo</code> 等目录中的实现替换，再通过 <code>WithChatHistory</code> 传给记忆组件。</p>
+<h3 id="记忆策略"><a class="markdownIt-Anchor" href="#记忆策略"></a> 记忆策略</h3>
+<p><code>ConversationBuffer</code> 在历史存储上增加了两项处理，源码位于 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/memory/buffer.go"><code>memory/buffer.go</code></a>：</p>
+<ul>
+<li><strong>加载</strong>：读取消息，默认转成带 <code>Human</code>、<code>AI</code> 前缀的文本，放入 <code>history</code> 变量。设置 <code>ReturnMessages</code> 后，可以返回消息列表。</li>
+<li><strong>保存</strong>：从本轮输入和输出中取出字符串，分别追加为用户消息和 AI 消息。输入输出存在多个字段时，可以指定 <code>InputKey</code> 和 <code>OutputKey</code>。</li>
+</ul>
+<p>这就解释了记忆与链的连接方式：<code>chains.Call</code> 加载 <code>history</code>，模板把它放进提示词；调用结束后，<code>chains.Call</code> 再通知记忆组件保存本轮内容。<code>chains.NewConversation</code> 则预先准备了使用 <code>history</code> 和 <code>input</code> 的模板，将这些部件连接好。</p>
+<p>对话变长后，可以换用保留最近若干轮消息的 <code>ConversationWindowBuffer</code>，或按 token 数裁剪的 <code>ConversationTokenBuffer</code>。前者在当前实现中按每轮两条消息计算窗口；后者使用 <code>llms.CountTokens</code> 估算历史文本长度，超过限制时从最早的消息开始删除。<strong>这些策略控制历史规模，实际发送的完整提示词还包括问题和其他说明</strong>。</p>
+<p>默认历史对象只是一个没有锁的切片。HTTP 应用需要自己按会话分配历史对象或存储标识，并安排同一会话的并发访问；否则多个用户的历史可能进入同一个提示词。会话归属由应用管理，记忆组件负责按约定读写消息。</p>
+<h2 id="文档问答"><a class="markdownIt-Anchor" href="#文档问答"></a> 文档问答</h2>
+<p>保存对话只能解决“前面说过什么”。要回答企业自己的报销规定，还需要把制度文档提供给模型。文档很多时，应先找出相关段落，再把问题和资料一起送入模型，这就是检索增强生成，通常简称 RAG。</p>
+<h3 id="文档准备"><a class="markdownIt-Anchor" href="#文档准备"></a> 文档准备</h3>
+<p>读取、切分和存储属于文档准备阶段，可以在资料更新时执行；查询和回答则发生在用户提问时：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">文档准备</span><br><span class="line">文件 / 网页 --&gt; Loader --&gt; Document --&gt; TextSplitter --&gt; 文档片段</span><br><span class="line">                                                           |</span><br><span class="line">                                                           v</span><br><span class="line">                                                        Embedder</span><br><span class="line">                                                           |</span><br><span class="line">                                                           v</span><br><span class="line">                                                       向量数据库</span><br><span class="line"></span><br><span class="line">问题回答</span><br><span class="line">用户问题 --&gt; Embedder --&gt; 相似度查询 --&gt; 相关文档片段</span><br><span class="line">    |                                        |</span><br><span class="line">    +----------------+-----------------------+</span><br><span class="line">                     |</span><br><span class="line">                     v</span><br><span class="line">                 提示词模板 --&gt; 模型 --&gt; 回答</span><br></pre></td></tr></table></figure>
+<p><code>documentloaders.Loader</code> 将不同来源转换为 <code>[]schema.Document</code>。例如，文本 loader 从 <code>io.Reader</code> 读取内容，PDF 和 HTML loader 各自处理对应格式。后续组件面对的都是同一种文档结构，定义在 <code>schema/documents.go</code>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Document <span class="keyword">struct</span> &#123;</span><br><span class="line">    PageContent <span class="type">string</span></span><br><span class="line">    Metadata    <span class="keyword">map</span>[<span class="type">string</span>]any</span><br><span class="line">    Score       <span class="type">float32</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>正文放在 <code>PageContent</code>；文件名、来源地址等可以放在 <code>Metadata</code>，具体信息取决于读取实现与应用补充；<code>Score</code> 可用于记录检索得分。</p>
+<p>长文档随后交给 <code>textsplitter</code>。<code>RecursiveCharacter</code> 按空行、换行、空格等分隔符逐步拆分过长内容，并尝试合并成接近目标大小的片段。默认长度函数是 Unicode 字符计数，token splitter 则使用分词结果计算长度。<code>SplitDocuments</code> 为每个片段复制原文档的 metadata，使来源信息能继续传递。</p>
+<h3 id="向量与检索"><a class="markdownIt-Anchor" href="#向量与检索"></a> 向量与检索</h3>
+<p>切分以后，需要用数值表示文本，才能查找语义相近的段落。<code>embeddings.Embedder</code> 分别提供文档批量向量化和单个问题向量化。通用的 <code>EmbedderImpl</code> 将批处理交给 <code>EmbedderClient</code>，向量由接入的模型或服务实际生成。</p>
+<p>向量存储负责把片段正文、向量和 metadata 关联起来。以 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/vectorstores/pgvector/pgvector.go"><code>vectorstores/pgvector/pgvector.go</code></a> 为例，<code>AddDocuments</code> 取出正文并调用 <code>EmbedDocuments</code>，随后将文档、向量和 metadata 批量写入 PostgreSQL；<code>SimilaritySearch</code> 则先调用 <code>EmbedQuery</code>，再执行向量距离查询。</p>
+<p>可见，在这个实现中，调用者传入文档和问题文本，store 内部会使用配置的 embedder。准备文档和查询问题时应使用相匹配的向量模型，才能让相似度比较有意义。</p>
+<p>问答流程只需要“传入问题，拿到相关文档”。<a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/schema/retrivers.go"><code>schema.Retriever</code></a> 将这一需求定义为单个方法：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Retriever <span class="keyword">interface</span> &#123;</span><br><span class="line">    GetRelevantDocuments(ctx context.Context, query <span class="type">string</span>) ([]Document, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>vectorstores.ToRetriever</code> 保存 store、返回片段数量和查询选项。执行 <code>GetRelevantDocuments</code> 时，再调用 store 的 <code>SimilaritySearch</code>。因此，问答流程可以使用同一个文档查询接口，具体数据库的查询方式留在各个 store 中。</p>
+<h3 id="资料与回答"><a class="markdownIt-Anchor" href="#资料与回答"></a> 资料与回答</h3>
+<p>当用户问“报销需要哪些材料”时，<code>RetrievalQA</code> 先获得相关段落，再交给后续的回答流程。下面是 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/chains/retrieval_qa.go"><code>chains/retrieval_qa.go</code></a> 中的关键调用，省略错误处理：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">docs, err := c.Retriever.GetRelevantDocuments(ctx, query)</span><br><span class="line"></span><br><span class="line">result, err := Call(ctx, c.CombineDocumentsChain, <span class="keyword">map</span>[<span class="type">string</span>]any&#123;</span><br><span class="line">    <span class="string">&quot;question&quot;</span>:        query,</span><br><span class="line">    <span class="string">&quot;input_documents&quot;</span>: docs,</span><br><span class="line">&#125;, options...)</span><br></pre></td></tr></table></figure>
+<p><code>question</code> 是原问题，<code>input_documents</code> 是查到的资料。<code>NewRetrievalQAFromLLM</code> 默认选择 <code>LoadStuffQA</code>：它创建一个 <code>StuffDocuments</code>，将各片段的正文用空行连接，放入提示词的 <code>context</code> 变量，然后调用 <code>LLMChain</code> 生成回答。</p>
+<p>因此，这条默认路径的实际过程很具体：查出报销条款，拼接条款正文，填入“根据这些资料回答问题”的模板，再调用模型。设置 <code>ReturnSourceDocuments</code> 后，还可以把查到的文档随回答返回，供应用展示来源；默认回答并不会自动逐条列出引用。</p>
+<p>如果检索结果仍然太长，可以采用其他文档组合策略：</p>
+<ul>
+<li><strong>StuffDocuments</strong>：直接拼接资料，流程最短，但需要控制资料总长度。</li>
+<li><strong>MapReduceDocuments</strong>：分别处理文档，再汇总各份结果；处理文档的阶段通过 <code>chains.Apply</code> 支持限制并发数量。</li>
+<li><strong>RefineDocuments</strong>：先用第一份资料生成答案，再逐份读取资料修订答案，后一步依赖前一步的结果。</li>
+</ul>
+<p>这些策略改变的是资料如何进入回答过程。检索器仍负责查资料，模型仍负责生成文本，各部分通过文档和链的接口协作。</p>
+<h2 id="智能体循环"><a class="markdownIt-Anchor" href="#智能体循环"></a> 智能体循环</h2>
+<p>制度文档可以回答报销规则，却无法告诉用户某张报销单的最新状态。要查询当前进度，需要访问业务系统；如果用户的问题不同，所需操作也不同，就需要在执行过程中选择工具。</p>
+<h3 id="决策与执行"><a class="markdownIt-Anchor" href="#决策与执行"></a> 决策与执行</h3>
+<p><code>agents.Agent</code> 的 <code>Plan</code> 方法接收用户输入和已经执行的步骤，返回待执行的动作，或者最终答案。执行这些动作的是 <code>agents.Executor</code>。它实现了 <code>chains.Chain</code>，因此也可以从 <code>chains.Call</code> 进入。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/agents/executor.go"><code>agents/executor.go</code></a> 中的循环主体如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">steps := <span class="built_in">make</span>([]schema.AgentStep, <span class="number">0</span>)</span><br><span class="line"><span class="keyword">for</span> i := <span class="number">0</span>; i &lt; e.MaxIterations; i++ &#123;</span><br><span class="line">    <span class="keyword">var</span> finish <span class="keyword">map</span>[<span class="type">string</span>]any</span><br><span class="line">    steps, finish, err = e.doIteration(ctx, steps, nameToTool, inputs, options...)</span><br><span class="line">    <span class="keyword">if</span> finish != <span class="literal">nil</span> || err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> finish, err</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>每次迭代先调用 <code>Agent.Plan</code>。如果返回最终答案，循环结束；如果返回动作，执行器按工具名称找到实现，调用工具，并将动作和结果追加到 <code>steps</code>。下一轮规划时，这些结果会再次交给 agent。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">用户问题</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">Agent.Plan &lt;--------------------------------+</span><br><span class="line">    |                                      |</span><br><span class="line">    +--&gt; 最终答案 --&gt; 返回                  |</span><br><span class="line">    |                                      |</span><br><span class="line">    +--&gt; 工具动作 --&gt; Tool.Call --&gt; 步骤记录-+</span><br></pre></td></tr></table></figure>
+<p>默认最大迭代次数为 5，达到上限仍未完成时返回 <code>ErrNotFinished</code>。一次规划可以返回多个动作，但当前执行器通过普通 <code>for</code> 循环逐个调用工具。同一轮返回多个工具请求，并不表示这些工具会并行执行。</p>
+<h3 id="工具协议"><a class="markdownIt-Anchor" href="#工具协议"></a> 工具协议</h3>
+<p>工具接口定义在 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/tools/tool.go"><code>tools/tool.go</code></a>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Tool <span class="keyword">interface</span> &#123;</span><br><span class="line">    Name() <span class="type">string</span></span><br><span class="line">    Description() <span class="type">string</span></span><br><span class="line">    Call(ctx context.Context, input <span class="type">string</span>) (<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>名称和描述供模型了解工具用途，<code>Call</code> 执行实际操作。例如，应用可以提供一个报销状态查询工具，接收报销单号，调用内部 API，再返回进度文本。模型选择工具和输入，Go 程序负责实际查询。</p>
+<p>模型输出如何变成动作，取决于 agent 实现。<code>OneShotZeroAgent</code> 从文本中解析 <code>Action</code>、<code>Action Input</code> 和 <code>Final Answer</code>；<code>OpenAIFunctionsAgent</code> 则把工具描述传给模型，从响应的工具调用字段中解析动作，再将工具结果整理为下一轮消息。</p>
+<p>当前 <code>OpenAIFunctionsAgent</code> 会将 <code>tools.Tool</code> 包装成带有 <code>__arg1</code> 字符串参数的函数定义，再把这个值交给 <code>Tool.Call</code>。它沿用了工具接口的单字符串约定。自定义工具需要自行检查这个字符串的内容，并处理业务系统返回的结果。</p>
+<p>执行器只从注册的工具中查找名称。找不到工具时，它会把错误提示记录为一次观察结果，供下一轮规划使用；工具执行返回错误时，当前流程则直接返回错误。工具的业务权限和参数规则仍在具体实现中处理。</p>
+<h2 id="流式输出与回调"><a class="markdownIt-Anchor" href="#流式输出与回调"></a> 流式输出与回调</h2>
+<p>一次问答可能同时经历检索、模型生成和工具查询。只看到最终答案，很难知道耗时发生在哪里；而等到全部生成完再显示，也会增加用户的等待感。LangChainGo 提供流式回调与执行事件，分别处理即时输出和过程记录。</p>
+<h3 id="响应片段"><a class="markdownIt-Anchor" href="#响应片段"></a> 响应片段</h3>
+<p><code>llms.CallOptions.StreamingFunc</code> 接收生成过程中的字节片段。OpenAI 和 Anthropic 的内部 client 会据此开启流式请求，再各自解析服务返回的事件。</p>
+<p>例如，Anthropic client 的 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/llms/anthropic/internal/anthropicclient/messages.go"><code>handleTextDelta</code></a> 会先将文字追加到响应内容中，再调用回调。下面是回调部分：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> payload.StreamingFunc != <span class="literal">nil</span> &#123;</span><br><span class="line">    err := payload.StreamingFunc(ctx, []<span class="type">byte</span>(text))</span><br><span class="line">    <span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> response, fmt.Errorf(<span class="string">&quot;streaming func returned an error: %w&quot;</span>, err)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>应用可以把片段打印到终端，也可以转发给浏览器。回调处于响应处理路径上，耗时操作会影响读取速度；回调返回错误时，解析流程会收到这个错误。</p>
+<h3 id="执行事件"><a class="markdownIt-Anchor" href="#执行事件"></a> 执行事件</h3>
+<p><code>callbacks.Handler</code> 提供模型开始与结束、链开始与结束、工具事件、检索事件、智能体动作等方法。具体组件在相应位置主动调用这些方法，应用可以记录输入输出、阶段耗时和中间动作。</p>
+<p>例如，<code>chains.Call</code> 在执行链前后调用链回调，<code>vectorstores.Retriever</code> 在相似度查询前后调用检索回调。回调对象需要配置到对应组件上，外层链的 handler 不会自动为所有内层对象建立完整的事件记录。</p>
+<p>调用过程还会向下传递 <code>context.Context</code>，模型的 HTTP 请求使用 <code>http.NewRequestWithContext</code> 创建。应用因此可以通过 context 控制请求期限。公共 <code>httputil.DefaultClient</code> 没有设置 <code>Timeout</code>，实际的调用期限需要由应用传入的 context 或自定义 HTTP client 确定。</p>
+<h2 id="模型缓存"><a class="markdownIt-Anchor" href="#模型缓存"></a> 模型缓存</h2>
+<p>对于相同输入重复生成的场景，可以在模型前加一层响应缓存。LangChainGo 的实现位于 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/llms/cache/cache.go"><code>llms/cache/cache.go</code></a>，<code>Cacher</code> 本身也实现 <code>llms.Model</code>。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">LLMChain --&gt; Cacher --&gt; 缓存命中 --&gt; 返回响应</span><br><span class="line">                |</span><br><span class="line">                +--&gt; 缓存未命中 --&gt; 原始模型 --&gt; 保存响应</span><br></pre></td></tr></table></figure>
+<p>调用进入 <code>Cacher.GenerateContent</code> 后，先根据本次选项生成 <code>CallOptions</code>，再将它与消息一起编码为 JSON，计算 SHA-256 作为缓存键。命中时直接返回响应，未命中时才调用底层模型并保存结果。上层仍然面对同一个模型接口，因此链的执行代码可以继续使用。</p>
+<p>缓存保存的是一次模型调用的结果，对话记忆保存的是某个会话的消息。历史变化会改变传给模型的消息，也会改变缓存键。两者解决的问题不同，但都可以接入同一条流程。</p>
+<p>当前缓存键由消息和本次调用选项组成，没有自动加入底层模型对象的全部构造配置。因此，如果多个模型共用一个缓存后端，应用需要安排缓存隔离，避免相同请求落到另一模型留下的结果上。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>LangChainGo 通过接口把一次模型请求扩展成完整应用：模型适配器处理不同服务的调用差异，提示词模板组织输入，链安排执行步骤，记忆组件把历史带入下一轮。文档问答在生成前增加资料检索，智能体则根据工具结果循环决定下一步。</p>
+<p>沿着报销问答的过程看，这些组件各有具体作用：制度从文档变成可检索的片段，相关条款进入提示词，对话历史补充问题背景，业务工具提供最新进度，模型最后生成面向用户的回答。理解这条数据和控制流程，再回到目录与接口，就能看清各模块为什么这样划分，以及它们如何共同完成一次请求。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/30/go-langchaingo-01/" rel="next" title="LangChainGo 学习 01：快速入门">
+      LangChainGo 学习 01：快速入门 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E7%BB%93%E6%9E%84"><span class="nav-number">1.</span> <span class="nav-text"> 整体结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E5%9C%B0%E5%9B%BE"><span class="nav-number">2.</span> <span class="nav-text"> 目录地图</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E6%8E%A5%E5%85%A5"><span class="nav-number">3.</span> <span class="nav-text"> 模型接入</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%9F%E4%B8%80%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.1.</span> <span class="nav-text"> 统一接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B6%88%E6%81%AF%E4%B8%8E%E5%93%8D%E5%BA%94"><span class="nav-number">3.2.</span> <span class="nav-text"> 消息与响应</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%8D%E5%8A%A1%E9%80%82%E9%85%8D"><span class="nav-number">3.3.</span> <span class="nav-text"> 服务适配</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8F%90%E7%A4%BA%E8%AF%8D%E4%B8%8E%E8%A7%A3%E6%9E%90"><span class="nav-number">4.</span> <span class="nav-text"> 提示词与解析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8F%90%E7%A4%BA%E8%AF%8D%E6%A8%A1%E6%9D%BF"><span class="nav-number">4.1.</span> <span class="nav-text"> 提示词模板</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BE%93%E5%87%BA%E8%A7%A3%E6%9E%90"><span class="nav-number">4.2.</span> <span class="nav-text"> 输出解析</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%93%BE%E7%9A%84%E6%89%A7%E8%A1%8C"><span class="nav-number">5.</span> <span class="nav-text"> 链的执行</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B0%83%E7%94%A8%E7%BA%A6%E5%AE%9A"><span class="nav-number">5.1.</span> <span class="nav-text"> 调用约定</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E9%93%BE"><span class="nav-number">5.2.</span> <span class="nav-text"> 模型链</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AF%B9%E8%AF%9D%E8%AE%B0%E5%BF%86"><span class="nav-number">6.</span> <span class="nav-text"> 对话记忆</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%86%E5%8F%B2%E5%AD%98%E5%82%A8"><span class="nav-number">6.1.</span> <span class="nav-text"> 历史存储</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%B0%E5%BF%86%E7%AD%96%E7%95%A5"><span class="nav-number">6.2.</span> <span class="nav-text"> 记忆策略</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E9%97%AE%E7%AD%94"><span class="nav-number">7.</span> <span class="nav-text"> 文档问答</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E5%87%86%E5%A4%87"><span class="nav-number">7.1.</span> <span class="nav-text"> 文档准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%91%E9%87%8F%E4%B8%8E%E6%A3%80%E7%B4%A2"><span class="nav-number">7.2.</span> <span class="nav-text"> 向量与检索</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B5%84%E6%96%99%E4%B8%8E%E5%9B%9E%E7%AD%94"><span class="nav-number">7.3.</span> <span class="nav-text"> 资料与回答</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%99%BA%E8%83%BD%E4%BD%93%E5%BE%AA%E7%8E%AF"><span class="nav-number">8.</span> <span class="nav-text"> 智能体循环</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%B3%E7%AD%96%E4%B8%8E%E6%89%A7%E8%A1%8C"><span class="nav-number">8.1.</span> <span class="nav-text"> 决策与执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B7%A5%E5%85%B7%E5%8D%8F%E8%AE%AE"><span class="nav-number">8.2.</span> <span class="nav-text"> 工具协议</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B5%81%E5%BC%8F%E8%BE%93%E5%87%BA%E4%B8%8E%E5%9B%9E%E8%B0%83"><span class="nav-number">9.</span> <span class="nav-text"> 流式输出与回调</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%93%8D%E5%BA%94%E7%89%87%E6%AE%B5"><span class="nav-number">9.1.</span> <span class="nav-text"> 响应片段</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E4%BA%8B%E4%BB%B6"><span class="nav-number">9.2.</span> <span class="nav-text"> 执行事件</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A8%A1%E5%9E%8B%E7%BC%93%E5%AD%98"><span class="nav-number">10.</span> <span class="nav-text"> 模型缓存</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">11.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">303</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
