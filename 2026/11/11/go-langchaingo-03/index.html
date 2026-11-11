@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="在前面的快速入门和架构原理中，我们已经把模型、提示词、链和文档检索放进同一个应用结构。现在继续沿着“报销制度问答”这个场景，深入看一条完整的 RAG 链路：制度文档怎样变成向量，问题怎样找到相关条款，条款又怎样进入模型的回答。 RAG 是 Retrieval-Augmented Generation，即检索增强生成。应用先从自己的数据中检索资料，再把资料和问题一起交给大模型。LangChainGo">
+<meta property="og:type" content="article">
+<meta property="og:title" content="LangChainGo 学习 03：RAG 实现">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/11/11/go-langchaingo-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="在前面的快速入门和架构原理中，我们已经把模型、提示词、链和文档检索放进同一个应用结构。现在继续沿着“报销制度问答”这个场景，深入看一条完整的 RAG 链路：制度文档怎样变成向量，问题怎样找到相关条款，条款又怎样进入模型的回答。 RAG 是 Retrieval-Augmented Generation，即检索增强生成。应用先从自己的数据中检索资料，再把资料和问题一起交给大模型。LangChainGo">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-11-11T07:32:29.000Z">
+<meta property="article:modified_time" content="2026-11-11T07:38:59.984Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/11/go-langchaingo-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>LangChainGo 学习 03：RAG 实现 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/11/go-langchaingo-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          LangChainGo 学习 03：RAG 实现
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-11-11 15:32:29" itemprop="dateCreated datePublished" datetime="2026-11-11T15:32:29+08:00">2026-11-11</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>在前面的<a href="langchaingo-quickstart.md">快速入门</a>和<a href="langchaingo-architecture.md">架构原理</a>中，我们已经把模型、提示词、链和文档检索放进同一个应用结构。现在继续沿着“报销制度问答”这个场景，深入看一条完整的 RAG 链路：制度文档怎样变成向量，问题怎样找到相关条款，条款又怎样进入模型的回答。</p>
+<p>RAG 是 Retrieval-Augmented Generation，即检索增强生成。应用先从自己的数据中检索资料，再把资料和问题一起交给大模型。LangChainGo 提供其中的文档加载、文本切分、向量模型接入、向量存储适配和问答编排组件，应用负责选择并连接它们。</p>
+<span id="more"></span>
+<h2 id="rag-的两条执行路径"><a class="markdownIt-Anchor" href="#rag-的两条执行路径"></a> RAG 的两条执行路径</h2>
+<p>假设公司发布了新的差旅制度，规定“境内住宿费上限为每晚 500 元”。模型未必见过这份制度，但应用可以把它存入知识库。员工提问“出差住宿能报多少”，应用先检索出对应条款，再要求模型依据条款回答。</p>
+<p>这分成两个执行阶段：资料变更时建立或更新索引，用户提问时检索并生成回答。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line">文档准备：在资料变更时执行</span><br><span class="line"></span><br><span class="line">[文件 / 网页 / 业务资料]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[Loader：解析为 Document]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[TextSplitter：生成文档片段]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[Embedder：生成文档向量]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[向量存储：向量、正文、metadata]</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">在线问答：在用户提问时执行</span><br><span class="line"></span><br><span class="line">[用户问题] ------------------------------------+</span><br><span class="line">     |                                        |</span><br><span class="line">     v                                        |</span><br><span class="line">[EmbedQuery：生成问题向量]                     |</span><br><span class="line">     |                                        |</span><br><span class="line">     v                                        |</span><br><span class="line">[相似度查询与过滤] &lt;---- [向量存储]             |</span><br><span class="line">     |                                        |</span><br><span class="line">     v                                        |</span><br><span class="line">[Retriever：返回相关 Document]                 |</span><br><span class="line">     |                                        |</span><br><span class="line">     v                                        |</span><br><span class="line">[组合资料与问题，渲染提示词] &lt;-----------------+</span><br><span class="line">     |</span><br><span class="line">     v</span><br><span class="line">[LLM：生成回答]</span><br><span class="line">     |</span><br><span class="line">     v</span><br><span class="line">[回答与来源展示] &lt;---- [本次检索的来源文档]</span><br></pre></td></tr></table></figure>
+<p>在 pgvector 等适配器中，图里的文档向量化由 <code>Store.AddDocuments</code> 内部触发，问题向量化由 <code>Store.SimilaritySearch</code> 内部触发。调用者可以直接传入文档和问题文本，不必先手动计算一次向量。</p>
+<p>RAG 主要改变模型本次调用能看到的资料，通常不涉及更新模型权重。知识库更新后，后续问题便可以检索到新内容；能否正确回答，仍取决于资料是否完整、检索是否命中，以及模型是否遵循资料。</p>
+<h2 id="串起整条链路的数据与接口"><a class="markdownIt-Anchor" href="#串起整条链路的数据与接口"></a> 串起整条链路的数据与接口</h2>
+<p>理解实现时，可以先记住六个约定：</p>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>主要约定</th>
+<th>传递的数据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文档</td>
+<td><code>schema.Document</code></td>
+<td>正文、metadata、检索得分</td>
+</tr>
+<tr>
+<td>文档加载器</td>
+<td><code>documentloaders.Loader</code></td>
+<td>数据源 → <code>[]schema.Document</code></td>
+</tr>
+<tr>
+<td>文本切分器</td>
+<td><code>textsplitter.TextSplitter</code></td>
+<td>字符串 → 多个字符串</td>
+</tr>
+<tr>
+<td>向量生成器</td>
+<td><code>embeddings.Embedder</code></td>
+<td>文档或问题 → 浮点向量</td>
+</tr>
+<tr>
+<td>向量存储</td>
+<td><code>vectorstores.VectorStore</code></td>
+<td>文档写入、相似度查询</td>
+</tr>
+<tr>
+<td>检索器</td>
+<td><code>schema.Retriever</code></td>
+<td>问题 → 相关文档</td>
+</tr>
+</tbody>
+</table>
+<h3 id="document保留正文与出处"><a class="markdownIt-Anchor" href="#document保留正文与出处"></a> Document：保留正文与出处</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/schema/documents.go"><code>schema/documents.go</code></a> 中的文档结构如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Document <span class="keyword">struct</span> &#123;</span><br><span class="line">    PageContent <span class="type">string</span></span><br><span class="line">    Metadata    <span class="keyword">map</span>[<span class="type">string</span>]any</span><br><span class="line">    Score       <span class="type">float32</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>PageContent</code> 是用于切分、向量化和回答的正文。<code>Metadata</code> 可以记录文件名、URL、页码、制度版本、部门、片段编号等。<code>Score</code> 可以由检索实现填入，用于表示该结果与问题的相关程度。</p>
+<p>为了让用户能从回答找到原始资料，可以将文件路径、URL、页码等来源信息放入 <code>Metadata</code>，随文档一起存储，并在检索后展示。不同 loader 会提供不同的字段：文本 loader 默认返回空 map，需要应用补充文件来源；PDF loader 会写入页码和总页数，还可以补充文件名，方便定位到具体文件的对应页面。</p>
+<h3 id="embedder区分文档与问题"><a class="markdownIt-Anchor" href="#embedder区分文档与问题"></a> Embedder：区分文档与问题</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/embeddings/embedding.go"><code>embeddings/embedding.go</code></a> 定义了两个入口：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Embedder <span class="keyword">interface</span> &#123;</span><br><span class="line">    EmbedDocuments(ctx context.Context, texts []<span class="type">string</span>) ([][]<span class="type">float32</span>, <span class="type">error</span>)</span><br><span class="line">    EmbedQuery(ctx context.Context, text <span class="type">string</span>) ([]<span class="type">float32</span>, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这两个方法分别用于准备知识库和处理用户提问。<code>EmbedDocuments</code> 一次接收多个文档片段，为每个片段生成一个向量；<code>EmbedQuery</code> 接收一个问题，生成用于搜索的问题向量。例如，制度入库时，用前者处理各条报销规定；用户问“住宿费能报多少”时，用后者处理这个问题。</p>
+<p>有些向量模型还要求调用方说明这段文字的用途：是准备存入知识库的资料，还是用来查找资料的问题。因此，两个方法也给具体实现留出了分别设置请求参数的位置。仓库中的 Bedrock/Cohere 实现就会将文档标记为 <code>search_document</code>，将问题标记为 <code>search_query</code>，再发送给模型。</p>
+<h3 id="vectorstore-与-retriever保存文档与查找资料"><a class="markdownIt-Anchor" href="#vectorstore-与-retriever保存文档与查找资料"></a> VectorStore 与 Retriever：保存文档与查找资料</h3>
+<p>制度文档切分完成后，需要存入知识库；员工提问时，又需要从中查找相关条款。<code>VectorStore</code> 为这两项操作提供统一的方法，具体的数据库读写由 pgvector、Chroma 等适配器完成。接口定义在 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/vectorstores/vectorstores.go"><code>vectorstores/vectorstores.go</code></a>：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> VectorStore <span class="keyword">interface</span> &#123;</span><br><span class="line">    AddDocuments(ctx context.Context, docs []schema.Document, options ...Option) ([]<span class="type">string</span>, <span class="type">error</span>)</span><br><span class="line">    SimilaritySearch(ctx context.Context, query <span class="type">string</span>, numDocuments <span class="type">int</span>, options ...Option) ([]schema.Document, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>AddDocuments</code> 接收文档片段，将它们写入存储，并返回记录 ID。以 pgvector 适配器为例，它会先调用配置好的 embedder 生成向量，再把向量、正文和 metadata 一起写入数据库。<code>SimilaritySearch</code> 则接收问题文本和期望返回的数量，查找语义相近的文档。例如，传入“住宿费能报多少”和数量 4，就会尝试找出最多 4 个相关片段。</p>
+<p>问答链拿到这些片段后，才能组织资料并调用模型。对它来说，只需把问题交出去，再取回相关文档，文档怎样入库、搜索哪个数据库都可以由其他组件处理。LangChainGo 用 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/schema/retrivers.go"><code>schema.Retriever</code></a> 表达这一步：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">type</span> Retriever <span class="keyword">interface</span> &#123;</span><br><span class="line">    GetRelevantDocuments(ctx context.Context, query <span class="type">string</span>) ([]Document, <span class="type">error</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>已有向量存储时，可以用 <code>vectorstores.ToRetriever(store, 4)</code> 创建检索器。这里的 <code>store</code> 指定搜索哪个存储，<code>4</code> 指定最多返回多少个片段。之后，问答链调用 <code>GetRelevantDocuments(ctx, question)</code>，检索器便会将请求转交给 <code>store.SimilaritySearch(ctx, question, 4)</code>，再把查到的文档返回给问答链。创建时还可以传入过滤条件、分数阈值等查询选项。</p>
+<p>这种分工也方便调整检索方式。例如，希望同时搜索关键词和向量，再合并结果，可以编写自己的 Retriever，在 <code>GetRelevantDocuments</code> 中完成这些步骤。只要最后返回 <code>[]schema.Document</code>，就能继续交给原来的问答链生成回答。</p>
+<h2 id="文档加载先得到可用的文本"><a class="markdownIt-Anchor" href="#文档加载先得到可用的文本"></a> 文档加载：先得到可用的文本</h2>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/documentloaders/documentloaders.go"><code>documentloaders.Loader</code></a> 包含 <code>Load</code> 和 <code>LoadAndSplit</code>。后者通常先调用 <code>Load</code>，再调用 <code>textsplitter.SplitDocuments</code>，并没有在后台建立向量索引。</p>
+<p>常见实现的处理方式如下：</p>
+<table>
+<thead>
+<tr>
+<th>Loader</th>
+<th>处理方式</th>
+<th>使用时需要补充的信息</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Text</code></td>
+<td>从 <code>io.Reader</code> 读取全文，返回一个 Document</td>
+<td>文件路径、资料版本等来源字段</td>
+</tr>
+<tr>
+<td><code>HTML</code></td>
+<td>解析 HTML，提取文本并清理，返回一个 Document</td>
+<td>URL，以及按站点特点提取正文的逻辑</td>
+</tr>
+<tr>
+<td><code>PDF</code></td>
+<td>按页提取文字，每页生成一个 Document</td>
+<td>文件标识；默认已有 <code>page</code>、<code>total_pages</code></td>
+</tr>
+<tr>
+<td><code>CSV</code></td>
+<td>首行作为表头，每行生成一个文档，正文使用“列名: 值”</td>
+<td>业务主键与字段含义；默认已有 <code>row</code> 行号</td>
+</tr>
+</tbody>
+</table>
+<p>例如，<code>NewHTML(reader)</code> 接收的是 HTML 内容的 reader。下载网页、处理登录态、限制抓取范围等工作，需要由上游代码安排。通用 HTML 文本提取也可能包含菜单、页脚等内容，知识库通常需要按具体页面结构提取正文。</p>
+<p>PDF loader 使用 <code>ledongthuc/pdf</code> 提取已有的文字层。扫描版 PDF 的信息可能只有图片，需要先经过 OCR。对于制度表格，还应检查列名、金额、单位是否在提取后保持了正确对应关系。解析阶段丢失的关系，很难依靠后续向量搜索恢复。</p>
+<h2 id="文本切分决定知识库的检索粒度"><a class="markdownIt-Anchor" href="#文本切分决定知识库的检索粒度"></a> 文本切分：决定知识库的检索粒度</h2>
+<p>将整本制度保存为一个向量，容易让不同条款的语义混在一起；切得过碎，又可能把“适用条件”和“报销上限”分开。因此，chunk 的边界直接影响检索和回答质量。</p>
+<h3 id="递归字符切分的执行过程"><a class="markdownIt-Anchor" href="#递归字符切分的执行过程"></a> 递归字符切分的执行过程</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/textsplitter/recursive_character.go"><code>RecursiveCharacter</code></a> 默认按以下分隔符依次尝试：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">空行 &quot;\n\n&quot; → 换行 &quot;\n&quot; → 空格 &quot; &quot; → 字符级 &quot;&quot;</span><br></pre></td></tr></table></figure>
+<p>处理一个文本段时，它找到当前可用的分隔符并拆开文本。较短的部分进入待合并列表，过长的部分再用后续分隔符递归拆分。最后，<code>mergeSplits</code> 将小片段合并到接近目标长度，并在进入下一块时尝试保留一部分尾部内容。</p>
+<p>这样做是为了尽量先保留段落边界，再处理段落中仍然过长的内容。中文制度中还可以显式加入“。”、“；”等分隔符，或按业务条款预先组织文本。</p>
+<p>使用时，可以通过 <code>ChunkSize</code> 设置每块的目标长度，通过 <code>ChunkOverlap</code> 设置相邻块希望保留的重叠长度。片段应尽量包含完整的条款，同时为问题、提示词和其他检索结果留出输入空间。例如，<code>住宿费每晚最多报销 500 元</code> 和 <code>超过标准需提前审批</code> 可能刚好被分到相邻两块。设置适当的 overlap，可以让后一块保留前一块末尾的部分内容，使检索到的片段更容易同时包含报销标准和例外条件。重叠过多也会增加重复内容，因此应结合实际切分结果调整。</p>
+<h3 id="按-token-与按-markdown-结构切分"><a class="markdownIt-Anchor" href="#按-token-与按-markdown-结构切分"></a> 按 token 与按 Markdown 结构切分</h3>
+<p><code>TokenSplitter</code> 使用 <code>tiktoken-go</code> 编码文本，以 token 窗口切分，再解码为文本。窗口步长为 <code>ChunkSize - ChunkOverlap</code>，因此应用应保证 <code>ChunkSize &gt; 0</code> 且 <code>0 &lt;= ChunkOverlap &lt; ChunkSize</code>。</p>
+<p>token 数取决于模型使用的分词规则，同一段文字在不同规则下可能得到不同的 token 数。<code>TokenSplitter</code> 默认采用 <code>cl100k_base</code> 这套规则，因此它切出的“500 个 token”，在另一个模型中可能超过 500 个。选择分词规则时，应与所用模型匹配，才能更准确地控制片段长度。</p>
+<p><code>MarkdownTextSplitter</code> 则通过 CommonMark 解析器识别文档结构，再结合二级 splitter 处理长内容，并提供标题层级、代码块、表格行等相关选项。对于技术文档，保留标题路径往往能帮助片段在脱离原文后仍表达完整含义。</p>
+<h3 id="切分以后保留下来的内容"><a class="markdownIt-Anchor" href="#切分以后保留下来的内容"></a> 切分以后保留下来的内容</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/textsplitter/split_documents.go"><code>SplitDocuments</code></a> 取出每篇文档的正文和 metadata，切分正文后，为每个 chunk 新建 metadata map 并复制顶层键值。</p>
+<p>它会保留已有的文件来源或页码，但不会自动创建字符偏移、chunk ID 或标题路径；这些字段需要由应用或相应 splitter 的处理结果补充。这里的 map 复制也是浅复制，嵌套 map、切片等值仍可能共享底层对象。</p>
+<h2 id="embedding把片段与问题转换成可比较的向量"><a class="markdownIt-Anchor" href="#embedding把片段与问题转换成可比较的向量"></a> Embedding：把片段与问题转换成可比较的向量</h2>
+<p>通用的 <code>EmbedderImpl</code> 包装一个 <code>EmbedderClient</code>，后者只需实现 <code>CreateEmbedding(ctx, texts)</code>。例如，<code>openai.LLM</code> 同时提供生成能力和这个 embedding client 方法，可以交给 <code>embeddings.NewEmbedder</code> 使用。</p>
+<p>它的文档处理过程可以概括为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">[]string</span><br><span class="line">   → 可选地将换行替换为空格</span><br><span class="line">   → 按 BatchSize 拆批</span><br><span class="line">   → 顺序调用 client.CreateEmbedding</span><br><span class="line">   → 按批次顺序拼接结果</span><br><span class="line">   → [][]float32</span><br></pre></td></tr></table></figure>
+<p><code>BatchSize</code> 控制一次请求发送多少个文档片段。例如，设为 32 时，100 个片段会分成四次请求，分别处理 32、32、32 和 4 个片段。每个片段有多长，则由前面的文本切分决定。如果模型提示输入过长，可以缩短片段，或减少每批发送的片段数量。</p>
+<p><code>EmbedQuery</code> 则对单条问题做相同的可选换行处理，再请求一个向量。向量维度、语义能力和语言覆盖来自具体 embedding 模型。通用包装器主要安排输入预处理与批处理。</p>
+<p>生成回答的模型和 embedding 模型可以分别选择。例如，文档与问题使用同一个中文 embedding 模型，回答阶段使用另一个聊天模型。二者分别承担“查找资料”和“依据资料表达答案”的任务。</p>
+<h2 id="以-pgvector-为例理解向量存储"><a class="markdownIt-Anchor" href="#以-pgvector-为例理解向量存储"></a> 以 pgvector 为例理解向量存储</h2>
+<p>前面已经把制度切成片段，并介绍了如何为片段生成向量。接下来的问题是：这些内容存在哪里，用户提问时又怎样找到它们？</p>
+<p>这里使用 PostgreSQL 和它的 pgvector 扩展。PostgreSQL 保存制度正文、来源和版本等信息，pgvector 为它增加保存向量和比较向量距离的能力。LangChainGo 的 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/vectorstores/pgvector/pgvector.go"><code>vectorstores/pgvector</code></a> 适配器把这些数据库操作封装起来，应用通过 <code>AddDocuments</code> 写入资料，通过 <code>SimilaritySearch</code> 查找资料。</p>
+<h3 id="一条制度需要保存哪些内容"><a class="markdownIt-Anchor" href="#一条制度需要保存哪些内容"></a> 一条制度需要保存哪些内容</h3>
+<p>假设切分后得到这样一个片段：“境内出差住宿费上限为每晚 500 元。”保存它时，需要将三类内容关联起来：</p>
+<table>
+<thead>
+<tr>
+<th>内容</th>
+<th>在这个例子中保存什么</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>正文</td>
+<td>境内出差住宿费上限为每晚 500 元。</td>
+<td>检索命中后，交给模型作为回答依据</td>
+</tr>
+<tr>
+<td>向量</td>
+<td>embedding 模型根据这段正文生成的一组数值</td>
+<td>与问题向量比较，判断内容是否相关</td>
+</tr>
+<tr>
+<td>metadata</td>
+<td>来源为“<a target="_blank" rel="noopener" href="http://xn--xcr98z2pa01u.md">差旅制度.md</a>”，版本为“2026-10”</td>
+<td>筛选有效制度，并展示资料出处</td>
+</tr>
+</tbody>
+</table>
+<p>向量用于查找，正文用于回答，metadata 则补充来源和筛选条件。三者一起保存，检索命中一个向量后，才能取回它对应的原文和出处。</p>
+<p>一份制度通常会产生多个片段。适配器为每条记录生成独立 ID，并通过 collection 将相关记录归在一起。比如，可以把差旅制度的片段放入一个名为 <code>travel_policy</code> 的 collection，查询时就在这个范围内查找。</p>
+<h3 id="写入时文档怎样进入数据库"><a class="markdownIt-Anchor" href="#写入时文档怎样进入数据库"></a> 写入时，文档怎样进入数据库</h3>
+<p>创建 pgvector store 时，需要提供数据库连接、embedding 组件和 collection 名称。<code>pgvector.New</code> 会准备保存文档所需的表和 collection；数据库环境的准备方式会在后面的完整示例中给出。</p>
+<p>准备好 store 后，将文档片段传给 <code>store.AddDocuments</code> 即可。适配器会读取每个片段的正文，调用 <code>EmbedDocuments</code> 生成向量，再将正文、向量和 metadata 一起写入数据库。应用不必先手动生成向量，再调用一次写入方法。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">[住宿费条款 + 来源、版本]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[AddDocuments]</span><br><span class="line">          |</span><br><span class="line">          +--&gt; 取出正文 --&gt; [EmbedDocuments] --&gt; 文档向量</span><br><span class="line">          |                                        |</span><br><span class="line">          v                                        v</span><br><span class="line">[PostgreSQL：保存正文、metadata 和对应的向量]</span><br></pre></td></tr></table></figure>
+<p>例如，输入十个制度片段，就会为这十个片段分别生成向量，并保存为十条记录。以后检索时，返回的便是其中相关的片段。</p>
+<h3 id="提问时怎样找到住宿费条款"><a class="markdownIt-Anchor" href="#提问时怎样找到住宿费条款"></a> 提问时，怎样找到住宿费条款</h3>
+<p>员工问“出差住宿能报多少”，这句话和制度中的“住宿费上限”并不完全相同。向量检索会把问题也转换成向量，再比较它与各个文档向量的距离，因此有机会找到表达不同但含义相关的条款。</p>
+<p>调用 <code>store.SimilaritySearch(ctx, &quot;出差住宿能报多少&quot;, 4)</code> 后，适配器先通过 <code>EmbedQuery</code> 生成问题向量，再让数据库查找当前 collection 中距离最近的文档向量，最后取回最多四个片段的正文和 metadata。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">[问题：出差住宿能报多少]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[EmbedQuery：生成问题向量]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[pgvector：比较问题向量与已存文档向量的距离]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[按相关程度取回片段]</span><br><span class="line">          |</span><br><span class="line">          v</span><br><span class="line">[住宿费上限条款、超标审批条款等]</span><br></pre></td></tr></table></figure>
+<p><strong>当前 pgvector 适配器使用 <code>余弦距离</code> 进行比较，它衡量两个向量的方向是否接近</strong>：距离越小，表示它们越接近。查询按距离从小到大排列结果，并将 <code>1 - 距离</code> 放入返回文档的 <code>Score</code> 字段，所以这里的分数越大，表示越相关。</p>
+<p>这个分数反映的是检索相关程度，不能直接当作答案正确的概率。如果取回的都是无关资料，后续模型仍然缺少回答依据。实际使用时，可以先查看不同问题命中的片段，再决定是否设置分数阈值，排除相关程度较低的结果。</p>
+<p>上面参数中的 <code>4</code> 也只是返回数量的上限。取回更多片段可能补充证据，也可能带来重复和无关内容，需要结合实际问题选择。</p>
+<h3 id="怎样避免查到旧版制度"><a class="markdownIt-Anchor" href="#怎样避免查到旧版制度"></a> 怎样避免查到旧版制度</h3>
+<p>假设旧制度规定住宿费上限为 400 元，新制度调整为 500 元。两段文字都与住宿费问题相关，仅靠向量距离，很难保证每次只返回新版条款。</p>
+<p>这时可以利用 metadata 中的版本字段，将查询范围限定为 <code>version=2026-10</code>。在前面介绍的 <code>ToRetriever</code> 中传入版本过滤条件后，检索器每次查找资料时，都会把这个条件一并交给 store。这样，旧版制度即使在语义上很相关，也不会进入本次回答的资料中。</p>
+<p>版本管理也需要和写入方式配合。当前适配器的 <code>AddDocuments</code> 会新增记录，重复导入同一份文件不会自动替换原有片段。制度更新时，应用可以保存新版本并切换查询条件，或删除旧片段后重新写入，避免新旧条款混在一起。</p>
+<h3 id="资料增多后怎样加快搜索"><a class="markdownIt-Anchor" href="#资料增多后怎样加快搜索"></a> 资料增多后，怎样加快搜索</h3>
+<p>知识库较小时，可以先用上述流程验证能否找对条款。片段数量增长后，如果每次都比较大量向量，查询就会变慢。向量索引的作用，是帮助数据库更快地找到可能相关的候选片段。</p>
+<p>这个适配器提供 <code>WithHNSWIndex</code> 选项，用于创建 HNSW 向量索引。它通过近似搜索提高检索速度，可能牺牲一部分召回率，因此需要同时观察查询耗时和正确条款的命中情况。实际配置还需与向量维度、距离计算方式匹配，并确认数据库查询使用了该索引。</p>
+<p>索引优化的是查找速度。从正文生成向量仍由 embedding 模型负责，检索到条款后的回答生成则由后面的问答链完成。</p>
+<h2 id="retrievalqa从相关文档走向回答"><a class="markdownIt-Anchor" href="#retrievalqa从相关文档走向回答"></a> RetrievalQA：从相关文档走向回答</h2>
+<p>检索器找到制度条款后，还需要把条款和用户问题一起交给模型，才能得到回答。<strong><code>RetrievalQA</code> 是 LangChainGo 用来串起这两个步骤的问答链：先调用检索器查资料，再将查到的文档和问题交给后续的回答流程</strong>。</p>
+<p>这段回答流程保存在 <code>RetrievalQA</code> 的 <code>CombineDocumentsChain</code> 字段中，负责组织文档、准备提示词并调用模型。之所以单独设置这个字段，是因为资料的处理方式可以不同：少量条款可以直接拼接，较多资料则可以先提取要点再汇总。</p>
+<h3 id="默认调用链"><a class="markdownIt-Anchor" href="#默认调用链"></a> 默认调用链</h3>
+<p>最直接的回答方式，是把检索到的条款拼成一段资料，再连同问题一起发送给模型。LangChainGo 用 <code>StuffDocuments</code> 完成正文拼接，用 <code>LLMChain</code> 填写提示词模板并调用模型。<code>LoadStuffQA(model)</code> 是一个辅助函数，会将这两个组件和默认问答模板组装好，得到可供 <code>RetrievalQA</code> 使用的回答流程。</p>
+<p>创建时，可以调用 <code>chains.NewRetrievalQAFromLLM(model, retriever)</code>，传入负责生成回答的模型和负责查资料的检索器。这个构造函数会用 <code>LoadStuffQA</code> 准备上述回答流程，再将它与检索器连接起来，返回一个 <code>RetrievalQA</code> 对象。</p>
+<p>用户提问后，通过 <code>chains.Call</code> 执行这个对象。问题先用于检索，检索结果随后进入提示词，最后由模型生成回答：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">chains.Call(ctx, qa, &#123;&quot;query&quot;: 用户问题&#125;)</span><br><span class="line">    -&gt; 加载记忆变量、检查输入</span><br><span class="line">    -&gt; RetrievalQA.Call：安排检索与回答</span><br><span class="line">        -&gt; Retriever.GetRelevantDocuments：查找相关条款</span><br><span class="line">        -&gt; CombineDocumentsChain：根据条款生成回答</span><br><span class="line">            输入 &#123;&quot;question&quot;: query, &quot;input_documents&quot;: docs&#125;</span><br><span class="line">            -&gt; StuffDocuments：将各条款正文拼入 &quot;context&quot;</span><br><span class="line">            -&gt; LLMChain：将资料和问题填入模板，调用模型</span><br><span class="line">        -&gt; 按配置附加来源文档 &quot;source_documents&quot;</span><br><span class="line">    -&gt; 检查输出、保存记忆</span><br></pre></td></tr></table></figure>
+<p>普通 <code>RetrievalQA</code> 默认使用不保存内容的 simple memory，因此它本身没有多轮对话历史。业务代码使用包级 <code>chains.Call</code> 可以经过公共的输入输出检查、记忆与链回调流程；直接调用链对象的方法只执行其主体逻辑。</p>
+<h3 id="stuffdocuments-怎样构造-context"><a class="markdownIt-Anchor" href="#stuffdocuments-怎样构造-context"></a> StuffDocuments 怎样构造 context</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/chains/stuff_documents.go"><code>StuffDocuments</code></a> 默认使用两个换行连接各文档的 <code>PageContent</code>，然后把结果放入 <code>context</code>。默认 QA 模板要求模型依据这些资料回答，不知道时说明不知道。</p>
+<p><code>LLMChain</code> 随后调用 <code>Prompt.FormatPrompt</code>，使用 <code>promptValue.String()</code> 得到文本，再通过 <code>llms.GenerateFromSinglePrompt</code> 调用模型。当前这条路径将提示词作为单条用户文本发送；即使换成聊天模板，也需要留意这里会先转换为字符串。默认输出解析器只去掉回答首尾的空白。</p>
+<p>这里有三个直接影响应用行为的细节：</p>
+<ol>
+<li><strong>只拼正文。</strong> metadata 和 <code>Score</code> 不会自动加入提示词，模型因此未必知道文件名、页码或检索分数。</li>
+<li><strong>不自动控制总长度。</strong> Stuff 不会根据模型上下文窗口删减、压缩或重新检索资料。</li>
+<li><strong>不因空结果自动拒答。</strong> 空文档列表会形成空 context，随后仍可能进入模型调用。需要硬性拒答时，应在检索后、生成前增加分支。</li>
+</ol>
+<p>输入预算需要同时考虑固定提示词、问题、资料以及为输出预留的空间：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">T_fixed + T_question + T_context + T_reserved_output &lt;= T_model_window</span><br></pre></td></tr></table></figure>
+<p>chunk 限制只控制单个片段。最终预算还受到 Top-K、来源标识、历史内容和模板长度影响。</p>
+<h3 id="返回来源与生成引用"><a class="markdownIt-Anchor" href="#返回来源与生成引用"></a> 返回来源与生成引用</h3>
+<p>设置 <code>qa.ReturnSourceDocuments = true</code> 后，结果会多出 <code>source_documents</code>。这是返回检索文档的开关，不能据此认定模型已经为每句话标注了依据。</p>
+<p>如果希望回答中出现 <code>[1]</code>、<code>[2]</code> 这样的引用，可以在自定义 Retriever 或组合链中将检索结果格式化为带编号的证据块：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[1] 来源：差旅制度.md；版本：2026-10；条款：住宿</span><br><span class="line">境内出差住宿费上限为每晚 500 元。</span><br><span class="line"></span><br><span class="line">[2] 来源：差旅制度.md；版本：2026-10；条款：例外审批</span><br><span class="line">超过标准的部分，须提前取得部门负责人审批。</span><br></pre></td></tr></table></figure>
+<p>提示词再要求每个结论引用证据编号，应用同时保存编号与原始文档的映射，并检查返回编号是否存在。需要进一步验证“这句话是否确实由该证据支持”时，还要增加证据一致性校验。</p>
+<h2 id="文档组合策略与多轮-rag"><a class="markdownIt-Anchor" href="#文档组合策略与多轮-rag"></a> 文档组合策略与多轮 RAG</h2>
+<h3 id="四种文档组合方式"><a class="markdownIt-Anchor" href="#四种文档组合方式"></a> 四种文档组合方式</h3>
+<p>RAG 已检索到的资料有时仍然很多。LangChainGo 在 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/chains/question_answering.go"><code>chains/question_answering.go</code></a> 中提供了几种组合方式，可以传入 <code>NewRetrievalQA</code>：</p>
+<table>
+<thead>
+<tr>
+<th>构造函数</th>
+<th>执行方式</th>
+<th>主要代价与适用条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LoadStuffQA</code></td>
+<td>全部正文拼接，一次生成</td>
+<td>调用少，适合资料能放入一个上下文窗口的情况</td>
+</tr>
+<tr>
+<td><code>LoadMapReduceQA</code></td>
+<td>每块提取相关信息，再汇总</td>
+<td>对 n 块资料通常约 n+1 次调用；提取阶段可能丢失信息</td>
+</tr>
+<tr>
+<td><code>LoadRefineQA</code></td>
+<td>第一块生成初稿，后续逐块修订</td>
+<td>对 n 块资料通常约 n 次调用；顺序执行，结果可能受资料顺序影响</td>
+</tr>
+<tr>
+<td><code>LoadMapRerankQA</code></td>
+<td>每块独立回答并评分，返回最高分答案</td>
+<td>对 n 块资料通常约 n 次调用；依赖模型自评分与输出格式</td>
+</tr>
+</tbody>
+</table>
+<p>MapReduce 的 map 阶段通过 <code>Apply</code> 执行，可配置并发数，但默认 reduce 阶段仍然使用 Stuff。它没有保证汇总后的输入一定落在模型窗口内，必要时仍需应用分级压缩。</p>
+<p>MapRerank 在这里表示对各文档生成的答案按模型评分排序。它与“先用 cross-encoder 重排候选文档，再把前几条交给另一个模型综合回答”有不同的执行过程。需要后者时，可以把重排接在自定义 Retriever 内部。</p>
+<h3 id="多轮对话"><a class="markdownIt-Anchor" href="#多轮对话"></a> 多轮对话</h3>
+<p>实际问答中，用户往往会接着上一轮继续问：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">用户：境内出差住宿费上限是多少？</span><br><span class="line">助手：每晚 500 元。</span><br><span class="line">用户：那超过了怎么办？</span><br></pre></td></tr></table></figure>
+<p>人读过前面的对话，知道“超过了”指的是住宿费超过报销上限。但如果直接用“那超过了怎么办”去搜索制度，检索器就缺少了“住宿费”和“报销上限”这些关键信息，容易查不到对应条款。</p>
+<p>LangChainGo 的 <a target="_blank" rel="noopener" href="https://github.com/tmc/langchaingo/blob/381d4a36d0f79d03b85c15e3ff303be62916be5a/chains/conversational_retrieval_qa.go"><code>ConversationalRetrievalQA</code></a> 为此增加了一个步骤：<strong>先让模型结合历史对话，把追问补成一个完整问题</strong>。在这个例子中，补全后的问题可以是“境内出差住宿费超过报销上限时怎么办？”</p>
+<p>接下来就可以沿用前面的检索与回答流程：用完整问题查找制度，取回超标审批条款，再让模型依据条款回答。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">[历史对话] + [追问：那超过了怎么办？]</span><br><span class="line">                    |</span><br><span class="line">                    v</span><br><span class="line">          [模型补全问题]</span><br><span class="line">                    |</span><br><span class="line">                    v</span><br><span class="line">    [境内出差住宿费超过报销上限时怎么办？]</span><br><span class="line">                    |</span><br><span class="line">                    v</span><br><span class="line">          [检索超标审批条款]</span><br><span class="line">                    |</span><br><span class="line">                    v</span><br><span class="line">          [根据条款生成回答]</span><br></pre></td></tr></table></figure>
+<p>默认情况下，补全后的问题会同时用于检索和生成回答。历史对话主要用于补全问题，因此模型需要把历史中仍然相关的条件保留下来，例如“境内出差”，避免检索到境外出差的规定。第一轮没有历史时，会直接使用用户原来的问题，省去补全这一步。</p>
+<p>接入时，需要为每个会话保存各自的历史，并通过 <code>question</code> 字段传入本轮问题。若追问的检索结果不对，可以开启 <code>ReturnGeneratedQuestion</code>，查看模型补全后的问题，先确认它是否理解了用户在问什么。</p>
+<h2 id="第三方库"><a class="markdownIt-Anchor" href="#第三方库"></a> 第三方库</h2>
+<p>下面按 RAG 的执行阶段列出直接相关的第三方库。它们分布在不同功能包中，应用根据选择的 loader、模型和存储适配器引入相应依赖。这里区分“库用于什么功能”和“服务端实际执行什么工作”，便于排查问题和替换组件。</p>
+<h3 id="文档解析与文本切分"><a class="markdownIt-Anchor" href="#文档解析与文本切分"></a> 文档解析与文本切分</h3>
+<table>
+<thead>
+<tr>
+<th>第三方库</th>
+<th>对应位置</th>
+<th>主要作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>github.com/ledongthuc/pdf</code></td>
+<td><code>documentloaders/pdf.go</code></td>
+<td>读取 PDF 结构、字体与文字层，按页提取文本</td>
+</tr>
+<tr>
+<td><code>github.com/PuerkitoBio/goquery</code></td>
+<td><code>documentloaders/html.go</code></td>
+<td>解析 HTML，选择节点并提取文本</td>
+</tr>
+<tr>
+<td><code>github.com/microcosm-cc/bluemonday</code></td>
+<td><code>documentloaders/html.go</code></td>
+<td>对 HTML loader 提取后的内容执行清理</td>
+</tr>
+<tr>
+<td><code>gitlab.com/golang-commonmark/markdown</code></td>
+<td><code>textsplitter/markdown_splitter.go</code></td>
+<td>解析 Markdown token，辅助按标题、段落、列表等结构切分</td>
+</tr>
+<tr>
+<td><code>github.com/pkoukk/tiktoken-go</code></td>
+<td><code>textsplitter/token_splitter.go</code></td>
+<td>将文本编码为 token，按 token 数切块并解码</td>
+</tr>
+<tr>
+<td><code>github.com/gocolly/colly</code></td>
+<td><code>tools/scraper/scraper.go</code></td>
+<td>为可选的网页抓取工具提供采集、链接遍历与并发抓取能力</td>
+</tr>
+</tbody>
+</table>
+<p>Colly 属于可选抓取工具，基础的 HTML loader 不会自动启动爬虫。递归字符切分算法由 LangChainGo 自己实现，主要使用 <code>strings</code>、<code>unicode/utf8</code> 等 Go 标准库。</p>
+<p>HTML 清理用于处理页面内容，不能据此认为已经处理了自然语言中的提示词注入。文档里的“忽略之前要求”等句子即使是普通文本，也需要在应用的证据与指令组织中区别对待。</p>
+<h3 id="向量生成与模型接入"><a class="markdownIt-Anchor" href="#向量生成与模型接入"></a> 向量生成与模型接入</h3>
+<table>
+<thead>
+<tr>
+<th>第三方库</th>
+<th>使用场景</th>
+<th>主要作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>github.com/nlpodyssey/cybertron</code></td>
+<td><code>embeddings/cybertron</code></td>
+<td>在本机 CPU 上运行文本编码模型，生成 embedding；相应实现还会归一化结果</td>
+</tr>
+<tr>
+<td><code>github.com/aws/aws-sdk-go-v2/service/bedrockruntime</code></td>
+<td><code>embeddings/bedrock</code></td>
+<td>调用 Bedrock 的 embedding 模型，处理 AWS 服务请求</td>
+</tr>
+<tr>
+<td><code>cloud.google.com/go/aiplatform</code></td>
+<td><code>llms/googleai/vertex</code> 使用的内部 <code>palmclient</code></td>
+<td>通过 Vertex AI Prediction API 请求文本向量</td>
+</tr>
+</tbody>
+</table>
+<p>这些 SDK 或运行库负责模型服务接入、本地推理等具体能力；<code>embeddings.Embedder</code> 则给上层提供统一的文档与问题向量接口。不同实现的批处理、归一化和输入类型需要分别核对。</p>
+<p>当前 OpenAI 适配器通过 <code>llms/openai/internal/openaiclient</code> 和 Go 的 <code>net/http</code>、<code>encoding/json</code> 等标准库发起请求，<strong>没有依赖一个外部 OpenAI Go SDK 来完成这条调用链</strong>。Ollama 适配器也有自己的内部 client。判断实现依赖时，应查看实际 import 和调用位置。</p>
+<h3 id="向量存储适配"><a class="markdownIt-Anchor" href="#向量存储适配"></a> 向量存储适配</h3>
+<table>
+<thead>
+<tr>
+<th>第三方库</th>
+<th>对应存储</th>
+<th>主要作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>github.com/jackc/pgx/v5</code></td>
+<td>pgvector、部分 PostgreSQL 类存储</td>
+<td>PostgreSQL 连接、连接池、事务、SQL 与批量写入</td>
+</tr>
+<tr>
+<td><code>github.com/pgvector/pgvector-go</code></td>
+<td>pgvector、部分 PostgreSQL 类存储</td>
+<td>包装向量值，处理 Go 数据与 PostgreSQL vector 类型之间的表示转换</td>
+</tr>
+<tr>
+<td><code>github.com/amikos-tech/chroma-go</code></td>
+<td>Chroma</td>
+<td>管理 collection，添加文档、查询向量并接入 embedding function</td>
+</tr>
+<tr>
+<td><code>github.com/milvus-io/milvus-sdk-go/v2</code></td>
+<td><code>vectorstores/milvus</code></td>
+<td>使用相应版本的 Milvus client 管理 collection、写入与搜索</td>
+</tr>
+<tr>
+<td><code>github.com/milvus-io/milvus/client/v2</code></td>
+<td><code>vectorstores/milvus/v2</code></td>
+<td>为另一套 Milvus 适配实现提供新版 client、实体及索引配置</td>
+</tr>
+<tr>
+<td><code>github.com/pinecone-io/go-pinecone</code></td>
+<td>Pinecone</td>
+<td>连接向量索引，执行写入与相似度查询</td>
+</tr>
+<tr>
+<td><code>github.com/weaviate/weaviate-go-client/v5</code></td>
+<td>Weaviate</td>
+<td>访问 schema、写入对象并构造向量查询与过滤条件</td>
+</tr>
+<tr>
+<td><code>github.com/redis/rueidis</code></td>
+<td>Redis Vector</td>
+<td>连接 Redis，执行向量索引和搜索相关命令</td>
+</tr>
+<tr>
+<td><code>go.mongodb.org/mongo-driver/v2</code></td>
+<td>Mongo Vector</td>
+<td>访问 MongoDB，通过聚合管道等能力执行向量查询</td>
+</tr>
+<tr>
+<td><code>github.com/opensearch-project/opensearch-go</code></td>
+<td>OpenSearch</td>
+<td>管理索引、写入数据并执行搜索请求</td>
+</tr>
+<tr>
+<td><code>github.com/google/uuid</code></td>
+<td>pgvector、Chroma、Qdrant 等</td>
+<td>为文档或集合相关对象生成标识</td>
+</tr>
+</tbody>
+</table>
+<p>这些 client 主要负责构造请求、传输数据和解析结果。向量距离计算、持久化与索引搜索通常由对应数据库或服务执行；具体是否使用 HNSW、IVF 等算法，由服务能力和索引配置决定。</p>
+<p>Qdrant 在当前仓库中使用 <code>vectorstores/qdrant/rest.go</code> 自行发送 REST 请求，没有在这条适配路径上使用外部 Qdrant Go SDK。</p>
+<p>另外，公共接口相同，并不代表过滤、namespace、阈值和分数语义完全相同。例如 pgvector 的当前查询使用余弦距离，Chroma 则使用 collection 配置的距离函数，再由适配器转换返回值。迁移后端时应重新验证检索效果与阈值。</p>
+<h3 id="提示词渲染"><a class="markdownIt-Anchor" href="#提示词渲染"></a> 提示词渲染</h3>
+<table>
+<thead>
+<tr>
+<th>第三方库</th>
+<th>对应位置</th>
+<th>主要作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>github.com/Masterminds/sprig/v3</code></td>
+<td><code>prompts/templates.go</code> 等</td>
+<td>为 Go <code>text/template</code> 补充字符串、集合等模板函数</td>
+</tr>
+<tr>
+<td><code>github.com/nikolalohinski/gonja</code></td>
+<td><code>prompts/templates_jinja2.go</code></td>
+<td>提供可选的 Jinja2 风格模板渲染</td>
+</tr>
+</tbody>
+</table>
+<p>默认 <code>NewPromptTemplate</code> 使用 Go 模板，核心渲染由标准库 <code>text/template</code> 完成。<code>RetrievalQA</code>、<code>StuffDocuments</code>、<code>MapReduceDocuments</code> 等执行顺序由 LangChainGo 自己编排，没有在运行时启动 Python LangChain。</p>
+<p>需要注意，Go 按包编译，某个包的其他源文件仍可能引入额外依赖。例如 <code>documentloaders</code> 将多种 loader 放在同一包，<code>prompts</code> 也包含多种渲染实现；只调用其中一个构造函数，并不保证只下载该构造函数直接使用的库。与此同时，独立存储适配包的存在，也避免了应用必须统一编译所有数据库后端。</p>
+<h2 id="完整示例建立制度知识库再执行问答"><a class="markdownIt-Anchor" href="#完整示例建立制度知识库再执行问答"></a> 完整示例：建立制度知识库，再执行问答</h2>
+<p>下面使用 OpenAI 兼容的生成与 embedding 接口，以及 PostgreSQL/pgvector。示例分成两个命令模式：<code>-index</code> 加载并写入资料，普通模式复用已经入库的数据回答问题。</p>
+<p>示例采用默认 Stuff 路径，返回答案并单独打印检索来源，便于观察各组件的默认行为。它适合验证小规模链路；资料版本切换、幂等更新和严格引用可以在此基础上增加。</p>
+<h3 id="准备数据库与资料"><a class="markdownIt-Anchor" href="#准备数据库与资料"></a> 准备数据库与资料</h3>
+<p>在本地测试环境启动已包含 pgvector 的 PostgreSQL。以下凭据仅用于这个本地示例：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">docker run --name langchaingo-rag-pg \</span><br><span class="line">  -e POSTGRES_USER=rag \</span><br><span class="line">  -e POSTGRES_PASSWORD=rag_local \</span><br><span class="line">  -e POSTGRES_DB=rag \</span><br><span class="line">  -p 127.0.0.1:5432:5432 \</span><br><span class="line">  -d pgvector/pgvector:pg16</span><br></pre></td></tr></table></figure>
+<p>等待数据库就绪后，配置连接和模型。<code>OPENAI_EMBEDDING_MODEL</code> 是下面示例自行读取的变量；它将被显式传入 <code>WithEmbeddingModel</code>。服务端需要同时提供所选的生成与 embedding 模型。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">export</span> POSTGRES_URL=<span class="string">&#x27;postgres://rag:rag_local@localhost:5432/rag?sslmode=disable&#x27;</span></span><br><span class="line"><span class="built_in">export</span> OPENAI_API_KEY=<span class="string">&#x27;&lt;你的 API key&gt;&#x27;</span></span><br><span class="line"><span class="built_in">export</span> OPENAI_MODEL=<span class="string">&#x27;&lt;可用的聊天模型名&gt;&#x27;</span></span><br><span class="line"><span class="built_in">export</span> OPENAI_EMBEDDING_MODEL=<span class="string">&#x27;&lt;可用的 embedding 模型名&gt;&#x27;</span></span><br><span class="line"><span class="comment"># 使用兼容服务时，按服务商要求设置 API 基础地址：</span></span><br><span class="line"><span class="comment"># export OPENAI_BASE_URL=&#x27;https://your-provider.example/v1&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">cat</span> &gt; policy.txt &lt;&lt;<span class="string">&#x27;EOF&#x27;</span></span><br><span class="line">公司差旅报销制度，版本 2026-10。</span><br><span class="line"></span><br><span class="line">境内出差住宿费上限为每晚 500 元。报销时须提供住宿发票。</span><br><span class="line"></span><br><span class="line">住宿费超过标准的部分，须提前取得部门负责人审批。</span><br><span class="line"></span><br><span class="line">出差结束后，员工应在 30 天内提交报销申请。</span><br><span class="line">EOF</span><br></pre></td></tr></table></figure>
+<h3 id="程序代码"><a class="markdownIt-Anchor" href="#程序代码"></a> 程序代码</h3>
+<p>将下面代码保存为独立示例项目的 <code>main.go</code>。示例使用连接池，并将其交给 pgvector store；程序退出时由连接池释放连接。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> (</span><br><span class="line">	<span class="string">&quot;context&quot;</span></span><br><span class="line">	<span class="string">&quot;flag&quot;</span></span><br><span class="line">	<span class="string">&quot;fmt&quot;</span></span><br><span class="line">	<span class="string">&quot;log&quot;</span></span><br><span class="line">	<span class="string">&quot;os&quot;</span></span><br><span class="line">	<span class="string">&quot;time&quot;</span></span><br><span class="line"></span><br><span class="line">	<span class="string">&quot;github.com/jackc/pgx/v5/pgxpool&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/chains&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/documentloaders&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/embeddings&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/llms/openai&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/prompts&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/schema&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/textsplitter&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/vectorstores&quot;</span></span><br><span class="line">	<span class="string">&quot;github.com/tmc/langchaingo/vectorstores/pgvector&quot;</span></span><br><span class="line">)</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span><span class="params">()</span></span> &#123;</span><br><span class="line">	<span class="keyword">if</span> err := run(); err != <span class="literal">nil</span> &#123;</span><br><span class="line">		log.Fatal(err)</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">run</span><span class="params">()</span></span> <span class="type">error</span> &#123;</span><br><span class="line">	index := flag.Bool(<span class="string">&quot;index&quot;</span>, <span class="literal">false</span>, <span class="string">&quot;加载文件并写入知识库&quot;</span>)</span><br><span class="line">	file := flag.String(<span class="string">&quot;file&quot;</span>, <span class="string">&quot;policy.txt&quot;</span>, <span class="string">&quot;制度文件路径&quot;</span>)</span><br><span class="line">	question := flag.String(<span class="string">&quot;question&quot;</span>, <span class="string">&quot;境内出差住宿费上限是多少？&quot;</span>, <span class="string">&quot;查询问题&quot;</span>)</span><br><span class="line">	flag.Parse()</span><br><span class="line"></span><br><span class="line">	<span class="keyword">for</span> _, key := <span class="keyword">range</span> []<span class="type">string</span>&#123;</span><br><span class="line">		<span class="string">&quot;POSTGRES_URL&quot;</span>, <span class="string">&quot;OPENAI_API_KEY&quot;</span>, <span class="string">&quot;OPENAI_MODEL&quot;</span>, <span class="string">&quot;OPENAI_EMBEDDING_MODEL&quot;</span>,</span><br><span class="line">	&#125; &#123;</span><br><span class="line">		<span class="keyword">if</span> os.Getenv(key) == <span class="string">&quot;&quot;</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;请设置环境变量 %s&quot;</span>, key)</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	ctx, cancel := context.WithTimeout(context.Background(), <span class="number">2</span>*time.Minute)</span><br><span class="line">	<span class="keyword">defer</span> cancel()</span><br><span class="line"></span><br><span class="line">	model, err := openai.New(</span><br><span class="line">		openai.WithModel(os.Getenv(<span class="string">&quot;OPENAI_MODEL&quot;</span>)),</span><br><span class="line">		openai.WithEmbeddingModel(os.Getenv(<span class="string">&quot;OPENAI_EMBEDDING_MODEL&quot;</span>)),</span><br><span class="line">	)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;创建模型客户端: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	embedder, err := embeddings.NewEmbedder(model, embeddings.WithBatchSize(<span class="number">32</span>))</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;创建 embedder: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	pool, err := pgxpool.New(ctx, os.Getenv(<span class="string">&quot;POSTGRES_URL&quot;</span>))</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;创建连接池: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">defer</span> pool.Close()</span><br><span class="line"></span><br><span class="line">	store, err := pgvector.New(ctx,</span><br><span class="line">		pgvector.WithConn(pool),</span><br><span class="line">		pgvector.WithEmbedder(embedder),</span><br><span class="line">		pgvector.WithCollectionName(<span class="string">&quot;travel_policy_demo_v1&quot;</span>),</span><br><span class="line">	)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;初始化向量存储: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	<span class="keyword">if</span> *index &#123;</span><br><span class="line">		f, err := os.Open(*file)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;打开资料: %w&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">defer</span> f.Close()</span><br><span class="line"></span><br><span class="line">		docs, err := documentloaders.NewText(f).Load(ctx)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;加载资料: %w&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">for</span> i := <span class="keyword">range</span> docs &#123;</span><br><span class="line">			docs[i].Metadata[<span class="string">&quot;source&quot;</span>] = *file</span><br><span class="line">			docs[i].Metadata[<span class="string">&quot;version&quot;</span>] = <span class="string">&quot;2026-10&quot;</span></span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		splitter := textsplitter.NewRecursiveCharacter(</span><br><span class="line">			textsplitter.WithChunkSize(<span class="number">500</span>),</span><br><span class="line">			textsplitter.WithChunkOverlap(<span class="number">80</span>),</span><br><span class="line">		)</span><br><span class="line">		chunks, err := textsplitter.SplitDocuments(splitter, docs)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;切分资料: %w&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">if</span> <span class="built_in">len</span>(chunks) == <span class="number">0</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;资料为空，没有可写入的片段&quot;</span>)</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">for</span> i := <span class="keyword">range</span> chunks &#123;</span><br><span class="line">			chunks[i].Metadata[<span class="string">&quot;chunk_id&quot;</span>] = fmt.Sprintf(<span class="string">&quot;%s#%d&quot;</span>, *file, i+<span class="number">1</span>)</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">		ids, err := store.AddDocuments(ctx, chunks)</span><br><span class="line">		<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">			<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;写入知识库: %w&quot;</span>, err)</span><br><span class="line">		&#125;</span><br><span class="line">		fmt.Printf(<span class="string">&quot;已写入 %d 个片段\n&quot;</span>, <span class="built_in">len</span>(ids))</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	retriever := vectorstores.ToRetriever(store, <span class="number">4</span>)</span><br><span class="line">	prompt := prompts.NewPromptTemplate(</span><br><span class="line">		<span class="string">`请仅依据以下资料，用中文回答问题。</span></span><br><span class="line"><span class="string">资料不足时，请明确回答“知识库中没有足够的信息”。</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">资料：</span></span><br><span class="line"><span class="string">&#123;&#123;.context&#125;&#125;</span></span><br><span class="line"><span class="string"></span></span><br><span class="line"><span class="string">问题：&#123;&#123;.question&#125;&#125;`</span>,</span><br><span class="line">		[]<span class="type">string</span>&#123;<span class="string">&quot;context&quot;</span>, <span class="string">&quot;question&quot;</span>&#125;,</span><br><span class="line">	)</span><br><span class="line">	combine := chains.NewStuffDocuments(chains.NewLLMChain(model, prompt))</span><br><span class="line">	qa := chains.NewRetrievalQA(combine, retriever)</span><br><span class="line">	qa.ReturnSourceDocuments = <span class="literal">true</span></span><br><span class="line"></span><br><span class="line">	result, err := chains.Call(ctx, qa, <span class="keyword">map</span>[<span class="type">string</span>]any&#123;<span class="string">&quot;query&quot;</span>: *question&#125;)</span><br><span class="line">	<span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;执行问答: %w&quot;</span>, err)</span><br><span class="line">	&#125;</span><br><span class="line">	answer, ok := result[<span class="string">&quot;text&quot;</span>].(<span class="type">string</span>)</span><br><span class="line">	<span class="keyword">if</span> !ok &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;回答字段类型异常: %T&quot;</span>, result[<span class="string">&quot;text&quot;</span>])</span><br><span class="line">	&#125;</span><br><span class="line">	sources, ok := result[<span class="string">&quot;source_documents&quot;</span>].([]schema.Document)</span><br><span class="line">	<span class="keyword">if</span> !ok &#123;</span><br><span class="line">		<span class="keyword">return</span> fmt.Errorf(<span class="string">&quot;来源字段类型异常: %T&quot;</span>, result[<span class="string">&quot;source_documents&quot;</span>])</span><br><span class="line">	&#125;</span><br><span class="line"></span><br><span class="line">	fmt.Println(answer)</span><br><span class="line">	<span class="keyword">for</span> i, doc := <span class="keyword">range</span> sources &#123;</span><br><span class="line">		fmt.Printf(<span class="string">&quot;来源 %d: %v，片段 %v，得分 %.4f\n&quot;</span>,</span><br><span class="line">			i+<span class="number">1</span>, doc.Metadata[<span class="string">&quot;source&quot;</span>], doc.Metadata[<span class="string">&quot;chunk_id&quot;</span>], doc.Score)</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> <span class="literal">nil</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>创建独立项目后再安装依赖。下面固定到本文分析的提交，便于保持 API 一致；该提交要求 Go 1.26.0 或以上，本地验证使用 Go 1.26.10。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">mkdir</span> langchaingo-rag-demo</span><br><span class="line"><span class="built_in">cd</span> langchaingo-rag-demo</span><br><span class="line">go mod init example.com/langchaingo-rag-demo</span><br><span class="line"><span class="comment"># 将上面的 main.go 和 policy.txt 放入此目录。</span></span><br><span class="line">go get github.com/tmc/langchaingo@381d4a36d0f79d03b85c15e3ff303be62916be5a</span><br><span class="line">go mod tidy</span><br><span class="line"></span><br><span class="line"><span class="comment"># 文档准备：首次写入资料。</span></span><br><span class="line">go run . -index -file policy.txt</span><br><span class="line"></span><br><span class="line"><span class="comment"># 在线问答：读取已有索引。</span></span><br><span class="line">go run . -question <span class="string">&#x27;境内出差住宿费上限是多少？超过标准怎么办？&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>重复执行 <code>-index</code> 会新增记录；这里写入 metadata 的 <code>chunk_id</code> 只是业务标识，pgvector 适配器仍为记录生成独立 UUID，不会因此自动覆盖同名片段。示例使用同一个客户端配置调用两类模型，查询和入库时应保持 embedding 配置一致。</p>
+<p>一次普通查询主要包括一次问题向量请求、一次数据库搜索和一次生成请求。示例没有设置分数阈值，以便先观察返回的资料；正式采用阈值时，需要用真实问题评估，避免直接套用任意数值。</p>
+<h2 id="排查与优化"><a class="markdownIt-Anchor" href="#排查与优化"></a> 排查与优化</h2>
+<p>假设现行制度规定住宿费每晚最多报销 500 元，系统却回答 400 元。这个错误可能来自旧版资料，也可能是模型没有按资料回答。排查时，可以顺着“查到了什么、发给模型什么、模型回答了什么”逐步检查。</p>
+<h3 id="先看查到了什么"><a class="markdownIt-Anchor" href="#先看查到了什么"></a> 先看查到了什么</h3>
+<p>开启 <code>ReturnSourceDocuments</code>，查看本次检索返回的片段。如果其中写的是 400 元，就需要检查是否导入了旧版制度，以及查询是否限定了有效版本。</p>
+<p>如果返回的都是交通费、餐补等无关条款，可以先确认住宿费规定是否已经入库，再检查切分后的内容。例如，金额所在的片段如果没有保留“住宿费”这个标题，单独看只剩一句“每晚 500 元”，检索时就可能不容易找到它。此时可以让标题和条款一起保留，再重新生成向量并写入知识库。</p>
+<p>如果需要综合多条规定，还要看结果是否齐全。回答“超标怎么办”时，只有住宿费上限还不够，还需要取回超标审批条款。可以适当增加返回片段数量，观察是否能找到缺失的依据。</p>
+<h3 id="再看模型收到了什么"><a class="markdownIt-Anchor" href="#再看模型收到了什么"></a> 再看模型收到了什么</h3>
+<p>检索结果正确后，检查最终发给模型的提示词，确认相关条款确实被放了进去。若资料在拼接或裁剪时丢失，模型仍然无法据此回答。</p>
+<p>如果提示词已经包含“每晚 500 元”，模型却回答 400 元，就应检查生成阶段：是否混入了旧版条款，提示词是否明确要求依据资料回答，以及无关内容是否过多。可以先只保留相关条款和问题进行验证，再逐步加入其他资料，观察回答从哪里开始出现偏差。</p>
+<p>知识库没有相关规定时，也需要明确处理方式。例如，员工问“家属随行的费用能否报销”，但制度没有说明，应用可以在没有检索结果时直接提示资料不足；即使命中了一般差旅条款，也应要求模型说明其中没有家属费用的规定。</p>
+<h3 id="用固定问题验证修改"><a class="markdownIt-Anchor" href="#用固定问题验证修改"></a> 用固定问题验证修改</h3>
+<p>每次调整切分方式、检索数量或提示词后，都用同一组问题重新检查，才能知道改动是否有效。报销场景可以从这些问题开始：</p>
+<ul>
+<li>“住宿费每晚能报多少？”——检查是否找到正确金额。</li>
+<li>“超过标准怎么办？”——结合上一轮对话，检查能否找到审批要求。</li>
+<li>“家属随行能报销吗？”——检查资料不足时是否会编造规定。</li>
+</ul>
+<p>验证时，同时保存检索片段和最终回答。这样既能发现“没找到正确条款”，也能发现“找到了条款却答错了”，避免只凭某一次回答判断效果。</p>
+<h3 id="回答慢时分别看各步耗时"><a class="markdownIt-Anchor" href="#回答慢时分别看各步耗时"></a> 回答慢时，分别看各步耗时</h3>
+<p>一次问答会经历问题向量生成、数据库检索和模型生成。可以分别记录这些步骤的耗时，再决定优化哪里。</p>
+<p>数据库检索慢时，检查查询范围和向量索引；模型生成慢时，先看是否发送了太多重复或无关的资料。开启流式输出可以让用户更早看到回答，但检索仍需先完成，因此也要关注用户发问到第一个字出现之间的等待时间。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>LangChainGo 的 RAG 流程分为文档准备和在线问答两部分：先加载、切分文档，生成向量并存入知识库；用户提问后，再检索相关片段，将资料和问题一起交给模型生成回答。多轮对话则先结合历史补全追问，再进行检索。</p>
+<p>在这条链路中，文档解析、分词和数据库访问使用相应的第三方库，LangChainGo 通过接口和问答链将各步骤连接起来。本文以 pgvector 为例说明了文档如何保存和检索，并用完整 Go 示例演示了入库与问答。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/11/05/go-langchaingo-02/" rel="next" title="LangChainGo 学习 02：架构原理">
+      LangChainGo 学习 02：架构原理 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#rag-%E7%9A%84%E4%B8%A4%E6%9D%A1%E6%89%A7%E8%A1%8C%E8%B7%AF%E5%BE%84"><span class="nav-number">1.</span> <span class="nav-text"> RAG 的两条执行路径</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%B2%E8%B5%B7%E6%95%B4%E6%9D%A1%E9%93%BE%E8%B7%AF%E7%9A%84%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%8E%A5%E5%8F%A3"><span class="nav-number">2.</span> <span class="nav-text"> 串起整条链路的数据与接口</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#document%E4%BF%9D%E7%95%99%E6%AD%A3%E6%96%87%E4%B8%8E%E5%87%BA%E5%A4%84"><span class="nav-number">2.1.</span> <span class="nav-text"> Document：保留正文与出处</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#embedder%E5%8C%BA%E5%88%86%E6%96%87%E6%A1%A3%E4%B8%8E%E9%97%AE%E9%A2%98"><span class="nav-number">2.2.</span> <span class="nav-text"> Embedder：区分文档与问题</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#vectorstore-%E4%B8%8E-retriever%E4%BF%9D%E5%AD%98%E6%96%87%E6%A1%A3%E4%B8%8E%E6%9F%A5%E6%89%BE%E8%B5%84%E6%96%99"><span class="nav-number">2.3.</span> <span class="nav-text"> VectorStore 与 Retriever：保存文档与查找资料</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E5%8A%A0%E8%BD%BD%E5%85%88%E5%BE%97%E5%88%B0%E5%8F%AF%E7%94%A8%E7%9A%84%E6%96%87%E6%9C%AC"><span class="nav-number">3.</span> <span class="nav-text"> 文档加载：先得到可用的文本</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E6%9C%AC%E5%88%87%E5%88%86%E5%86%B3%E5%AE%9A%E7%9F%A5%E8%AF%86%E5%BA%93%E7%9A%84%E6%A3%80%E7%B4%A2%E7%B2%92%E5%BA%A6"><span class="nav-number">4.</span> <span class="nav-text"> 文本切分：决定知识库的检索粒度</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%92%E5%BD%92%E5%AD%97%E7%AC%A6%E5%88%87%E5%88%86%E7%9A%84%E6%89%A7%E8%A1%8C%E8%BF%87%E7%A8%8B"><span class="nav-number">4.1.</span> <span class="nav-text"> 递归字符切分的执行过程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%89-token-%E4%B8%8E%E6%8C%89-markdown-%E7%BB%93%E6%9E%84%E5%88%87%E5%88%86"><span class="nav-number">4.2.</span> <span class="nav-text"> 按 token 与按 Markdown 结构切分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%87%E5%88%86%E4%BB%A5%E5%90%8E%E4%BF%9D%E7%95%99%E4%B8%8B%E6%9D%A5%E7%9A%84%E5%86%85%E5%AE%B9"><span class="nav-number">4.3.</span> <span class="nav-text"> 切分以后保留下来的内容</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#embedding%E6%8A%8A%E7%89%87%E6%AE%B5%E4%B8%8E%E9%97%AE%E9%A2%98%E8%BD%AC%E6%8D%A2%E6%88%90%E5%8F%AF%E6%AF%94%E8%BE%83%E7%9A%84%E5%90%91%E9%87%8F"><span class="nav-number">5.</span> <span class="nav-text"> Embedding：把片段与问题转换成可比较的向量</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A5-pgvector-%E4%B8%BA%E4%BE%8B%E7%90%86%E8%A7%A3%E5%90%91%E9%87%8F%E5%AD%98%E5%82%A8"><span class="nav-number">6.</span> <span class="nav-text"> 以 pgvector 为例理解向量存储</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%80%E6%9D%A1%E5%88%B6%E5%BA%A6%E9%9C%80%E8%A6%81%E4%BF%9D%E5%AD%98%E5%93%AA%E4%BA%9B%E5%86%85%E5%AE%B9"><span class="nav-number">6.1.</span> <span class="nav-text"> 一条制度需要保存哪些内容</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%99%E5%85%A5%E6%97%B6%E6%96%87%E6%A1%A3%E6%80%8E%E6%A0%B7%E8%BF%9B%E5%85%A5%E6%95%B0%E6%8D%AE%E5%BA%93"><span class="nav-number">6.2.</span> <span class="nav-text"> 写入时，文档怎样进入数据库</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8F%90%E9%97%AE%E6%97%B6%E6%80%8E%E6%A0%B7%E6%89%BE%E5%88%B0%E4%BD%8F%E5%AE%BF%E8%B4%B9%E6%9D%A1%E6%AC%BE"><span class="nav-number">6.3.</span> <span class="nav-text"> 提问时，怎样找到住宿费条款</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%80%8E%E6%A0%B7%E9%81%BF%E5%85%8D%E6%9F%A5%E5%88%B0%E6%97%A7%E7%89%88%E5%88%B6%E5%BA%A6"><span class="nav-number">6.4.</span> <span class="nav-text"> 怎样避免查到旧版制度</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B5%84%E6%96%99%E5%A2%9E%E5%A4%9A%E5%90%8E%E6%80%8E%E6%A0%B7%E5%8A%A0%E5%BF%AB%E6%90%9C%E7%B4%A2"><span class="nav-number">6.5.</span> <span class="nav-text"> 资料增多后，怎样加快搜索</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#retrievalqa%E4%BB%8E%E7%9B%B8%E5%85%B3%E6%96%87%E6%A1%A3%E8%B5%B0%E5%90%91%E5%9B%9E%E7%AD%94"><span class="nav-number">7.</span> <span class="nav-text"> RetrievalQA：从相关文档走向回答</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%BB%98%E8%AE%A4%E8%B0%83%E7%94%A8%E9%93%BE"><span class="nav-number">7.1.</span> <span class="nav-text"> 默认调用链</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#stuffdocuments-%E6%80%8E%E6%A0%B7%E6%9E%84%E9%80%A0-context"><span class="nav-number">7.2.</span> <span class="nav-text"> StuffDocuments 怎样构造 context</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%94%E5%9B%9E%E6%9D%A5%E6%BA%90%E4%B8%8E%E7%94%9F%E6%88%90%E5%BC%95%E7%94%A8"><span class="nav-number">7.3.</span> <span class="nav-text"> 返回来源与生成引用</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E7%BB%84%E5%90%88%E7%AD%96%E7%95%A5%E4%B8%8E%E5%A4%9A%E8%BD%AE-rag"><span class="nav-number">8.</span> <span class="nav-text"> 文档组合策略与多轮 RAG</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9B%9B%E7%A7%8D%E6%96%87%E6%A1%A3%E7%BB%84%E5%90%88%E6%96%B9%E5%BC%8F"><span class="nav-number">8.1.</span> <span class="nav-text"> 四种文档组合方式</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%A4%9A%E8%BD%AE%E5%AF%B9%E8%AF%9D"><span class="nav-number">8.2.</span> <span class="nav-text"> 多轮对话</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AC%AC%E4%B8%89%E6%96%B9%E5%BA%93"><span class="nav-number">9.</span> <span class="nav-text"> 第三方库</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%87%E6%A1%A3%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%96%87%E6%9C%AC%E5%88%87%E5%88%86"><span class="nav-number">9.1.</span> <span class="nav-text"> 文档解析与文本切分</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%91%E9%87%8F%E7%94%9F%E6%88%90%E4%B8%8E%E6%A8%A1%E5%9E%8B%E6%8E%A5%E5%85%A5"><span class="nav-number">9.2.</span> <span class="nav-text"> 向量生成与模型接入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%91%E9%87%8F%E5%AD%98%E5%82%A8%E9%80%82%E9%85%8D"><span class="nav-number">9.3.</span> <span class="nav-text"> 向量存储适配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8F%90%E7%A4%BA%E8%AF%8D%E6%B8%B2%E6%9F%93"><span class="nav-number">9.4.</span> <span class="nav-text"> 提示词渲染</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%8C%E6%95%B4%E7%A4%BA%E4%BE%8B%E5%BB%BA%E7%AB%8B%E5%88%B6%E5%BA%A6%E7%9F%A5%E8%AF%86%E5%BA%93%E5%86%8D%E6%89%A7%E8%A1%8C%E9%97%AE%E7%AD%94"><span class="nav-number">10.</span> <span class="nav-text"> 完整示例：建立制度知识库，再执行问答</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%86%E5%A4%87%E6%95%B0%E6%8D%AE%E5%BA%93%E4%B8%8E%E8%B5%84%E6%96%99"><span class="nav-number">10.1.</span> <span class="nav-text"> 准备数据库与资料</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%A8%8B%E5%BA%8F%E4%BB%A3%E7%A0%81"><span class="nav-number">10.2.</span> <span class="nav-text"> 程序代码</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%92%E6%9F%A5%E4%B8%8E%E4%BC%98%E5%8C%96"><span class="nav-number">11.</span> <span class="nav-text"> 排查与优化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%88%E7%9C%8B%E6%9F%A5%E5%88%B0%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">11.1.</span> <span class="nav-text"> 先看查到了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%86%8D%E7%9C%8B%E6%A8%A1%E5%9E%8B%E6%94%B6%E5%88%B0%E4%BA%86%E4%BB%80%E4%B9%88"><span class="nav-number">11.2.</span> <span class="nav-text"> 再看模型收到了什么</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E5%9B%BA%E5%AE%9A%E9%97%AE%E9%A2%98%E9%AA%8C%E8%AF%81%E4%BF%AE%E6%94%B9"><span class="nav-number">11.3.</span> <span class="nav-text"> 用固定问题验证修改</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9B%9E%E7%AD%94%E6%85%A2%E6%97%B6%E5%88%86%E5%88%AB%E7%9C%8B%E5%90%84%E6%AD%A5%E8%80%97%E6%97%B6"><span class="nav-number">11.4.</span> <span class="nav-text"> 回答慢时，分别看各步耗时</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">12.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">305</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
