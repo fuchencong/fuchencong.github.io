@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="本文介绍 OpenMeter 的数据存储设计，结合源码分析用量事件、客户订阅、额度余额、账单和账务记录等数据的保存方式，以及各个存储组件的作用与选型取舍。OpenMeter 使用 ClickHouse 保存和查询用量明细，使用 PostgreSQL 管理业务状态，通过 Kafka 传递使用事件和业务消息，并按配置使用 Redis 保存去重索引与查询进度。下文先介绍整体分工，再分别展开各类数据的存储">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OpenMeter 学习 04：数据存储设计">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/10/21/go-openmeter-04/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="本文介绍 OpenMeter 的数据存储设计，结合源码分析用量事件、客户订阅、额度余额、账单和账务记录等数据的保存方式，以及各个存储组件的作用与选型取舍。OpenMeter 使用 ClickHouse 保存和查询用量明细，使用 PostgreSQL 管理业务状态，通过 Kafka 传递使用事件和业务消息，并按配置使用 Redis 保存去重索引与查询进度。下文先介绍整体分工，再分别展开各类数据的存储">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-10-21T06:16:33.000Z">
+<meta property="article:modified_time" content="2026-11-11T06:19:40.522Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/21/go-openmeter-04/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>OpenMeter 学习 04：数据存储设计 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/10/21/go-openmeter-04/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OpenMeter 学习 04：数据存储设计
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-10-21 14:16:33" itemprop="dateCreated datePublished" datetime="2026-10-21T14:16:33+08:00">2026-10-21</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>本文介绍 OpenMeter 的数据存储设计，结合源码分析用量事件、客户订阅、额度余额、账单和账务记录等数据的保存方式，以及各个存储组件的作用与选型取舍。OpenMeter 使用 ClickHouse 保存和查询用量明细，使用 PostgreSQL 管理业务状态，通过 Kafka 传递使用事件和业务消息，并按配置使用 Redis 保存去重索引与查询进度。下文先介绍整体分工，再分别展开各类数据的存储结构与读写流程。</p>
+<span id="more"></span>
+<h2 id="存储版图"><a class="markdownIt-Anchor" href="#存储版图"></a> 存储版图</h2>
+<h3 id="数据的归属"><a class="markdownIt-Anchor" href="#数据的归属"></a> 数据的归属</h3>
+<p>不同数据的访问方式决定了存储需求。客户资料、套餐单价和订阅日期需要经常按实体读取，也需要协调修改；用量记录主要是持续追加，再按客户和时间范围汇总。前者关心“这次修改是否完整提交”，后者关心“大量记录能否高效写入和扫描”。</p>
+<p>按数据的性质和用途，可以将存储分工归纳为下面几类：</p>
+<table>
+<thead>
+<tr>
+<th>数据类型</th>
+<th>实际例子</th>
+<th>主要存储</th>
+<th>存储需求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用量明细</td>
+<td>Token 消耗、请求次数、存储用量事件</td>
+<td>ClickHouse</td>
+<td>持续追加，按时间和业务维度批量聚合</td>
+</tr>
+<tr>
+<td>业务配置与状态</td>
+<td>计量规则、套餐价格、客户订阅</td>
+<td>PostgreSQL</td>
+<td>按实体读写，保证关联修改的完整性与一致性</td>
+</tr>
+<tr>
+<td>计算检查点</td>
+<td>额度余额快照</td>
+<td>PostgreSQL</td>
+<td>保存可复用的中间状态，减少重复计算</td>
+</tr>
+<tr>
+<td>历史凭据</td>
+<td>已出账明细、账务分录、通知载荷</td>
+<td>PostgreSQL</td>
+<td>保留当时的结果与依据，支持查询和追溯</td>
+</tr>
+<tr>
+<td>异步消息</td>
+<td>待处理的使用事件、订阅变更消息</td>
+<td>Kafka，部分消息先写入 PostgreSQL outbox</td>
+<td>连接处理阶段，支持缓冲、消费与重试</td>
+</tr>
+<tr>
+<td>短期辅助状态</td>
+<td>去重标记、查询进度</td>
+<td>按配置使用内存或 Redis</td>
+<td>快速读写，并通过容量限制或有效期控制保留范围</td>
+</tr>
+</tbody>
+</table>
+<p>其中最容易混淆的是计量器和用量：<strong>计量器定义保存在 PostgreSQL，用量明细保存在 ClickHouse。</strong> 创建一个求和计量器，保存的是“怎样解释事件”的规则，并不等于在关系数据库中创建了一张用量表。</p>
+<p>同样，Kafka 中的消息和 ClickHouse 中的行虽然可能描述同一次调用，职责也不同。前者用于把工作交给消费者，后者用于长期查询和计量。</p>
+<h3 id="两条数据路径"><a class="markdownIt-Anchor" href="#两条数据路径"></a> 两条数据路径</h3>
+<p>用量接入与订阅管理可以画成两条路径。下面省略观测设施和配置依赖，业务事件处理以相关功能启用为前提。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line">Usage path</span><br><span class="line"></span><br><span class="line">  Application</span><br><span class="line">       |</span><br><span class="line">       | CloudEvent</span><br><span class="line">       v</span><br><span class="line">  API server ---&gt; Kafka usage topic ---&gt; Sink worker ---&gt; ClickHouse</span><br><span class="line">                                             |              om_events</span><br><span class="line">                                             |</span><br><span class="line">                                             +-- dedupe --&gt; Redis (optional)</span><br><span class="line">                                             |</span><br><span class="line">                                             +-- stored notice --&gt; Kafka</span><br><span class="line">                                                                    |</span><br><span class="line">                                                                    v</span><br><span class="line">                                                              Balance worker</span><br><span class="line"></span><br><span class="line">Business path</span><br><span class="line"></span><br><span class="line">  Management API</span><br><span class="line">       |</span><br><span class="line">       v</span><br><span class="line">  Domain service ---&gt; PostgreSQL transaction</span><br><span class="line">                         |                 |</span><br><span class="line">                         v                 v</span><br><span class="line">                   Business rows      Outbox rows</span><br><span class="line">                                           |</span><br><span class="line">                                           | after commit / retry</span><br><span class="line">                                           v</span><br><span class="line">                                         Kafka</span><br><span class="line">                                           |</span><br><span class="line">                                           v</span><br><span class="line">                                      Billing worker</span><br><span class="line">                                           |</span><br><span class="line">                         +-----------------+----------------+</span><br><span class="line">                         |                                  |</span><br><span class="line">                         v                                  v</span><br><span class="line">                 ClickHouse queries                PostgreSQL results</span><br><span class="line">                                                   charges / invoices</span><br><span class="line">                                                   ledger entries</span><br></pre></td></tr></table></figure>
+<p>两条路径最终会相遇：费用计算需要读取订阅条款，也需要查询这段时间的实际用量。但它们并没有共享一笔覆盖 PostgreSQL、Kafka 和 ClickHouse 的事务。系统通过本地事务、消息重试、快照和明确的时间边界衔接各个阶段。</p>
+<p>理解了这张图，就可以先沿着使用事件向下走，再回过头看业务状态如何保存。</p>
+<h2 id="clickhouse-的用量明细"><a class="markdownIt-Anchor" href="#clickhouse-的用量明细"></a> ClickHouse 的用量明细</h2>
+<h3 id="clickhouse-基础"><a class="markdownIt-Anchor" href="#clickhouse-基础"></a> ClickHouse 基础</h3>
+<p>用量记录不断增加后，数据库需要处理的往往不再是“找到某一条调用”，而是“汇总这个月所有客户的消耗，再按模型和地区分组”。这样的查询可能涉及数百万甚至更多记录，但最终只返回几十行结果。ClickHouse 就是面向这类分析任务的数据库。</p>
+<p>ClickHouse 是一个开源的列式数据库，支持使用 SQL 对大量数据进行筛选、分组和聚合。这类工作通常称为在线分析处理（Online Analytical Processing，简称 OLAP）。这里的“在线”指可以直接执行查询并获取结果，不意味着数据写入后一定立即可见，也不意味着任何查询都能在固定时间内完成。</p>
+<p>它的核心特点是<strong>按列组织数据</strong>。我们平时看到的表仍然有行和列，但底层存储方式不同。下面用三条使用记录说明这种区别，图中只是逻辑示意，不代表实际文件格式：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">Logical table</span><br><span class="line"></span><br><span class="line">  customer   model     tokens</span><br><span class="line">  acme       model-a   1200</span><br><span class="line">  beta       model-a    800</span><br><span class="line">  acme       model-b    500</span><br><span class="line"></span><br><span class="line">Row-oriented layout</span><br><span class="line"></span><br><span class="line">  [acme, model-a, 1200] [beta, model-a, 800] [acme, model-b, 500]</span><br><span class="line"></span><br><span class="line">Column-oriented layout</span><br><span class="line"></span><br><span class="line">  customer: [acme, beta, acme]</span><br><span class="line">  model:    [model-a, model-a, model-b]</span><br><span class="line">  tokens:   [1200, 800, 500]</span><br></pre></td></tr></table></figure>
+<p>行式存储把同一条记录的字段组织在一起，适合按主键读取或修改完整记录。列式存储把同一列的数据组织在一起：计算 Token 总量时，主要读取 <code>tokens</code> 列；按模型统计时，再读取 <code>model</code> 列。表中即使还有请求参数、错误信息等其他列，也不必为了这次汇总全部读出。<strong>对于扫描很多行、只使用少数列的查询，这可以减少读取的数据量</strong>。</p>
+<p>同一列的数据类型相同，取值也可能重复，因而更便于采用合适的编码与压缩方式。ClickHouse 还会成批处理数据，让一次计算作用于一组值，并利用多个 CPU 核心并行执行查询。这些能力共同服务于一个目标：高效地从大量明细中得到统计结果。</p>
+<p>不过，列式存储只是基础。实际查询速度还取决于分区、排序、过滤条件和读取范围。如果一条查询必须扫描几年的数据，再解析每条记录中的复杂 JSON，工作量仍然很大。后面分析 OpenMeter 的表结构时，会具体讨论这些因素。</p>
+<h3 id="核心能力与场景"><a class="markdownIt-Anchor" href="#核心能力与场景"></a> 核心能力与场景</h3>
+<p>从使用者的角度看，ClickHouse 的主要能力包括：</p>
+<ul>
+<li><strong>明细存储</strong>：持续接收事件、日志等记录，同时保留后续查询所需的字段。</li>
+<li><strong>统计分析</strong>：通过 SQL 计算总量、平均值、去重数量、分位数等，并按时间、客户或业务维度分组。</li>
+<li><strong>时间范围查询</strong>：配合分区和排序，从大量历史数据中筛选某段时间的记录。</li>
+<li><strong>分析加速</strong>：支持物化视图等机制，按需要预先处理部分数据；具体项目是否使用，需要查看实现。</li>
+</ul>
+<p>因此，它常见于日志分析、网站与应用行为分析、监控指标分析、广告效果统计，以及 OpenMeter 这样的用量计量系统。这些场景通常持续产生新记录，查询则关注一段时间内的趋势、分布或汇总值。</p>
+<p>另一类工作是修改订单、维护订阅、扣减库存：每次操作涉及的记录可能很少，却要求多项修改完整提交，并正确处理并发。这类工作通常称为在线事务处理（Online Transaction Processing，简称 OLTP），也是 PostgreSQL 等关系数据库的常见用途。两类数据库的能力存在交集，但优化重点不同。<strong>ClickHouse 更适合以追加写入和批量分析为主的数据，频繁的逐行修改和复杂业务事务通常会交给其他存储处理</strong>。</p>
+<p>在 OpenMeter 中，ClickHouse 负责保存使用事件，并根据计量规则查询这些事件。例如“客户本月用了多少 Token”“不同模型分别消耗多少”，都属于它擅长的分析任务。客户买了什么套餐、订阅何时到期、账单处于什么状态，则由 PostgreSQL 管理。下面先通过一组简单 SQL 熟悉它的用法，再看 OpenMeter 如何组织实际数据。</p>
+<h3 id="sql-基本用法"><a class="markdownIt-Anchor" href="#sql-基本用法"></a> SQL 基本用法</h3>
+<p>理解列式存储之后，可以先用几条 SQL 熟悉 ClickHouse 的操作方式。ClickHouse 使用 SQL 作为主要查询语言，而且与 MySQL、PostgreSQL 使用的 SQL 非常相似。已经有可连接的实例时，可以通过命令行客户端 <code>clickhouse-client</code> 或数据库工具执行这些语句。</p>
+<p>下面的 <code>storage_demo</code> 是教学用数据库，与 OpenMeter 的实际表结构分开。首先，创建数据库和一张简单的用量表：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> DATABASE IF <span class="keyword">NOT</span> <span class="keyword">EXISTS</span> storage_demo;</span><br><span class="line"></span><br><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> storage_demo.usage_events (</span><br><span class="line">    customer String,</span><br><span class="line">    model LowCardinality(String),</span><br><span class="line">    tokens UInt64,</span><br><span class="line">    <span class="type">time</span> DateTime(<span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line">)</span><br><span class="line">ENGINE <span class="operator">=</span> MergeTree</span><br><span class="line"><span class="keyword">PARTITION</span> <span class="keyword">BY</span> toYYYYMM(<span class="type">time</span>)</span><br><span class="line"><span class="keyword">ORDER</span> <span class="keyword">BY</span> (customer, <span class="type">time</span>);</span><br></pre></td></tr></table></figure>
+<p>前半段与常见的建表语句很接近：<code>String</code> 表示字符串，<code>UInt64</code> 表示无符号的 64 位整数，这里用于保存非负的 Token 数量；<code>DateTime('UTC')</code> 表示按 UTC 时区解释和显示的秒级时间。<code>LowCardinality(String)</code> 则适合模型名这种大量重复、不同取值相对较少的字符串，通过字典编码减少重复存储。</p>
+<p>后半段是理解 ClickHouse 表设计的重点：</p>
+<ul>
+<li><strong><code>ENGINE</code>，表引擎</strong>：决定这张表如何存储和处理数据。<code>MergeTree</code> 是 ClickHouse 常用的表引擎，写入形成数据片段，后台再逐步合并，适合持续追加和范围查询。</li>
+<li><strong><code>PARTITION BY</code>，分区规则</strong>：把数据分成便于管理的部分。<code>toYYYYMM(time)</code> 将时间转换为年月，例如 <code>202610</code>，让同一个月的数据进入同一个月份分区。查询限制时间范围时，数据库有机会排除不相关分区。</li>
+<li><strong><code>ORDER BY</code>，存储排序键</strong>：决定数据片段内部如何排序，帮助查询跳过不相关范围。这里先按客户、再按时间组织数据，适合查询某个客户在一段时间内的用量。它与查询结果中的 <code>ORDER BY</code> 用途不同，也不要求客户和时间的组合唯一。</li>
+</ul>
+<p>接着，一次写入三条记录：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">INSERT</span> <span class="keyword">INTO</span> storage_demo.usage_events (customer, model, tokens, <span class="type">time</span>)</span><br><span class="line"><span class="keyword">VALUES</span></span><br><span class="line">    (<span class="string">&#x27;acme&#x27;</span>, <span class="string">&#x27;model-a&#x27;</span>, <span class="number">1200</span>, <span class="string">&#x27;2026-10-01 08:00:00&#x27;</span>),</span><br><span class="line">    (<span class="string">&#x27;beta&#x27;</span>, <span class="string">&#x27;model-a&#x27;</span>,  <span class="number">800</span>, <span class="string">&#x27;2026-10-01 08:05:00&#x27;</span>),</span><br><span class="line">    (<span class="string">&#x27;acme&#x27;</span>, <span class="string">&#x27;model-b&#x27;</span>,  <span class="number">500</span>, <span class="string">&#x27;2026-10-01 09:00:00&#x27;</span>);</span><br></pre></td></tr></table></figure>
+<p>这三条记录一共消耗 2500 Token。查询总量，只需要对数量列求和：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> <span class="built_in">sum</span>(tokens) <span class="keyword">AS</span> total_tokens</span><br><span class="line"><span class="keyword">FROM</span> storage_demo.usage_events;</span><br></pre></td></tr></table></figure>
+<p>如果需要统计十月份每个客户的用量，就加上时间条件与分组：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> customer, <span class="built_in">sum</span>(tokens) <span class="keyword">AS</span> total_tokens</span><br><span class="line"><span class="keyword">FROM</span> storage_demo.usage_events</span><br><span class="line"><span class="keyword">WHERE</span> <span class="type">time</span> <span class="operator">&gt;=</span> toDateTime(<span class="string">&#x27;2026-10-01 00:00:00&#x27;</span>, <span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line">  <span class="keyword">AND</span> <span class="type">time</span> <span class="operator">&lt;</span>  toDateTime(<span class="string">&#x27;2026-11-01 00:00:00&#x27;</span>, <span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line"><span class="keyword">GROUP</span> <span class="keyword">BY</span> customer</span><br><span class="line"><span class="keyword">ORDER</span> <span class="keyword">BY</span> customer;</span><br></pre></td></tr></table></figure>
+<p>结果是 <code>acme</code> 使用 1700 Token，<code>beta</code> 使用 800 Token。<code>WHERE</code> 决定哪些记录参与统计，<code>GROUP BY</code> 决定按什么维度分组，<code>sum</code> 完成数量累加。按天或按小时统计时，还可以先把事件时间转换成对应时间段的起点，再按这个值分组。</p>
+<p><strong>这就是 OpenMeter 使用 ClickHouse 的基本方式：持续写入明细，再用 SQL 按时间和使用主体汇总</strong>。接下来需要理解的，是它为什么把教学例子中的 <code>tokens</code> 列换成了更通用的事件载荷。</p>
+<h3 id="通用事件表"><a class="markdownIt-Anchor" href="#通用事件表"></a> 通用事件表</h3>
+<p>前面的教学表只记录 Token，直接使用 <code>tokens</code> 列很方便。OpenMeter 还要接收请求次数、存储字节数、任务时长等不同数据，如果每接入一种事件都增加物理列，表结构就会不断变化。</p>
+<p><strong>当前实现将通用字段保存为独立列，把不同业务的具体内容放进 JSON 字符串</strong>。按默认数据库名和表名，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/streaming/clickhouse/event_query.go">事件表定义</a>生成的 SQL 重新排版后如下：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE</span> <span class="keyword">TABLE</span> IF <span class="keyword">NOT</span> <span class="keyword">EXISTS</span> openmeter.om_events (</span><br><span class="line">    namespace String,</span><br><span class="line">    id String,</span><br><span class="line">    type LowCardinality(String),</span><br><span class="line">    subject String,</span><br><span class="line">    source String,</span><br><span class="line">    <span class="type">time</span> DateTime,</span><br><span class="line">    data String,</span><br><span class="line">    ingested_at DateTime,</span><br><span class="line">    stored_at DateTime,</span><br><span class="line">    INDEX om_events_stored_at stored_at TYPE minmax GRANULARITY <span class="number">4</span>,</span><br><span class="line">    store_row_id String</span><br><span class="line">)</span><br><span class="line">ENGINE <span class="operator">=</span> MergeTree</span><br><span class="line"><span class="keyword">PARTITION</span> <span class="keyword">BY</span> toYYYYMM(<span class="type">time</span>)</span><br><span class="line"><span class="keyword">ORDER</span> <span class="keyword">BY</span> (namespace, type, subject, toStartOfHour(<span class="type">time</span>))</span><br></pre></td></tr></table></figure>
+<p>这张表叫作 <code>om_events</code>，名称可以配置。不同计量器共用这张事件表，<code>namespace</code> 区分业务空间，<code>type</code> 区分事件类型，<code>subject</code> 表示使用主体。<code>id</code>、<code>source</code> 用于描述事件身份与来源，<code>time</code> 记录使用发生的时间。</p>
+<p>对于一条 Token 事件，<code>data</code> 可以保存下面这样的内容。这是用于说明存储方式的载荷示例：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;tokens&quot;</span><span class="punctuation">:</span> <span class="number">1200</span><span class="punctuation">,</span> <span class="attr">&quot;model&quot;</span><span class="punctuation">:</span> <span class="string">&quot;model-a&quot;</span><span class="punctuation">,</span> <span class="attr">&quot;region&quot;</span><span class="punctuation">:</span> <span class="string">&quot;us-west&quot;</span><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+<p><code>tokens</code> 和 <code>model</code> 此时都是 JSON 内部字段，没有自动变成 ClickHouse 物理列。后续查询需要从 <code>data</code> 中提取它们。这样，同一张表也可以保存 <code>&#123;&quot;bytes&quot;: 4096&#125;</code> 或 <code>&#123;&quot;duration&quot;: 30&#125;</code>，由不同计量器决定读取哪个字段、怎样统计。</p>
+<p>表中另外几个字段属于处理信息：<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/sink/storage.go">Sink 写入代码</a>会补充接入时间 <code>ingested_at</code>、批次存储时间标记 <code>stored_at</code>，以及供明细分页使用的行标识 <code>store_row_id</code>。例如昨天发生、今天补报的事件，业务时间和处理时间就不同。计量区间主要按 <code>time</code> 划分；计费需要限定本次可见数据范围时，还会用到 <code>stored_at</code>，后文再展开。</p>
+<h3 id="数据布局"><a class="markdownIt-Anchor" href="#数据布局"></a> 数据布局</h3>
+<p>通用事件表沿用了教学例子中的 <code>MergeTree</code> 和月份分区，但排序键变成了：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">namespace -&gt; type -&gt; subject -&gt; event hour</span><br></pre></td></tr></table></figure>
+<p>这是因为 OpenMeter 常见的查询是“某个业务空间、某类事件、某个使用主体在一段时间内的用量”。先把这些条件相近的记录放在一起，有助于减少读取范围。查询服务会把客户归属转换成相关 subject 条件，这里只需要把它理解为事件中用于筛选使用主体的字段。</p>
+<p>末尾的 <code>toStartOfHour(time)</code> 表示按小时起点参与存储排序。例如 08:15 和 08:40 都对应 08:00，但原来的事件行和 <code>time</code> 列仍然保留。<strong>存储排序不会把一个小时的事件合成一条汇总记录。</strong></p>
+<p><code>stored_at</code> 上还有一个 minmax 索引，用于记录数据块的最小、最大值，让数据库在某些过滤条件下跳过整个块。它是辅助减少扫描的机制，实际效果取决于数据分布，初次阅读时不必先掌握其中的粒度参数。</p>
+<p>这里还可以确认两个边界：建表语句没有设置自动过期删除规则，按月分区不意味着数据会按月自动清理；普通 <code>MergeTree</code> 也没有给业务事件 ID 提供唯一约束。去重由应用处理，后面的 Redis 部分会介绍。</p>
+<h3 id="批量写入"><a class="markdownIt-Anchor" href="#批量写入"></a> 批量写入</h3>
+<p>前面的 SQL 示例用一次 <code>INSERT</code> 写入三条记录。<strong>实际事件量更大时，合并写入可以减少网络往返，也避免产生过多很小的数据片段，这正是 OpenMeter 在写入侧采用的方式</strong>。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Application -&gt; API -&gt; Kafka -&gt; Sink buffer -&gt; batch INSERT -&gt; om_events</span><br></pre></td></tr></table></figure>
+<p>API 先将事件交给 Kafka；Sink 是后台消费者，读取消息、完成解析和去重，再把一批事件写入 ClickHouse：</p>
+<ul>
+<li>当前<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/app/config/sink.go">默认配置</a>是累计 500 条或等待 2 秒触发一次批次写入，以先满足的条件为准</li>
+<li><a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/streaming/clickhouse/event_query.go">插入语句构造代码</a>将这些记录组合成一条 INSERT，再由<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/streaming/clickhouse/connector.go">连接器</a>执行</li>
+</ul>
+<p>因此，即使用的是同步数据库写入，API 接收与最终入库之间仍然有后台处理过程。请求返回成功与新增用量可查存在时间差，实际延迟还取决于消息积压和数据库处理速度。</p>
+<p>ClickHouse 自身也支持异步插入，不过 OpenMeter 默认关闭这一选项。它与上图中 Kafka 带来的异步是两回事；显式启用时，还需要通过 <code>asyncInsertWait</code> 决定是否等待后台插入完成。</p>
+<h3 id="聚合查询"><a class="markdownIt-Anchor" href="#聚合查询"></a> 聚合查询</h3>
+<p>有了明细，OpenMeter 接下来的核心工作仍是执行 SQL 聚合。与教学例子的主要区别，是数值需要从 <code>data</code> 中提取，而查询条件由计量器和请求参数共同提供。</p>
+<p>例如，定义一个 Token 计量器，需要说明事件类型是 <code>llm.tokens</code>、数值位于 <code>$.tokens</code>、统计方式是求和。<strong>这里的 <code>$.tokens</code> 是 JSON Path，表示读取 JSON 对象顶层的 <code>tokens</code> 字段</strong>。计量器定义保存在 PostgreSQL，应用读取定义后生成 ClickHouse 查询。</p>
+<p>下面根据<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/streaming/clickhouse/meter_query.go">查询实现</a>和<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/streaming/clickhouse/meter_query_test.go">SQL 测试</a>保留主要计算逻辑，省略返回的时间窗口列，并代入示例值。它用于说明按小时统计的过程，不是原样复制的完整生成 SQL：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span></span><br><span class="line">    toStartOfHour(<span class="type">time</span>, <span class="string">&#x27;UTC&#x27;</span>) <span class="keyword">AS</span> <span class="keyword">hour</span>,</span><br><span class="line">    <span class="built_in">sum</span>(</span><br><span class="line">        ifNotFinite(</span><br><span class="line">            toFloat64OrNull(<span class="built_in">JSON_VALUE</span>(data, <span class="string">&#x27;$.tokens&#x27;</span>)),</span><br><span class="line">            <span class="keyword">null</span></span><br><span class="line">        )</span><br><span class="line">    ) <span class="keyword">AS</span> total_tokens</span><br><span class="line"><span class="keyword">FROM</span> openmeter.om_events</span><br><span class="line"><span class="keyword">WHERE</span> namespace <span class="operator">=</span> <span class="string">&#x27;workspace-acme&#x27;</span></span><br><span class="line">  <span class="keyword">AND</span> type <span class="operator">=</span> <span class="string">&#x27;llm.tokens&#x27;</span></span><br><span class="line">  <span class="keyword">AND</span> subject <span class="operator">=</span> <span class="string">&#x27;acme-api&#x27;</span></span><br><span class="line">  <span class="keyword">AND</span> <span class="type">time</span> <span class="operator">&gt;=</span> toDateTime(<span class="string">&#x27;2026-10-01 00:00:00&#x27;</span>, <span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line">  <span class="keyword">AND</span> <span class="type">time</span> <span class="operator">&lt;</span>  toDateTime(<span class="string">&#x27;2026-11-01 00:00:00&#x27;</span>, <span class="string">&#x27;UTC&#x27;</span>)</span><br><span class="line"><span class="keyword">GROUP</span> <span class="keyword">BY</span> <span class="keyword">hour</span></span><br><span class="line"><span class="keyword">ORDER</span> <span class="keyword">BY</span> <span class="keyword">hour</span>;</span><br></pre></td></tr></table></figure>
+<p>这段查询可以从内向外理解：<code>JSON_VALUE</code> 提取 Token 字段，<code>toFloat64OrNull</code> 将结果转成数值，不能转换时得到 NULL；<code>ifNotFinite</code> 进一步处理非有限值；最后 <code>sum</code> 累加有效数值。时间转换则把事件分到各个小时，返回每小时的用量。</p>
+<p>实际实现通过 <code>tumbleStart</code>、<code>tumbleEnd</code> 生成请求所需时间窗口的起止值，并支持窗口时区。除了求和，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/streaming/clickhouse/meter_query.go">查询构造器</a>也支持平均值、最小值、最大值、事件计数、精确去重计数和最新值。默认数值路径使用 Float64，启用 decimal precision 配置后，相关表达式改用 Decimal128 转换。</p>
+<p>由此可以看清 ClickHouse 在 OpenMeter 中的核心使用场景：<strong>保存通用的使用明细，按照计量定义在查询时筛选和聚合。</strong> 当前连接器没有为每个计量器建立预聚合表。同一份事件因此能够支持不同统计口径，代价是查询仍要读取明细、解析 JSON；时间跨度和分组维度越大，需要处理的数据也可能越多。</p>
+<p>这些查询得到的是使用数量。客户订阅条款、额度扣减和最终账单还需要其他模块结合规则处理，下面转向保存这些业务状态的 PostgreSQL。</p>
+<h2 id="postgresql-的业务状态"><a class="markdownIt-Anchor" href="#postgresql-的业务状态"></a> PostgreSQL 的业务状态</h2>
+<h3 id="实体与约束"><a class="markdownIt-Anchor" href="#实体与约束"></a> 实体与约束</h3>
+<p>如果说使用事件回答“发生过什么”，业务数据库就要回答“客户现在按什么规则使用和付费”。这里的修改往往跨越多个实体：创建订阅可能同时生成阶段、条目和权益；更新账单可能改变明细、汇总和状态。它们需要完整提交，也需要明确的关系与约束。</p>
+<p>OpenMeter 通过 Ent 描述大部分持久化实体，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/tree/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema">schema 目录</a>是理解数据结构的主要入口，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/tree/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/db">生成代码目录</a>提供查询与写入接口。运行时，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/app/common/database.go">数据库组装代码</a>将 PostgreSQL 驱动、<code>sql.DB</code> 和 Ent client 连接起来。</p>
+<p>许多业务实体复用公共字段：</p>
+<ul>
+<li><code>id</code>：通常由 ULID 生成，PostgreSQL 中使用 <code>char(26)</code>。</li>
+<li><code>namespace</code>：标识业务空间，作为大量查询和复合索引的条件。</li>
+<li><code>created_at</code>、<code>updated_at</code>、<code>deleted_at</code>：保存记录时间与删除可见性。</li>
+<li><code>metadata</code>、<code>annotations</code>：保存扩展信息或系统标记。</li>
+</ul>
+<p>这些字段由 <a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/pkg/framework/entutils/mixins.go">Ent mixin</a>提供，不过不能因此推断所有表完全同构。例如 outbox 使用递增序列 ID，也没有沿用普通业务实体的软删除方式。</p>
+<p>namespace 在这里是数据模型中的逻辑隔离，不等于每个租户拥有一个 PostgreSQL 数据库。相应地，查询和约束需要带上 namespace。以<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema/meter.go">计量器</a>为例，活跃定义的 key 受下面这个复合唯一索引约束：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">index.Fields(<span class="string">&quot;namespace&quot;</span>, <span class="string">&quot;key&quot;</span>).</span><br><span class="line">    Annotations(</span><br><span class="line">        entsql.IndexWhere(<span class="string">&quot;deleted_at IS NULL&quot;</span>),</span><br><span class="line">    ).</span><br><span class="line">    Unique(),</span><br></pre></td></tr></table></figure>
+<p>它表达的是：同一个 namespace 内，未删除的计量器不能重用相同 key。软删除后保留历史记录，但活跃资源的命名空间可以重新使用。这比仅靠 API 在写入前查一次重名，更能应对并发创建。</p>
+<p>当然，约束也有边界。源码中不是每个业务引用都有数据库外键，ClickHouse 中的 subject 更没有跨库外键。关系模型、服务校验和数据库约束是共同工作的几层机制。</p>
+<h3 id="关系字段与-jsonb"><a class="markdownIt-Anchor" href="#关系字段与-jsonb"></a> 关系字段与 JSONB</h3>
+<p>业务配置既有稳定结构，也有变化较多的部分。客户 ID、币种、阶段起点适合独立字段；阶梯价格、权益模板、折扣组合则更像一个内部结构完整的配置对象。OpenMeter 因此没有将全部业务对象塞进单个 JSON，也没有把每一种价格形态都拆成大量固定列。它使用关系字段保存身份、关联、状态和主要时间，再用 JSONB（Binary JSON）保存部分结构化配置。</p>
+<p>以<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema/meter.go">计量器定义</a>为例：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">field.String(<span class="string">&quot;event_type&quot;</span>).NotEmpty().Immutable(),</span><br><span class="line"><span class="comment">// Optional for count</span></span><br><span class="line">field.String(<span class="string">&quot;value_property&quot;</span>).Nillable().Optional(),</span><br><span class="line">field.JSON(<span class="string">&quot;group_by&quot;</span>, <span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span>&#123;&#125;).Optional(),</span><br><span class="line">field.Enum(<span class="string">&quot;aggregation&quot;</span>).GoType(meter.MeterAggregation(<span class="string">&quot;&quot;</span>)).Immutable(),</span><br></pre></td></tr></table></figure>
+<p><code>event_type</code>、<code>aggregation</code> 是独立字段，分组名到 JSON Path 的映射则保存在 JSON 配置中。计量器并没有存储“累计 Token”这样的运行结果，它只是查询原始事件的解释规则。</p>
+<p>订阅条目的价格也采用类似方式。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema/subscription.go">SubscriptionItem schema</a>中，下面这段虽然以 <code>field.String</code> 开头，实际持久化类型却是 PostgreSQL JSONB：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">field.String(<span class="string">&quot;price&quot;</span>).</span><br><span class="line">    GoType(&amp;productcatalog.Price&#123;&#125;).</span><br><span class="line">    ValueScanner(PriceValueScanner).</span><br><span class="line">    SchemaType(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span>&#123;</span><br><span class="line">        dialect.Postgres: <span class="string">&quot;jsonb&quot;</span>,</span><br><span class="line">    &#125;).</span><br><span class="line">    Optional().</span><br><span class="line">    Nillable(),</span><br></pre></td></tr></table></figure>
+<p>这里通过 Go 类型和 <code>ValueScanner</code> 完成序列化。因此，阅读 Ent schema 时不能仅凭构造器名称判断数据库列类型，还要看 <code>SchemaType</code> 和转换逻辑。</p>
+<p>这种混合设计保留了两种能力：关系部分便于关联、索引和约束；JSONB 部分便于表达不同价格和配置形态。不过，JSONB 也没有免除版本管理责任。只要旧记录还在，读取代码就必须理解它们原来的表示方式。</p>
+<p>商品目录本身也有关系结构。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema/productcatalog.go">套餐 schema</a>保存 key、version、币种、生效范围和结算方式，下接套餐阶段与费率卡；活跃版本通过 <code>(namespace, key, version)</code> 唯一索引区分。这个版本表达商品目录中的商业配置，与下面客户订阅的条目历史是两个层面。</p>
+<h3 id="订阅的时间结构"><a class="markdownIt-Anchor" href="#订阅的时间结构"></a> 订阅的时间结构</h3>
+<p>客户订阅也不是一行 <code>plan_id</code> 就能表达。套餐可以更新，客户可以中途升级、预约取消，也可能拥有单独协商的价格。历史上某段时间使用什么条款，需要从客户自己的订阅安排中读出来。</p>
+<p>当前<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema/subscription.go">订阅模型</a>主要由三层组成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">Customer</span><br><span class="line">   |</span><br><span class="line">   v</span><br><span class="line">Subscription</span><br><span class="line">  customer / plan reference</span><br><span class="line">  active interval / billing anchor / cadence</span><br><span class="line">  invoice currency / settlement mode</span><br><span class="line">   |</span><br><span class="line">   +--&gt; SubscriptionPhase</span><br><span class="line">           key / active_from / sort_hint</span><br><span class="line">           |</span><br><span class="line">           +--&gt; SubscriptionItem</span><br><span class="line">                   key / active_from / active_to</span><br><span class="line">                   price / discounts / unit_config</span><br><span class="line">                   feature / entitlement reference</span><br></pre></td></tr></table></figure>
+<p>订阅保存客户、账期锚点、周期和结算方式；阶段组织商业安排；条目保存有效时间和费率卡内容，包括价格、折扣及权益模板等。商品目录是生成这些安排的来源，已经形成的客户条款则有自己的持久化表示。</p>
+<p>阶段与条目的时间结构还有一处区别：阶段行主要保存起点，阶段结束需要根据下一个阶段或订阅结束推导；条目保存自己的生效区间，并可保存相对阶段起点的时间覆盖信息。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/subscription/README.md">订阅领域文档</a>明确要求，不要把推导出的阶段结束误当成另一份独立事实。</p>
+<p>这样保存，才能描述“先试用，后正式收费”以及“同一条目在不同时间采用不同条款”。它也解释了为什么订阅更新需要领域服务协调多个实体，而不是直接改一张表中的价格字段。</p>
+<p>此外，更新可能删除并重新创建阶段、条目及其权益。物理行 ID 不一定是某条逻辑商业安排永远不变的身份。下游同步需要理解领域中的逻辑引用，不能只凭一行是否换了 ID 就认定客户购买了全新的商品。</p>
+<h3 id="事务与并发"><a class="markdownIt-Anchor" href="#事务与并发"></a> 事务与并发</h3>
+<p>关系数据库选型的另一个理由，来自多个进程同时修改同一份客户状态的场景。</p>
+<p>例如两个任务同时尝试为同一客户创建待出账容器。即使每个任务内部都执行“先查，没有则创建”，它们仍可能在相同时间看到空结果。<strong>需要把并发控制放进事务，并让数据库约束成为最后一道保护</strong>。</p>
+<p>OpenMeter 的<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/billing/adapter/lock.go">计费锁实现</a>维护客户锁记录，通过 Ent 的 <code>ForUpdate()</code> 在事务中锁定。同一客户的账单操作因此可以串行执行。与此同时，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ent/schema/billing.go">账单 schema</a>还有一个部分唯一索引：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">index.Fields(<span class="string">&quot;namespace&quot;</span>, <span class="string">&quot;customer_id&quot;</span>, <span class="string">&quot;currency&quot;</span>).</span><br><span class="line">    Annotations(</span><br><span class="line">        entsql.IndexWhere(<span class="string">&quot;deleted_at IS NULL and status = &#x27;gathering&#x27;&quot;</span>),</span><br><span class="line">    ).</span><br><span class="line">    Unique(),</span><br></pre></td></tr></table></figure>
+<p>这个约束限制同一业务空间、同一客户、同一币种只能存在一张活跃的 gathering invoice，也就是尚在收集待出账项目的账单容器。</p>
+<p>项目还提供通用的<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/pkg/framework/lockr/locker.go">事务级业务锁</a>，底层使用：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">SELECT</span> pg_advisory_xact_lock($<span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+<p>锁的生命周期跟随 PostgreSQL 事务，不需要另建 Redis 分布式锁才能完成这类协调。行锁适合锁定已有记录，advisory lock 则让业务可以按某个逻辑 key 协调操作。</p>
+<p>这些能力说明了 PostgreSQL 在项目里的角色：它不只是保存对象的地方，也承担局部原子性、关系约束和并发协调。至于事务提交之后怎样可靠地通知其他进程，还需要 Kafka 与 outbox 配合。</p>
+<h2 id="kafka-的事件日志"><a class="markdownIt-Anchor" href="#kafka-的事件日志"></a> Kafka 的事件日志</h2>
+<h3 id="使用事件"><a class="markdownIt-Anchor" href="#使用事件"></a> 使用事件</h3>
+<p>调用量增长时，接入速度和 ClickHouse 写入速度不一定始终一致。写入节点短暂变慢，不应该立即让所有事件生产者跟着堵塞；消费者也需要在重启后继续处理尚未完成的数据。Kafka 为这两个阶段提供消息日志和消费位置。接入侧负责发布，Sink 消费并批量写入，积压量反映两者的速度差。保留期内的消息还可以按消费位置重新读取，但 Kafka 的保留策略仍由实际 broker 和 topic 配置决定，不能把它当成永久档案。</p>
+<p>重新读取是一项能力，也需要明确的消费位置操作。当前 Sink 将无有效 offset 时的重置策略固定为 <code>latest</code>；如果消费位置缺失或过期，它不会自动从最早保留消息开始补齐。正常重启后的继续消费，与主动回放历史，是不同的运行场景。</p>
+<p>当前<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ingest/kafkaingest/topicresolver/namespacedtopic.go">接入 topic 解析器</a>根据 namespace 套用模板，默认模板是 <code>om_%s_events</code>。消息中保存序列化后的 CloudEvent，并通过 header 携带 namespace、接入时间和追踪信息。</p>
+<p>消息 key 与去重身份使用相同字段。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ingest/kafkaingest/serializer/json.go">JSON 序列化器</a>中的实现如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">dedupeItem := dedupe.Item&#123;</span><br><span class="line">    Namespace: namespace,</span><br><span class="line">    ID:        ev.ID(),</span><br><span class="line">    Source:    ev.Source(),</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">return</span> []<span class="type">byte</span>(dedupeItem.Key()), <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>在一致的分区器配置下，同一去重身份的重试会进入相同分区，有助于减少并发去重竞争。但这里的 key 不是 customer 或 subject，不能据此推出“同一客户的所有事件严格有序”。Kafka 的顺序边界是分区，而不是整个集群或所有业务数据。</p>
+<p>还有一处会直接影响接入语义。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/ingest/kafkaingest/collector.go">Kafka Collector</a>调用的是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">err = s.Producer.Produce(msg, <span class="literal">nil</span>)</span><br></pre></td></tr></table></figure>
+<p>该调用将消息交给生产者的异步发送路径；投递报告由另一个循环处理，失败时记录日志。因此，接口成功不能被直接解释成“这一条消息已逐条等待 broker 持久化确认”，更不表示 ClickHouse 已经可查。Kafka 能提供什么级别的可靠性，还要结合生产者行为和 broker 配置一起看。</p>
+<h3 id="领域事件"><a class="markdownIt-Anchor" href="#领域事件"></a> 领域事件</h3>
+<p>Kafka 的第二项工作，是传递订阅变更、账单变更、用量落库通知、权益值更新等消息。这些消息用于让不同业务模块继续工作。当前配置区分了 system events、ingest events、balance worker events 等 topic。它们与原始用量 topic 不同：原始事件描述一次使用，领域事件描述一次业务变化或后台处理结果。</p>
+<p>同样重要的是，<strong>收到一个“用量已更新”的通知，不等于通知本身保存了完整业务状态。</strong> Balance worker 仍需要查询用量并结合 PostgreSQL 中的权益和授予进行计算；Billing worker 也需要读取已提交的订阅安排。消费者各自使用自己的消费组推进，彼此完成时间可以不同。</p>
+<p>接入日志、领域消息和关系数据库共同协作，但当前系统并不是把所有业务状态都通过重放 Kafka 历史重新构建。客户、订阅、账单等对象在 PostgreSQL 中有直接的持久化模型；Kafka 消息不能替代这些业务表的备份。</p>
+<h3 id="事务消息"><a class="markdownIt-Anchor" href="#事务消息"></a> 事务消息</h3>
+<p>订阅修改引出了一个经典的双写问题：如果 PostgreSQL 已经提交，而进程在发送 Kafka 消息前崩溃，计费模块就可能错过这次变化。反过来，如果先发消息再提交数据库，消费者也可能看见一条最终回滚的修改。</p>
+<p>OpenMeter 对配置进入 outbox 的消息，先在同一笔 PostgreSQL 事务中写入待发送记录。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/app/common/watermill.go">当前应用组装</a>只把 system-events topic 加入 <code>OutboxTopics</code>，其他 topic 仍可直接发布。因此，不能将所有 Kafka 消息都描述成具有事务 outbox 保护。</p>
+<p>outbox 的关系可以画成：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">One PostgreSQL transaction</span><br><span class="line"></span><br><span class="line">  update subscription</span><br><span class="line">  update phases / items / entitlements</span><br><span class="line">  insert event_outboxes</span><br><span class="line">             |</span><br><span class="line">          COMMIT</span><br><span class="line">             |</span><br><span class="line">             v</span><br><span class="line">  outbox worker claims pending rows</span><br><span class="line">             |</span><br><span class="line">             v</span><br><span class="line">         publish Kafka</span><br><span class="line">             |</span><br><span class="line">             v</span><br><span class="line">  delete acknowledged outbox rows</span><br></pre></td></tr></table></figure>
+<p><a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/watermill/outbox/publisher.go">发布器</a>会复用调用者事务；没有外层事务时，为入队操作创建独立事务。核心写入片段如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">_, err = client.EventOutbox.Create().</span><br><span class="line">    SetMessageID(msg.UUID).</span><br><span class="line">    SetTransactionID(tx.ID()).</span><br><span class="line">    SetTopic(topic).</span><br><span class="line">    SetPayload(msg.Payload).</span><br><span class="line">    SetMetadata(<span class="keyword">map</span>[<span class="type">string</span>]<span class="type">string</span>(msg.Metadata)).Save(ctx)</span><br></pre></td></tr></table></figure>
+<p>待发送行保存消息 ID、来源事务 ID、topic、payload、metadata、尝试次数和序列 ID。事务提交后唤醒投递 worker，周期性重试也会推进队列；默认重试间隔是一分钟，默认最多尝试十次。</p>
+<p>后台 worker 通过 <code>FOR UPDATE SKIP LOCKED</code> 领取某个来源事务的队列头，再按序列 ID 发送同一事务的消息。多个 worker 可以处理不同事务，而不需要业务请求等待 Kafka 网络调用。</p>
+<p>这解决了“业务提交后消息记录丢失”的主要窗口，但仍有两项限制：</p>
+<ul>
+<li>Kafka 已确认发送，而删除 outbox 的数据库事务未提交时，消息可能再次发送。消费者仍需容忍重复。</li>
+<li>达到最大尝试次数的记录会保留以供检查，但后续 drain 会跳过。有限重试不是无限期保证最终送达。</li>
+</ul>
+<p>顺序保证也只作用于同一来源事务的发送过程；它不能扩展成不同事务、不同 topic 或不同 Kafka 分区之间的全局顺序。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/watermill/outbox/README.md">Outbox 的领域说明</a>明确指出，成功发送后记录会被硬删除。它是一张交付队列表，不是永久事件档案。这里的 PostgreSQL 和 Kafka 不是保存两份相同历史，而是先后承担“提交后待发送”和“消费者可读取”的责任。</p>
+<h2 id="redis-的短期状态"><a class="markdownIt-Anchor" href="#redis-的短期状态"></a> Redis 的短期状态</h2>
+<h3 id="去重索引"><a class="markdownIt-Anchor" href="#去重索引"></a> 去重索引</h3>
+<p>客户端上报事件后，可能因为网络超时而重新发送同一条记录。如果这些记录都参与统计，同一次使用就会被重复计量。OpenMeter 在处理事件时通过去重索引识别已经处理过的记录，Redis 是其中一种可选的索引存储。</p>
+<p>OpenMeter 的去重身份由 namespace、source、事件 ID 组成。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/dedupe/dedupe.go">Item.Key</a>的实现是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">func</span> <span class="params">(i Item)</span></span> Key() <span class="type">string</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> fmt.Sprintf(<span class="string">&quot;%s-%s-%s&quot;</span>, i.Namespace, i.Source, i.ID)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>默认关闭可配置去重；启用时可使用进程内 memory driver 或 Redis driver。Sink 在同一批次内部还会按事件身份去重，这与跨批次、跨进程的去重存储不是一回事。</p>
+<p>内存 driver 使用 LRU，只保存有限数量的 key，重启后消失，也不会在多个进程间共享。Redis 则可以让多个实例查看同一份短期索引，并通过有效期控制占用。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/dedupe/redisdedupe/redisdedupe.go">Redis driver</a>的一种原子写入方式是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">status, err := d.Redis.SetArgs(ctx, key, <span class="string">&quot;&quot;</span>, redis.SetArgs&#123;</span><br><span class="line">    TTL:  d.Expiration,</span><br><span class="line">    Mode: <span class="string">&quot;nx&quot;</span>,</span><br><span class="line">&#125;).Result()</span><br></pre></td></tr></table></figure>
+<p>它只需要记录“这个身份出现过”，所以 value 可以为空；真正有用的是 key 是否存在及其 TTL。实现还支持原始 key、哈希 key 和迁移兼容模式。默认 Redis 去重有效期为 24 小时，实际值可以配置。</p>
+<p>这里必须区分两个使用位置：</p>
+<ul>
+<li><strong>接入侧去重</strong>：包装 Collector，先检查并登记身份，再决定是否继续发送。</li>
+<li><strong>Sink 去重</strong>：先批量检查已有身份，成功写入用量后，再登记成功记录。</li>
+</ul>
+<p>前者可以减少重复消息进入 Kafka，后者贴近最终存储。它们使用独立配置项，不能把“启用了某处去重”直接解释成整个链路拥有相同保证。</p>
+<p>Redis 在这里也不只是提升速度的缓存。去重键丢失或过期，会改变后续重试是否被接纳；接入侧先登记再发送，还存在发送失败而身份已经登记的窗口。系统没有把 Redis 和 Kafka 的这两个操作包进同一事务。</p>
+<p>这也是为什么短期去重不等于永久幂等：超过有效期再次上报相同事件，或者相关索引状态丢失，系统就可能重新接纳它。事件表自身又没有唯一约束，最终仍需结合生产者重试方式和业务身份设计理解重复风险。</p>
+<h3 id="查询进度"><a class="markdownIt-Anchor" href="#查询进度"></a> 查询进度</h3>
+<p>另一个 Redis 用途来自大范围查询。用户等待长查询时，希望知道它仍在执行，而不是只能盯着一个没有反馈的请求。</p>
+<p><a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/openmeter/progressmanager/adapter/progress.go">Progress manager</a>将进度对象序列化为 JSON，使用 namespace、进度 ID 和可选前缀组织 key，再通过普通 Redis <code>SET</code> 保存。默认过期时间是五分钟；未启用时，<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/app/common/progressmanager.go">依赖组装</a>使用 noop 实现。</p>
+<p>这类数据生命周期短、读写简单，并且需要跨 API 请求读取，适合使用带 TTL 的键值存储。它没有承担客户余额或账单状态的事实来源，丢失后也不能据此判断用量数据丢失。</p>
+<p>由此可以看到，即使同样保存在 Redis，去重索引和查询进度的丢失后果也不同。分析存储可靠性时，需要先看数据用途，不能仅按组件名称把所有 Redis 数据都归入“随时可以丢弃的缓存”。</p>
+<h2 id="保留与演进"><a class="markdownIt-Anchor" href="#保留与演进"></a> 保留与演进</h2>
+<h3 id="数据的保留期"><a class="markdownIt-Anchor" href="#数据的保留期"></a> 数据的保留期</h3>
+<p>采用多个存储之后，数据保留也变成了几套不同策略。</p>
+<p>Kafka 的保留期决定还能回读多早的消息；Redis 的 TTL 决定短期辅助状态存活多久；ClickHouse 事件的保留范围决定还能重查多早的使用事实；PostgreSQL 中的软删除记录、账单和账务历史则有各自的业务含义。</p>
+<p>当前事件表建表语句没有默认 TTL，不能凭月份分区推断系统已经自动清理旧事件。当前 outbox 则相反：成功交付后会删除记录。二者看似都保存“事件”，生命周期却不同。</p>
+<p>还需要考虑数据之间的依赖。如果历史原始事件已经删除，而某项计算又需要从计量起点重算，仅保存若干余额快照未必足以满足要求。是否可以删除某段输入，需要结合查询需求、有效检查点和历史计费凭据一起决定，不能只看磁盘占用。</p>
+<h3 id="结构迁移"><a class="markdownIt-Anchor" href="#结构迁移"></a> 结构迁移</h3>
+<p>数据结构会随着产品模型变化。价格增加单位换算、账务增加来源维度、快照增加完整周期状态，都不仅仅是多写一个 Go 字段：旧数据和滚动升级中的旧进程仍然存在。</p>
+<p>OpenMeter 的 PostgreSQL 结构由 Ent schema 描述，版本化 SQL 位于 <a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/tree/95794e610ffb15f097c1ec8e2b731a43444a39f0/tools/migrate/migrations">migrations 目录</a>。<a target="_blank" rel="noopener" href="https://github.com/openmeterio/openmeter/blob/95794e610ffb15f097c1ec8e2b731a43444a39f0/app/common/database.go">启动迁移器</a>根据配置执行 migration，或等待独立迁移 job；仓库的 Makefile 还包含 schema、迁移差异和校验和检查。</p>
+<p>ClickHouse 这条路径则在连接器启动时执行 <code>CREATE TABLE IF NOT EXISTS</code>。这个语句可以确保表存在，却不会自动将已经存在的旧表改成新的列定义。因此，阅读新版本源码看到新增列时，还需要核对对应升级步骤，而不能把建表函数当成完整的 schema 演进机制。</p>
+<p>JSONB 同样需要迁移与兼容。前面提到的旧 <code>usage</code> 与新 <code>usage_snapshot</code> 并存，就是为了让升级过程中的读写双方逐步过渡。某个字段使用 JSON 存储，只是把内部结构交给编码和解码逻辑管理，并没有让历史结构问题消失。</p>
+<h2 id="存储取舍"><a class="markdownIt-Anchor" href="#存储取舍"></a> 存储取舍</h2>
+<p>用量明细与业务状态的访问需求不同，OpenMeter 因此分别围绕 ClickHouse 和 PostgreSQL 组织这两类数据。</p>
+<p>ClickHouse 围绕追加明细和范围聚合组织数据。月份分区、按业务空间和使用主体排序、批量插入，服务于大量用量记录；JSON 载荷和查询时取值保留了计量定义的灵活性。它承担的成本是扫描与解析，以及由外部机制处理重复事件的需要。</p>
+<p>PostgreSQL 围绕客户商业状态与历史凭据组织数据。关系字段、JSONB、唯一约束、事务和锁，让订阅、费用、账单和账务记录能够协调变化；必要快照让历史结果不依赖今天的配置。它承担的成本是更复杂的实体关系、并发控制和结构迁移。</p>
+<p>Kafka 让接收速度与处理速度可以暂时不同，也让多个后台模块各自推进。它带来缓冲和重新读取的能力，同时把“什么时候已可查询、什么时候已完成计费”变成必须显式说明的边界。Redis 则补充跨实例的短期索引与进度状态，但它不能代替用量明细、商业状态或永久幂等记录。</p>
+<p>这些组件的价值最终落在同一件具体事情上：客户的一次使用，可以持续进入系统；客户的商业条款，可以完整提交；收费结果和历史凭据，可以解释它们当时依据了什么。OpenMeter 的存储设计，就是围绕这几种不同的数据责任，把写入、计算和历史保存连接起来。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>OpenMeter 根据数据的访问方式安排存储：ClickHouse 保存用量明细，支持按时间和业务维度聚合；PostgreSQL 保存配置、订阅、账单和账务记录，提供事务与关系约束；Kafka 连接事件接收和后台处理；Redis 按需保存去重索引和查询进度。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/30/go-langchaingo-01/" rel="prev" title="LangChainGo 学习 01：快速入门">
+      <i class="fa fa-chevron-left"></i> LangChainGo 学习 01：快速入门
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/10/19/go-openmeter-03/" rel="next" title="OpenMeter 学习 03：业务领域与模型设计">
+      OpenMeter 学习 03：业务领域与模型设计 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AD%98%E5%82%A8%E7%89%88%E5%9B%BE"><span class="nav-number">1.</span> <span class="nav-text"> 存储版图</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%9A%84%E5%BD%92%E5%B1%9E"><span class="nav-number">1.1.</span> <span class="nav-text"> 数据的归属</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%A4%E6%9D%A1%E6%95%B0%E6%8D%AE%E8%B7%AF%E5%BE%84"><span class="nav-number">1.2.</span> <span class="nav-text"> 两条数据路径</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#clickhouse-%E7%9A%84%E7%94%A8%E9%87%8F%E6%98%8E%E7%BB%86"><span class="nav-number">2.</span> <span class="nav-text"> ClickHouse 的用量明细</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#clickhouse-%E5%9F%BA%E7%A1%80"><span class="nav-number">2.1.</span> <span class="nav-text"> ClickHouse 基础</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E8%83%BD%E5%8A%9B%E4%B8%8E%E5%9C%BA%E6%99%AF"><span class="nav-number">2.2.</span> <span class="nav-text"> 核心能力与场景</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#sql-%E5%9F%BA%E6%9C%AC%E7%94%A8%E6%B3%95"><span class="nav-number">2.3.</span> <span class="nav-text"> SQL 基本用法</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%9A%E7%94%A8%E4%BA%8B%E4%BB%B6%E8%A1%A8"><span class="nav-number">2.4.</span> <span class="nav-text"> 通用事件表</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E5%B8%83%E5%B1%80"><span class="nav-number">2.5.</span> <span class="nav-text"> 数据布局</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%B9%E9%87%8F%E5%86%99%E5%85%A5"><span class="nav-number">2.6.</span> <span class="nav-text"> 批量写入</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%81%9A%E5%90%88%E6%9F%A5%E8%AF%A2"><span class="nav-number">2.7.</span> <span class="nav-text"> 聚合查询</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#postgresql-%E7%9A%84%E4%B8%9A%E5%8A%A1%E7%8A%B6%E6%80%81"><span class="nav-number">3.</span> <span class="nav-text"> PostgreSQL 的业务状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%9E%E4%BD%93%E4%B8%8E%E7%BA%A6%E6%9D%9F"><span class="nav-number">3.1.</span> <span class="nav-text"> 实体与约束</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B3%E7%B3%BB%E5%AD%97%E6%AE%B5%E4%B8%8E-jsonb"><span class="nav-number">3.2.</span> <span class="nav-text"> 关系字段与 JSONB</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AE%A2%E9%98%85%E7%9A%84%E6%97%B6%E9%97%B4%E7%BB%93%E6%9E%84"><span class="nav-number">3.3.</span> <span class="nav-text"> 订阅的时间结构</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E5%8A%A1%E4%B8%8E%E5%B9%B6%E5%8F%91"><span class="nav-number">3.4.</span> <span class="nav-text"> 事务与并发</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kafka-%E7%9A%84%E4%BA%8B%E4%BB%B6%E6%97%A5%E5%BF%97"><span class="nav-number">4.</span> <span class="nav-text"> Kafka 的事件日志</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E4%BA%8B%E4%BB%B6"><span class="nav-number">4.1.</span> <span class="nav-text"> 使用事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%86%E5%9F%9F%E4%BA%8B%E4%BB%B6"><span class="nav-number">4.2.</span> <span class="nav-text"> 领域事件</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%8B%E5%8A%A1%E6%B6%88%E6%81%AF"><span class="nav-number">4.3.</span> <span class="nav-text"> 事务消息</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#redis-%E7%9A%84%E7%9F%AD%E6%9C%9F%E7%8A%B6%E6%80%81"><span class="nav-number">5.</span> <span class="nav-text"> Redis 的短期状态</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%8E%BB%E9%87%8D%E7%B4%A2%E5%BC%95"><span class="nav-number">5.1.</span> <span class="nav-text"> 去重索引</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9F%A5%E8%AF%A2%E8%BF%9B%E5%BA%A6"><span class="nav-number">5.2.</span> <span class="nav-text"> 查询进度</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BF%9D%E7%95%99%E4%B8%8E%E6%BC%94%E8%BF%9B"><span class="nav-number">6.</span> <span class="nav-text"> 保留与演进</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E7%9A%84%E4%BF%9D%E7%95%99%E6%9C%9F"><span class="nav-number">6.1.</span> <span class="nav-text"> 数据的保留期</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%93%E6%9E%84%E8%BF%81%E7%A7%BB"><span class="nav-number">6.2.</span> <span class="nav-text"> 结构迁移</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AD%98%E5%82%A8%E5%8F%96%E8%88%8D"><span class="nav-number">7.</span> <span class="nav-text"> 存储取舍</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">8.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">304</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
