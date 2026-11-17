@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇用订单统计跑通了 OpenSandbox：应用创建沙箱，把文件传进去，执行 Python，再取回报告。从调用代码看，这只是几个 SDK 方法；但在这几个方法背后，环境的创建、程序的执行、文件的传输和资源的回收，分别由不同的组件完成。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OpenSandbox 学习 02：核心架构">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/11/17/opensandbox-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇用订单统计跑通了 OpenSandbox：应用创建沙箱，把文件传进去，执行 Python，再取回报告。从调用代码看，这只是几个 SDK 方法；但在这几个方法背后，环境的创建、程序的执行、文件的传输和资源的回收，分别由不同的组件完成。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-11-17T09:26:32.000Z">
+<meta property="article:modified_time" content="2026-11-17T09:29:48.899Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/17/opensandbox-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>OpenSandbox 学习 02：核心架构 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/17/opensandbox-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OpenSandbox 学习 02：核心架构
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-11-17 17:26:32" itemprop="dateCreated datePublished" datetime="2026-11-17T17:26:32+08:00">2026-11-17</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>上一篇用订单统计跑通了 OpenSandbox：应用创建沙箱，把文件传进去，执行 Python，再取回报告。从调用代码看，这只是几个 SDK 方法；但在这几个方法背后，环境的创建、程序的执行、文件的传输和资源的回收，分别由不同的组件完成。</p>
+<span id="more"></span>
+<p>这样的拆分和 Agent 的工作方式有关。Agent 通常需要根据上一步的结果继续尝试，环境要在多次操作之间保留文件和进程；与此同时，不同任务又需要各自的资源和回收边界。Docker 和 Kubernetes 提供了运行环境的基础，OpenSandbox 则在其上组织沙箱的创建、访问、执行和回收。<strong>理解它的架构，关键在于看清环境由谁管理、任务在哪里执行，以及两者如何衔接。</strong></p>
+<h2 id="整体架构"><a class="markdownIt-Anchor" href="#整体架构"></a> 整体架构</h2>
+<h3 id="管理与执行"><a class="markdownIt-Anchor" href="#管理与执行"></a> 管理与执行</h3>
+<p>先把一次任务分成两类操作。创建沙箱时，应用需要决定镜像、资源和存活时间；环境准备好后，应用才会上传文件、运行程序、读取结果。前一类操作管理环境，后一类操作使用环境。</p>
+<p>如果这些请求都交给同一个中心进程，管理服务就需要同时处理容器创建和长时间的命令输出、文件传输。OpenSandbox 将两类职责分开：<strong>管理服务负责沙箱的创建、查询和回收，沙箱内部的 execd 负责命令与文件操作。</strong> execd 是一个随沙箱启动的执行服务，客户端向它发送请求，它再调用环境里的程序、读写环境里的文件。</p>
+<p>文档中把它们分别称为控制面和数据面。在本文中，可以将控制面理解为“管理环境的部分”，将数据面理解为“实际处理任务请求的部分”。先看整体关系：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">       +---------------------+</span><br><span class="line">       | Application / SDK   |</span><br><span class="line">       +---------------------+</span><br><span class="line">          |              |</span><br><span class="line">lifecycle |              | commands / files</span><br><span class="line">          v              |</span><br><span class="line">  Management Service     |</span><br><span class="line">          |              |</span><br><span class="line">          v              |</span><br><span class="line">  Docker / Kubernetes    |</span><br><span class="line">          |              |</span><br><span class="line">          v              v</span><br><span class="line">  +-----------------------------+</span><br><span class="line">  | Sandbox                     |</span><br><span class="line">  |   execd --&gt; task processes  |</span><br><span class="line">  |         --&gt; task files      |</span><br><span class="line">  +-----------------------------+</span><br></pre></td></tr></table></figure>
+<p>图中的 Management Service 就是管理服务，项目中称为 Lifecycle Server。创建成功后，客户端向管理服务查询 execd 的访问地址，后续命令和文件请求便发往这个地址。请求可以直接连接沙箱，也可以通过网关转发。</p>
+<p>这样的分层把管理请求与任务流量分开。一个任务持续输出日志、另一个任务上传大文件时，数据可以由各自沙箱内的 execd 处理，管理服务继续负责环境的创建和回收。执行请求的承载能力也因此可以随着沙箱数量分散开来。</p>
+<h3 id="组件分工"><a class="markdownIt-Anchor" href="#组件分工"></a> 组件分工</h3>
+<p>有了这条主线，再看各个组件就容易一些：</p>
+<table>
+<thead>
+<tr>
+<th>架构位置</th>
+<th>组件</th>
+<th>核心职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>应用接入</td>
+<td>SDK、CLI、MCP 服务</td>
+<td>把程序、终端或 Agent 的操作转换为 API 请求</td>
+</tr>
+<tr>
+<td>环境管理</td>
+<td>管理服务</td>
+<td>校验创建参数，调用运行时，查询状态，提供访问地址，管理生命周期</td>
+</tr>
+<tr>
+<td>环境交付</td>
+<td>Docker 或 Kubernetes 后端</td>
+<td>创建容器或集群工作负载，将用户需要的环境运行起来</td>
+</tr>
+<tr>
+<td>沙箱执行</td>
+<td>execd</td>
+<td>在沙箱内执行命令、操作文件、提供终端与运行指标</td>
+</tr>
+<tr>
+<td>入站访问</td>
+<td>Ingress</td>
+<td>在 Kubernetes 部署中，将客户端请求转发到对应沙箱</td>
+</tr>
+<tr>
+<td>出站控制</td>
+<td>Egress</td>
+<td>按策略控制沙箱访问外部网络，可配合凭据代理使用</td>
+</tr>
+</tbody>
+</table>
+<p>这些组件按部署方式组合。本机 Docker 可以直接访问沙箱；集群通常需要网关；需要限制出站访问时，再配置 Egress。整体架构包含这些能力，具体部署只需启用所需的部分。</p>
+<p>Agent 本身也可以运行在沙箱内。例如，业务应用创建一个安装了 Claude Code 的沙箱，再启动 Agent，由它调用模型、编辑文件和运行命令。也可以让 Agent 运行在外部，把某些任务交给沙箱执行。两种方式使用同一套环境管理能力，区别在于 Agent 程序放在哪里。</p>
+<h2 id="目录结构"><a class="markdownIt-Anchor" href="#目录结构"></a> 目录结构</h2>
+<p>前面的组件在仓库中也有各自的位置。阅读源码时，可以先按职责找到对应目录，再沿着请求进入具体实现。与本文主线相关的目录如下，省略了部分辅助目录和文件：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">OpenSandbox/</span><br><span class="line">├── specs/                  # 管理、执行与出站策略等公共接口定义</span><br><span class="line">├── sdks/</span><br><span class="line">│   ├── sandbox/            # 多语言沙箱 SDK</span><br><span class="line">│   ├── code-interpreter/   # 基于沙箱的代码解释器 SDK</span><br><span class="line">│   └── mcp/                # 面向 MCP 客户端的沙箱工具服务</span><br><span class="line">├── cli/                    # osb 命令行客户端</span><br><span class="line">├── server/</span><br><span class="line">│   └── opensandbox_server/ # 管理服务与运行时对接实现</span><br><span class="line">├── components/</span><br><span class="line">│   ├── execd/              # 沙箱内部的命令、文件和会话服务</span><br><span class="line">│   ├── ingress/            # 入站网关与沙箱路由</span><br><span class="line">│   ├── egress/             # 出站网络策略与凭据代理</span><br><span class="line">│   └── internal/           # 运行时组件共用的 Go 辅助代码</span><br><span class="line">├── kubernetes/</span><br><span class="line">│   ├── apis/               # BatchSandbox、Pool 等自定义资源类型</span><br><span class="line">│   ├── internal/           # 控制器、池分配与任务调度实现</span><br><span class="line">│   └── cmd/                # 控制器、任务执行器等程序入口</span><br><span class="line">├── manifests/charts/       # Helm 部署配置</span><br><span class="line">├── console/                # 开发者控制台</span><br><span class="line">├── tests/                  # 跨语言 SDK 端到端测试</span><br><span class="line">├── examples/               # 可运行示例</span><br><span class="line">├── docs/                   # 架构、使用和部署文档</span><br><span class="line">└── oseps/                  # 设计提案</span><br></pre></td></tr></table></figure>
+<p>其中，<code>specs/</code> 定义各个服务对外提供的接口，<code>sdks/</code> 和 <code>cli/</code> 负责调用这些接口，<code>server/</code> 与 <code>components/</code> 则分别实现环境管理和沙箱执行、网络访问等能力。把这几处连起来，就能对应上前面的管理与执行两条路径。</p>
+<p><strong><code>server/</code> 和 <code>kubernetes/</code> 的区别尤其值得先分清。</strong> 管理服务在 <code>server/</code> 中接收创建请求，并把沙箱需求转换为容器操作或 Kubernetes 资源；<code>kubernetes/</code> 中的控制器运行在集群侧，观察资源并创建或分配 Pod。管理服务负责提交需求，控制器负责持续落实需求，两者通过 Kubernetes API 协作。</p>
+<p>接下来先从 <code>specs/</code> 和 <code>sdks/</code> 看应用如何表达一次沙箱操作，再进入管理服务和底层组件，理解请求如何一步步完成。</p>
+<h2 id="接口与客户端"><a class="markdownIt-Anchor" href="#接口与客户端"></a> 接口与客户端</h2>
+<h3 id="统一接口"><a class="markdownIt-Anchor" href="#统一接口"></a> 统一接口</h3>
+<p>同样是运行一段 Python，本机 Docker 和 Kubernetes 集群需要的底层操作不同。应用如果直接依赖容器和集群的管理接口，就需要理解容器 ID、Pod、端口映射等细节。其中，Pod 是 Kubernetes 中承载容器的运行单元。</p>
+<p><strong>OpenSandbox 先定义沙箱层面的接口，再由后端实现底层操作。应用关心的是沙箱 ID、镜像、资源和任务，而容器与集群的差异由管理服务及运行时后端处理</strong>。</p>
+<p>仓库中的 <code>specs/</code> 保存这些公共接口的定义：</p>
+<table>
+<thead>
+<tr>
+<th>接口定义</th>
+<th>主要内容</th>
+<th>处理组件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>specs/sandbox-lifecycle.yml</code></td>
+<td>沙箱创建、查询、删除、续期和访问地址查询等</td>
+<td>管理服务</td>
+</tr>
+<tr>
+<td><code>specs/execd-api.yaml</code></td>
+<td>命令执行、文件操作和代码执行等</td>
+<td>execd</td>
+</tr>
+<tr>
+<td><code>specs/egress-api.yaml</code></td>
+<td>出站策略与凭据管理等</td>
+<td>Egress</td>
+</tr>
+</tbody>
+</table>
+<p>因此，“统一接口”也包含明确的职责边界。SDK 可以把不同接口组织到一个 <code>Sandbox</code> 对象上，实际请求仍然发送给负责相应功能的服务。</p>
+<h3 id="客户端封装"><a class="markdownIt-Anchor" href="#客户端封装"></a> 客户端封装</h3>
+<p>以 Python SDK 为例，<code>sandbox.commands</code>、<code>sandbox.files</code> 和 <code>sandbox.kill()</code> 看起来属于同一个对象，内部却有各自的客户端。</p>
+<p><code>sdks/sandbox/python/src/opensandbox/sandbox.py</code> 在创建沙箱对象时，把它们分别组织起来。下面是构造参数中的连续节选：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">sandbox_service=sandbox_service,</span><br><span class="line">filesystem_service=factory.create_filesystem_service(execd_endpoint),</span><br><span class="line">command_service=factory.create_command_service(execd_endpoint),</span><br><span class="line">health_service=factory.create_health_service(execd_endpoint),</span><br></pre></td></tr></table></figure>
+<p>其中，<code>sandbox_service</code> 连接管理服务；文件、命令和健康检查客户端使用管理服务返回的 execd 地址。这个结构把前面的管理与执行分工保留在客户端内部，应用调用时则可以保持简单。</p>
+<p>因此，一个 <code>Sandbox</code> 对象主要保存沙箱 ID、连接配置和各类服务客户端。远端环境有自己的生命周期，关闭这个本地对象的连接，环境仍然可以继续运行，之后也能通过沙箱 ID 重新连接。</p>
+<p>创建过程中，SDK 会先调用管理服务，再查询 execd 的访问地址，默认还要等待 <code>/ping</code> 健康检查通过，才把沙箱对象交给应用。这里分别确认了两件事：底层环境已经创建，客户端也能访问执行服务。例如，Docker 容器启动后，里面的 execd 还需要时间启动监听，SDK 会继续等待它响应。如果创建请求成功、后续连接检查却失败，SDK 会尝试删除已经创建的沙箱，减少遗留资源。</p>
+<p>默认检查确认的是 execd 能够响应。假如应用还要等待沙箱里的 Web 服务或其他业务程序完成初始化，可以提供自己的健康检查，判断任务所需的服务是否准备好。</p>
+<p>命令运行时，应用往往希望及时看到日志。为此，execd 会在同一个 HTTP 连接中陆续发送标准输出、标准错误和执行结果，这种传输方式称为 SSE。Python SDK 在 <code>sdks/sandbox/python/src/opensandbox/adapters/command_adapter.py</code> 中接收这些消息，把它们整理成应用可以读取的日志和结果，也支持在输出到达时调用应用提供的回调函数。</p>
+<p>从创建环境到获取执行结果，SDK 把与管理服务、execd 的交互组织在一起。应用只需调用 <code>Sandbox.create()</code>、<code>sandbox.commands.run()</code> 等方法，就能完成这些操作。</p>
+<h2 id="管理服务"><a class="markdownIt-Anchor" href="#管理服务"></a> 管理服务</h2>
+<h3 id="请求处理"><a class="markdownIt-Anchor" href="#请求处理"></a> 请求处理</h3>
+<p>沙箱创建从管理服务开始。它需要判断请求是否有权限、参数是否合法，以及当前后端是否支持指定的能力，然后才能真正创建环境。</p>
+<p>管理服务使用 FastAPI，代码按职责组织：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">server/opensandbox_server/</span><br><span class="line">  middleware/     request authentication</span><br><span class="line">  api/            routes and request models</span><br><span class="line">  services/       lifecycle and runtime integration</span><br><span class="line">  repositories/   snapshot and template records</span><br></pre></td></tr></table></figure>
+<p>认证由中间件处理，路由接收并规范化请求，服务实现负责创建、删除等操作。以创建路由为例，<code>server/opensandbox_server/api/lifecycle.py</code> 完成校验后，将请求交给服务层：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> <span class="keyword">await</span> sandbox_service.create_sandbox(request)</span><br></pre></td></tr></table></figure>
+<p>Docker 的镜像检查、端口分配等逻辑继续放在 Docker 后端中；Kubernetes 的资源构造和集群调用放在 Kubernetes 后端中。这样，公共路由可以围绕沙箱 API 工作，各个运行时的细节也有自己的位置。</p>
+<h3 id="运行时选择"><a class="markdownIt-Anchor" href="#运行时选择"></a> 运行时选择</h3>
+<p>管理服务通过 <code>runtime.type</code> 选择运行时。<code>server/opensandbox_server/services/factory.py</code> 为 Docker 和 Kubernetes 注册了对应实现，其中 Kubernetes 分支还组合了 Fast Sandbox 后端。选择过程的关键代码如下，省略了配置读取和错误处理：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">implementations = &#123;</span><br><span class="line">    <span class="string">&quot;docker&quot;</span>: DockerSandboxService,</span><br><span class="line">    <span class="string">&quot;kubernetes&quot;</span>: KubernetesSandboxService,</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> selected_type == <span class="string">&quot;kubernetes&quot;</span>:</span><br><span class="line">    implementation = KubernetesSandboxService(config=active_config)</span><br><span class="line">    <span class="keyword">return</span> CompositeSandboxService(</span><br><span class="line">        implementation,</span><br><span class="line">        FastSandboxService(active_config, k8s_client=implementation.k8s_client),</span><br><span class="line">    )</span><br><span class="line"><span class="keyword">return</span> implementations[selected_type](config=active_config)</span><br></pre></td></tr></table></figure>
+<p>这些服务遵循 <code>server/opensandbox_server/services/sandbox_service.py</code> 中的 <code>SandboxService</code> 接口。创建、查询、删除和访问地址解析等操作，因此可以从同一个管理接口进入，再交给对应的后端。上面出现的 <code>CompositeSandboxService</code> 负责在 Kubernetes 容器和模板化虚拟机之间分派请求，后面再介绍这两条交付路径。</p>
+<p><strong>这层抽象统一的是沙箱操作的含义，具体能力仍取决于后端。</strong> 例如，Docker 可以调用本机 Docker Engine 创建容器，Kubernetes 则要通过集群资源和控制器交付环境；资源池、暂停恢复等能力也有各自的实现条件。</p>
+<h2 id="沙箱的交付"><a class="markdownIt-Anchor" href="#沙箱的交付"></a> 沙箱的交付</h2>
+<h3 id="docker-容器"><a class="markdownIt-Anchor" href="#docker-容器"></a> Docker 容器</h3>
+<p>运行时选定后，下一个问题是如何把普通镜像变成可以通过 API 操作的沙箱。Python 镜像里有 Python，Node.js 镜像里有 Node.js，但这些镜像通常没有 OpenSandbox 的命令和文件接口。</p>
+<p>Docker 后端采用的方式，是将用户环境与执行服务分别准备：用户镜像提供语言和依赖，execd 镜像提供执行程序及启动脚本。管理服务创建目标容器后，将 execd 安装进去，再启动容器。</p>
+<p><code>server/opensandbox_server/services/docker/runtime.py</code> 中的两行代码体现了这个过程：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">self._copy_execd_to_container(container, sandbox_id, platform)</span><br><span class="line">self._install_bootstrap_script(container, sandbox_id, platform)</span><br></pre></td></tr></table></figure>
+<p>镜像与容器的关系如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">User image, e.g. python:3.12-slim</span><br><span class="line">              |</span><br><span class="line">              | Docker creates container</span><br><span class="line">              v</span><br><span class="line">+------------------------------------------+</span><br><span class="line">| Sandbox container                        |</span><br><span class="line">|   Python + user dependencies             |</span><br><span class="line">|   execd + bootstrap.sh                   | &lt;-- copied from execd image</span><br><span class="line">|   task processes + task files            |</span><br><span class="line">+------------------------------------------+</span><br></pre></td></tr></table></figure>
+<p><strong>具体复制时，管理服务先从 execd 镜像启动一个临时容器，通过 Docker 的归档接口取出程序和启动脚本。提取完毕后，临时容器就被删除；管理服务将缓存的程序和脚本写入目标容器的 <code>/opt/opensandbox/</code>，execd 最终运行在用户的沙箱容器内</strong>。</p>
+<p><code>server/opensandbox_server/services/docker/container_ops.py</code> 将 Linux 沙箱容器的入口设置为 <code>/opt/opensandbox/bootstrap.sh</code>。脚本负责启动 execd 和请求中指定的入口命令。环境启动后，后续的 <code>commands.run()</code> 再由 execd 启动对应的任务进程；上传的文件也保存在这个容器中。</p>
+<p><strong>这个设计让应用可以选择已有的运行环境镜像，也让 execd 能独立构建和升级</strong>。语言依赖仍由用户镜像提供，命令和文件接口由 execd 提供，两者在沙箱中配合工作。这里以 Linux 容器路径为例，镜像仍需满足启动脚本、系统和架构等兼容要求。</p>
+<h3 id="kubernetes-工作负载"><a class="markdownIt-Anchor" href="#kubernetes-工作负载"></a> Kubernetes 工作负载</h3>
+<p>使用 Kubernetes 后端时，管理服务会把沙箱的镜像、资源和存活时间等需求写入 Kubernetes 资源，通过 Kubernetes API 提交给集群。相应的控制器持续观察这些资源，再创建或分配承载沙箱的 Pod。</p>
+<p>当前实现支持不同的 Kubernetes 工作负载提供方。以仓库自带控制器使用的 <code>BatchSandbox</code> 为例，它是一个描述沙箱需求的 Kubernetes 自定义资源，包含镜像、资源、到期时间等信息。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">Management Service --&gt; Kubernetes API --&gt; BatchSandbox</span><br><span class="line">                                             |</span><br><span class="line">                                      Controller watches</span><br><span class="line">                                             |</span><br><span class="line">                                             v</span><br><span class="line">                                        Sandbox Pod</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>BatchSandbox</code> 把环境需求保存为集群中的资源对象。它的规格描述期望的镜像、资源和到期时间，状态则记录实际分配和运行情况。控制器反复比较期望与现状：缺少 Pod 就创建，需要分配资源就协调分配，再将观察到的结果写回。</p>
+<p>这就是 Kubernetes 的控制循环。<strong>创建请求先留下需要什么环境的记录，控制器随后持续推动环境达到要求。</strong> Pod 的调度、镜像拉取和容器启动可以分别耗时，管理服务通过资源状态了解进度，客户端再等待执行端点可用。它与 Docker 后端在创建调用中完成容器创建和启动的过程有所不同。</p>
+<p>相应代码分别位于 <code>server/opensandbox_server/services/k8s/batchsandbox_provider.py</code> 和 <code>kubernetes/internal/controller/batchsandbox_controller.go</code>。前者构造资源，后者观察资源并推动 Pod 创建、分配和清理。</p>
+<p>普通新建 Pod 时，execd 的安装通过初始化容器完成。初始化容器先于用户容器运行，使用 execd 镜像将程序复制到共享卷；用户容器挂载同一个卷，再运行启动脚本：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">Sandbox Pod</span><br><span class="line">  execd-installer (init container, runs first)</span><br><span class="line">       |</span><br><span class="line">       | copies execd + bootstrap.sh</span><br><span class="line">       v</span><br><span class="line">  shared emptyDir volume: opensandbox-bin</span><br><span class="line">       |</span><br><span class="line">       | mounted at /opt/opensandbox</span><br><span class="line">       v</span><br><span class="line">  user container --&gt; bootstrap.sh --&gt; execd + user entrypoint</span><br></pre></td></tr></table></figure>
+<p>这部分资源构造位于 <code>server/opensandbox_server/services/k8s/provider_common.py</code>。它与 Docker 的目标相同，都是把 execd 放进用户环境，交付方式则遵循各自运行时的机制。上面的图展示普通新建 Pod 的路径，预热池会使用事先准备好的 Pod。</p>
+<h3 id="预热池"><a class="markdownIt-Anchor" href="#预热池"></a> 预热池</h3>
+<p>如果每次创建都要等待 Pod 调度和启动，Agent 的短任务可能花很多时间在准备环境上。预热池把这部分工作提前完成：先启动一批可用 Pod，请求到来时再分配。</p>
+<p><code>Pool</code> 控制器会提前准备一批 Pod，并维持池中的可用数量。创建沙箱时，<code>BatchSandbox</code> 可以指定使用哪个池，由池分配已经准备好的 Pod，省去临时创建 Pod 的等待。</p>
+<p>不过，提前准备好的 Pod 还需要接收本次请求指定的环境变量和入口命令。为此，Pod 中运行着任务执行器（task-executor）。分配完成后，控制器把这些配置交给它，由它启动 <code>bootstrap.sh</code>，再由启动脚本拉起 execd 和用户指定的程序。execd 启动后，应用就可以调用 <code>commands.run()</code> 执行命令，或通过文件 API 上传和下载文件。<strong>task-executor 负责把分配到的环境启动起来，execd 负责接收应用后续的命令和文件请求。</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">Without pool: request --&gt; create Pod --&gt; wait --&gt; run task</span><br><span class="line">With pool:    prepare Pods in advance</span><br><span class="line">              request --&gt; allocate ready Pod --&gt; run task</span><br></pre></td></tr></table></figure>
+<p>预热的代价是需要保留空闲容量，并明确资源归还后的处理方式。<code>kubernetes/apis/sandbox/v1alpha1/pool_types.go</code> 定义的默认回收策略是 <code>Delete</code>，归还的 Pod 会被删除，再由池补足容量；<code>Noop</code> 则不对归还的 Pod 做回收操作。因此，环境分配、容量补充和任务之间的清理需要一起设计，才能持续交付可用的沙箱。</p>
+<h3 id="fast-sandbox"><a class="markdownIt-Anchor" href="#fast-sandbox"></a> Fast Sandbox</h3>
+<p>前面的预热池分配的是 Pod。如果希望以轻量虚拟机作为每个任务的执行环境，OpenSandbox 还可以接入独立项目 <a target="_blank" rel="noopener" href="https://github.com/opensandbox-group/fast-sandbox">opensandbox-group/fast-sandbox</a>。这个项目使用 Firecracker 创建 microVM（轻量虚拟机），并提前准备好环境模板和运行容量，减少创建沙箱时的准备工作。本文将这套虚拟机沙箱平台称为 Fast Sandbox。</p>
+<p>OpenSandbox 中的 <code>FastSandboxService</code> 是连接这套平台的服务实现，代码位于 <code>server/opensandbox_server/services/fast_sandbox/</code>。它接收沙箱创建、删除和地址查询等操作，再调用 Fast Sandbox 平台完成相应工作；虚拟机的实际创建和运行由该平台负责。</p>
+<p>这条路径在 <code>runtime.type = &quot;kubernetes&quot;</code> 下使用。<code>server/opensandbox_server/services/composite_service.py</code> 根据请求内容分派：指定 <code>templateId</code> 时，交给 <code>FastSandboxService</code>，从预先构建的模板创建虚拟机沙箱；恢复这类沙箱的快照时，也交给同一服务。后续查询和删除等操作则通过沙箱 ID 的 <code>fsb-</code> 前缀识别。</p>
+<p>Fast Sandbox 会提前准备好一批 Pod，用来承载虚拟机。创建沙箱时，平台直接利用这些已有 Pod 的容量启动虚拟机，分配给本次任务。</p>
+<p><strong>这里，一个沙箱对应一个轻量虚拟机，一个 Pod 可以承载多个沙箱：</strong></p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">Pod（提前准备）</span><br><span class="line">├── 虚拟机 A：沙箱 A，内含 execd 和任务程序</span><br><span class="line">├── 虚拟机 B：沙箱 B，内含 execd 和任务程序</span><br><span class="line">└── 剩余容量：供后续沙箱使用</span><br></pre></td></tr></table></figure>
+<p>这样，每次创建沙箱时就省去了新建 Pod 的等待。虚拟机模板中已装好 execd，应用仍通过它执行命令、读写文件。</p>
+<p>Docker、Kubernetes 普通容器和模板化 microVM，交付环境的方式不同。它们能够共用上层接口，是因为管理服务和 SDK 围绕沙箱能力组织，而具体环境由后端负责。</p>
+<h3 id="隔离边界"><a class="markdownIt-Anchor" href="#隔离边界"></a> 隔离边界</h3>
+<p>环境的隔离程度由底层实现决定。普通容器与宿主机共享内核，microVM 使用独立的虚拟机环境；容器部署也可以结合 gVisor、Kata 等安全运行时。管理服务负责选择和配置这些机制，execd 则在选定的环境内部执行任务。将一个程序交给 execd，执行边界仍取决于沙箱使用的运行时和权限配置。</p>
+<h2 id="任务执行"><a class="markdownIt-Anchor" href="#任务执行"></a> 任务执行</h2>
+<h3 id="命令与输出"><a class="markdownIt-Anchor" href="#命令与输出"></a> 命令与输出</h3>
+<p>环境交付完成后，任务就进入 execd 的职责范围。execd 是沙箱内部的 Go 服务，命令、文件和终端等接口都由它处理，因此可以直接使用沙箱内的程序和文件系统。</p>
+<p>以 <code>sandbox.commands.run(&quot;python /tmp/summarize.py&quot;)</code> 为例，执行过程如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">SDK --&gt; execd /command --&gt; start Python process</span><br><span class="line"> ^                              |</span><br><span class="line"> |                              | stdout / stderr / exit</span><br><span class="line"> +---------- SSE events --------+</span><br></pre></td></tr></table></figure>
+<p>这次调用会向 execd 的 <code>/command</code> 接口发送执行请求。<code>components/execd/pkg/web/router.go</code> 将请求交给 <code>components/execd/pkg/web/controller/command.go</code> 中的处理函数，完成参数校验，再调用 <code>components/execd/pkg/runtime/command.go</code> 中的执行逻辑。</p>
+<p>接下来，execd 启动命令，并在运行过程中收集输出。以 Linux 上的前台命令为例，进程的标准输出和标准错误会分别写入文件；execd 同时跟踪这两个文件，把新增内容转换成输出事件，陆续发送给客户端。</p>
+<p>execd 为每次执行分配命令 ID，并在进程启动后保存进程与执行状态。进程结束后，等待逻辑先确认输出读取结束，再发送成功或错误信息。客户端由此可以在运行期间持续收到输出，结束时再获取最终结果。</p>
+<p>SDK 通过 SSE 接收这些事件，再还原为应用使用的结果。<code>sdks/sandbox/python/src/opensandbox/adapters/converter/execution_event_dispatcher.py</code> 中的分派逻辑如下，省略了其他事件分支：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> event_type == <span class="string">&quot;stdout&quot;</span>:</span><br><span class="line">    <span class="keyword">await</span> self._handle_stdout(event_node, timestamp)</span><br><span class="line"><span class="keyword">elif</span> event_type == <span class="string">&quot;stderr&quot;</span>:</span><br><span class="line">    <span class="keyword">await</span> self._handle_stderr(event_node, timestamp)</span><br><span class="line"><span class="keyword">elif</span> event_type == <span class="string">&quot;error&quot;</span>:</span><br><span class="line">    <span class="keyword">await</span> self._handle_error(event_node, timestamp)</span><br><span class="line"><span class="keyword">elif</span> event_type == <span class="string">&quot;execution_complete&quot;</span>:</span><br><span class="line">    <span class="keyword">await</span> self._handle_execution_complete(event_node, timestamp)</span><br></pre></td></tr></table></figure>
+<p>stdout 和 stderr 被整理成日志，错误事件被写入执行结果中的错误字段，完成事件记录执行结束信息。应用既可以在事件到达时处理输出，也可以等待 SDK 收集最终结果。</p>
+<p>前台执行时，应用可以一边接收输出，一边等待命令结束。如果选择后台执行，命令启动后 SDK 就会返回，程序继续在沙箱里运行。应用随后可以查询命令状态、读取日志，了解运行进度，并在命令结束后检查执行结果。</p>
+<p>这里检查的是命令是否执行成功。命令结束后，沙箱通常还会继续运行，供后续操作使用。比如统计脚本报错退出，Agent 可以在原来的沙箱里查看错误、修改脚本并重新运行。因此，沙箱显示“运行中”，并不能说明其中的脚本已经执行成功。</p>
+<h3 id="文件与会话"><a class="markdownIt-Anchor" href="#文件与会话"></a> 文件与会话</h3>
+<p>文件操作同样由 execd 在沙箱内部完成。应用上传的脚本和数据写入沙箱文件系统，程序产生的报告也先保存在那里，随后由应用下载或写入其他存储。</p>
+<p>对于需要连续分析数据的任务，文件只是需要保留的一部分状态，程序里的变量也可能希望延续到下一次执行。execd 因此提供了不同的执行方式：</p>
+<ul>
+<li><strong>普通命令</strong>：<code>/command</code> 启动独立命令，适合运行脚本或 CLI。沙箱里的文件可以保留，某次 Python 进程中的变量会随着该进程结束。</li>
+<li><strong>Shell 会话</strong>：<code>/session</code> 为连续的 shell 操作保留会话，适合需要延续工作目录和环境的操作。</li>
+<li><strong>代码上下文</strong>：代码执行接口借助 Jupyter 内核保存上下文，让后续代码继续使用前面定义的变量。对应的内核和语言依赖需要由镜像准备。</li>
+</ul>
+<p>可见，环境的存活、文件的保留和解释器上下文的保留，是三个不同层次的问题。应用可以根据任务选择执行方式。</p>
+<p>如果运行的是完整 Agent，execd 可以负责启动 Agent 进程；Agent 随后在沙箱内部调用模型和本地工具。它执行的每一条本地命令，并不都需要重新经过 OpenSandbox 的管理接口。</p>
+<h3 id="进程管理"><a class="markdownIt-Anchor" href="#进程管理"></a> 进程管理</h3>
+<p>Agent 可能启动测试程序、开发服务器和其他子进程。长期运行的沙箱需要处理进程退出和信号传递，否则容易积累未回收的子进程，停止环境时也难以让各个进程正确结束。</p>
+<p>当前实现支持由 execd 充当容器的初始进程，也就是 PID 1。启用该模式时，启动脚本将控制权交给 execd，由它负责管理用户入口进程、转发信号并回收子进程。相关入口位于 <code>components/execd/bootstrap.sh</code>，Linux 实现位于 <code>components/execd/pkg/runtime/initmode_linux.go</code>。</p>
+<p>这使 execd 除了提供执行 API，还能承担沙箱内的进程管理工作。不过，某条通过 API 执行的命令失败，与用户入口进程结束仍是不同事件，不能仅凭一次命令结果推断整个沙箱的状态。</p>
+<h2 id="网络访问"><a class="markdownIt-Anchor" href="#网络访问"></a> 网络访问</h2>
+<h3 id="地址解析"><a class="markdownIt-Anchor" href="#地址解析"></a> 地址解析</h3>
+<p>同一个沙箱服务，在 Docker 中可能通过宿主机映射端口访问，在 Kubernetes 中可能通过 Pod 地址或网关访问。SDK 如果把这些地址规则写死，运行环境一变，应用就需要跟着修改。</p>
+<p>OpenSandbox 将“服务在哪里”交给管理服务解析。客户端先用沙箱 ID 和容器内端口查询访问地址，再向返回的地址发送请求。这个结果还可以携带访问所需的请求头。</p>
+<p>这样，应用只需指定沙箱 ID 和目标端口，具体连接哪个地址，由管理服务确定。SDK 连接 execd 时也是如此：先向管理服务查询它的访问地址，再向这个地址发送命令和文件请求。</p>
+<p>以 Docker 的 bridge 模式为例。假设沙箱里启动了一个监听 <code>3000</code> 端口的 Web 服务，应用需要从宿主机访问它。容器内的 <code>3000</code> 和宿主机的 <code>3000</code> 属于不同的网络环境，直接访问宿主机的这个端口，并不会连接到沙箱中的服务。</p>
+<p>OpenSandbox 利用 execd 转发这类请求。创建沙箱时，Docker 已经将 execd 的容器端口映射到宿主机端口。假设映射到的是 <code>45000</code>，查询沙箱的 <code>3000</code> 端口时，管理服务就会返回 <code>127.0.0.1:45000/proxy/3000</code>。请求的路径如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">客户端访问 127.0.0.1:45000/proxy/3000</span><br><span class="line">    |</span><br><span class="line">    | Docker 端口映射</span><br><span class="line">    v</span><br><span class="line">沙箱内的 execd（44772 端口）</span><br><span class="line">    |</span><br><span class="line">    | 根据 /proxy/3000 转发</span><br><span class="line">    v</span><br><span class="line">沙箱内的 Web 服务（127.0.0.1:3000）</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>45000</code> 是示例端口，实际值在创建沙箱时分配。<code>/proxy/3000</code> 告诉 execd：把请求转给同一个沙箱里的 <code>3000</code> 端口。这样，沙箱里后来启动的 HTTP 服务也能通过 execd 已有的端口映射对外提供访问。</p>
+<p>对应的地址拼接代码位于 <code>server/opensandbox_server/services/docker/networking.py</code>。其中，<code>execd_host_port</code> 是 execd 映射到宿主机的端口，<code>port</code> 是要访问的沙箱内端口：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">endpoint = Endpoint(endpoint=<span class="string">f&quot;<span class="subst">&#123;public_host&#125;</span>:<span class="subst">&#123;execd_host_port&#125;</span>/proxy/<span class="subst">&#123;port&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+<p>当前实现为容器内的 <code>8080</code> 端口单独保留了宿主机端口映射，查询它时会直接返回映射地址。应用使用管理服务返回的地址即可，无需自行判断采用哪条访问路径。</p>
+<h3 id="入站网关"><a class="markdownIt-Anchor" href="#入站网关"></a> 入站网关</h3>
+<p>前面的 Docker 示例通过宿主机端口访问沙箱。换成 Kubernetes 集群，沙箱分布在不同节点的 Pod 中，外部应用通常无法直接访问这些 Pod 的地址。OpenSandbox 为此提供入站网关 Ingress，作为客户端访问沙箱的统一入口。</p>
+<p>继续以沙箱内 <code>3000</code> 端口的 Web 服务为例。配置网关后，应用向管理服务查询这个端口，得到的是网关地址，以及告诉网关“访问哪个沙箱、哪个端口”的信息。应用随后按这些信息向网关发送请求，网关再连接沙箱里的 Web 服务。</p>
+<p>例如，采用请求头传递目标时，访问沙箱 <code>demo</code> 的 <code>3000</code> 端口会携带下面的请求头。这里的 <code>demo</code> 仅作示意，实际使用创建沙箱时返回的 ID：</p>
+<figure class="highlight http"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="attribute">OpenSandbox-Ingress-To</span><span class="punctuation">: </span>demo-3000</span><br></pre></td></tr></table></figure>
+<p>请求经过的路径如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">应用向管理服务查询：沙箱 demo 的 3000 端口</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">管理服务返回：网关地址 + 目标请求头</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">应用向网关发送 HTTP 请求</span><br><span class="line">    |</span><br><span class="line">    | 网关根据 demo-3000 查找沙箱地址</span><br><span class="line">    v</span><br><span class="line">沙箱 demo 的 Web 服务（3000 端口）</span><br></pre></td></tr></table></figure>
+<p>网关能找到沙箱，是因为它持续读取集群中的沙箱位置信息。以 BatchSandbox 为例，控制器将 Pod 地址写入资源的注解，网关监听这些资源并在本地缓存地址。收到请求时，它先按沙箱 ID 查到地址，再连接请求中指定的端口。地址查询实现在 <code>components/ingress/pkg/sandbox/batchsandbox_provider.go</code>，请求转发实现在 <code>components/ingress/pkg/proxy/</code>。</p>
+<p>访问 execd 也走同样的流程，只是目标端口换成 execd 的端口。命令输出和文件内容通过网关返回给 SDK，终端连接则通过网关转发 WebSocket。管理服务负责告诉客户端如何访问沙箱，实际任务数据经由网关传输。</p>
+<p>请求头是传递目标的一种方式，网关也支持从 URL 路径中读取沙箱 ID 和端口。启用访问认证后，返回结果还可能包含令牌或带签名的地址。应用应使用管理服务返回的完整连接信息，SDK 会据此发送相应请求。</p>
+<h3 id="出站控制"><a class="markdownIt-Anchor" href="#出站控制"></a> 出站控制</h3>
+<p>入站网关解决客户端访问沙箱的问题，出站控制则处理沙箱访问外部服务的问题。Agent 可能需要访问模型 API、代码仓库和软件源，同时又需要限制其他访问目标。只在应用代码中约定允许访问哪些地址，很难覆盖沙箱内启动的所有程序。</p>
+<p>容器部署中的 Egress 以辅助容器的方式运行，与用户容器共享网络命名空间，也就是共享网络接口和网络规则。它在这条网络路径上实施策略，让沙箱内不同程序的访问都能受到控制。</p>
+<p>Docker 后端先启动 Egress，再用 <code>container:&lt;egress-container-id&gt;</code> 作为用户容器的网络模式，让两个容器进入同一套网络环境。同时，用户容器移除 <code>NET_ADMIN</code>，修改网络规则所需的权限留给 Egress。Kubernetes 则利用同一个 Pod 内容器共享网络的机制。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">User container ---+</span><br><span class="line">                  | shared network namespace</span><br><span class="line">Egress sidecar ---+   DNS redirect + optional nftables rules --&gt; external service</span><br></pre></td></tr></table></figure>
+<p>策略实现分为两个层次：</p>
+<ul>
+<li><strong>DNS 过滤</strong>：处理域名解析，拒绝被禁止的域名。</li>
+<li><strong>网络层过滤</strong>：<code>dns+nft</code> 模式进一步使用 nftables 控制连接，并根据允许域名的解析结果维护可访问地址。</li>
+</ul>
+<p>DNS 过滤决定某个域名能否解析，网络层规则进一步约束实际连接。例如，程序直接连接 IP 时不需要查询 DNS，单靠域名解析过滤无法覆盖这条路径。因此，网络隔离的范围需要结合实际启用的模式判断。</p>
+<p>域名解析和网络规则的主要实现分别位于 <code>components/egress/pkg/dnsproxy/</code> 与 <code>components/egress/nft.go</code>。它们将创建时声明的网络策略落实到沙箱的网络环境中，运行期间也能通过策略 API 更新规则。</p>
+<p>凭据代理建立在出站访问路径上。启用相关功能后，Egress 可以为匹配的外部请求注入凭据，让沙箱中的程序访问服务，同时减少真实密钥暴露在任务环境中的机会。Fast Sandbox 则使用按沙箱区分策略的共享出站组件，部署形态与每沙箱一个辅助容器有所不同。</p>
+<h2 id="状态与回收"><a class="markdownIt-Anchor" href="#状态与回收"></a> 状态与回收</h2>
+<h3 id="状态归属"><a class="markdownIt-Anchor" href="#状态归属"></a> 状态归属</h3>
+<p>管理服务需要返回沙箱状态，但实际运行的环境在 Docker 或 Kubernetes 中。把两边各维护一份独立的运行状态，很容易在重启、超时或创建失败时出现分歧。<strong>当前架构以底层运行时资源作为沙箱运行状态的主要依据</strong>：Docker 后端读取容器状态和标签，Kubernetes 后端读取相应工作负载的规格与状态。管理服务再将这些信息转换为公共 API 中的沙箱状态。</p>
+<table>
+<thead>
+<tr>
+<th>信息</th>
+<th>主要保存位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker 沙箱身份、初始配置与运行状态</td>
+<td>容器标签和 Docker 状态</td>
+</tr>
+<tr>
+<td>Docker 后续修改的元数据、到期时间与生命周期转换记录</td>
+<td>管理服务本地的 JSON 元数据文件</td>
+</tr>
+<tr>
+<td>Kubernetes 沙箱需求、分配和运行情况</td>
+<td>Kubernetes 资源及其状态</td>
+</tr>
+<tr>
+<td>管理服务拥有的快照记录与模板目录</td>
+<td>SQLite 或配置的 PostgreSQL</td>
+</tr>
+<tr>
+<td>任务生成的文件</td>
+<td>沙箱文件系统，或挂载的存储</td>
+</tr>
+</tbody>
+</table>
+<p>Docker 的标签不能在容器运行时直接修改，所以续期和元数据更新另外保存在 JSON 文件中，读取时优先采用更新后的记录。这部分实现在 <code>server/opensandbox_server/services/docker/metadata.py</code>，默认目录为 <code>~/.opensandbox/metadata/</code>。因此，Docker 后端恢复管理状态时，既需要容器信息，也需要保留这些本地记录。</p>
+<p>快照记录与模板目录通过数据库保存，任务文件则需要在沙箱删除前取回，或写入持久化存储。理解信息各自保存在哪里，才能判断服务重启后能恢复什么，以及删除沙箱会影响哪些数据。</p>
+<h3 id="到期回收"><a class="markdownIt-Anchor" href="#到期回收"></a> 到期回收</h3>
+<p>任务可能异常结束，客户端也可能断开连接，因此沙箱不能只依赖客户端主动删除。创建请求指定存活时长时，管理服务会将它转换为明确的到期时间，后端根据这个时间安排回收；选择手动清理的沙箱则由调用方负责删除。</p>
+<p>Docker 后端在 <code>server/opensandbox_server/services/docker/docker_service.py</code> 中计算到期时间，并用定时器触发清理。定时器的关键代码如下，省略了加锁和替换旧定时器等部分：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">delay = <span class="built_in">max</span>(<span class="number">0.0</span>, (expires_at - datetime.now(timezone.utc)).total_seconds())</span><br><span class="line">timer = Timer(</span><br><span class="line">    delay,</span><br><span class="line">    self._expire_sandbox,</span><br><span class="line">    args=(sandbox_id,),</span><br><span class="line">    kwargs=expire_kwargs <span class="keyword">or</span> <span class="literal">None</span>,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>定时器保存在管理服务进程里，服务重新启动后，需要扫描已有容器，结合标签和本地到期时间记录恢复清理安排。计算使用原来的绝对到期时间：尚未到期就继续等待，已经到期就触发清理。服务停机期间，进程内的定时器无法执行，回收也会相应延后。</p>
+<p>Kubernetes 的 BatchSandbox 后端把到期时间写入资源的 <code>spec.expireTime</code>，由控制器观察并发起删除。回收工作由谁执行，取决于底层环境由谁管理。</p>
+<p>客户端仍然可以主动清理。Python SDK 的 <code>destroy()</code> 组合了远端沙箱终止和本地连接关闭；单独关闭客户端连接，可以让远端环境继续保留。主动删除负责及时释放资源，到期回收则处理调用方未完成清理的情况，两者共同完成沙箱的生命周期管理。</p>
+<h2 id="任务全流程"><a class="markdownIt-Anchor" href="#任务全流程"></a> 任务全流程</h2>
+<p>从申请环境到释放资源，一次任务会依次经过前面介绍的几个组件。管理服务协调沙箱的创建与回收，SDK 查询访问地址并等待 execd 能够响应，随后通过 execd 上传文件、执行命令和取回结果。整体流程如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">Application / SDK      Management Service       Runtime / Controller       execd</span><br><span class="line">       |                       |                         |                   |</span><br><span class="line">       |--- create -----------&gt;|--- provision ----------&gt;|                   |</span><br><span class="line">       |                       |                         |--- start --------&gt;|</span><br><span class="line">       |&lt;-- ID + status -------|                         |                   |</span><br><span class="line">       |--- resolve endpoint -&gt;|                         |                   |</span><br><span class="line">       |&lt;-- address + headers -|                         |                   |</span><br><span class="line">       |--- health check ---------------------------------------------------&gt;|</span><br><span class="line">       |--- upload / command / download ------------------------------------&gt;|</span><br><span class="line">       |&lt;-- file contents / output / result ---------------------------------|</span><br><span class="line">       |--- delete -----------&gt;|--- release ------------&gt;|                   |</span><br></pre></td></tr></table></figure>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>OpenSandbox 的架构围绕一次任务所需的环境展开：客户端提供一致的调用方式，管理服务协调生命周期，运行时负责交付环境，execd 在沙箱内处理执行请求，网络组件负责接入与访问控制。各层通过 API、运行时资源和访问地址衔接起来。</p>
+<p>这样的分工让本机 Docker、Kubernetes 容器和模板化 microVM 可以在同一套沙箱接口下提供能力。它们的创建、网络和回收方式有所不同，上层应用仍可以围绕“申请环境、完成任务、保存结果、释放资源”组织工作。</p>
+<p>理解这套架构，重点在于把请求和状态放回对应的位置：创建问题沿管理服务与运行时排查，执行问题沿 execd 与任务进程排查，访问问题沿地址解析和网络组件排查。组件之间的边界清楚了，后续阅读具体实现也就有了一条稳定的线索。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/11/16/opensandbox-01/" rel="next" title="OpenSandbox 学习 01：快速入门">
+      OpenSandbox 学习 01：快速入门 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84"><span class="nav-number">1.</span> <span class="nav-text"> 整体架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AE%A1%E7%90%86%E4%B8%8E%E6%89%A7%E8%A1%8C"><span class="nav-number">1.1.</span> <span class="nav-text"> 管理与执行</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%84%E4%BB%B6%E5%88%86%E5%B7%A5"><span class="nav-number">1.2.</span> <span class="nav-text"> 组件分工</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%9B%AE%E5%BD%95%E7%BB%93%E6%9E%84"><span class="nav-number">2.</span> <span class="nav-text"> 目录结构</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3%E4%B8%8E%E5%AE%A2%E6%88%B7%E7%AB%AF"><span class="nav-number">3.</span> <span class="nav-text"> 接口与客户端</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%9F%E4%B8%80%E6%8E%A5%E5%8F%A3"><span class="nav-number">3.1.</span> <span class="nav-text"> 统一接口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF%E5%B0%81%E8%A3%85"><span class="nav-number">3.2.</span> <span class="nav-text"> 客户端封装</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AE%A1%E7%90%86%E6%9C%8D%E5%8A%A1"><span class="nav-number">4.</span> <span class="nav-text"> 管理服务</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%AF%B7%E6%B1%82%E5%A4%84%E7%90%86"><span class="nav-number">4.1.</span> <span class="nav-text"> 请求处理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E9%80%89%E6%8B%A9"><span class="nav-number">4.2.</span> <span class="nav-text"> 运行时选择</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%B2%99%E7%AE%B1%E7%9A%84%E4%BA%A4%E4%BB%98"><span class="nav-number">5.</span> <span class="nav-text"> 沙箱的交付</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#docker-%E5%AE%B9%E5%99%A8"><span class="nav-number">5.1.</span> <span class="nav-text"> Docker 容器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kubernetes-%E5%B7%A5%E4%BD%9C%E8%B4%9F%E8%BD%BD"><span class="nav-number">5.2.</span> <span class="nav-text"> Kubernetes 工作负载</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%A2%84%E7%83%AD%E6%B1%A0"><span class="nav-number">5.3.</span> <span class="nav-text"> 预热池</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#fast-sandbox"><span class="nav-number">5.4.</span> <span class="nav-text"> Fast Sandbox</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%9A%94%E7%A6%BB%E8%BE%B9%E7%95%8C"><span class="nav-number">5.5.</span> <span class="nav-text"> 隔离边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E6%89%A7%E8%A1%8C"><span class="nav-number">6.</span> <span class="nav-text"> 任务执行</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E4%B8%8E%E8%BE%93%E5%87%BA"><span class="nav-number">6.1.</span> <span class="nav-text"> 命令与输出</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%96%87%E4%BB%B6%E4%B8%8E%E4%BC%9A%E8%AF%9D"><span class="nav-number">6.2.</span> <span class="nav-text"> 文件与会话</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86"><span class="nav-number">6.3.</span> <span class="nav-text"> 进程管理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%BD%91%E7%BB%9C%E8%AE%BF%E9%97%AE"><span class="nav-number">7.</span> <span class="nav-text"> 网络访问</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9C%B0%E5%9D%80%E8%A7%A3%E6%9E%90"><span class="nav-number">7.1.</span> <span class="nav-text"> 地址解析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%A5%E7%AB%99%E7%BD%91%E5%85%B3"><span class="nav-number">7.2.</span> <span class="nav-text"> 入站网关</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%87%BA%E7%AB%99%E6%8E%A7%E5%88%B6"><span class="nav-number">7.3.</span> <span class="nav-text"> 出站控制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E4%B8%8E%E5%9B%9E%E6%94%B6"><span class="nav-number">8.</span> <span class="nav-text"> 状态与回收</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E5%BD%92%E5%B1%9E"><span class="nav-number">8.1.</span> <span class="nav-text"> 状态归属</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%B0%E6%9C%9F%E5%9B%9E%E6%94%B6"><span class="nav-number">8.2.</span> <span class="nav-text"> 到期回收</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E5%85%A8%E6%B5%81%E7%A8%8B"><span class="nav-number">9.</span> <span class="nav-text"> 任务全流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">10.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">308</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
