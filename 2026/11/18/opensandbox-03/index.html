@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇介绍了 OpenSandbox 的整体架构：管理服务负责准备环境，execd 在环境里执行命令、操作文件。不过，“准备环境”这四个字里还有不少工作。应用指定一个 Python 镜像、CPU 和内存后，究竟是谁创建容器？如果使用 Kubernetes，管理服务和集群控制器又各自做什么？ 这些工作由沙箱运行时完成。对应用来说，创建沙箱是一次 API 调用；对运行时来说，它需要把请求变成真正运行的">
+<meta property="og:type" content="article">
+<meta property="og:title" content="OpenSandbox 学习 03：沙箱运行时">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/11/18/opensandbox-03/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇介绍了 OpenSandbox 的整体架构：管理服务负责准备环境，execd 在环境里执行命令、操作文件。不过，“准备环境”这四个字里还有不少工作。应用指定一个 Python 镜像、CPU 和内存后，究竟是谁创建容器？如果使用 Kubernetes，管理服务和集群控制器又各自做什么？ 这些工作由沙箱运行时完成。对应用来说，创建沙箱是一次 API 调用；对运行时来说，它需要把请求变成真正运行的">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-11-18T08:08:01.000Z">
+<meta property="article:modified_time" content="2026-11-18T08:12:50.565Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/18/opensandbox-03/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>OpenSandbox 学习 03：沙箱运行时 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/18/opensandbox-03/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          OpenSandbox 学习 03：沙箱运行时
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-11-18 16:08:01" itemprop="dateCreated datePublished" datetime="2026-11-18T16:08:01+08:00">2026-11-18</time>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>上一篇介绍了 OpenSandbox 的整体架构：管理服务负责准备环境，execd 在环境里执行命令、操作文件。不过，“准备环境”这四个字里还有不少工作。应用指定一个 Python 镜像、CPU 和内存后，究竟是谁创建容器？如果使用 Kubernetes，管理服务和集群控制器又各自做什么？</p>
+<p>这些工作由沙箱运行时完成。对应用来说，创建沙箱是一次 API 调用；对运行时来说，它需要把请求变成真正运行的容器或虚拟机，记录环境的状态，并在任务结束后释放资源。<strong>同一个沙箱接口能够用于本机和集群，依靠的就是这一层实现。</strong></p>
+<span id="more"></span>
+<p>本文继续沿用订单统计的背景：为任务申请一个 Python 环境，保留几分钟，完成工作后删除。先从 Docker 看最直接的实现，再进入 Kubernetes，重点分析普通 Pod 和预热池两条创建流程，最后介绍暂停恢复，以及 agent-sandbox、Fast Sandbox 的接入方式。</p>
+<h2 id="运行时的职责"><a class="markdownIt-Anchor" href="#运行时的职责"></a> 运行时的职责</h2>
+<h3 id="沙箱与容器"><a class="markdownIt-Anchor" href="#沙箱与容器"></a> 沙箱与容器</h3>
+<p>假设应用需要一个装有 Python 的环境，限制为一个 CPU、512 MiB 内存，使用五分钟。这个请求只描述任务需要什么，尚未说明底层怎样完成。使用 Docker 时，这些条件会转换为容器镜像和 Docker 的资源限制。使用 Kubernetes 时，它们会转换为集群资源，再由集群创建或分配 Pod。Pod 是 Kubernetes 承载容器的基本单元，一个 Pod 中可以有多个配合工作的容器。</p>
+<p>因此，OpenSandbox 中的 sandbox runtime 可以理解为：<strong>负责把沙箱需求落实到底层环境的一组实现。</strong> 除了创建，它还要支持查询、删除、续期和暂停恢复等操作。</p>
+<p>这里还会遇到另一个含义的 runtime，例如 Docker 使用的 runc，或 Kubernetes 节点上的容器运行时。这些程序负责更底层的容器运行。OpenSandbox 的运行时负责组织整个沙箱的生命周期，两者所在的层次如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">应用：需要一个 Python 沙箱</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">OpenSandbox 运行时：准备环境、查询状态、回收资源</span><br><span class="line">    |</span><br><span class="line">    +-- Docker Engine --&gt; 底层容器运行时 --&gt; 容器</span><br><span class="line">    |</span><br><span class="line">    +-- Kubernetes --&gt; 节点上的容器运行时 --&gt; Pod 中的容器</span><br></pre></td></tr></table></figure>
+<h3 id="统一入口"><a class="markdownIt-Anchor" href="#统一入口"></a> 统一入口</h3>
+<p>管理服务通过 <code>SandboxService</code> 接口调用运行时，接口定义位于 <code>server/opensandbox_server/services/sandbox_service.py</code>。其中包括 <code>create_sandbox()</code>、<code>get_sandbox()</code>、<code>delete_sandbox()</code> 等方法。</p>
+<p>路由只需把请求交给这个接口。镜像如何准备、资源如何创建、状态从哪里读取，则由具体实现完成。这样，HTTP API 不需要分别维护一套 Docker 创建接口和一套 Kubernetes 创建接口。</p>
+<p>运行时的选择发生在 <code>server/opensandbox_server/services/factory.py</code>。当前 <code>runtime.type</code> 有 <code>docker</code> 和 <code>kubernetes</code> 两个选项，Kubernetes 分支的关键代码如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> selected_type == <span class="string">&quot;kubernetes&quot;</span>:</span><br><span class="line">    implementation = KubernetesSandboxService(config=active_config)</span><br><span class="line">    <span class="keyword">return</span> CompositeSandboxService(</span><br><span class="line">        implementation,</span><br><span class="line">        FastSandboxService(active_config, k8s_client=implementation.k8s_client),</span><br><span class="line">    )</span><br><span class="line"><span class="keyword">return</span> implementations[selected_type](config=active_config)</span><br></pre></td></tr></table></figure>
+<p>先记住这里的两条路径：Docker 使用 <code>DockerSandboxService</code>；Kubernetes 配置下既可以创建容器沙箱，也可以接入模板化虚拟机沙箱。<code>CompositeSandboxService</code> 负责分派这两类请求，后面再展开虚拟机部分。</p>
+<h3 id="源码分布"><a class="markdownIt-Anchor" href="#源码分布"></a> 源码分布</h3>
+<p>沿运行时阅读源码，主要会经过以下目录：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">server/opensandbox_server/services/</span><br><span class="line">├── sandbox_service.py       # 沙箱服务的公共接口</span><br><span class="line">├── factory.py               # 根据配置构造运行时服务</span><br><span class="line">├── composite_service.py     # 分派 Kubernetes 容器与虚拟机请求</span><br><span class="line">├── docker/                  # Docker 容器创建、状态与回收</span><br><span class="line">├── k8s/                     # 请求转换、资源提交与状态等待</span><br><span class="line">└── fast_sandbox/            # Fast Sandbox 平台接入</span><br><span class="line"></span><br><span class="line">kubernetes/</span><br><span class="line">├── apis/sandbox/v1alpha1/   # BatchSandbox、Pool、SandboxSnapshot 类型</span><br><span class="line">└── internal/</span><br><span class="line">    ├── controller/          # 集群资源的创建、分配与回收</span><br><span class="line">    ├── scheduler/           # 将启动任务分派给已分配的 Pod</span><br><span class="line">    └── task-executor/       # 在 Pod 中启动和管理任务进程</span><br></pre></td></tr></table></figure>
+<p><code>server/</code> 中的代码运行在管理服务里，<code>kubernetes/</code> 中的控制器运行在集群侧。后面看到 Python 和 Go 两部分实现时，可以先用这个边界判断它们分别负责哪一步。</p>
+<h2 id="docker-运行时"><a class="markdownIt-Anchor" href="#docker-运行时"></a> Docker 运行时</h2>
+<h3 id="engine-连接"><a class="markdownIt-Anchor" href="#engine-连接"></a> Engine 连接</h3>
+<p>管理服务通过 <strong>Docker SDK for Python 调用 Docker Engine API</strong>，完成镜像拉取、容器创建、启动和删除。这些操作直接使用 Python 客户端发起，无需拼接和执行 <code>docker run</code> 等命令。</p>
+<p>客户端在 <code>server/opensandbox_server/services/docker/docker_service.py</code> 中初始化，关键代码是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">self.docker_client = docker.from_env(**client_kwargs)</span><br></pre></td></tr></table></figure>
+<p><code>docker.from_env()</code> 根据运行管理服务时的环境配置连接 Docker Engine。在常见的 Linux 本机部署中，客户端通过 <code>/var/run/docker.sock</code> 这个 Unix socket 发送 API 请求；如果设置了 <code>DOCKER_HOST</code>，则使用指定的 Engine 地址。因此，启动管理服务的进程需要能够访问对应的 Docker 服务。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">OpenSandbox 管理服务</span><br><span class="line">    |</span><br><span class="line">    | 调用 Docker SDK for Python</span><br><span class="line">    v</span><br><span class="line">Docker Engine API（本机通常通过 Unix socket 访问）</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">Docker Engine 创建和管理容器</span><br></pre></td></tr></table></figure>
+<p>后面源码中的 <code>self.docker_client.api.create_container(...)</code> 就是在请求 Engine 创建容器；<code>container.start()</code>、<code>container.remove()</code> 则由 SDK 转换成相应的启动、删除 API 请求。真正操作容器的是 Docker Engine，管理服务负责准备参数和组织调用顺序。</p>
+<h3 id="容器创建"><a class="markdownIt-Anchor" href="#容器创建"></a> 容器创建</h3>
+<p>先看本机 Docker。管理服务能够直接访问 Docker Engine，因此可以在一次创建过程中完成镜像准备、容器创建和启动。</p>
+<p><code>server/opensandbox_server/services/docker/docker_service.py</code> 中的 <code>create_sandbox()</code> 先校验入口命令、资源和存活时间，再生成沙箱 ID 和到期时间。随后，<code>_provision_sandbox()</code> 准备镜像和容器配置，调用 Docker 创建环境。</p>
+<p>镜像下载和容器启动可能耗时较长。当前实现把主要创建工作放在单独的线程里，完成后再返回结果。等待 Docker 的过程中，管理服务仍可以继续处理其他请求。</p>
+<p>对前面的 Python 任务，这条路径可以概括为：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">创建请求：Python 镜像 + 资源限制 + 五分钟存活时间</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">校验参数，准备镜像和容器配置</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">创建容器 --&gt; 安装 execd 和启动脚本 --&gt; 启动容器</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">安排到期回收，返回沙箱信息</span><br></pre></td></tr></table></figure>
+<h3 id="执行服务安装"><a class="markdownIt-Anchor" href="#执行服务安装"></a> 执行服务安装</h3>
+<p>Python 镜像只提供 Python，不能直接处理 OpenSandbox 的命令和文件请求。管理服务还需要把 execd 装进容器。</p>
+<p>Linux 路径中，<code>server/opensandbox_server/services/docker/container_ops.py</code> 先创建尚未启动的目标容器，再调用运行环境准备逻辑。<code>server/opensandbox_server/services/docker/runtime.py</code> 中的关键步骤是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">self._copy_execd_to_container(container, sandbox_id, platform)</span><br><span class="line">self._install_bootstrap_script(container, sandbox_id, platform)</span><br></pre></td></tr></table></figure>
+<p>管理服务从配置的 execd 镜像提取程序和 <code>bootstrap.sh</code>，缓存后写入目标容器的 <code>/opt/opensandbox/</code>。随后，容器通过这个启动脚本拉起 execd 和请求指定的入口程序。</p>
+<p>因此，用户镜像决定沙箱里有什么语言和依赖，execd 则补上远程执行所需的接口。<strong>最终运行任务的 Python 和接收请求的 execd，位于同一个沙箱容器中。</strong> 这一过程以兼容的 Linux 镜像为前提，Windows 使用另外的安装路径。</p>
+<p>容器启动后，Docker 后端返回 <code>Running</code>。SDK 还会检查 execd 能否响应，确认可以使用后才把沙箱对象交给应用。容器启动和执行服务准备好，是前后衔接的两个步骤。</p>
+<h3 id="状态与清理"><a class="markdownIt-Anchor" href="#状态与清理"></a> 状态与清理</h3>
+<p>创建后的容器带有 OpenSandbox 写入的标签，其中保存沙箱 ID 和初始到期信息。查询沙箱时，管理服务找到对应容器，再把 Docker 状态转换成公共 API 的状态。</p>
+<p>Docker 本身不会因为 OpenSandbox 请求中的“五分钟”到了就自动删除容器，因此管理服务需要安排回收。它先把存活时长换算成具体的到期时间。例如，10:00 创建、使用五分钟，就记录为 10:05 到期，再设置定时器触发清理。</p>
+<ul>
+<li>记录具体时间，是为了在服务重启后仍然知道沙箱还能使用多久。假设管理服务在 10:03 重启，这个沙箱应当再保留两分钟，而不是重新计时五分钟。如果恢复时已经超过 10:05，就直接触发清理。</li>
+<li>续期也需要同时更新清理安排和保存的时间。管理服务先取消旧定时器，按新的到期时间重新安排。<strong>Docker 不支持直接修改运行中容器的标签，因此新的时间另外写入本地元数据文件，读取时优先采用这个记录</strong>。</li>
+<li>定时器只存在于管理服务进程中，进程退出后就会消失。因此，服务启动时会扫描已有沙箱，结合容器标签和本地文件找出各自的到期时间，再重建定时器。管理服务停机期间，容器可能继续运行，已经到期的沙箱会在服务恢复后清理。</li>
+</ul>
+<p>主动删除也由 Docker 后端完成：终止容器、删除容器，再清理定时器和相关资源。容器创建或启动失败时，则尝试删除已经创建的容器，避免只报错却留下半成品环境。</p>
+<p>这个实现适合本机和单机部署：管理服务直接操作 Docker，也直接承担到期回收。进入 Kubernetes 后，创建与清理会由管理服务和集群控制器共同完成。</p>
+<h2 id="kubernetes-创建流程"><a class="markdownIt-Anchor" href="#kubernetes-创建流程"></a> Kubernetes 创建流程</h2>
+<h3 id="管理服务与控制器"><a class="markdownIt-Anchor" href="#管理服务与控制器"></a> 管理服务与控制器</h3>
+<p>前面的 Docker 后端由管理服务直接创建和清理容器。使用 Kubernetes 时，管理服务会把镜像、资源限制和到期时间等要求写成一份资源记录，提交给集群。集群中的控制器读取这份记录，创建或分配 Pod，并持续更新运行状态；沙箱到期后，也由控制器发起回收。<strong>管理服务负责提交沙箱需求，控制器负责创建环境并管理后续变化。</strong> 需求保存在集群中，管理服务重启后，控制器仍能继续处理。</p>
+<p>当前有两种 Kubernetes 容器工作负载实现，由 <code>kubernetes.workload_provider</code> 选择：</p>
+<table>
+<thead>
+<tr>
+<th>配置值</th>
+<th>管理服务创建的资源</th>
+<th>配套控制器</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>batchsandbox</code></td>
+<td><code>BatchSandbox</code></td>
+<td>OpenSandbox 仓库中的控制器</td>
+</tr>
+<tr>
+<td><code>agent-sandbox</code></td>
+<td><code>agents.x-k8s.io</code> 下的 <code>Sandbox</code></td>
+<td>kubernetes-sigs/agent-sandbox 项目的控制器</td>
+</tr>
+</tbody>
+</table>
+<p>两者在管理服务里都实现 <code>WorkloadProvider</code> 接口，负责资源的构造、提交、读取和删除。接口与注册代码分别位于 <code>server/opensandbox_server/services/k8s/workload_provider.py</code> 和 <code>provider_factory.py</code>。当前注册顺序下，不指定提供方时使用 <code>batchsandbox</code>。</p>
+<p>接下来先沿 <code>BatchSandbox</code> 阅读，因为它完整展示了 OpenSandbox 自己的控制器和预热池设计。</p>
+<h3 id="crd-与控制器"><a class="markdownIt-Anchor" href="#crd-与控制器"></a> CRD 与控制器</h3>
+<p>Kubernetes 自带 Pod、Deployment 等资源，但并没有内置 OpenSandbox 的沙箱类型。要让集群保存和管理沙箱需求，项目需要先通过 CRD（CustomResourceDefinition，自定义资源定义）向 Kubernetes 注册一种新资源。</p>
+<p><strong>CRD 定义资源的类型，创建请求提交的则是这个类型的一个实例。</strong> 例如，BatchSandbox 的 CRD 定义了它有哪些字段、字段是什么类型；管理服务为订单任务创建的某个 BatchSandbox，则保存这一次任务的镜像、资源和到期时间。注册后，这些实例也可以通过 Kubernetes API 或 <code>kubectl</code> 创建、查询和修改。</p>
+<p>和常见的 Kubernetes 资源一样，一个 BatchSandbox 实例主要有以下几部分：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+<th>在沙箱中的例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apiVersion</code>、<code>kind</code></td>
+<td>标明资源属于哪个 API、是什么类型</td>
+<td><code>sandbox.opensandbox.io/v1alpha1</code>、<code>BatchSandbox</code></td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td>标明资源的身份和附加信息</td>
+<td>名称、命名空间、标签</td>
+</tr>
+<tr>
+<td><code>spec</code></td>
+<td>描述希望得到什么环境</td>
+<td>Pod 模板、副本数、到期时间</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>记录控制器观察到的实际情况</td>
+<td>已有多少 Pod、多少已经就绪</td>
+</tr>
+</tbody>
+</table>
+<p>不过，<strong>注册 CRD 只是让 Kubernetes 能够识别和保存这种资源。要根据其中的要求创建沙箱，还需要配套的控制器</strong>。控制器持续比较 <code>spec</code> 中的要求与集群现状，执行必要的操作，再把结果更新到 <code>status</code> 中：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">spec：需要一个 Python 沙箱</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">控制器检查：当前还没有对应 Pod</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">根据模板创建 Pod，等待它启动</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">status：记录 Pod 数量和就绪情况</span><br></pre></td></tr></table></figure>
+<p>这就是 Kubernetes 常见的控制循环。资源变化会触发控制器重新检查，同一份需求也可能处理多次。因此，控制器每次都要结合当前状态决定下一步，已经创建好的 Pod 无需再创建一遍。</p>
+<p>这里可以进一步分清 controller 和 Operator。<strong>Controller（控制器）是持续检查资源、执行调整逻辑的程序。</strong> Kubernetes 自带的控制器会根据 Deployment 等资源管理应用副本；OpenSandbox 编写的 BatchSandbox 控制器，则根据沙箱资源创建 Pod、更新状态和处理到期回收。它们都采用前面介绍的控制循环。</p>
+<p><strong>Operator 是用自定义资源和控制器自动管理某类应用的一种方式。</strong> 以沙箱为例，原本需要管理员判断何时创建环境、补充预热容量、保存快照和释放资源。把这些管理规则写进控制器，让它根据资源中的要求持续执行，就构成了沙箱 Operator。</p>
+<p>因此，Operator 的核心实现就是控制器，名称强调的是它具备某类应用的管理能力。一个 Operator 可以只有一个控制器，也可以由多个控制器协作；控制器数量并不是判断它是不是 Operator 的依据。</p>
+<p>需要注意，CRD 和 Controller 是分开的。这是理解 Kubernetes Operator 的关键。</p>
+<ul>
+<li>CRD：告诉 kube-apiserver，集群中新增了一种叫 BatchSandbox 的资源类型，以及它的数据结构和校验规则。</li>
+<li>Controller：告诉自己的程序，需要监听 BatchSandbox，并根据它的期望状态执行操作。</li>
+</ul>
+<p><strong>一句话总结：CRD 负责定义资源，kube-apiserver 负责存储和提供 API，Controller 通过 Watch 主动监听资源，并通过 Reconcile 实现自动化管理</strong>。</p>
+<p>在 OpenSandbox 中，这些职责由同一个控制程序中的多个控制器承担：BatchSandbox 控制器管理沙箱，Pool 控制器管理预热池，SandboxSnapshot 控制器管理快照。它们在 <code>kubernetes/cmd/controller/main.go</code> 中一起启动，共同完成这套沙箱 Operator 的工作。</p>
+<p>BatchSandbox 采用的正是这套机制。Go 类型定义位于 <code>kubernetes/apis/sandbox/v1alpha1/batchsandbox_types.go</code>，生成的 CRD 清单位于 <code>kubernetes/config/crd/bases/sandbox.opensandbox.io_batchsandboxes.yaml</code>；控制器则基于 <code>controller-runtime</code> 实现，在 <code>kubernetes/internal/controller/batchsandbox_controller.go</code> 中监听 BatchSandbox 及相关 Pod 的变化。</p>
+<p>有了这层背景，再看管理服务提交的 BatchSandbox，就可以把它理解为交给控制器处理的一份具体沙箱需求。</p>
+<h3 id="沙箱需求记录"><a class="markdownIt-Anchor" href="#沙箱需求记录"></a> 沙箱需求记录</h3>
+<p>对于订单统计任务，这份需求除了 Pod 的配置，还需要说明创建几个执行单元、何时到期，以及是否从预热池分配。这些信息都保存在 BatchSandbox 实例中。</p>
+<p>管理服务通过 <code>server/opensandbox_server/services/k8s/batchsandbox_provider.py</code> 构造这份记录。普通创建路径中的核心结构如下，节选自 <code>create_workload()</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">spec: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>] = &#123;</span><br><span class="line">    <span class="string">&quot;replicas&quot;</span>: <span class="number">1</span>,</span><br><span class="line">    <span class="string">&quot;template&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;metadata&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;labels&quot;</span>: labels,</span><br><span class="line">            <span class="string">&quot;annotations&quot;</span>: annotations <span class="keyword">or</span> &#123;&#125;,</span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;spec&quot;</span>: pod_spec,</span><br><span class="line">    &#125;,</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>template</code> 描述 Pod 应该怎样运行，里面包含 Python 镜像、资源限制、环境变量和入口命令。<code>replicas</code> 表示需要多少个执行单元；管理服务为单次沙箱创建写入 <code>1</code>，因此这次请求对应一个沙箱 Pod。直接使用 BatchSandbox 资源时，还可以指定更多副本。</p>
+<p>五分钟的存活时间被计算成具体时间，再写入 <code>spec.expireTime</code>。这样，镜像和到期时间都保存在 Kubernetes 资源中，集群控制器能够独立读取和处理。</p>
+<p>如果部署者提供了基础资源模板，管理服务还会合并模板与本次请求生成的配置。模板适合放置节点选择等部署要求，本次请求则提供任务所需的镜像、资源和环境变量。合并后的资源才会提交到集群。</p>
+<p>提交时，管理服务通过 Python 的 Kubernetes 客户端向 kube-apiserver 发送请求，调用注册 CRD 后提供的 <strong>BatchSandbox 创建接口</strong>：</p>
+<figure class="highlight http"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">POST /apis/sandbox.opensandbox.io/v1alpha1/namespaces/&#123;namespace&#125;/batchsandboxes</span><br></pre></td></tr></table></figure>
+<p>请求体是构造好的 BatchSandbox 资源。kube-apiserver 保存这份需求后，配套控制器便能读取它，继续准备沙箱环境。</p>
+<h3 id="pod-的组成"><a class="markdownIt-Anchor" href="#pod-的组成"></a> Pod 的组成</h3>
+<p>需求记录里最重要的部分是 Pod 模板。订单统计需要 Python，OpenSandbox 还需要 execd，因此 Pod 创建时必须把二者准备到同一个用户容器中。Docker 可以通过 API 向尚未启动的容器复制文件，Kubernetes 则采用初始化容器。初始化容器先于用户容器运行，负责将 execd 和启动脚本复制到一个共享目录；用户容器挂载这个目录，再执行启动脚本。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">一个沙箱 Pod</span><br><span class="line">    |</span><br><span class="line">    +-- execd-installer：先运行，复制 execd 和 bootstrap.sh</span><br><span class="line">    |         |</span><br><span class="line">    |         v</span><br><span class="line">    |   共享卷 opensandbox-bin</span><br><span class="line">    |         |</span><br><span class="line">    +-- 用户容器：挂载到 /opt/opensandbox</span><br><span class="line">              |</span><br><span class="line">              v</span><br><span class="line">        bootstrap.sh --&gt; execd + 用户入口程序</span><br></pre></td></tr></table></figure>
+<p>对应的构造逻辑位于 <code>server/opensandbox_server/services/k8s/provider_common.py</code>。用户容器使用请求中的镜像，并把启动脚本放在命令最前面：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">return</span> V1Container(</span><br><span class="line">    name=<span class="string">&quot;sandbox&quot;</span>,</span><br><span class="line">    image=image_spec.uri,</span><br><span class="line">    image_pull_policy=image_pull_policy,</span><br><span class="line">    command=[<span class="string">&quot;/opt/opensandbox/bootstrap.sh&quot;</span>] + entrypoint,</span><br><span class="line">    env=env_vars <span class="keyword">if</span> env_vars <span class="keyword">else</span> <span class="literal">None</span>,</span><br><span class="line">    resources=resources,</span><br><span class="line">    volume_mounts=volume_mounts,</span><br><span class="line">    security_context=security_context,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+<p>这个共享目录使用 <code>emptyDir</code> 卷，只在 Pod 存活期间存在，主要用于交付执行程序。订单数据和报告的持久保存，需要由应用取回，或另外使用持久化存储。</p>
+<p>CPU 和内存也在这里转换为 Kubernetes 容器资源配置。当前主容器构造逻辑中，提供了资源上限而没有单独提供资源请求时，会用同一组数值填写 <code>requests</code> 和 <code>limits</code>。前者供 Kubernetes 调度时计算资源需求，后者约束容器运行时的资源使用。</p>
+<p>于是，“一个 CPU、512 MiB”不再只是 API 参数，而是进入了集群的调度和运行配置。</p>
+<h3 id="pod-创建"><a class="markdownIt-Anchor" href="#pod-创建"></a> Pod 创建</h3>
+<p>资源提交成功，只代表集群保存了这份需求。真正创建 Pod 的是 <code>kubernetes/internal/controller/batchsandbox_controller.go</code> 中的 <code>BatchSandboxReconciler</code>。</p>
+<p>Kubernetes 的控制器会在资源变化时反复检查当前情况。对于普通创建，它先读取 BatchSandbox，再查找已经属于它的 Pod。如果需要一个 Pod，而当前还没有，就根据模板创建。</p>
+<p><code>scaleBatchSandbox()</code> 中计算缺少哪些 Pod 的代码如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">var</span> needCreateIndex []<span class="type">int</span></span><br><span class="line"><span class="keyword">for</span> i := <span class="number">0</span>; i &lt; <span class="type">int</span>(*batchSandbox.Spec.Replicas); i++ &#123;</span><br><span class="line">    _, ok := indexedPodMap[i]</span><br><span class="line">    <span class="keyword">if</span> !ok &#123;</span><br><span class="line">        needCreateIndex = <span class="built_in">append</span>(needCreateIndex, i)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>假设 BatchSandbox 名为 <code>demo</code>，只需要一个 Pod，那么缺少的编号就是 <code>0</code>。控制器从 <code>spec.template</code> 复制容器配置，将 Pod 命名为 <code>demo-0</code>，放在与 BatchSandbox 相同的命名空间中。Pod 的 <code>metadata.ownerReferences</code> 还会记录它属于哪个 BatchSandbox，方便 Kubernetes 在删除沙箱资源时清理对应 Pod。</p>
+<p>配置准备好后，控制器通过 <code>controller-runtime</code> 的 Go 客户端提交 Pod。源码中的调用是：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> err := r.Create(ctx, pod); err != <span class="literal">nil</span> &#123;</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>r.Create()</code> 最终向 kube-apiserver 发起 HTTP 请求，调用 Kubernetes 内置的 <strong>Pod 创建接口</strong>，请求体就是刚刚构造的 Pod：</p>
+<figure class="highlight http"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">POST /api/v1/namespaces/&#123;namespace&#125;/pods</span><br></pre></td></tr></table></figure>
+<p>控制器下一次处理同一份需求时，会先看 Pod 是否已经存在，避免每检查一次就再建一个。代码还记录已提交的创建操作，等待缓存观察到结果，以减少缓存尚未更新时的重复创建。</p>
+<p>Pod 创建后，Kubernetes 调度器负责选择节点，节点上的 kubelet 负责拉取镜像、运行初始化容器和用户容器。OpenSandbox 控制器负责沙箱与 Pod 的关系，具体在哪个节点运行则沿用 Kubernetes 的调度机制。</p>
+<h3 id="创建结果"><a class="markdownIt-Anchor" href="#创建结果"></a> 创建结果</h3>
+<p>Pod 启动的状态还要沿原路传回应用。控制器观察 Pod 的运行和就绪情况，更新 BatchSandbox 的状态；管理服务再将这份状态转换为 OpenSandbox 的状态。</p>
+<p>这里有一个容易看错的名称：BatchSandbox 内部的 <code>phase: Succeed</code> 会被转换成公共 API 的 <code>Running</code>。它表示环境已经运行起来，应用上传的统计脚本此时可能还没有执行。</p>
+<p>管理服务也会等待这个过程。在 <code>server/opensandbox_server/services/k8s/kubernetes_service.py</code> 中，<code>create_sandbox()</code> 提交资源后调用 <code>_wait_for_sandbox_ready()</code>。它订阅资源变化，并保留定期查询作为补充。等待逻辑中的成功条件是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> current_state <span class="keyword">in</span> (<span class="string">&quot;Running&quot;</span>, <span class="string">&quot;Allocated&quot;</span>):</span><br><span class="line">    <span class="keyword">return</span> workload</span><br></pre></td></tr></table></figure>
+<p><code>Allocated</code> 表示已经获得执行位置，池模式可能先达到这一步，沙箱程序还需要继续启动。因此，返回创建结果后，SDK 仍会检查 execd 是否能够响应。</p>
+<p>将这些步骤串起来，普通 Kubernetes 创建的流程如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">管理服务构造并提交 BatchSandbox</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">控制器根据 template 创建 Pod</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">Kubernetes 调度节点，启动容器</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">控制器更新 BatchSandbox 状态</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">管理服务结束等待，返回创建结果</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">SDK 确认 execd 可以使用</span><br></pre></td></tr></table></figure>
+<p>当前配置中，管理服务的创建等待默认是六十秒。无法调度、启动失败或超过等待时间时，管理服务会返回相应错误，并尝试删除已经创建的资源。<strong>提交成功、环境启动、执行服务可用，需要依次确认。</strong></p>
+<h2 id="kubernetes-预热池"><a class="markdownIt-Anchor" href="#kubernetes-预热池"></a> Kubernetes 预热池</h2>
+<h3 id="提前准备"><a class="markdownIt-Anchor" href="#提前准备"></a> 提前准备</h3>
+<p>上面的流程适合按需创建，但每次都要等待 Pod 调度和容器启动。如果任务只运行几秒，环境准备就可能占去相当一部分时间。</p>
+<p>预热池把 Pod 创建提前完成。部署者先定义一个 <code>Pool</code>，其中的模板决定 Pod 使用什么镜像、拥有多少资源，以及如何运行任务执行器。<code>PoolReconciler</code> 维护这些 Pod，请求到来时再分配。</p>
+<p>Pool 的类型定义位于 <code>kubernetes/apis/sandbox/v1alpha1/pool_types.go</code>，容量配置主要包含两组边界：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bufferMin</code>、<code>bufferMax</code></td>
+<td>希望保留的空闲预热 Pod 数量范围</td>
+</tr>
+<tr>
+<td><code>poolMin</code>、<code>poolMax</code></td>
+<td>整个池的 Pod 总数量范围，包含已分配的 Pod</td>
+</tr>
+</tbody>
+</table>
+<p>空闲 Pod 被分走后，控制器会结合总量上限和扩缩容策略补充容量。空闲 Pod 超过保留范围时，也可以缩减数量。预热由此减少任务等待，同时占用一部分提前准备的计算资源。</p>
+<h3 id="环境分配"><a class="markdownIt-Anchor" href="#环境分配"></a> 环境分配</h3>
+<p>有了池，创建请求可以通过 <code>extensions.poolRef</code> 指定池名称。管理服务进入 <code>BatchSandboxProvider._create_workload_from_pool()</code>，写入的主要需求变成：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">spec: <span class="type">Dict</span>[<span class="built_in">str</span>, <span class="type">Any</span>] = &#123;</span><br><span class="line">    <span class="string">&quot;replicas&quot;</span>: <span class="number">1</span>,</span><br><span class="line">    <span class="string">&quot;poolRef&quot;</span>: pool_ref,</span><br><span class="line">    <span class="string">&quot;taskTemplate&quot;</span>: self._build_task_template(</span><br><span class="line">        entrypoint,</span><br><span class="line">        env,</span><br><span class="line">        batchsandbox_name,</span><br><span class="line">    ),</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>与普通创建相比，这里使用 <code>poolRef</code> 引用已有环境，<code>taskTemplate</code> 描述分配后需要启动什么。镜像和容器资源在 Pool 的 Pod 模板中已经确定，本次请求的环境变量和入口命令则放进任务配置中。</p>
+<p>这也意味着池模式有使用条件：任务需要匹配池预先准备的环境。当前实现还拒绝将 <code>poolRef</code> 与请求级的卷挂载、平台选择组合使用。应用无法拿到一个已经启动的 Pod 后，再把它当成尚未创建的 Pod 重新指定所有条件。</p>
+<p>分配工作由 Pool 控制器完成。<code>kubernetes/internal/controller/allocator.go</code> 先找到可以分配的 Pod，再计算每个 BatchSandbox 缺少多少个执行单元。当前默认算法位于 <code>controller/algorithm/packed.go</code>，按输入请求的顺序为它们分配可用 Pod。</p>
+<p>对单个订单任务，可以先理解成：从池中找到一个就绪且未被占用的 Pod，记到这个 BatchSandbox 名下。分配完成后，BatchSandbox 控制器便能找到它，继续安排启动任务。</p>
+<h3 id="分配记录"><a class="markdownIt-Anchor" href="#分配记录"></a> 分配记录</h3>
+<p>分配结果不能只存在于控制器的内存中。否则控制器重启后，已经在运行任务的 Pod 就可能被误认为空闲。</p>
+<p>Kubernetes 资源除了 <code>spec</code> 和 <code>status</code>，还可以在 <code>metadata.annotations</code> 中保存附加信息，这个字段称为注解（annotation）。注解按键值保存，键和值都是字符串；需要记录结构化信息时，可以把内容转换成 JSON 字符串。</p>
+<p>OpenSandbox 就用这种方式保存分配关系。假设沙箱 <code>demo</code> 从 <code>python-pool</code> 分到了 <code>pod-a</code>，它的 BatchSandbox 资源会带有类似下面的注解。这是资源片段，用于说明保存的位置和内容：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">metadata:</span></span><br><span class="line">  <span class="attr">name:</span> <span class="string">demo</span></span><br><span class="line">  <span class="attr">annotations:</span></span><br><span class="line">    <span class="attr">sandbox.opensandbox.io/alloc-status:</span> <span class="string">&#x27;&#123;&quot;pods&quot;:[&quot;pod-a&quot;],&quot;poolRef&quot;:&quot;python-pool&quot;,&quot;generation&quot;:1&#125;&#x27;</span></span><br></pre></td></tr></table></figure>
+<p>其中，<code>sandbox.opensandbox.io/alloc-status</code> 是 OpenSandbox 约定的键，值记录分配的 Pod、所属池，以及分配时的资源规格版本。Kubernetes 负责保存这段信息，OpenSandbox 的控制器负责读取和解释它。</p>
+<p>控制器还在内存中保存便于查询的分配表。写入注解失败时，会回退本次内存修改；重启后，则读取资源里的分配记录重建内存状态。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">分配前：Pod A 空闲</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">内存记录：Pod A 分配给沙箱 X</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">BatchSandbox X 的注解保存 Pod A 的分配信息</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">控制器重启后，从注解恢复这段关系</span><br></pre></td></tr></table></figure>
+<p>相关实现在 <code>allocator.go</code> 的 <code>SyncSandboxAllocation()</code> 和 <code>inMemoryAllocationStore.Recover()</code>。控制器重启后，还能据此找回原来的分配关系。</p>
+<h3 id="任务启动"><a class="markdownIt-Anchor" href="#任务启动"></a> 任务启动</h3>
+<p>Pod 分配完成，还没有用上本次请求的入口命令和环境变量。普通创建可以在 Pod 启动前写好它们，预热 Pod 已经运行，就需要一个能够接收后续启动任务的程序。这个程序是 task-executor。它随池中的环境提前启动，控制器分配 Pod 后再将本次任务交给它。</p>
+<p>管理服务生成任务配置的逻辑位于 <code>server/opensandbox_server/services/k8s/batchsandbox_provider.py</code>。其中，用户入口命令被放在 <code>bootstrap.sh</code> 后面：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">escaped_entrypoint = <span class="string">&#x27; &#x27;</span>.join(shlex.quote(arg) <span class="keyword">for</span> arg <span class="keyword">in</span> entrypoint)</span><br><span class="line">user_process_cmd = <span class="string">f&quot;exec /opt/opensandbox/bootstrap.sh <span class="subst">&#123;escaped_entrypoint&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+<p>控制器中的任务调度器读取这份配置，将任务交给已分配 Pod 的 task-executor。后者启动脚本，并记录任务进程的状态。源码分别位于 <code>kubernetes/internal/scheduler/default_scheduler.go</code> 和 <code>kubernetes/internal/task-executor/runtime/process.go</code>。</p>
+<p>执行器支持在自身环境中启动进程，也支持进入配套主容器的环境启动进程。具体采用哪一种，由池的部署方式和执行配置决定；无论哪种方式，都需要提前准备好脚本、execd 和用户程序所需的依赖。</p>
+<p>这里的启动任务与应用后续执行的统计脚本，是两个阶段：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">Pod 分配完成</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">控制器中的任务调度器</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">task-executor 启动 bootstrap.sh</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">execd 和用户入口程序开始运行</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">应用通过 execd 上传订单数据、执行统计脚本</span><br></pre></td></tr></table></figure>
+<p><strong>task-executor 负责在预热环境中启动这次沙箱，execd 负责接收应用后续的命令和文件请求。</strong> 控制器里的任务调度器也只是把任务分配给已经获得的 Pod，节点选择仍由 Kubernetes 调度器完成。</p>
+<h3 id="归还与补充"><a class="markdownIt-Anchor" href="#归还与补充"></a> 归还与补充</h3>
+<p>沙箱使用结束、需要归还 Pod 时，还要处理上一次任务留下的进程、文件和环境修改。只有明确这些内容怎样清理，池才能决定这个 Pod 何时可以再次分配。</p>
+<p>Pool 通过回收策略决定如何处理归还的 Pod：</p>
+<ul>
+<li><strong><code>Delete</code></strong>：删除 Pod，再按容量要求补充环境。这是默认策略。</li>
+<li><strong><code>Restart</code></strong>：通过回收逻辑重启 Pod 中的容器。</li>
+<li><strong><code>Noop</code></strong>：不执行回收操作，保留原有环境。</li>
+</ul>
+<p>这些策略的实现位于 <code>kubernetes/internal/controller/recycle/</code>。</p>
+<p>这三种方式的清理范围不同。尤其是 <code>Noop</code>，不能据此认为环境已经恢复成最初状态；卷中的数据是否保留，也取决于卷本身的生命周期。</p>
+<p>因此，预热池并不意味着同一个 Pod 要反复交给不同任务。默认策略可以在分配前提前建好 Pod，在归还后删除，再准备新的 Pod。它节省的是请求到来时的等待，环境是否原地复用则由回收策略决定。</p>
+<h2 id="生命周期管理"><a class="markdownIt-Anchor" href="#生命周期管理"></a> 生命周期管理</h2>
+<h3 id="状态与失败"><a class="markdownIt-Anchor" href="#状态与失败"></a> 状态与失败</h3>
+<p>普通 Pod 和预热池两条路径最终都需要回答：这个沙箱现在能否使用？</p>
+<p>BatchSandbox 控制器会统计已有 Pod、已分配 Pod 和就绪 Pod 的数量，并记录启动任务的运行、失败等情况。管理服务再通过 <code>BatchSandboxProvider.get_status()</code> 转换为应用看到的状态。</p>
+<p>池里的 Pod 可能在分配前就已经就绪，因此仅看 Pod Ready 还不够。如果 task-executor 启动本次沙箱失败，Pod 仍在运行，沙箱却不能正常使用。当前状态转换逻辑会检查 <code>taskFailed</code>，将这类失败报告出来。这里的 <code>taskFailed</code> 记录的是 task-executor 管理的任务失败，例如启动脚本出错，导致沙箱没有正常启动。沙箱可用后，应用通过 <code>commands.run()</code> 运行的脚本由 execd 管理；脚本报错会返回到这次命令的执行结果中，不会直接计入 <code>taskFailed</code>。</p>
+<p>普通 BatchSandbox 的 Pod 模板默认使用 <code>restartPolicy: Never</code>，部署模板可以显式调整。这个默认值符合沙箱任务的特点：容器重建可能丢失可写层和进程状态，程序重新启动并不代表原来的任务能够接着执行。</p>
+<h3 id="到期回收"><a class="markdownIt-Anchor" href="#到期回收"></a> 到期回收</h3>
+<p>客户端可能异常退出，所以环境不能只等应用主动删除。前面保存的 <code>spec.expireTime</code> 在这里发挥作用：BatchSandbox 控制器每次处理资源时都会检查到期时间，到期后发起删除。</p>
+<p>续期的实现也很直接。<code>server/opensandbox_server/services/k8s/batchsandbox_provider.py</code> 中的 <code>update_expiration()</code> 修改同一个字段：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">body = &#123;</span><br><span class="line">    <span class="string">&quot;spec&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;expireTime&quot;</span>: expires_at.isoformat()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>新的时间保存在集群里，后续检查会按新值安排回收。管理服务重启后，控制器仍可以读取它；控制器自身停机时，清理可能延后，但恢复后仍能判断哪些沙箱已经到期。</p>
+<p>对比 Docker，这个差别就清楚了：Docker 的清理由管理服务中的定时器发起，BatchSandbox 的清理由集群控制器发起。回收职责跟着底层资源的管理方式走。</p>
+<h3 id="删除顺序"><a class="markdownIt-Anchor" href="#删除顺序"></a> 删除顺序</h3>
+<p>普通创建的 Pod 通过 <code>ownerReferences</code> 关联 BatchSandbox，删除资源时 Kubernetes 能够据此清理所属 Pod。预热池中的 Pod 属于 Pool，还需要先停掉本次任务，再交回池处理。</p>
+<p>为保证清理顺序，控制器使用 finalizer。它是 Kubernetes 资源上的一种删除标记：资源收到删除请求后，先进入删除流程，等负责清理的控制器完成工作并移除标记，资源才最终消失。</p>
+<p><code>kubernetes/internal/controller/batchsandbox_deletion.go</code> 展示了有任务清理标记时的过程：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">BatchSandbox 收到删除请求</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">停止本次启动任务，等待执行器确认清理</span><br><span class="line">    |</span><br><span class="line">    +-- 普通模式：确认所属 Pod 已删除</span><br><span class="line">    |</span><br><span class="line">    +-- 池模式：交给 Pool 控制器回收分配的 Pod</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">相关控制器移除清理标记，完成删除</span><br></pre></td></tr></table></figure>
+<p><strong>删除请求被接受和资源已经释放，是先后两个时刻。</strong> 这也是集群后端需要保存中间状态的原因：清理可能跨越多次控制器检查，不能在提交删除后就假定所有进程已经停止。</p>
+<p>管理服务自动创建的 PVC 也会尽可能关联到沙箱资源，方便沙箱到期时由 Kubernetes 回收。这里的 PVC 是申请持久化存储的资源；应用自备存储与管理服务代建的存储有不同的归属，不能把删除沙箱理解为删除所有挂载的数据。</p>
+<h2 id="暂停与恢复"><a class="markdownIt-Anchor" href="#暂停与恢复"></a> 暂停与恢复</h2>
+<h3 id="docker-暂停"><a class="markdownIt-Anchor" href="#docker-暂停"></a> Docker 暂停</h3>
+<p>如果任务需要等待较长时间，应用可能希望暂停环境，稍后继续。不过，不同运行时的暂停方式有明显区别。</p>
+<p>Docker 后端调用容器的 <code>pause()</code> 和 <code>unpause()</code>：暂停原容器中的进程，恢复时继续运行。容器仍然存在，进程内存也仍然占用，适合暂时停止执行。</p>
+<p>Docker 另有快照操作，会将容器文件系统提交为镜像，实现在 <code>server/opensandbox_server/services/docker/snapshot_runtime.py</code>。暂停原容器和保存文件系统镜像是两种操作，使用时需要分别理解。</p>
+<h3 id="kubernetes-文件系统快照"><a class="markdownIt-Anchor" href="#kubernetes-文件系统快照"></a> Kubernetes 文件系统快照</h3>
+<p>BatchSandbox 暂停沙箱时，会删除承载它的 Pod，以释放计算资源。但删除 Pod 也会丢失容器可写层中的文件改动。因此，常规暂停流程会先把容器文件系统保存成镜像，确认保存成功后再释放 Pod；恢复时，用这个镜像重新创建环境。</p>
+<p>管理服务先将 <code>spec.pause</code> 改为 <code>true</code>。<code>kubernetes/internal/controller/batchsandbox_pause_resume.go</code> 观察到这个请求后，创建一个内部 <code>SandboxSnapshot</code> 资源，由快照控制器保存容器文件系统。</p>
+<p>普通容器文件系统快照的流程如下：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">暂停请求：spec.pause = true</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">创建 SandboxSnapshot</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">快照控制器在源节点安排提交任务</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">将容器文件系统保存为镜像，推送到镜像仓库</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">确认快照成功，删除 Pod 或释放池分配</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">沙箱进入 Paused</span><br></pre></td></tr></table></figure>
+<p>提交任务由 image-committer 完成，相关控制逻辑在 <code>kubernetes/internal/controller/sandboxsnapshot_controller.go</code>。镜像仓库和提交任务所需的配置由集群控制器侧提供。</p>
+<p>这里先保存、后释放的顺序很重要。只有快照成功，后续恢复才有可用的环境；快照失败时，不能把源 Pod 当作已经可以丢弃的资源。进入 <code>Paused</code> 后，Pod 的实际删除仍可能需要一点时间。</p>
+<h3 id="环境恢复"><a class="markdownIt-Anchor" href="#环境恢复"></a> 环境恢复</h3>
+<p>恢复时，管理服务将 <code>spec.pause</code> 改为 <code>false</code>。控制器读取上次快照中的镜像引用，替换 Pod 模板里的镜像，再通过普通创建流程启动新 Pod。BatchSandbox 和沙箱 ID 保持不变，承载它的 Pod 可以变化。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">恢复请求 --&gt; 读取快照镜像 --&gt; 改写 Pod 模板 --&gt; 新建 Pod</span><br></pre></td></tr></table></figure>
+<p>原本来自预热池的沙箱也需要从自己的快照恢复。暂停流程会保存具体的 Pod 模板并解除池引用，恢复时按这份模板重建环境。</p>
+<p><strong>普通文件系统快照保存的是文件，正在运行的进程和 Python 内存变量不会因此恢复。</strong> 例如，已安装到容器文件系统里的依赖和写入其中的脚本可以随镜像保留；一个 Python 进程里尚未写入文件的计算结果则不在这种快照里。挂载卷中的数据仍由相应存储负责。</p>
+<p>当前这条暂停恢复路径只支持 <code>replicas: 1</code>。仓库还包含专门的 QEMU 状态保存路径，其保存内容与普通容器文件系统快照不同。阅读或使用暂停功能时，需要确认实际采用的快照方式。</p>
+<h2 id="其他运行时接入"><a class="markdownIt-Anchor" href="#其他运行时接入"></a> 其他运行时接入</h2>
+<h3 id="agent-sandbox"><a class="markdownIt-Anchor" href="#agent-sandbox"></a> agent-sandbox</h3>
+<p>前面的 Kubernetes 实现使用 OpenSandbox 自己的 BatchSandbox 控制器。有些集群已经使用 <a target="_blank" rel="noopener" href="https://github.com/kubernetes-sigs/agent-sandbox">kubernetes-sigs/agent-sandbox</a>，OpenSandbox 也提供了对应接入。</p>
+<p>配置 <code>kubernetes.workload_provider = &quot;agent-sandbox&quot;</code> 后，管理服务使用 <code>AgentSandboxProvider</code>，代码位于 <code>server/opensandbox_server/services/k8s/agent_sandbox_provider.py</code>。它构造的资源类型是 <code>agents.x-k8s.io/v1beta1</code> 下的 <code>Sandbox</code>。</p>
+<p>应用请求仍然描述镜像、资源和存活时间，但写入集群时换成另一组字段：</p>
+<table>
+<thead>
+<tr>
+<th>沙箱需求</th>
+<th>agent-sandbox 资源中的表达</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户容器配置</td>
+<td><code>spec.podTemplate</code></td>
+</tr>
+<tr>
+<td>到期时间</td>
+<td><code>spec.shutdownTime</code></td>
+</tr>
+<tr>
+<td>暂停</td>
+<td>将 <code>spec.operatingMode</code> 改为 <code>Suspended</code></td>
+</tr>
+<tr>
+<td>恢复</td>
+<td>将 <code>spec.operatingMode</code> 改为 <code>Running</code></td>
+</tr>
+</tbody>
+</table>
+<p>execd 的安装继续复用初始化容器和共享卷的构造逻辑。资源提交后，后续处理由 agent-sandbox 自己的控制器完成，OpenSandbox 读取它的状态并转换成沙箱状态。</p>
+<p>因此，<code>WorkloadProvider</code> 统一的是管理服务怎样操作一种工作负载，具体的暂停和回收由配套控制器实现。BatchSandbox 的预热池分配、文件系统快照等流程，不能直接套用到这个提供方。</p>
+<h3 id="fast-sandbox"><a class="markdownIt-Anchor" href="#fast-sandbox"></a> Fast Sandbox</h3>
+<p>容器之外，OpenSandbox 还可以接入独立项目 <a target="_blank" rel="noopener" href="https://github.com/opensandbox-group/fast-sandbox">opensandbox-group/fast-sandbox</a>，以 Firecracker 轻量虚拟机承载沙箱。</p>
+<p>这里分工可以先看成两层：OpenSandbox 保留应用使用的沙箱 API，Fast Sandbox 平台负责准备模板和运行虚拟机。对应的 <code>FastSandboxService</code> 位于 <code>server/opensandbox_server/services/fast_sandbox/</code>。</p>
+<p>它在 <code>runtime.type = &quot;kubernetes&quot;</code> 下由 <code>CompositeSandboxService</code> 分派请求。创建时指定 <code>templateId</code>，就进入这条路径；恢复 Fast Sandbox 生成的快照时也交给它。已有沙箱的后续操作，则通过 ID 的 <code>fsb-</code> 前缀识别。</p>
+<p>模板已经准备好虚拟机使用的系统、依赖和 execd。平台再提前运行能够承载虚拟机的 Pod，一个这样的 Pod 可以提供多个虚拟机沙箱的容量：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">提前准备的承载 Pod</span><br><span class="line">├── 虚拟机沙箱 A：execd + 用户程序</span><br><span class="line">├── 虚拟机沙箱 B：execd + 用户程序</span><br><span class="line">└── 供后续请求使用的容量</span><br></pre></td></tr></table></figure>
+<p>管理服务把创建请求转换后，通过 gRPC 提交给平台的 FastPath 控制服务。平台利用已经准备好的容量创建沙箱，省去为每个新沙箱单独创建 Pod 的步骤。</p>
+<p><code>FastSandboxService.create_sandbox()</code> 会让创建调用等待一段配置的时间。如果平台已经保存创建需求，但环境尚未准备好，也可能返回 <code>Pending</code>，随后继续准备。它与前面 Kubernetes 容器后端等待 <code>Running</code> 或 <code>Allocated</code> 的行为有所不同，客户端仍需要确认环境可用。</p>
+<p>Fast Sandbox 的暂停恢复由平台保存虚拟机检查点完成，可以包含文件系统、虚拟机状态和内存。OpenSandbox 负责提交操作并读取进度。平台内部的虚拟机运行逻辑位于独立项目中，本仓库主要实现对接代码；这也与 BatchSandbox 通过容器文件系统镜像恢复的方式不同。</p>
+<h3 id="底层隔离"><a class="markdownIt-Anchor" href="#底层隔离"></a> 底层隔离</h3>
+<p>Docker 和 Kubernetes 后端还可以结合不同的容器隔离机制。Docker 路径将配置的运行时传给 Docker Engine，Kubernetes 路径则可以为 Pod 写入 <code>runtimeClassName</code>，由节点侧选择相应的实现。</p>
+<p>相关配置解析位于 <code>server/opensandbox_server/services/runtime_resolver.py</code>。例如，gVisor、Kata 等运行时会改变容器的隔离方式，但沙箱创建仍然沿 Docker 或 Kubernetes 的流程完成。</p>
+<p>把这两层区分开，就能理解配置的作用：选择 Docker 或 Kubernetes，决定由谁管理环境；选择具体的容器运行时或虚拟机平台，决定环境底层怎样运行和隔离。</p>
+<h2 id="创建与回收全流程"><a class="markdownIt-Anchor" href="#创建与回收全流程"></a> 创建与回收全流程</h2>
+<p>回到最初的 Python 任务，几条运行路径可以放在一起比较：</p>
+<table>
+<thead>
+<tr>
+<th>实现方式</th>
+<th>环境从哪里来</th>
+<th>主要创建过程</th>
+<th>回收职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Docker</td>
+<td>本机新建容器</td>
+<td>管理服务准备镜像、安装 execd、启动容器</td>
+<td>管理服务调用 Docker 清理</td>
+</tr>
+<tr>
+<td>Kubernetes 普通 BatchSandbox</td>
+<td>根据 Pod 模板新建</td>
+<td>管理服务提交资源，控制器创建 Pod</td>
+<td>BatchSandbox 控制器与 Kubernetes 清理所属资源</td>
+</tr>
+<tr>
+<td>Kubernetes 预热池</td>
+<td>提前准备的 Pod</td>
+<td>分配 Pod，再通过 task-executor 启动本次沙箱</td>
+<td>任务清理后，由 Pool 按策略回收</td>
+</tr>
+<tr>
+<td>agent-sandbox</td>
+<td>对应控制器管理的环境</td>
+<td>OpenSandbox 提交 Sandbox 资源</td>
+<td>agent-sandbox 配套控制器</td>
+</tr>
+<tr>
+<td>Fast Sandbox</td>
+<td>模板和预先准备的虚拟机容量</td>
+<td>OpenSandbox 提交请求，平台创建虚拟机</td>
+<td>Fast Sandbox 平台</td>
+</tr>
+</tbody>
+</table>
+<p>其中，Kubernetes 两条 BatchSandbox 路径的区别最值得记住：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">普通创建</span><br><span class="line">请求 --&gt; BatchSandbox(template) --&gt; 新建 Pod --&gt; 启动沙箱</span><br><span class="line"></span><br><span class="line">池模式</span><br><span class="line">提前准备：Pool --&gt; 创建可用 Pod</span><br><span class="line">请求 --&gt; BatchSandbox(poolRef + taskTemplate)</span><br><span class="line">             |</span><br><span class="line">             v</span><br><span class="line">         分配已有 Pod --&gt; task-executor --&gt; 启动沙箱</span><br><span class="line"></span><br><span class="line">任务结束</span><br><span class="line">删除或到期 --&gt; 停止任务 --&gt; 删除所属 Pod / 交给 Pool 回收</span><br></pre></td></tr></table></figure>
+<p>预热池把准备时间提前，普通创建保留按请求构造环境的灵活性。两者都依赖集群中保存的资源和控制器持续处理，管理服务则把它们组织成应用熟悉的沙箱操作。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>OpenSandbox 的运行时把“申请一个环境”落实为具体资源。Docker 后端直接管理容器；Kubernetes 后端先保存沙箱需求，再由控制器创建或分配 Pod。BatchSandbox 描述一次沙箱所需的环境，Pool 维护提前准备的容量，task-executor 负责在分配后启动沙箱，execd 随后接收应用的执行请求。</p>
+<p>理解 Kubernetes 实现，可以沿着这条顺序阅读：请求怎样变成资源、资源怎样变成 Pod、Pod 怎样启动本次任务，以及任务结束后怎样释放环境。暂停恢复则进一步说明，同一个 API 在不同运行时下可能采用不同机制，需要结合实际保存的文件、进程和内存状态理解它的行为。</p>
+<p>这些实现共同保留了沙箱这一层使用方式，也各自遵循底层平台的管理机制。应用可以围绕任务组织操作，环境的创建、等待和清理由运行时及其配套组件完成。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/11/17/opensandbox-02/" rel="next" title="OpenSandbox 学习 02：核心架构">
+      OpenSandbox 学习 02：核心架构 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E6%97%B6%E7%9A%84%E8%81%8C%E8%B4%A3"><span class="nav-number">1.</span> <span class="nav-text"> 运行时的职责</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B2%99%E7%AE%B1%E4%B8%8E%E5%AE%B9%E5%99%A8"><span class="nav-number">1.1.</span> <span class="nav-text"> 沙箱与容器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BB%9F%E4%B8%80%E5%85%A5%E5%8F%A3"><span class="nav-number">1.2.</span> <span class="nav-text"> 统一入口</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E5%88%86%E5%B8%83"><span class="nav-number">1.3.</span> <span class="nav-text"> 源码分布</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#docker-%E8%BF%90%E8%A1%8C%E6%97%B6"><span class="nav-number">2.</span> <span class="nav-text"> Docker 运行时</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#engine-%E8%BF%9E%E6%8E%A5"><span class="nav-number">2.1.</span> <span class="nav-text"> Engine 连接</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%B9%E5%99%A8%E5%88%9B%E5%BB%BA"><span class="nav-number">2.2.</span> <span class="nav-text"> 容器创建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%89%A7%E8%A1%8C%E6%9C%8D%E5%8A%A1%E5%AE%89%E8%A3%85"><span class="nav-number">2.3.</span> <span class="nav-text"> 执行服务安装</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E4%B8%8E%E6%B8%85%E7%90%86"><span class="nav-number">2.4.</span> <span class="nav-text"> 状态与清理</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kubernetes-%E5%88%9B%E5%BB%BA%E6%B5%81%E7%A8%8B"><span class="nav-number">3.</span> <span class="nav-text"> Kubernetes 创建流程</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AE%A1%E7%90%86%E6%9C%8D%E5%8A%A1%E4%B8%8E%E6%8E%A7%E5%88%B6%E5%99%A8"><span class="nav-number">3.1.</span> <span class="nav-text"> 管理服务与控制器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#crd-%E4%B8%8E%E6%8E%A7%E5%88%B6%E5%99%A8"><span class="nav-number">3.2.</span> <span class="nav-text"> CRD 与控制器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B2%99%E7%AE%B1%E9%9C%80%E6%B1%82%E8%AE%B0%E5%BD%95"><span class="nav-number">3.3.</span> <span class="nav-text"> 沙箱需求记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#pod-%E7%9A%84%E7%BB%84%E6%88%90"><span class="nav-number">3.4.</span> <span class="nav-text"> Pod 的组成</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#pod-%E5%88%9B%E5%BB%BA"><span class="nav-number">3.5.</span> <span class="nav-text"> Pod 创建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA%E7%BB%93%E6%9E%9C"><span class="nav-number">3.6.</span> <span class="nav-text"> 创建结果</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#kubernetes-%E9%A2%84%E7%83%AD%E6%B1%A0"><span class="nav-number">4.</span> <span class="nav-text"> Kubernetes 预热池</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8F%90%E5%89%8D%E5%87%86%E5%A4%87"><span class="nav-number">4.1.</span> <span class="nav-text"> 提前准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E5%88%86%E9%85%8D"><span class="nav-number">4.2.</span> <span class="nav-text"> 环境分配</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%86%E9%85%8D%E8%AE%B0%E5%BD%95"><span class="nav-number">4.3.</span> <span class="nav-text"> 分配记录</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BB%BB%E5%8A%A1%E5%90%AF%E5%8A%A8"><span class="nav-number">4.4.</span> <span class="nav-text"> 任务启动</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BD%92%E8%BF%98%E4%B8%8E%E8%A1%A5%E5%85%85"><span class="nav-number">4.5.</span> <span class="nav-text"> 归还与补充</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E7%AE%A1%E7%90%86"><span class="nav-number">5.</span> <span class="nav-text"> 生命周期管理</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E4%B8%8E%E5%A4%B1%E8%B4%A5"><span class="nav-number">5.1.</span> <span class="nav-text"> 状态与失败</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%B0%E6%9C%9F%E5%9B%9E%E6%94%B6"><span class="nav-number">5.2.</span> <span class="nav-text"> 到期回收</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%88%A0%E9%99%A4%E9%A1%BA%E5%BA%8F"><span class="nav-number">5.3.</span> <span class="nav-text"> 删除顺序</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9A%82%E5%81%9C%E4%B8%8E%E6%81%A2%E5%A4%8D"><span class="nav-number">6.</span> <span class="nav-text"> 暂停与恢复</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#docker-%E6%9A%82%E5%81%9C"><span class="nav-number">6.1.</span> <span class="nav-text"> Docker 暂停</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#kubernetes-%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E5%BF%AB%E7%85%A7"><span class="nav-number">6.2.</span> <span class="nav-text"> Kubernetes 文件系统快照</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E6%81%A2%E5%A4%8D"><span class="nav-number">6.3.</span> <span class="nav-text"> 环境恢复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%B6%E4%BB%96%E8%BF%90%E8%A1%8C%E6%97%B6%E6%8E%A5%E5%85%A5"><span class="nav-number">7.</span> <span class="nav-text"> 其他运行时接入</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#agent-sandbox"><span class="nav-number">7.1.</span> <span class="nav-text"> agent-sandbox</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#fast-sandbox"><span class="nav-number">7.2.</span> <span class="nav-text"> Fast Sandbox</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%BA%95%E5%B1%82%E9%9A%94%E7%A6%BB"><span class="nav-number">7.3.</span> <span class="nav-text"> 底层隔离</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%9B%E5%BB%BA%E4%B8%8E%E5%9B%9E%E6%94%B6%E5%85%A8%E6%B5%81%E7%A8%8B"><span class="nav-number">8.</span> <span class="nav-text"> 创建与回收全流程</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">9.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">309</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
