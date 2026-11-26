@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 6.2.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/fuchencong.github.io/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/fuchencong.github.io/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/fuchencong.github.io/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/fuchencong.github.io/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/fuchencong.github.io/css/main.css">
+
+
+<link rel="stylesheet" href="/fuchencong.github.io/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"fuchencong.github.io","root":"/fuchencong.github.io/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"right","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}},"path":"search.xml"};
+  </script>
+
+  <meta name="description" content="上一篇介绍了 AX 的基础用法：创建任务、准备工作区、调用模型，以及暂停和恢复任务。这一篇从整体上分析 AX 的核心功能和架构，看看这些操作背后的组件如何配合。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="AX 学习：核心功能与整体架构">
+<meta property="og:url" content="https://fuchencong.github.io/fuchencong.github.io/2026/11/26/go-ax-02/index.html">
+<meta property="og:site_name" content="fuchencong">
+<meta property="og:description" content="上一篇介绍了 AX 的基础用法：创建任务、准备工作区、调用模型，以及暂停和恢复任务。这一篇从整体上分析 AX 的核心功能和架构，看看这些操作背后的组件如何配合。">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2026-11-26T10:30:26.000Z">
+<meta property="article:modified_time" content="2026-11-26T10:33:21.799Z">
+<meta property="article:author" content="fuchencong">
+<meta property="article:tag" content="Go">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/26/go-ax-02/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>AX 学习：核心功能与整体架构 | fuchencong</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/fuchencong.github.io/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">fuchencong</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">The way I am</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/fuchencong.github.io/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/fuchencong.github.io/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/fuchencong.github.io/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/fuchencong.github.io/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/fuchencong.github.io/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://fuchencong.github.io/fuchencong.github.io/2026/11/26/go-ax-02/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/fuchencong.github.io/images/logo.jpeg">
+      <meta itemprop="name" content="fuchencong">
+      <meta itemprop="description" content="Having dreams is what makes life tolerable.">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="fuchencong">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          AX 学习：核心功能与整体架构
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2026-11-26 18:30:26" itemprop="dateCreated datePublished" datetime="2026-11-26T18:30:26+08:00">2026-11-26</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/fuchencong.github.io/categories/Go/" itemprop="url" rel="index"><span itemprop="name">Go</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <p>上一篇介绍了 <a target="_blank" rel="noopener" href="https://github.com/google/ax">AX</a> 的基础用法：创建任务、准备工作区、调用模型，以及暂停和恢复任务。这一篇从整体上分析 AX 的核心功能和架构，看看这些操作背后的组件如何配合。</p>
+<span id="more"></span>
+<p>下面先介绍 Task、Workspace、Gateway 和 Model 的职责，再梳理客户端、控制面和执行环境的关系，最后沿着一次任务的执行过程理解具体实现。本文依据源码 <code>0bbe4f6</code> 介绍当前实现。</p>
+<h2 id="功能范围"><a class="markdownIt-Anchor" href="#功能范围"></a> 功能范围</h2>
+<p>AX 的核心能力围绕任务执行展开：</p>
+<ul>
+<li><strong>执行环境</strong>：指定镜像和计算资源，在独立沙箱中启动任务程序。</li>
+<li><strong>工作区准备</strong>：准备代码、文件和依赖，供任务运行时使用。</li>
+<li><strong>网络访问</strong>：限制任务能够访问的服务，并为请求注入凭据。</li>
+<li><strong>生命周期管理</strong>：创建、启动、暂停、恢复和删除任务，查询运行状态。</li>
+</ul>
+<p>AX 用资源配置描述这些需求，再由控制面和执行组件完成相应操作。下面先看资源的职责，再看它们如何转化为运行中的任务。</p>
+<h2 id="核心资源"><a class="markdownIt-Anchor" href="#核心资源"></a> 核心资源</h2>
+<h3 id="task"><a class="markdownIt-Anchor" href="#task"></a> Task</h3>
+<p>Task 是 AX 管理执行的基本单位。它描述任务使用的计算配置、启动命令、环境变量，以及需要引用的工作区和网络规则。</p>
+<p>其中，<code>spec.profile</code> 指定镜像与 CPU、内存限制，<code>spec.commands</code> 指定实际运行的程序。最小任务可以只运行一条 shell 命令；复杂任务则可以启动 Claude Code、Codex 等智能体 CLI。</p>
+<p>Task 提供程序运行所需的条件，程序本身实现具体逻辑。使用编程智能体时，规划、模型调用和工具调用由智能体完成，AX 管理它的执行环境。</p>
+<p>任务镜像必须通过 digest 固定内容，例如 <code>image@sha256:...</code>。环境快照与具体镜像相关，固定镜像内容才能让后续恢复使用一致的基础环境。</p>
+<h3 id="workspace"><a class="markdownIt-Anchor" href="#workspace"></a> Workspace</h3>
+<p>Task 解决了运行什么程序的问题，接下来需要准备程序要读取的内容。</p>
+<p>Workspace 用于声明工作区的初始化内容，包括 Git 仓库、内联文件和初始化命令。默认工作目录是 <code>/workspace</code>，Task 通过 <code>spec.workspace</code> 引用它。</p>
+<p>Workspace 将初始化内容分成几个字段：<code>setup.git</code> 声明需要克隆的仓库，<code>setup.files</code> 声明需要创建的文件，<code>setup.commands</code> 声明需要执行的初始化命令。它们负责准备工作环境，<code>Task.spec.commands</code> 则在环境就绪后启动实际任务。</p>
+<p>更进一步，AX 会把准备好的环境保存为快照，供后续任务复用。多个任务引用同一个 Workspace，相当于从同一份准备结果开始工作，各自的修改仍保存在自己的执行环境中。</p>
+<p>Workspace 可以通过 <code>profile</code> 为任务统一配置镜像和计算资源。Task 是否使用这份配置，取决于它有没有设置自己的 <code>profile</code>：</p>
+<ul>
+<li>没有设置：使用 Workspace 的 <code>profile</code>。</li>
+<li>已经设置：完整使用 Task 自己的 <code>profile</code>。其中未填写的资源限制采用系统默认值，不会从 Workspace 补齐。</li>
+</ul>
+<p>这部分逻辑由 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/controller/profile.go">EffectiveProfile</a> 实现。</p>
+<h3 id="gateway"><a class="markdownIt-Anchor" href="#gateway"></a> Gateway</h3>
+<p>任务运行时可能需要访问模型服务、代码仓库或其他 API。Gateway 用于配置这些外部访问的范围，以及请求所需的认证凭据。</p>
+<p>Gateway 描述允许任务访问的外部主机和端口，也可以为 HTTPS 请求配置凭据注入。Task 通过 <code>spec.gateway</code> 引用它；没有绑定 Gateway 的任务默认没有外部网络访问权限。</p>
+<p>Gateway 保存策略，<a target="_blank" rel="noopener" href="https://github.com/agent-substrate/substrate">Substrate</a> 的出站网关执行策略。启用 HTTPS 凭据注入后，任务发送占位认证头，网关读取授权的 Secret 并替换请求头，再转发给目标服务：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Task sandbox             Egress gateway              Model API</span><br><span class="line">     |                          |                         |</span><br><span class="line">     | Bearer placeholder       |                         |</span><br><span class="line">     +-------------------------&gt;|                         |</span><br><span class="line">     |                          | read authorized Secret  |</span><br><span class="line">     |                          | replace request header  |</span><br><span class="line">     |                          +------------------------&gt;|</span><br><span class="line">     |                          |      model response     |</span><br><span class="line">     |&lt;-------------------------+&lt;------------------------+</span><br></pre></td></tr></table></figure>
+<p>任务先发送一个占位认证头，出站网关再根据策略读取授权的 Secret，将占位值替换为真实凭据。这样，任务可以完成认证请求，而真实 token 无需写入 Task 清单或任务环境变量。</p>
+<p>这些规则在绑定时复制到任务对应的执行实例。修改 Gateway 后，已经存在的任务仍使用原有规则，需要创建新的任务来使用调整后的策略。</p>
+<h3 id="model"><a class="markdownIt-Anchor" href="#model"></a> Model</h3>
+<p>Model 将模型名称、提供商、生成参数和凭据引用保存为一份可命名的配置，供接入这套配置的模型调用代码读取。</p>
+<p>但在当前版本中，<strong>Model 尚未接入 Task 的执行流程</strong>。创建一个 Model，可以通过 AX API 保存、查询和更新它，却不会改变任务中 Claude Code、Codex 或其他程序使用的模型。</p>
+<p>源码中的 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/model/client.go">internal/model 客户端</a> 已具备从存储中读取 Model 配置并发起模型请求的能力。不过，当前仓库中只有测试调用这个客户端，AX Server 和 runner 尚未使用它执行任务。因此，Model 目前主要完成了配置管理和客户端基础，实际任务仍需自行配置模型访问。</p>
+<h3 id="资源分组"><a class="markdownIt-Anchor" href="#资源分组"></a> 资源分组</h3>
+<p>四种资源都属于某个 <code>atespace</code>，默认名称为 <code>default</code>。Task 引用的 Workspace 和 Gateway 需要与它位于同一个 atespace。</p>
+<p>Atespace 用于组织任务及其关联资源；Kubernetes 命名空间则用于部署 AX Server、数据库等基础组件，二者各有用途。</p>
+<h2 id="整体架构"><a class="markdownIt-Anchor" href="#整体架构"></a> 整体架构</h2>
+<p>资源描述了期望的执行条件，组件负责把这些条件变成运行中的任务。AX 的主要组件可以沿着控制请求和实际执行两条路径来看。</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">                       ax CLI / Go client</span><br><span class="line">                               |</span><br><span class="line">                               | AX gRPC API</span><br><span class="line">                               v</span><br><span class="line">                          ax-server</span><br><span class="line">                         /         \</span><br><span class="line">                        /           \</span><br><span class="line">                       v             v</span><br><span class="line">                 PostgreSQL     Substrate Control API</span><br><span class="line">                 specs + locks        |</span><br><span class="line">                                      | placement / lifecycle</span><br><span class="line">                                      v</span><br><span class="line">                                    Worker</span><br><span class="line">                                      |</span><br><span class="line">                  +-------------------+-------------------+</span><br><span class="line">                  | Task sandbox                          |</span><br><span class="line">                  |                                       |</span><br><span class="line">ax-server --------+--&gt; ax-runner --&gt; workspace + command   |</span><br><span class="line">task push         |                       |               |</span><br><span class="line">via router        +-----------------------+---------------+</span><br><span class="line">                                          |</span><br><span class="line">                                          v</span><br><span class="line">                                    Egress gateway</span><br><span class="line">                                          |</span><br><span class="line">                                          v</span><br><span class="line">                                    Model / Git / API</span><br></pre></td></tr></table></figure>
+<h3 id="客户端"><a class="markdownIt-Anchor" href="#客户端"></a> 客户端</h3>
+<p><code>ax</code> 读取清单，调用 AX 的 gRPC API。<code>apply</code>、<code>get</code>、<code>describe</code>、<code>suspend</code>、<code>resume</code> 和 <code>delete</code> 都是这套 API 的命令行入口。</p>
+<p>Kubernetes context 是保存在 kubeconfig 中的一组连接配置，关联了要访问的集群、访问身份和默认命名空间。切换 context，就是选择这次命令使用哪组配置，常用于在本地、测试和生产集群之间切换。<code>ax</code> 会根据选中的 context 连接目标集群，找到其中的 <code>ax-server</code>，并在需要时建立端口转发。因此，切换 context 后，同一套 AX 命令就可以操作另一个环境。仓库也提供公开的 Go client，供其他程序使用相同的连接方式。</p>
+<p><code>ax ssh</code> 则用于进入任务执行命令或读取文件。它通过 Substrate 的路由服务访问沙箱内的 guest 服务，任务需要设置 <code>spec.debug: true</code> 才会开放这项能力。</p>
+<h3 id="ax-控制面"><a class="markdownIt-Anchor" href="#ax-控制面"></a> AX 控制面</h3>
+<p><code>ax-server</code> 负责接收 API 请求、校验资源、读写配置，并协调 Substrate 上的执行资源。它内部的 TaskManager 管理任务生命周期，WorkspaceManager 管理工作区初始化与快照。</p>
+<p>AX 的资源虽然使用 Kubernetes 风格的清单，但没有作为 CRD 存进 etcd。按照 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/DESIGN.md">DESIGN.md</a> 的设计，大量短生命周期任务会给 Kubernetes 的对象存储和控制面带来压力，因此 AX 将自己的资源保存在 PostgreSQL，通过 Substrate API 直接管理执行环境。</p>
+<p>用户执行 <code>ax resume</code> 时，<code>ax-server</code> 收到请求后会调用 TaskManager，由它请求 Substrate 启动沙箱，再向沙箱内的 runner 下发任务。</p>
+<h3 id="substrate-运行层"><a class="markdownIt-Anchor" href="#substrate-运行层"></a> Substrate 运行层</h3>
+<p><a target="_blank" rel="noopener" href="https://github.com/agent-substrate/substrate">Agent Substrate</a> 负责把任务安排到执行资源上，并管理沙箱的创建、暂停和恢复。要理解这一层，可以先看任务程序实际运行在哪里：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">Kubernetes cluster</span><br><span class="line">|</span><br><span class="line">+-- AX Server / PostgreSQL / Substrate control plane</span><br><span class="line">|</span><br><span class="line">+-- Worker Pod</span><br><span class="line">|   |</span><br><span class="line">|   +-- worker process</span><br><span class="line">|       |</span><br><span class="line">|       +-- Task sandbox A (gVisor)</span><br><span class="line">|       |   +-- ax-runner</span><br><span class="line">|       |       +-- task program</span><br><span class="line">|       |</span><br><span class="line">|       +-- Task sandbox B (gVisor)</span><br><span class="line">|           +-- ax-runner</span><br><span class="line">|               +-- task program</span><br><span class="line">|</span><br><span class="line">+-- Other Worker Pods</span><br></pre></td></tr></table></figure>
+<p><strong>最外层是 Kubernetes 集群。</strong> AX Server、数据库、Substrate 控制面和 Worker Pod 都部署在这里。Kubernetes 负责运行这些基础组件。</p>
+<p><strong>Worker Pod 提供任务的执行资源。</strong> 每个 Pod 中运行 worker 进程，由它创建和管理任务沙箱。WorkerPool 管理一组 Worker Pod；任务需要启动时，Substrate 从中选择资源足够、运行时匹配的 worker。</p>
+<p><strong>沙箱是任务程序所在的隔离环境。</strong> 一个 worker 可以承载多个沙箱，每个沙箱有自己的进程空间、文件系统视图和网络环境。沙箱内先启动 <code>ax-runner</code>，再由它启动具体程序。CPU、内存限制和网络规则作用于任务的执行环境。</p>
+<p>本地部署使用 gVisor 创建这层隔离。它在任务程序与宿主机内核之间处理系统调用，减少任务程序直接接触宿主机内核的机会。图中的 gVisor 表示沙箱采用的隔离技术。</p>
+<p>Substrate 用 actor 表示一个受管理的任务执行实例，记录它的身份、状态和运行位置。AX 为 Task 创建对应的 actor，actor 启动后在选定的 worker 上运行沙箱。ActorTemplate 则保存镜像、资源限制和挂载等运行配置，供多个 actor 复用。</p>
+<h3 id="沙箱内的-runner"><a class="markdownIt-Anchor" href="#沙箱内的-runner"></a> 沙箱内的 runner</h3>
+<p>沙箱启动后，还需要有人把配置变成进程。<code>ax-runner</code> 就是这一层的入口程序，负责准备工作目录、启动命令、转发停止信号，并提供就绪探针和元数据接口。</p>
+<p>在 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/runner/runner.go">runner.runTask</a> 中，启动命令的核心代码很直接：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">cmd := exec.Command(cmdArgs[<span class="number">0</span>], cmdArgs[<span class="number">1</span>:]...)</span><br><span class="line">cmd.Dir = wsPath</span><br><span class="line">cmd.Stdin = os.Stdin</span><br><span class="line">cmd.Stdout = os.Stdout</span><br><span class="line">cmd.Stderr = os.Stderr</span><br><span class="line">cmd.Env = <span class="built_in">append</span>(commandEnv(task, metadataURL), files.env...)</span><br></pre></td></tr></table></figure>
+<p><code>cmdArgs</code> 来自任务命令，<code>wsPath</code> 是工作目录，环境中包含任务变量和 AX 提供的配置文件位置。脚本或智能体 CLI 都通过这段逻辑作为子进程启动。</p>
+<p>如果任务只给出了 <code>goal</code> 而没有显式命令，默认 runner 还支持调用镜像中的 <code>ax-launcher</code>。launcher 是镜像提供的启动程序，负责读取目标、配置和 MCP 信息并启动智能体。因此，使用自然语言目标时，也需要镜像具备相应的启动实现。</p>
+<h2 id="一次任务的执行"><a class="markdownIt-Anchor" href="#一次任务的执行"></a> 一次任务的执行</h2>
+<p>一次任务从资源提交到程序运行，会依次经过环境准备、资源创建和启动执行。沿着这个过程，可以看到各组件如何配合。</p>
+<h3 id="环境准备"><a class="markdownIt-Anchor" href="#环境准备"></a> 环境准备</h3>
+<p>任务引用 Workspace 时，需要先完成工作区准备。对于声明了初始化内容或计算配置的 Workspace，控制面会准备可供后续任务使用的环境快照。</p>
+<p>WorkspaceManager 会创建一个临时 setup actor，在其中运行工作区初始化，等待准备完成后保存快照并创建标签。后续符合条件的任务，就可以从这份准备结果启动。临时 actor 完成工作后会被清理，快照标签用于后续复用。</p>
+<p>这个流程位于 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/controller/workspace.go">buildSnapshotWithSetupActor</a>。文件、仓库和命令的具体准备工作由 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/workspace/setup.go">SetupWorkspace</a> 完成。</p>
+<p>Workspace 通过 <code>SetupComplete</code> 和 <code>SnapshotReady</code> 两个状态条件，分别表示初始化已经完成、环境快照已经就绪。后续任务复用快照，可以减少重复准备文件和依赖的工作。</p>
+<p>工作区初始化和任务执行还可以使用不同的 Gateway。例如，初始化需要下载依赖，正式任务只需要访问模型服务，就可以分别配置 <code>Workspace.spec.setup.gateway</code> 和 <code>Task.spec.gateway</code>。初始化阶段的访问权限不会自动传给任务。</p>
+<h3 id="资源创建"><a class="markdownIt-Anchor" href="#资源创建"></a> 资源创建</h3>
+<p>Workspace 和 Gateway 准备好后，CLI 提交 Task。服务端先校验引用的资源、计算配置等条件，再保存任务，并准备对应的 Substrate 资源。</p>
+<p>创建完成后，新 Task 处于 <code>Suspended</code>。这一行为在 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/server/server.go">CreateTask</a> 中有明确实现：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// New tasks start suspended.</span></span><br><span class="line"><span class="keyword">if</span> err := s.taskManager.Suspend(ctx, task, workspace, gateway); err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, s.recordFailure(ctx, task, <span class="string">&quot;provisioning&quot;</span>, err)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>因此，<code>apply</code> 表示创建任务配置与执行资源；真正让程序开始运行，还需要 <code>resume</code>。</p>
+<h3 id="启动与执行"><a class="markdownIt-Anchor" href="#启动与执行"></a> 启动与执行</h3>
+<p>执行恢复操作后，<a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/controller/task.go">TaskManager.Resume</a> 请求 Substrate 激活 actor。Substrate 安排运行位置并启动沙箱，AX 再通过路由服务，把 Task 和 Workspace 推送给 runner。</p>
+<p>任务配置在这里采用推送方式，是因为 actor 模板可以被多个任务复用。模板描述共同的运行条件，具体任务内容在实例启动后交给 runner。</p>
+<p>随后，runner 确认工作区就绪，再启动 Task 指定的程序。程序读取输入并执行任务；需要访问外部服务时，流量经出站网关按 Gateway 规则处理。</p>
+<p>这条路径可以压缩成下面的顺序：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">ax resume</span><br><span class="line">    |</span><br><span class="line">    v</span><br><span class="line">ax-server --&gt; Substrate --&gt; Worker starts sandbox</span><br><span class="line">    |</span><br><span class="line">    +-------&gt; Router --&gt; ax-runner</span><br><span class="line">                             |</span><br><span class="line">                             +--&gt; prepare workspace</span><br><span class="line">                             +--&gt; start task command</span><br><span class="line">                                      |</span><br><span class="line">                                      v</span><br><span class="line">                               Egress gateway</span><br><span class="line">                                      |</span><br><span class="line">                                      v</span><br><span class="line">                                  External service</span><br><span class="line">                                      |</span><br><span class="line">                                      v</span><br><span class="line">                                  Task output</span><br></pre></td></tr></table></figure>
+<p>在这条执行路径中，控制面协调资源，Substrate 管理沙箱，runner 启动程序，出站网关处理外部访问。具体的业务逻辑始终由任务程序执行。</p>
+<h2 id="状态与持久化"><a class="markdownIt-Anchor" href="#状态与持久化"></a> 状态与持久化</h2>
+<h3 id="状态的来源"><a class="markdownIt-Anchor" href="#状态的来源"></a> 状态的来源</h3>
+<p>任务配置保存在 AX 数据库，任务是否正在运行则由 Substrate 掌握。如果两边各自长期保存一份运行状态，就容易在暂停、故障或重新调度后出现不一致。</p>
+<p>AX 因此把两类信息分开处理：</p>
+<ul>
+<li>PostgreSQL 保存资源配置、元数据，以及工作区准备结果、资源创建失败等 AX 自己管理的信息。</li>
+<li>Substrate 提供 actor 的当前状态、身份等执行信息。</li>
+</ul>
+<p>服务端读取任务时先取得存储记录，再补入 actor 状态。对应 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/server/server.go">getTask</a> 的代码如下：</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">task, err := s.getStoredTask(ctx, atespace, name)</span><br><span class="line"><span class="keyword">if</span> err != <span class="literal">nil</span> &#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">nil</span>, err</span><br><span class="line">&#125;</span><br><span class="line">s.applyActor(ctx, task)</span><br><span class="line"><span class="keyword">return</span> task, <span class="literal">nil</span></span><br></pre></td></tr></table></figure>
+<p>这也是 <code>ax get</code> 和 <code>ax describe</code> 能同时展示任务配置与运行状态的原因。</p>
+<p>Task 的 <code>Running</code> 表示沙箱正在运行。runner 在任务命令退出后仍会继续提供服务，因此，沙箱状态和程序是否完成需要分别判断。当前控制面不会自动把普通命令的退出码转成业务完成状态，任务结果需要通过程序输出或结果文件确认。</p>
+<h3 id="并发操作"><a class="markdownIt-Anchor" href="#并发操作"></a> 并发操作</h3>
+<p>状态分开保存之后，还需要防止多个请求同时修改同一个任务。例如，一个请求正在恢复任务，另一个请求又要删除它，两者必须协调。</p>
+<p><strong>AX 使用按资源区分的分布式锁，锁的租约保存在 PostgreSQL。不同任务可以分别操作，同一资源上的冲突操作则通过锁协调</strong>。</p>
+<p>Workspace 的快照构建也采用锁：多个任务同时需要同一份尚未生成的快照时，由一个请求完成准备，其余请求等待并复用结果。这样可以减少重复创建 setup actor 的工作。</p>
+<h3 id="暂停与恢复"><a class="markdownIt-Anchor" href="#暂停与恢复"></a> 暂停与恢复</h3>
+<p>暂停任务时，Substrate 保存需要持久化的执行环境并释放运行资源。恢复时，再据此建立执行环境。</p>
+<p>对于显式配置了 <code>commands</code> 的任务，恢复后会保留持久化的文件，并重新启动命令。程序需要将进度写入持久文件，在重新启动时读取这些记录，决定继续执行哪些工作。</p>
+<p>AX 管理的默认 profile 快照还会保留容器文件系统状态，以支持 Workspace 初始化时安装的依赖。相关设置位于 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/internal/controller/profile.go">DefaultProfileSnapshotFidelity</a>。文件系统恢复和内存中的程序执行进度是不同层面的能力，任务程序仍需要根据自己的持久记录安排后续工作。</p>
+<h2 id="使用与扩展"><a class="markdownIt-Anchor" href="#使用与扩展"></a> 使用与扩展</h2>
+<h3 id="本地与集群"><a class="markdownIt-Anchor" href="#本地与集群"></a> 本地与集群</h3>
+<p>AX 提供两种常见部署入口：</p>
+<ul>
+<li><code>ax local start</code>：准备本地 Kind、Substrate 和 AX 环境。</li>
+<li><code>ax install</code>：将 AX 安装到已经具备 Substrate 的 Kubernetes 集群。</li>
+</ul>
+<p>两种环境使用相同的任务资源与 API。开发者可以先在本地验证镜像和清单，再通过 kubeconfig context 操作其他集群。<code>ax studio</code> 提供本地 Web 界面的启动入口，实际界面由独立的 AX Studio 程序提供。</p>
+<p>跨集群复用配置时，可以使用 <code>ax promote</code>。它会处理 Task 及其引用的 Workspace、Gateway，并在目标环境创建任务。它复用的是资源配置，任务运行中产生的文件和 Gateway 引用的 Secret 需要另外准备；这项行为可在 <a target="_blank" rel="noopener" href="https://github.com/google/ax/blob/0bbe4f604a5f8756091ad94a65a596260238ad10/cmd/ax/promote.go">promote 实现</a> 中确认。</p>
+<h3 id="运行信息"><a class="markdownIt-Anchor" href="#运行信息"></a> 运行信息</h3>
+<p>组件分层之后，排查问题也需要先定位到具体一层：</p>
+<ul>
+<li>资源状态：<code>ax describe</code> 展示资源的条件与状态。</li>
+<li>业务执行：查看沙箱内的文件和程序输出。</li>
+<li>控制面：结合日志、指标与调用链，判断请求在哪个环节耗时或失败。</li>
+</ul>
+<p>AX Server 使用 OpenTelemetry 接入日志上下文、指标、调用链和事件，并提供 Prometheus <code>/metrics</code>。使用 <code>ax --trace</code> 时，CLI 会输出 trace ID，相关 RPC 可以沿着 AX Server 继续关联到 Substrate。导出到外部后端的行为取决于部署中的遥测配置。</p>
+<p>例如，任务无法恢复时，先看 Task 的条件信息，再判断是资源准备失败、worker 不可用，还是 runner 尚未就绪。相比仅看一个 <code>Running</code> 或 <code>Suspended</code>，这些信息更接近实际发生的问题。</p>
+<h3 id="能力边界"><a class="markdownIt-Anchor" href="#能力边界"></a> 能力边界</h3>
+<p>AX 已经具备任务生命周期、环境快照和受控网络访问等基础能力，部分面向智能体的配置仍在完善。</p>
+<p>例如，当前服务端会拒绝 <code>spec.retry</code>，因为任务退出事件与自动重试流程尚未接通。Workspace 可以为 MCP 服务器生成配置供任务使用，但仍需要智能体或 launcher 读取；skills 的远程注册表下载也尚未实现，现有初始化代码主要负责准备目录。</p>
+<p>这些区别关系到实际使用：资源中出现一个字段，说明接口已经描述了这类信息；是否能产生预期行为，还需要看对应的执行路径。本文讨论的能力以当前代码和已有实测结果为依据。</p>
+<h2 id="小结"><a class="markdownIt-Anchor" href="#小结"></a> 小结</h2>
+<p>AX 将智能体任务需要的运行条件组织为资源：Task 定义执行，Workspace 准备环境，Gateway 管理外部访问，Model 保存模型配置。控制面把这些配置交给 Substrate 管理的沙箱，再由 runner 启动实际程序。</p>
+<p>沿着一次任务来看，就是先准备环境，再创建执行资源、启动命令、访问外部服务，最后保留文件并管理生命周期。理解这条路径，也就能看清 AX 的位置：它提供可复用的任务执行基础，让不同的脚本、模型客户端和编程智能体使用同一套环境管理方式。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/fuchencong.github.io/tags/Go/" rel="tag"># Go</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item"></div>
+      <div class="post-nav-item">
+    <a href="/fuchencong.github.io/2026/11/25/paper-CyberGym-Evaluating-AI-Agents-Real-World-Cybersecurity-Capabilities-at-Scale/" rel="next" title="CyberGym：大规模评估 AI 智能体的真实网络安全能力">
+      CyberGym：大规模评估 AI 智能体的真实网络安全能力 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%8A%9F%E8%83%BD%E8%8C%83%E5%9B%B4"><span class="nav-number">1.</span> <span class="nav-text"> 功能范围</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B8%E5%BF%83%E8%B5%84%E6%BA%90"><span class="nav-number">2.</span> <span class="nav-text"> 核心资源</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#task"><span class="nav-number">2.1.</span> <span class="nav-text"> Task</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#workspace"><span class="nav-number">2.2.</span> <span class="nav-text"> Workspace</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#gateway"><span class="nav-number">2.3.</span> <span class="nav-text"> Gateway</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#model"><span class="nav-number">2.4.</span> <span class="nav-text"> Model</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B5%84%E6%BA%90%E5%88%86%E7%BB%84"><span class="nav-number">2.5.</span> <span class="nav-text"> 资源分组</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84"><span class="nav-number">3.</span> <span class="nav-text"> 整体架构</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AE%A2%E6%88%B7%E7%AB%AF"><span class="nav-number">3.1.</span> <span class="nav-text"> 客户端</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ax-%E6%8E%A7%E5%88%B6%E9%9D%A2"><span class="nav-number">3.2.</span> <span class="nav-text"> AX 控制面</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#substrate-%E8%BF%90%E8%A1%8C%E5%B1%82"><span class="nav-number">3.3.</span> <span class="nav-text"> Substrate 运行层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%B2%99%E7%AE%B1%E5%86%85%E7%9A%84-runner"><span class="nav-number">3.4.</span> <span class="nav-text"> 沙箱内的 runner</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80%E6%AC%A1%E4%BB%BB%E5%8A%A1%E7%9A%84%E6%89%A7%E8%A1%8C"><span class="nav-number">4.</span> <span class="nav-text"> 一次任务的执行</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8E%AF%E5%A2%83%E5%87%86%E5%A4%87"><span class="nav-number">4.1.</span> <span class="nav-text"> 环境准备</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B5%84%E6%BA%90%E5%88%9B%E5%BB%BA"><span class="nav-number">4.2.</span> <span class="nav-text"> 资源创建</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%90%AF%E5%8A%A8%E4%B8%8E%E6%89%A7%E8%A1%8C"><span class="nav-number">4.3.</span> <span class="nav-text"> 启动与执行</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E4%B8%8E%E6%8C%81%E4%B9%85%E5%8C%96"><span class="nav-number">5.</span> <span class="nav-text"> 状态与持久化</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%8A%B6%E6%80%81%E7%9A%84%E6%9D%A5%E6%BA%90"><span class="nav-number">5.1.</span> <span class="nav-text"> 状态的来源</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B9%B6%E5%8F%91%E6%93%8D%E4%BD%9C"><span class="nav-number">5.2.</span> <span class="nav-text"> 并发操作</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9A%82%E5%81%9C%E4%B8%8E%E6%81%A2%E5%A4%8D"><span class="nav-number">5.3.</span> <span class="nav-text"> 暂停与恢复</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E4%B8%8E%E6%89%A9%E5%B1%95"><span class="nav-number">6.</span> <span class="nav-text"> 使用与扩展</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%9C%AC%E5%9C%B0%E4%B8%8E%E9%9B%86%E7%BE%A4"><span class="nav-number">6.1.</span> <span class="nav-text"> 本地与集群</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%BF%90%E8%A1%8C%E4%BF%A1%E6%81%AF"><span class="nav-number">6.2.</span> <span class="nav-text"> 运行信息</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%83%BD%E5%8A%9B%E8%BE%B9%E7%95%8C"><span class="nav-number">6.3.</span> <span class="nav-text"> 能力边界</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%8F%E7%BB%93"><span class="nav-number">7.</span> <span class="nav-text"> 小结</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="fuchencong"
+      src="/fuchencong.github.io/images/logo.jpeg">
+  <p class="site-author-name" itemprop="name">fuchencong</p>
+  <div class="site-description" itemprop="description">Having dreams is what makes life tolerable.</div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/fuchencong.github.io/archives/">
+        
+          <span class="site-state-item-count">315</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/fuchencong.github.io/categories/">
+          
+        <span class="site-state-item-count">14</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/fuchencong.github.io/tags/">
+          
+        <span class="site-state-item-count">38</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/fuchencong" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;fuchencong" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+      <span class="links-of-author-item">
+        <a href="mailto:fuchencong@163.com" title="E-Mail → mailto:fuchencong@163.com" rel="noopener" target="_blank"><i class="fa fa-envelope fa-fw"></i>E-Mail</a>
+      </span>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">fuchencong</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/fuchencong.github.io/lib/anime.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.min.js"></script>
+  <script src="/fuchencong.github.io/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/fuchencong.github.io/js/utils.js"></script>
+
+<script src="/fuchencong.github.io/js/motion.js"></script>
+
+
+<script src="/fuchencong.github.io/js/schemes/muse.js"></script>
+
+
+<script src="/fuchencong.github.io/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+      
+<link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0/dist/katex.min.css">
+
+
+  
+
+</body>
+</html>
